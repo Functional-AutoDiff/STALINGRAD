@@ -81,6 +81,7 @@
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
 		  ("length" length? (length "n" integer-argument #f)))
+		 (at-most-one ("pp" pp?))
 		 (required (pathname "pathname" string-argument)))
  (initialize-basis!)
  (set! *include-path*
@@ -93,6 +94,7 @@
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-closures?* unabbreviate-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
+ (set! *pp?* pp?)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -116,8 +118,8 @@
 	    (with-write-length
 	     length
 	     (lambda ()
-	      (pp (externalize
-		   (evaluate (first result) #f (second result))))))))
+	      ((if *pp?* pp write)
+	       (externalize (evaluate (first result) #f (second result))))))))
 	  (newline)
 	  (when metered?
 	   (for-each (lambda (b)

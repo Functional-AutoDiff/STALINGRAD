@@ -2,29 +2,21 @@
 
 (define (identity x) x)
 
+(define (not x) (if x #f #t))
+
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (sqr x) (* x x))
 
-(define (derivative-using-conjoint-j* f)
- (lambda (x) (cdr ((conjoint-j* f) x 1))))
+(define (derivative-using-j* f) (lambda (x) (cdr ((j* f) x 1))))
 
-(define (derivative-using-conjoint-*j f)
- (lambda (x) ((cdr ((conjoint-*j f) x identity)) 1)))
+(define (derivative-using-*j f) (lambda (x) ((cdr ((*j f) x identity)) 1)))
 
-(define (derivative-using-conjoined-j* f)
- (lambda (x) (cdr ((conjoined-j* f) x 1))))
-
-(define (derivative-using-conjoined-*j f)
- (lambda (x) ((cdr ((conjoined-*j f) x identity)) 1)))
-
-(define (derivative f) (derivative-using-conjoint-*j f))
+(define (derivative f) (derivative-using-*j f))
 
 (define (root f x epsilon)
  (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
-  (if (<= (abs (- x x-prime)) epsilon)
-      x
-      (root f x-prime epsilon))))
+  (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon))))
 
 ;;; needs work: To rule out maxima and inflection points.
 (define (argmin f x epsilon) (root (derivative f) x epsilon))
@@ -61,40 +53,19 @@
      '()
      (cons (f (first l1) (first l2)) (map2 f (rest l1) (rest l2)))))
 
-(define (forward-conjoint primal adjoint)
- (if (null? primal)
-     (cons '() '())
-     (cons (cons (first primal) (first adjoint))
-	   (forward-conjoint (rest primal) (rest adjoint)))))
-
-(define (reverse-conjoint primal adjoint)
- (if (null? primal)
-     (cons '() zero)
-     (cons (cons (first primal) (first adjoint))
-	   (reverse-conjoint (rest primal) (rest adjoint)))))
-
 (define (reduce f i)
  (lambda (l) (if (null? l) i (f (first l) ((reduce f i) (rest l))))))
 
 (define (length l) (if (null? l) 0 (+ (length (rest l)) 1)))
 
-(define (gradient-using-conjoint-j* f)
+(define (gradient-using-j* f)
  (lambda (x)
   (let ((n (length x)))
-   (map-n (lambda (i) (cdr ((conjoint-j* f) (forward-conjoint x (e i n)))))
-	  n))))
+   (map-n (lambda (i) (cdr ((j* f) x (e i n)))) n))))
 
-(define (gradient-using-conjoint-*j f)
- (lambda (x)
-  (let ((n (length x)))
-   ((cdr ((conjoint-*j f)
-	  (reverse-conjoint
-	   x (map-n (lambda (i) (lambda (y-grave) (ex y-grave i n))) n))))
-    1))))
+(define (gradient-using-*j f) (lambda (x) ((cdr ((*j f) x identity)) 1)))
 
-;;; needs work: gradient-using-conjoined-j* and gradient-using-conjoined-*j
-
-(define (gradient f) (gradient-using-conjoint-*j f))
+(define (gradient f) (gradient-using-*j f))
 
 (define (v+ u v) (map2 + u v))
 
