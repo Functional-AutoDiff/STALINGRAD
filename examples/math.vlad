@@ -18,7 +18,7 @@
 (define (derivative-using-conjoined-*j f)
  (lambda (x) ((cdr ((conjoined-*j f) x identity)) 1)))
 
-(define (derivative f) (derivative-using-conjoint-*j f))
+(define (derivative f) (derivative-using-conjoined-*j f))
 
 (define (root f x epsilon)
  (let ((x-prime (- x (/ (f x) ((derivative f) x)))))

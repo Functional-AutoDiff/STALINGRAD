@@ -394,8 +394,7 @@
 (define (coalesce-constants result)
  (let ((bss (transitive-equivalence-classesp
 	     (lambda (b1 b2)
-	      (coalesce-same? (value-binding-value b1)
-			      (value-binding-value b2)))
+	      (same? (value-binding-value b1) (value-binding-value b2)))
 	     (second result))))
   (define (rename x)
    (let ((bs (find-if
@@ -619,6 +618,16 @@
 
 (define (generic-zero-bound? v) (not (eq? (generic-zero-binding v) #f)))
 
+(define (as v)
+ (cond ((null? v) '())
+       ((real? v) 0)
+       ((pair? v) (cons (create-generic-zero) (create-generic-zero)))
+       ((procedure? v)
+	(make-closure (vector (create-generic-zero))
+		      'x
+		      (make-variable-access-expression 'zero 0)))
+       (else (fuck-up))))
+
 (define (generic-zero-dereference-as-null v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v) (set-generic-zero-binding! v '()))
@@ -649,6 +658,13 @@
 			(make-variable-access-expression 'zero 0))))
 	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
        (else v)))
+
+(define (generic-zero-dereference-as v1 v2)
+ (cond ((generic-zero? v2)
+	(unless (generic-zero-bound? v2)
+	 (set-generic-zero-binding! v2 (as v1)))
+	(generic-zero-dereference-as-procedure (generic-zero-binding v2)))
+       (else v2)))
 
 (define (generic-zero-dereference v)
  (cond ((generic-zero? v)
@@ -882,23 +898,21 @@
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     (f x1 x2)))))
 
-(define (coalesce-same? v1 v2)
+(define (same? v1 v2)
  (or (and (null? v1) (null? v2))
      (and (boolean? v1) (boolean? v2) (eq? v1 v2))
      (and (real? v1) (real? v2) (= v1 v2))
      (and (pair? v1)
 	  (pair? v2)
-	  (coalesce-same? (car v1) (car v2))
-	  (coalesce-same? (cdr v1) (cdr v2)))
+	  (same? (car v1) (car v2))
+	  (same? (cdr v1) (cdr v2)))
      (and (primitive-procedure? v1)
 	  (primitive-procedure? v2)
 	  (eq? v1 v2))
      (and (closure? v1)
 	  (closure? v2)
 	  (eq? (closure-body v1) (closure-body v2))
-	  (every-vector coalesce-same?
-			(closure-values v1)
-			(closure-values v2)))
+	  (every-vector same? (closure-values v1) (closure-values v2)))
      (and (recursive-closure? v1)
 	  (recursive-closure? v2)
 	  (= (vector-length (recursive-closure-bodies v1))
@@ -907,81 +921,545 @@
 	  (every-vector eq?
 			(recursive-closure-bodies v1)
 			(recursive-closure-bodies v2))
-	  (every-vector coalesce-same?
+	  (every-vector same?
 			(recursive-closure-values v1)
 			(recursive-closure-values v2)))))
 
-(define (same? curried-equal? v1 v2)
+(define (equal?-primitive curried-equal?
+			  =
+			  null?
+			  boolean?
+			  real?
+			  pair?
+			  car
+			  cdr
+			  cons-procedure
+			  if-procedure
+			  true
+			  false
+			  v1
+			  v2)
  (cond
-  ((generic-zero? v1) (same? curried-equal? (generic-zero-dereference v1) v2))
-  ((generic-zero? v2) (same? curried-equal? v1 (generic-zero-dereference v2)))
+  ((generic-zero? v1)
+   (equal?-primitive curried-equal?
+		     =
+		     null?
+		     boolean?
+		     real?
+		     pair?
+		     car
+		     cdr
+		     cons-procedure
+		     if-procedure
+		     true
+		     false
+		     (generic-zero-dereference v1)
+		     v2))
+  ((generic-zero? v2)
+   (equal?-primitive curried-equal?
+		     =
+		     null?
+		     boolean?
+		     real?
+		     pair?
+		     car
+		     cdr
+		     cons-procedure
+		     if-procedure
+		     true
+		     false
+		     v1
+		     (generic-zero-dereference v2)))
   (else
-   (or (and (null? v1) (null? v2))
-       (and (boolean? v1) (boolean? v2) (eq? v1 v2))
-       (and (real? v1) (real? v2) (= v1 v2))
-       (and (pair? v1)
-	    (pair? v2)
-	    (call (call curried-equal? (car v1)) (car v2))
-	    (call (call curried-equal? (cdr v1)) (cdr v2)))
-       (and (primitive-procedure? v1)
-	    (primitive-procedure? v2)
-	    (eq? v1 v2))
-       (and (closure? v1)
-	    (closure? v2)
-	    (eq? (closure-body v1) (closure-body v2))
-	    (every-vector (lambda (v1 v2) (call (call curried-equal? v1) v2))
-			  (closure-values v1)
-			  (closure-values v2)))
-       (and (recursive-closure? v1)
-	    (recursive-closure? v2)
-	    (= (vector-length (recursive-closure-bodies v1))
-	       (vector-length (recursive-closure-bodies v2)))
-	    (= (recursive-closure-index v1) (recursive-closure-index v2))
-	    (every-vector eq?
-			  (recursive-closure-bodies v1)
-			  (recursive-closure-bodies v2))
-	    (every-vector (lambda (v1 v2) (call (call curried-equal? v1) v2))
-			  (recursive-closure-values v1)
-			  (recursive-closure-values v2)))))))
+   ;; The expansion of or here is nonstandard and particular to the case where
+   ;; all of the subexpressions return a boolean.
+   (if
+    (call (call (call (call if-procedure (call null? v1))
+		      (make-primitive-procedure
+		       "equal?-primitive internal 0"
+		       (lambda (x)
+			(call (call (call (call if-procedure (call null? v2))
+					  (make-primitive-procedure
+					   "equal?-primitive internal 1"
+					   (lambda (x) #t)))
+				    (make-primitive-procedure
+				     "equal?-primitive internal 2"
+				     (lambda (x) #f)))
+			      '()))))
+		(make-primitive-procedure
+		 "equal?-primitive internal 3"
+		 (lambda (x) #f)))
+	  '())
+    (call true '())
+    (if
+     (call
+      (call
+       (call
+	(call if-procedure (call boolean? v1))
+	(make-primitive-procedure
+	 "equal?-primitive internal 4"
+	 (lambda (x)
+	  (call
+	   (call
+	    (call
+	     (call if-procedure (call boolean? v2))
+	     (make-primitive-procedure
+	      "equal?-primitive internal 5"
+	      (lambda (x)
+	       (call
+		(call (call (call if-procedure v1)
+			    (make-primitive-procedure
+			     "equal?-primitive internal 6"
+			     (lambda (x)
+			      (call (call (call (call if-procedure v2)
+						(make-primitive-procedure
+						 "equal?-primitive internal 7"
+						 (lambda (x) #t)))
+					  (make-primitive-procedure
+					   "equal?-primitive internal 8"
+					   (lambda (x) #f)))
+				    '()))))
+		      (make-primitive-procedure
+		       "equal?-primitive internal 9"
+		       (lambda (x)
+			(call (call (call (call if-procedure v2)
+					  (make-primitive-procedure
+					   "equal?-primitive internal 10"
+					   (lambda (x) #f)))
+				    (make-primitive-procedure
+				     "equal?-primitive internal 11"
+				     (lambda (x) #t)))
+			      '()))))
+		'()))))
+	    (make-primitive-procedure
+	     "equal?-primitive internal 12"
+	     (lambda (x) #f)))
+	   '()))))
+       (make-primitive-procedure
+	"equal?-primitive internal 13"
+	(lambda (x) #f)))
+      '())
+     (call true '())
+     (if
+      (call
+       (call
+	(call
+	 (call if-procedure (call real? v1))
+	 (make-primitive-procedure
+	  "equal?-primitive internal 14"
+	  (lambda (x)
+	   (call
+	    (call
+	     (call
+	      (call if-procedure (call real? v2))
+	      (make-primitive-procedure
+	       "equal?-primitive internal 15"
+	       (lambda (x)
+		(call
+		 (call (call (call if-procedure
+				   (call = (call (call cons-procedure v1) v2)))
+			     (make-primitive-procedure
+			      "equal?-primitive internal 16"
+			      (lambda (x) #t)))
+		       (make-primitive-procedure
+			"equal?-primitive internal 17"
+			(lambda (x) #f)))
+		 '()))))
+	     (make-primitive-procedure
+	      "equal?-primitive internal 18"
+	      (lambda (x) #f)))
+	    '()))))
+	(make-primitive-procedure
+	 "equal?-primitive internal 19"
+	 (lambda (x) #f)))
+       '())
+      (call true '())
+      (if
+       (call
+	(call
+	 (call
+	  (call if-procedure (call pair? v1))
+	  (make-primitive-procedure
+	   "equal?-primitive internal 20"
+	   (lambda (x)
+	    (call
+	     (call
+	      (call
+	       (call if-procedure (call pair? v2))
+	       (make-primitive-procedure
+		"equal?-primitive internal 21"
+		(lambda (x)
+		 (call
+		  (call
+		   (call
+		    (call if-procedure
+			  (call (call curried-equal? (call car v1))
+				(call car v2)))
+		    (make-primitive-procedure
+		     "equal?-primitive internal 22"
+		     (lambda (x)
+		      (call
+		       (call
+			(call (call if-procedure
+				    (call (call curried-equal? (call cdr v1))
+					  (call cdr v2)))
+			      (make-primitive-procedure
+			       "equal?-primitive internal 23"
+			       (lambda (x) #t)))
+			(make-primitive-procedure
+			 "equal?-primitive internal 24"
+			 (lambda (x) #f)))
+		       '()))))
+		   (make-primitive-procedure
+		    "equal?-primitive internal 25"
+		    (lambda (x) #f)))
+		  '()))))
+	      (make-primitive-procedure
+	       "equal?-primitive internal 26"
+	       (lambda (x) #f)))
+	     '()))))
+	 (make-primitive-procedure
+	  "equal?-primitive internal 27"
+	  (lambda (x) #f)))
+	'())
+       (call true '())
+       (if
+	(and (primitive-procedure? v1)
+	     (primitive-procedure? v2)
+	     (eq? v1 v2))
+	(call true '())
+	(if
+	 (if (and (closure? v1)
+		  (closure? v2)
+		  (eq? (closure-body v1) (closure-body v2)))
+	     (let loop ((i 0))
+	      (if (>= i (vector-length (closure-values v1)))
+		  #t
+		  (call
+		   (call
+		    (call
+		     (call
+		      if-procedure
+		      (call
+		       (call curried-equal? (vector-ref (closure-values v1) i))
+		       (vector-ref (closure-values v2) i)))
+		     (make-primitive-procedure
+		      "equal?-primitive internal 28"
+		      (lambda (x) (loop (+ i 1)))))
+		    (make-primitive-procedure
+		     "equal?-primitive internal 29"
+		     (lambda (x) #f)))
+		   '())))
+	     #f)
+	 (call true '())
+	 (if (and (recursive-closure? v1)
+		  (recursive-closure? v2)
+		  (= (vector-length (recursive-closure-bodies v1))
+		     (vector-length (recursive-closure-bodies v2)))
+		  (= (recursive-closure-index v1) (recursive-closure-index v2))
+		  (every-vector eq?
+				(recursive-closure-bodies v1)
+				(recursive-closure-bodies v2)))
+	     (let loop ((i 0))
+	      (if (>= i (vector-length (recursive-closure-values v1)))
+		  (call true '())
+		  (call
+		   (call
+		    (call
+		     (call
+		      if-procedure
+		      (call (call curried-equal?
+				  (vector-ref (recursive-closure-values v1) i))
+			    (vector-ref (recursive-closure-values v2) i)))
+		     (make-primitive-procedure
+		      "equal?-primitive internal 30"
+		      (lambda (x) (loop (+ i 1)))))
+		    (make-primitive-procedure
+		     "equal?-primitive internal 31"
+		     (lambda (x) (call false '()))))
+		   '())))
+	     (call false '())))))))))))
 
 (define (vlad-procedure? v)
  (or (primitive-procedure? v) (closure? v) (recursive-closure? v)))
 
-(define (plus v1 v2)
+(define (plus-primitive
+	 curried-plus
+	 +
+	 null?
+	 real?
+	 pair?
+	 procedure?
+	 car
+	 cdr
+	 cons-procedure
+	 if-procedure
+	 ;; Can't use null because it is defined as the constant 0.
+	 null-procedure
+	 false
+	 v1
+	 v2)
  (cond
   ((and (generic-zero? v1) (generic-zero-bound? v1))
-   (plus (generic-zero-binding v1) v2))
+   (plus-primitive
+    curried-plus
+    +
+    null?
+    real?
+    pair?
+    procedure?
+    car
+    cdr
+    cons-procedure
+    if-procedure
+    null-procedure
+    false
+    (generic-zero-binding v1)
+    v2))
   ((and (generic-zero? v2) (generic-zero-bound? v2))
-   (plus v1 (generic-zero-binding v2)))
+   (plus-primitive
+    curried-plus
+    +
+    null?
+    real?
+    pair?
+    procedure?
+    car
+    cdr
+    cons-procedure
+    if-procedure
+    null-procedure
+    false
+    v1
+    (generic-zero-binding v2)))
   ((and (generic-zero? v1) (generic-zero? v2))
-   (set-generic-zero-binding! v1 v2)
+   (unless (eq? v1 v2) (set-generic-zero-binding! v1 v2))
    v2)
   ((generic-zero? v1)
-   (plus
-    (cond ((null? v2) (generic-zero-dereference-as-null v1))
-	  ((real? v2) (generic-zero-dereference-as-real v1))
-	  ((pair? v2) (generic-zero-dereference-as-pair v1))
-	  ((vlad-procedure? v2) (generic-zero-dereference-as-procedure v1))
-	  (else (run-time-error "Invalid argument to plus" (cons v1 v2))))
+   (plus-primitive
+    curried-plus
+    +
+    null?
+    real?
+    pair?
+    procedure?
+    car
+    cdr
+    cons-procedure
+    if-procedure
+    null-procedure
+    false
+    (call
+     (call
+      (call (call if-procedure (call null? v2))
+	    (make-primitive-procedure
+	     "plus-primitive internal 0"
+	     (lambda (x) (generic-zero-dereference-as v2 v1))))
+      (make-primitive-procedure
+       "plus-primitive internal 1"
+       (lambda (x)
+	(call
+	 (call
+	  (call (call if-procedure (call real? v2))
+		(make-primitive-procedure
+		 "plus-primitive internal 2"
+		 (lambda (x) (generic-zero-dereference-as v2 v1))))
+	  (make-primitive-procedure
+	   "plus-primitive internal 3"
+	   (lambda (x)
+	    (call
+	     (call
+	      (call (call if-procedure (call pair? v2))
+		    (make-primitive-procedure
+		     "plus-primitive internal 4"
+		     (lambda (x) (generic-zero-dereference-as v2 v1))))
+	      (make-primitive-procedure
+	       "plus-primitive internal 5"
+	       (lambda (x)
+		(call
+		 (call
+		  (call (call if-procedure (call procedure? v2))
+			(make-primitive-procedure
+			 "plus-primitive internal 6"
+			 (lambda (x) (generic-zero-dereference-as v2 v1))))
+		  (make-primitive-procedure
+		   "plus-primitive internal 7"
+		   (lambda (x)
+		    (run-time-error
+		     "Invalid argument to plus-primitive" (cons v1 v2)))))
+		 '()))))
+	     '()))))
+	 '()))))
+     '())
     v2))
   ((generic-zero? v2)
-   (plus
+   (plus-primitive
+    curried-plus
+    +
+    null?
+    real?
+    pair?
+    procedure?
+    car
+    cdr
+    cons-procedure
+    if-procedure
+    null-procedure
+    false
     v1
-    (cond ((null? v1) (generic-zero-dereference-as-null v2))
-	  ((real? v1) (generic-zero-dereference-as-real v2))
-	  ((pair? v1) (generic-zero-dereference-as-pair v2))
-	  ((vlad-procedure? v1) (generic-zero-dereference-as-procedure v2))
-	  (else (run-time-error "Invalid argument to plus" (cons v1 v2))))))
-  ((and (null? v1) (null? v2)) '())
-  ((and (real? v1) (real? v2)) (+ v1 v2))
-  ((and (pair? v1) (pair? v2))
-   (cons (plus (car v1) (car v2)) (plus (cdr v1) (cdr v2))))
-  ((and (vlad-procedure? v1) (vlad-procedure? v2))
-   ;; Note that we can't apply a j operator to this or compare these results
-   ;; with same?.
-   (make-primitive-procedure
-    "plus" (lambda (y) (plus (call v1 y) (call v2 y)))))
-  (else (run-time-error "Invalid argument to plus" (cons v1 v2)))))
+    (call
+     (call
+      (call (call if-procedure (call null? v1))
+	    (make-primitive-procedure
+	     "plus-primitive internal 8"
+	     (lambda (x) (generic-zero-dereference-as v1 v2))))
+      (make-primitive-procedure
+       "plus-primitive internal 9"
+       (lambda (x)
+	(call
+	 (call
+	  (call (call if-procedure (call real? v1))
+		(make-primitive-procedure
+		 "plus-primitive internal 10"
+		 (lambda (x) (generic-zero-dereference-as v1 v2))))
+	  (make-primitive-procedure
+	   "plus-primitive internal 11"
+	   (lambda (x)
+	    (call
+	     (call
+	      (call (call if-procedure (call pair? v1))
+		    (make-primitive-procedure
+		     "plus-primitive internal 12"
+		     (lambda (x) (generic-zero-dereference-as v1 v2))))
+	      (make-primitive-procedure
+	       "plus-primitive internal 13"
+	       (lambda (x)
+		(call
+		 (call
+		  (call (call if-procedure (call procedure? v1))
+			(make-primitive-procedure
+			 "plus-primitive internal 14"
+			 (lambda (x) (generic-zero-dereference-as v1 v2))))
+		  (make-primitive-procedure
+		   "plus-primitive internal 15"
+		   (lambda (x)
+		    (run-time-error
+		     "Invalid argument to plus" (cons v1 v2)))))
+		 '()))))
+	     '()))))
+	 '()))))
+     '())))
+  (else
+   (call
+    (call
+     (call
+      (call
+       if-procedure
+       (call
+	(call
+	 (call
+	  (call if-procedure (call null? v1))
+	  (make-primitive-procedure
+	   "plus-primitive internal 16"
+	   (lambda (x) (call null? v2))))
+	 (make-primitive-procedure
+	  "plus-primitive internal 17"
+	  (lambda (x) (call false '()))))
+	'()))
+      (make-primitive-procedure
+       "plus-primitive internal 18"
+       (lambda (x) (call null-procedure '()))))
+     (make-primitive-procedure
+      "plus-primitive internal 19"
+      (lambda (x)
+       (call
+	(call
+	 (call
+	  (call
+	   if-procedure
+	   (call
+	    (call
+	     (call
+	      (call if-procedure (call real? v1))
+	      (make-primitive-procedure
+	       "plus-primitive internal 20"
+	       (lambda (x) (call real? v2))))
+	     (make-primitive-procedure
+	      "plus-primitive internal 21"
+	      (lambda (x) (call false '()))))
+	    '()))
+	  (make-primitive-procedure
+	   "plus-primitive internal 22"
+	   (lambda (x) (call + (call (call cons-procedure v1) v2)))))
+	 (make-primitive-procedure
+	  "plus-primitive internal 23"
+	  (lambda (x)
+	   (call
+	    (call
+	     (call
+	      (call
+	       if-procedure
+	       (call
+		(call
+		 (call
+		  (call if-procedure (call pair? v1))
+		  (make-primitive-procedure
+		   "plus-primitive internal 24"
+		   (lambda (x) (call pair? v2))))
+		 (make-primitive-procedure
+		  "plus-primitive internal 25"
+		  (lambda (x) (call false '()))))
+		'()))
+	      (make-primitive-procedure
+	       "plus-primitive internal 26"
+	       (lambda (x)
+		(call
+		 (call
+		  cons-procedure
+		  (call (call curried-plus (call car v1)) (call car v2)))
+		 (call (call curried-plus (call cdr v1)) (call cdr v2))))))
+	     (make-primitive-procedure
+	      "plus-primitive internal 27"
+	      (lambda (x)
+	       (call
+		(call
+		 (call
+		  (call
+		   if-procedure
+		   (call
+		    (call
+		     (call
+		      (call if-procedure (call procedure? v1))
+		      (make-primitive-procedure
+		       "plus-primitive internal 28"
+		       (lambda (x) (call procedure? v2))))
+		     (make-primitive-procedure
+		      "plus-primitive internal 29"
+		      (lambda (x) (call false '()))))
+		    '()))
+		  (make-primitive-procedure
+		   "plus-primitive internal 30"
+		   (lambda (x)
+		    (make-closure
+		     (vector curried-plus v1 v2)
+		     'y
+		     (make-application
+		      (make-application
+		       (make-variable-access-expression 'curried-plus 0)
+		       (make-application
+			(make-variable-access-expression 'v1 1)
+			(make-variable-access-expression 'y -1)))
+		      (make-application
+		       (make-variable-access-expression 'v2 2)
+		       (make-variable-access-expression 'y -1)))))))
+		 (make-primitive-procedure
+		  "plus-primitive internal 31"
+		  (lambda (x)
+		   (run-time-error "Invalid argument to plus" (cons v1 v2)))))
+		'()))))
+	    '()))))
+	'()))))
+    '()))))
 
 (define (define-primitive-constant x value)
  (set! *basis-constants* (cons x *basis-constants*))
@@ -1025,28 +1503,78 @@
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
  (define-primitive-procedure 'cons-procedure
   ;; Note that we can't apply a j operator to the result of (cons-procedure e)
-  ;; or compare results of (cons-procedure e) with same?.
+  ;; or compare results of (cons-procedure e) with equal?-primitive.
   (lambda (x1)
    (make-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
  (define-primitive-procedure 'if-procedure
   ;; Note that we can't apply a j operator to the result of (if-procedure e1)
   ;; or ((if-procedure e1) e2) or compare results of (if-procedure e1) or
-  ;; ((if-procedure e1) e2) with same?.
+  ;; ((if-procedure e1) e2) with equal?-primitive.
   (lambda (x1)
    (make-primitive-procedure
     "if-procedure 0"
     (lambda (x2)
      (make-primitive-procedure
       "if-procedure 1" (lambda (x3) (if x1 x2 x3)))))))
- (define-primitive-procedure 'same?
-  ;; Note that we can't apply a j operator to the result of (same? e1) or
-  ;; ((same? e1) e2) or compare results of (same? e1) or ((same? e1) e2) with
-  ;; same?.
+ (define-primitive-procedure 'equal?-primitive
+  ;; Note that we can't apply a j operator to the result of
+  ;; (equal?-primitive e1), ... or compare results of (equal?-primitive e1),
+  ;; ... with equal?-primitive.
   (lambda (x1)
    (make-primitive-procedure
-    "same? 0"
+    "equal?-primitive 0"
     (lambda (x2)
-     (make-primitive-procedure "same? 1" (lambda (x3) (same? x1 x2 x3)))))))
+     (make-primitive-procedure
+      "equal?-primitive 1"
+      (lambda (x3)
+       (make-primitive-procedure
+	"equal?-primitive 2"
+	(lambda (x4)
+	 (make-primitive-procedure
+	  "equal?-primitive 3"
+	  (lambda (x5)
+	   (make-primitive-procedure
+	    "equal?-primitive 4"
+	    (lambda (x6)
+	     (make-primitive-procedure
+	      "equal?-primitive 5"
+	      (lambda (x7)
+	       (make-primitive-procedure
+		"equal?-primitive 6"
+		(lambda (x8)
+		 (make-primitive-procedure
+		  "equal?-primitive 7"
+		  (lambda (x9)
+		   (make-primitive-procedure
+		    "equal?-primitive 8"
+		    (lambda (x10)
+		     (make-primitive-procedure
+		      "equal?-primitive 9"
+		      (lambda (x11)
+		       (make-primitive-procedure
+			"equal?-primitive 10"
+			(lambda (x12)
+			 (make-primitive-procedure
+			  "equal?-primitive 11"
+			  (lambda (x13)
+			   (make-primitive-procedure
+			    "equal?-primitive 12"
+			    (lambda (x14)
+			     (equal?-primitive
+			      x1
+			      x2
+			      x3
+			      x4
+			      x5
+			      x6
+			      x7
+			      x8
+			      x9
+			      x10
+			      x11
+			      x12
+			      x13
+			      x14)))))))))))))))))))))))))))))
  (define-primitive-procedure 'map-closure
   (binary-procedure
    (lambda (x1 x2)
@@ -1065,7 +1593,65 @@
      (else (run-time-error "Invalid argument to map-closure" (cons x1 x2)))))
    "map-closure"))
  (define-primitive-procedure 'zero (lambda (x) (create-generic-zero)))
- (define-primitive-procedure 'plus (binary plus "plus"))
+ (define-primitive-procedure 'plus-primitive
+  ;; Note that we can't apply a j operator to the result of
+  ;; (plus-primitive e1), ... or compare results of (plus-primitive e1), ...
+  ;; with equal?-primitive.
+  (lambda (x1)
+   (make-primitive-procedure
+    "plus-primitive 0"
+    (lambda (x2)
+     (make-primitive-procedure
+      "plus-primitive 1"
+      (lambda (x3)
+       (make-primitive-procedure
+	"plus-primitive 2"
+	(lambda (x4)
+	 (make-primitive-procedure
+	  "plus-primitive 3"
+	  (lambda (x5)
+	   (make-primitive-procedure
+	    "plus-primitive 4"
+	    (lambda (x6)
+	     (make-primitive-procedure
+	      "plus-primitive 5"
+	      (lambda (x7)
+	       (make-primitive-procedure
+		"plus-primitive 6"
+		(lambda (x8)
+		 (make-primitive-procedure
+		  "plus-primitive 7"
+		  (lambda (x9)
+		   (make-primitive-procedure
+		    "plus-primitive 8"
+		    (lambda (x10)
+		     (make-primitive-procedure
+		      "plus-primitive 9"
+		      (lambda (x11)
+		       (make-primitive-procedure
+			"plus-primitive 10"
+			(lambda (x12)
+			 (make-primitive-procedure
+			  "plus-primitive 11"
+			  (lambda (x13)
+			   (make-primitive-procedure
+			    "plus-primitive 12"
+			    (lambda (x14)
+			     (plus-primitive
+			      x1
+			      x2
+			      x3
+			      x4
+			      x5
+			      x6
+			      x7
+			      x8
+			      x9
+			      x10
+			      x11
+			      x12
+			      x13
+			      x14)))))))))))))))))))))))))))))
  (define-primitive-procedure 'write
   (lambda (x) (write (externalize x)) (newline) x)))
 
