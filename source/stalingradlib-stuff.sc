@@ -74,13 +74,15 @@
 
 (define-structure application callee argument)
 
+(define-structure let*-expression variables expressions body)
+
 (define-structure letrec-expression
- procedure-variables
- argument-variables
  bodies-free-variables
  bodies-free-variable-indices		;vector
  body-free-variables
  body-free-variable-indices		;vector
+ procedure-variables
+ argument-variables
  bodies
  body)
 
@@ -88,7 +90,7 @@
 
 (define-structure value-binding variable value)
 
-(define-structure anf variable letrec-bindings let-bindings)
+(define-structure anf variable temporaries letrec-bindings let-bindings)
 
 (define-structure closure
  variables
@@ -236,7 +238,7 @@
 		 (first cluster))
 	    (loop (rest clusters)))
 	   (let ((x (first (first cluster))))
-	    (make-application
+	    (new-application
 	     (new-lambda-expression x (loop (rest clusters)))
 	     (new-lambda-expression
 	      (list-ref argument-variables (positionq x procedure-variables))
@@ -244,8 +246,6 @@
 
 (define (new-letrec-expression procedure-variables argument-variables es e)
  (make-letrec-expression
-  procedure-variables
-  argument-variables
   (letrec-free-variables procedure-variables argument-variables es)
   #f
   (sort-variables
@@ -258,8 +258,26 @@
 	    (free-variables e))
     procedure-variables))
   #f
+  procedure-variables
+  argument-variables
   es
   e))
+
+(define (new-application callee argument)
+ (if (and (lambda-expression? callee)
+	  (not (contains-letrec? (lambda-expression-body callee)))
+	  (not (contains-letrec? argument)))
+     (if (let*-expression? (lambda-expression-body callee))
+	 (make-let*-expression
+	  (cons (lambda-expression-variable callee)
+		(let*-expression-variables (lambda-expression-body callee)))
+	  (cons argument
+		(let*-expression-expressions (lambda-expression-body callee)))
+	  (let*-expression-body (lambda-expression-body callee)))
+	 (make-let*-expression (list (lambda-expression-variable callee))
+			       (list argument)
+			       (lambda-expression-body callee)))
+     (make-application callee argument)))
 
 (define (create-primitive-procedure name procedure)
  (make-primitive-procedure name procedure 0))
@@ -299,7 +317,7 @@
 	      (else (fuck-up)))))
   (else (create-lambda-expression bs `((cons* ,@ps)) e))))
 
-(define (create-application bs e . es) (make-application e (make-cons* bs es)))
+(define (create-application bs e . es) (new-application e (make-cons* bs es)))
 
 (define (create-let bs p e1 e2)
  (create-application bs (create-lambda-expression bs (list p) e2) e1))
@@ -389,7 +407,7 @@
   (string->uninterned-symbol (format #f "G~s" gensym))))
 
 (define (genname . names)
- ;; debugging
+ ;; debugging: could be gensym
  (string->uninterned-symbol
   (reduce (lambda (s1 s2) (string-append s1 "-" s2))
 	  (map symbol->string names)
@@ -588,23 +606,42 @@
 (define (let? e)
  (and (application? e) (lambda-expression? (application-callee e))))
 
+(define (let*? e) (or (let*-expression? e) (let? e)))
+
 (define (let*-variables e)
- (if (let? e)
-     (cons (lambda-expression-variable (application-callee e))
-	   (let*-variables (lambda-expression-body (application-callee e))))
-     '()))
+ (cond
+  ((let*-expression? e)
+   (if (let*? (let*-expression-body e))
+       (append (let*-expression-variables e)
+	       (let*-variables (let*-expression-body e)))
+       (let*-expression-variables e)))
+  ((let*? e)
+   (cons (lambda-expression-variable (application-callee e))
+	 (let*-variables (lambda-expression-body (application-callee e)))))
+  (else '())))
 
 (define (let*-expressions e)
- (if (let? e)
-     (cons (application-argument e)
-	   (let*-expressions (lambda-expression-body (application-callee e))))
-     '()))
+ (cond ((let*-expression? e)
+	(if (let*? (let*-expression-body e))
+	    (append (let*-expression-expressions e)
+		    (let*-expressions (let*-expression-body e)))
+	    (let*-expression-expressions e)))
+       ((let*? e)
+	(cons
+	 (application-argument e)
+	 (let*-expressions (lambda-expression-body (application-callee e)))))
+       (else '())))
 
 (define (let*-body e)
- (if (let? e) (let*-body (lambda-expression-body (application-callee e))) e))
+ (cond ((let*-expression? e)
+	(if (let*? (let*-expression-body e))
+	    (let*-body (let*-expression-body e))
+	    (let*-expression-body e)))
+       ((let*? e) (let*-body (lambda-expression-body (application-callee e))))
+       (else e)))
 
 (define (abstract->concrete e)
- (cond ((let? e)
+ (cond ((let*? e)
 	`(let* ,(map (lambda (x e) `(,x ,(abstract->concrete e)))
 		     (let*-variables e)
 		     (let*-expressions e))
@@ -623,6 +660,11 @@
        ((application? e)
 	`(,(abstract->concrete (application-callee e))
 	  ,(abstract->concrete (application-argument e))))
+       ((let*-expression? e)
+	`(let* ,(map (lambda (x e) `(,x ,(abstract->concrete e)))
+		     (let*-expression-variables e)
+		     (let*-expression-expressions e))
+	  ,(abstract->concrete (let*-expression-body e))))
        ((letrec-expression? e)
 	`(letrec ,(map (lambda (x1 x2 e)
 			`(,x1 (lambda (,x2) ,(abstract->concrete e))))
@@ -681,6 +723,10 @@
 	  ((application? e)
 	   (make-application (loop (application-callee e))
 			     (loop (application-argument e))))
+	  ((let*-expression? e)
+	   (make-let*-expression (let*-expression-variables e)
+				 (map loop (let*-expression-expressions e))
+				 (loop (let*-expression-body e))))
 	  ((letrec-expression? e)
 	   (new-letrec-expression (letrec-expression-procedure-variables e)
 				  (letrec-expression-argument-variables e)
@@ -706,6 +752,14 @@
 	((application? e)
 	 (unionq (free-variables (application-callee e))
 		 (free-variables (application-argument e))))
+	((let*-expression? e)
+	 (let loop ((xs (let*-expression-variables e))
+		    (es (let*-expression-expressions e))
+		    (xs1 '()))
+	  (if (null? es)
+	      (set-differenceq (free-variables (let*-expression-body e)) xs1)
+	      (unionq (set-differenceq (free-variables (first es)) xs1)
+		      (loop (rest xs) (rest es) (adjoinq (first xs) xs1))))))
 	((letrec-expression? e) (letrec-expression-body-free-variables e))
 	(else (fuck-up))))
  (sort-variables (free-variables e)))
@@ -716,7 +770,9 @@
 (define (index x xs e)
  (define (lookup x-prime)
   (unless (or (eq? x-prime x) (memq x-prime xs)) (fuck-up))
-  (if (eq? x-prime x) -1 (positionq x-prime xs)))
+  ;; The reverse is necessary because let*-expression doesn't prune unaccessed
+  ;; variables.
+  (if (eq? x-prime x) -1 (- (length xs) (positionq x-prime (reverse xs)) 1)))
  (cond
   ((variable-access-expression? e)
    (make-variable-access-expression
@@ -732,14 +788,29 @@
   ((application? e)
    (make-application (index x xs (application-callee e))
 		     (index x xs (application-argument e))))
+  ((let*-expression? e)
+   (let loop ((xs1 (let*-expression-variables e))
+	      (es1 (let*-expression-expressions e))
+	      (xs xs)
+	      (es2 '()))
+    (if (null? xs1)
+	(make-let*-expression (let*-expression-variables e)
+			      (reverse es2)
+			      (index x xs (let*-expression-body e)))
+	(loop (rest xs1)
+	      (rest es1)
+	      ;; needs work: This is not safe-for-space because we don't remove
+	      ;;             unused elements of xs.
+	      (append xs (list (first xs1)))
+	      (cons (index x xs (first es1)) es2)))))
   ((letrec-expression? e)
    (make-letrec-expression
-    (letrec-expression-procedure-variables e)
-    (letrec-expression-argument-variables e)
     (letrec-expression-bodies-free-variables e)
     (list->vector (map lookup (letrec-expression-bodies-free-variables e)))
     (letrec-expression-body-free-variables e)
     (list->vector (map lookup (letrec-expression-body-free-variables e)))
+    (letrec-expression-procedure-variables e)
+    (letrec-expression-argument-variables e)
     (let ((xs (append (letrec-expression-procedure-variables e)
 		      (letrec-expression-bodies-free-variables e))))
      (map (lambda (x e) (index x xs e))
@@ -826,7 +897,7 @@
 	       ((0) (loop (macro-expand e) bs))
 	       ((1) (let ((result1 (loop (first e) bs))
 			  (result2 (loop (second e) bs)))
-		     (list (make-application (first result1) (first result2))
+		     (list (new-application (first result1) (first result2))
 			   (append (second result1) (second result2)))))
 	       (else (loop (macro-expand e) bs))))))
 	   (else (fuck-up)))))
@@ -851,7 +922,7 @@
      (string->uninterned-symbol (symbol->string x))))
 
 (define (alpha-rename e)
- (let loop ((e e) (bs '()))
+ (let outer ((e e) (bs '()))
   (cond ((variable-access-expression? e)
 	 (let ((b (find-if (lambda (b)
 			    (eq? (variable-binding-variable b)
@@ -862,14 +933,32 @@
 	 (let ((x (clone-name (lambda-expression-variable e))))
 	  (new-lambda-expression
 	   x
-	   (loop (lambda-expression-body e)
-		 (cons (make-variable-binding
-			(lambda-expression-variable e)
-			(make-variable-access-expression x #f))
-		       bs)))))
+	   (outer (lambda-expression-body e)
+		  (cons (make-variable-binding
+			 (lambda-expression-variable e)
+			 (make-variable-access-expression x #f))
+			bs)))))
 	((application? e)
-	 (make-application (loop (application-callee e) bs)
-			   (loop (application-argument e) bs)))
+	 (make-application (outer (application-callee e) bs)
+			   (outer (application-argument e) bs)))
+	((let*-expression? e)
+	 (let inner ((xs1 (let*-expression-variables e))
+		     (es1 (let*-expression-expressions e))
+		     (xs2 '())
+		     (es2 '())
+		     (bs bs))
+	  (if (null? es1)
+	      (make-let*-expression
+	       (reverse xs2) (reverse es2) (outer (let*-expression-body e) bs))
+	      (let ((x (clone-name (first xs1))))
+	       (inner
+		(rest xs1)
+		(rest es1)
+		(cons x xs2)
+		(cons (outer (first es1) bs) es2)
+		(cons (make-variable-binding
+		       (first xs1) (make-variable-access-expression x #f))
+		      bs))))))
 	((letrec-expression? e)
 	 (let ((xs1 (map clone-name (letrec-expression-procedure-variables e)))
 	       (xs2 (map clone-name (letrec-expression-argument-variables e))))
@@ -878,7 +967,7 @@
 	   xs2
 	   (map
 	    (lambda (e1 x x2)
-	     (loop
+	     (outer
 	      e1
 	      (cons (make-variable-binding
 		     x (make-variable-access-expression x2 #f))
@@ -891,13 +980,13 @@
 	    (letrec-expression-bodies e)
 	    (letrec-expression-argument-variables e)
 	    xs2)
-	   (loop (letrec-expression-body e)
-		 (append (map (lambda (x x1)
-			       (make-variable-binding
-				x (make-variable-access-expression x1 #f)))
-			      (letrec-expression-procedure-variables e)
-			      xs1)
-			 bs)))))
+	   (outer (letrec-expression-body e)
+		  (append (map (lambda (x x1)
+				(make-variable-binding
+				 x (make-variable-access-expression x1 #f)))
+			       (letrec-expression-procedure-variables e)
+			       xs1)
+			  bs)))))
 	(else (fuck-up)))))
 
 (define (basis-value x)
@@ -933,21 +1022,29 @@
 (define (make-plus bs e1 e2)
  (create-application bs (make-constant bs (basis-value 'plus)) e1 e2))
 
+(define (contains-letrec? e)
+ (or (letrec-expression? e)
+     (and (application? e)
+	  (or (contains-letrec? (application-callee e))
+	      (contains-letrec? (application-argument e))))))
+
 (define (anf bs e)
  (cond
   ((variable-access-expression? e)
-   ;; needs work: can simplify
-   (let ((x (gensym))) (make-anf x '() (list (make-variable-binding x e)))))
+   (make-anf (variable-access-expression-variable e) '() '() '()))
   ((lambda-expression? e)
    (let ((x (gensym)))
-    (make-anf
-     x '() (list (make-variable-binding x (reverse-transform bs e))))))
+    (make-anf x
+	      (list x)
+	      '()
+	      (list (make-variable-binding x (reverse-transform bs e))))))
   ((application? e)
    (let* ((anf1 (anf bs (application-callee e)))
 	  (anf2 (anf bs (application-argument e)))
 	  (x (gensym)))
     (make-anf
      x
+     (cons x (append (anf-temporaries anf1) (anf-temporaries anf2)))
      (append (anf-letrec-bindings anf1) (anf-letrec-bindings anf2))
      (append
       (anf-let-bindings anf1)
@@ -957,10 +1054,32 @@
 	     (make-application
 	      (make-variable-access-expression (anf-variable anf1) #f)
 	      (make-variable-access-expression (anf-variable anf2) #f))))))))
+  ((let*-expression? e)
+   (if (null? (let*-expression-expressions e))
+       (anf bs (let*-expression-body e))
+       (let* ((anf1 (anf bs (first (let*-expression-expressions e))))
+	      (anf2 (anf bs
+			 (make-let*-expression
+			  (rest (let*-expression-variables e))
+			  (rest (let*-expression-expressions e))
+			  (let*-expression-body e)))))
+	(make-anf
+	 (anf-variable anf2)
+	 (append (anf-temporaries anf1)
+		 (list (first (let*-expression-variables e)))
+		 (anf-temporaries anf2))
+	 (append (anf-letrec-bindings anf1) (anf-letrec-bindings anf2))
+	 (append
+	  (anf-let-bindings anf1)
+	  (list (make-variable-binding
+		 (first (let*-expression-variables e))
+		 (make-variable-access-expression (anf-variable anf1) #f)))
+	  (anf-let-bindings anf2))))))
   ((letrec-expression? e)
    (let ((anf (anf bs (letrec-expression-body e))))
     (make-anf
      (anf-variable anf)
+     (anf-temporaries anf)
      (append (anf-letrec-bindings anf)
 	     (map make-variable-binding
 		  (letrec-expression-procedure-variables e)
@@ -973,75 +1092,95 @@
      (anf-let-bindings anf))))
   (else (fuck-up))))
 
-(define (reverse-transform-internal
-	 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves gs g-graves
-	 xs)
- (let* ((ts (map variable-binding-variable (anf-let-bindings anf)))
-	(es (map variable-binding-expression (anf-let-bindings anf)))
-	(x-graves (map (lambda (x) (genname x 'grave)) xs))
-	(ws
-	 (letrec-free-variables
-	  (map variable-binding-variable (anf-letrec-bindings anf))
-	  (map (lambda (b)
-		(lambda-expression-variable (variable-binding-expression b)))
-	       (anf-letrec-bindings anf))
-	  (map (lambda (b)
-		(lambda-expression-body (variable-binding-expression b)))
-	       (anf-letrec-bindings anf)))))
+(define (anf-letrec-free-variables anf)
+ (letrec-free-variables
+  (map variable-binding-variable (anf-letrec-bindings anf))
+  (map (lambda (b)
+	(lambda-expression-variable (variable-binding-expression b)))
+       (anf-letrec-bindings anf))
+  (map (lambda (b) (lambda-expression-body (variable-binding-expression b)))
+       (anf-letrec-bindings anf))))
+
+(define (reverse-transform-internal bs x anf fs gs xs ws)
+ (let* ((x-grave (genname x 'grave))
+	(y-grave (genname x 'y-grave))
+	(ts (anf-temporaries anf))
+	(t-twiddles (map (lambda (t) (genname t 'twiddle)) ts))
+	(t-graves (map (lambda (t) (genname t 'grave)) ts))
+	(f-graves (map (lambda (f) (genname f 'grave)) fs))
+	(g-graves (map (lambda (g) (genname g 'grave)) gs))
+	(x-graves (map (lambda (x) (genname x 'grave)) xs)))
+  (define (twiddlify t) (list-ref t-twiddles (positionq t ts)))
   (define (gravify z)
    (cond ((eq? z x) x-grave)
-	 ((memq z xs) (list-ref x-graves (positionq z xs)))
+	 ((memq z ts) (list-ref t-graves (positionq z ts)))
 	 ((memq z fs) (list-ref f-graves (positionq z fs)))
 	 ((memq z gs) (list-ref g-graves (positionq z gs)))
-	 ((memq z ts) (list-ref t-graves (positionq z ts)))
+	 ((memq z xs) (list-ref x-graves (positionq z xs)))
 	 ;; need before convergence to fixedpoint of free-variable
 	 ;; calculation
 	 (else z)))
   (let* ((bs0
 	  (map
-	   (lambda (t t-twiddle t-grave e)
-	    (cond
-	     ((variable-access-expression? e)
-	      (let ((x-grave
-		     (gravify (variable-access-expression-variable e))))
+	   (lambda (b)
+	    (let ((t (variable-binding-variable b))
+		  (e (variable-binding-expression b)))
+	     (cond
+	      ;; This case only happens because of lightweight anf conversion.
+	      ((variable-access-expression? e)
+	       (let ((x-grave
+		      (gravify (variable-access-expression-variable e))))
+		(make-variable-binding
+		 x-grave
+		 (make-plus
+		  bs
+		  (make-variable-access-expression x-grave #f)
+		  (make-variable-access-expression (gravify t) #f)))))
+	      ((lambda-expression? e)
+	       (let ((zs (free-variables e)))
+		(make-variable-binding
+		 `(cons* ,@(map gravify zs))
+		 (make-plus
+		  bs
+		  (make-cons*
+		   bs
+		   (map (lambda (z)
+			 (make-variable-access-expression (gravify z) #f))
+			zs))
+		  (make-variable-access-expression (gravify t) #f)))))
+	      ((application? e)
 	       (make-variable-binding
-		x-grave
-		(make-plus bs
-			   (make-variable-access-expression x-grave #f)
-			   (make-variable-access-expression t-grave #f)))))
-	     ((lambda-expression? e)
-	      (let ((zs (free-variables e)))
-	       (make-variable-binding
-		`(cons* ,@(map gravify zs))
+		`(cons ,(gravify (variable-access-expression-variable
+				  (application-callee e)))
+		       ,(gravify (variable-access-expression-variable
+				  (application-argument e))))
 		(make-plus
 		 bs
-		 (make-cons*
+		 (make-cons bs
+			    (make-variable-access-expression
+			     (gravify (variable-access-expression-variable
+				       (application-callee e)))
+			     #f)
+			    (make-variable-access-expression
+			     (gravify (variable-access-expression-variable
+				       (application-argument e)))
+			     #f))
+		 (create-application
 		  bs
-		  (map (lambda (z)
-			(make-variable-access-expression (gravify z) #f))
-		       zs))
-		 (make-variable-access-expression t-grave #f)))))
-	     ((application? e)
-	      (make-variable-binding
-	       `(cons ,(gravify (variable-access-expression-variable
-				 (application-callee e)))
-		      ,(gravify (variable-access-expression-variable
-				 (application-argument e))))
-	       (make-application
-		(make-variable-access-expression t-twiddle #f)
-		(make-variable-access-expression t-grave #f))))
-	     (else (fuck-up))))
-	   (reverse ts)
-	   (reverse t-twiddles)
-	   (reverse t-graves)
-	   (reverse es)))
+		  (make-variable-access-expression (twiddlify t) #f)
+		  (make-variable-access-expression (gravify t) #f)))))
+	      (else (fuck-up)))))
+	   (reverse (anf-let-bindings anf))))
 	 (e
 	  (create-let*
 	   bs
-	   (map (lambda (t t-twiddle e)
-		 (if (application? e) `(cons ,t ,t-twiddle) t))
-		ts t-twiddles es)
-	   es
+	   (map (lambda (b)
+		 (let ((x (variable-binding-variable b)))
+		  (if (application? (variable-binding-expression b))
+		      `(cons ,x ,(twiddlify x))
+		      x)))
+		(anf-let-bindings anf))
+	   (map variable-binding-expression (anf-let-bindings anf))
 	   (make-cons
 	    bs
 	    (make-variable-access-expression (anf-variable anf) #f)
@@ -1050,19 +1189,21 @@
 	     (list y-grave)
 	     (create-let*
 	      bs
-	      `(,@x-graves
-		,x-grave
+	      `(,x-grave
+		,@t-graves
 		,@f-graves
 		,@g-graves
-		,(last t-graves)
+		,@x-graves
+		,(gravify (anf-variable anf))
 		,@(map variable-binding-variable bs0)
 		,@(if (null? (anf-letrec-bindings anf))
 		      '()
 		      (list `(cons* ,@(map gravify ws)))))
-	      `(,@(map (lambda (x) (make-zero bs)) xs)
-		,(make-zero bs)
+	      `(,(make-zero bs)
+		,@(map (lambda (t) (make-zero bs)) ts)
 		,@(map (lambda (f) (make-zero bs)) fs)
 		,@(map (lambda (g) (make-zero bs)) gs)
+		,@(map (lambda (x) (make-zero bs)) xs)
 		,(make-variable-access-expression y-grave #f)
 		,@(map variable-binding-expression bs0)
 		,@(if (null? (anf-letrec-bindings anf))
@@ -1113,51 +1254,67 @@
 	      (anf-letrec-bindings anf))
 	 e))))))
 
+(define (added-free-variable bs v)
+ (value-binding-variable
+  (find-if (lambda (b) (eq? (value-binding-value b) v)) bs)))
+
+(define (added-free-variables bs anf gs ws)
+ `(,(added-free-variable bs '())
+   ,(added-free-variable bs (basis-value 'cons-procedure))
+   ,(added-free-variable bs (basis-value 'zero))
+   ,@(if (or (not (null? (anf-let-bindings anf)))
+	     (not (null? (anf-letrec-bindings anf)))
+	     (not (null? gs)))
+	 `(,(added-free-variable bs (basis-value 'plus)))
+	 '())
+   ,@(if (or
+	  (some
+	   (lambda (b)
+	    (or
+	     (and (lambda-expression? (variable-binding-expression b))
+		  (>= (length (free-variables (variable-binding-expression b)))
+		      2))
+	     (application? (variable-binding-expression b))))
+	   (anf-let-bindings anf))
+	  (and (not (null? (anf-letrec-bindings anf))) (>= (length ws) 2)))
+	 `(,(added-free-variable bs (basis-value 'car))
+	   ,(added-free-variable bs (basis-value 'cdr)))
+	 '())))
+
 (define (reverse-transform bs e)
  (let* ((x (lambda-expression-variable e))
-	(x-grave (genname x 'grave))
-	(y-grave (genname x 'y-grave))
 	(anf (anf bs (lambda-expression-body e)))
-	(ts (map variable-binding-variable (anf-let-bindings anf)))
-	(t-twiddles (map (lambda (t) (genname t 'twiddle)) ts))
-	(t-graves (map (lambda (t) (genname t 'grave)) ts))
 	(fs (map variable-binding-variable (anf-letrec-bindings anf)))
-	(f-graves (map (lambda (f) (genname f 'grave)) fs)))
-  (let loop ((xs (free-variables e)))
-   (let* ((e (reverse-transform-internal
-	      bs x x-grave y-grave anf t-twiddles t-graves fs f-graves '() '()
-	      xs))
-	  (xs-prime (free-variables e)))
-    (if (equal? xs xs-prime) e (loop xs-prime))))))
+	(ws (anf-letrec-free-variables anf))
+	(xs (sort-variables
+	     (unionq (free-variables e)
+		     (added-free-variables bs anf '() ws))))
+	(e (reverse-transform-internal bs x anf fs '() xs ws))
+	(xs-prime (free-variables e)))
+  (unless (equal? xs xs-prime) (fuck-up))
+  e))
 
 (define (reverse-transforms bs gs es)
  (let* ((xs (map lambda-expression-variable es))
-	(x-graves (map (lambda (x) (genname x 'grave)) xs))
-	(y-graves (map (lambda (x) (genname x 'y-grave)) xs))
 	(anfs (map (lambda (e) (anf bs (lambda-expression-body e))) es))
-	(tss (map (lambda (anf)
-		   (map variable-binding-variable (anf-let-bindings anf)))
-		  anfs))
-	(t-twiddless (map (lambda (ts)
-			   (map (lambda (t) (genname t 'twiddle)) ts))
-			  tss))
-	(t-gravess (map (lambda (ts) (map (lambda (t) (genname t 'grave)) ts))
-			tss))
 	(fss (map (lambda (anf)
 		   (map variable-binding-variable (anf-letrec-bindings anf)))
 		  anfs))
-	(f-gravess (map (lambda (fs) (map (lambda (f) (genname f 'grave)) fs))
-			fss))
-	(g-graves (map (lambda (g) (genname g 'grave)) gs)))
-  (let loop ((zs (letrec-free-variables gs xs es)))
-   (let* ((es (map
-	       (lambda (x x-grave y-grave anf t-twiddles t-graves fs f-graves)
-		(reverse-transform-internal
-		 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves
-		 gs g-graves zs))
-	       xs x-graves y-graves anfs t-twiddless t-gravess fss f-gravess))
-	  (zs-prime (letrec-free-variables gs xs es)))
-    (if (equal? zs zs-prime) es (loop zs-prime))))))
+	(wss (map anf-letrec-free-variables anfs))
+	(zs (sort-variables
+	     (unionq
+	      (letrec-free-variables gs xs es)
+	      (reduce
+	       unionq
+	       (map (lambda (anf ws) (added-free-variables bs anf gs ws))
+		    anfs wss)
+	       '()))))
+	(es (map (lambda (x anf fs ws)
+		  (reverse-transform-internal bs x anf fs gs zs ws))
+		 xs anfs fss wss))
+	(zs-prime (letrec-free-variables gs xs es)))
+  (unless (equal? zs zs-prime) (fuck-up))
+  es))
 
 ;;; Evaluator
 
@@ -1187,8 +1344,8 @@
        `(lambda (,(closure-variable v))
 	 ,(abstract->concrete (closure-body v)))))
   ((recursive-closure? v)
-   ;; debugging
    (if *unabbreviate-recursive-closures?*
+       ;; debugging
        (if #t
 	   `(recursive-closure
 	     ,(map-indexed
@@ -1313,13 +1470,13 @@
   result))
 
 (define (evaluate e v vs)
- (define (lookup-value i) (if (= i -1) v (vector-ref vs i)))
+ (define (lookup i) (if (= i -1) v (vector-ref vs i)))
  (cond ((variable-access-expression? e)
-	(lookup-value (variable-access-expression-index e)))
+	(lookup (variable-access-expression-index e)))
        ((lambda-expression? e)
 	(make-closure
 	 (free-variables e)
-	 (map-vector lookup-value (lambda-expression-free-variable-indices e))
+	 (map-vector lookup (lambda-expression-free-variable-indices e))
 	 (lambda-expression-variable e)
 	 (lambda-expression-body e)))
        ((application? e)
@@ -1327,13 +1484,21 @@
 	(let* ((callee (evaluate (application-callee e) v vs))
 	       (argument (evaluate (application-argument e) v vs)))
 	 (call callee argument)))
+       ((let*-expression? e)
+	(let loop ((es (let*-expression-expressions e)) (vs vs))
+	 (if (null? es)
+	     (evaluate (let*-expression-body e) v vs)
+	     (loop (rest es)
+		   ;; needs work: This is not safe-for-space because we don't
+		   ;;             remove unused elements of vs.
+		   (vector-append vs (vector (evaluate (first es) v vs)))))))
        ((letrec-expression? e)
 	(evaluate
 	 (letrec-expression-body e)
 	 v
 	 (vector-append
 	  (let ((vs (map-vector
-		     lookup-value
+		     lookup
 		     (letrec-expression-bodies-free-variable-indices e)))
 		(xs0 (list->vector (letrec-expression-procedure-variables e)))
 		(xs1 (list->vector (letrec-expression-argument-variables e)))
@@ -1343,7 +1508,7 @@
 	     (make-recursive-closure
 	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
 	    (vector-length es)))
-	  (map-vector lookup-value
+	  (map-vector lookup
 		      (letrec-expression-body-free-variable-indices e)))))
        (else (fuck-up))))
 
