@@ -61,7 +61,6 @@
 ;;; Top Level
 
 (define-command (main (at-most-one ("undecorated" undecorated?))
-		      (at-most-one ("decorated" decorated?))
 		      (at-most-one ("evaluated" evaluated?))
 		      (required (pathname "pathname" string-argument)))
  (initialize-basis!)
@@ -71,15 +70,14 @@
     (let ((e (read input-port)))
      (unless (eof-object? e)
       (syntax-check-expression! e)
-      (let ((e (concrete->abstract-expression e)))
+      (let ((result (concrete->abstract-expression e)))
        (when undecorated?
-	(pp (abstract->undecorated-concrete-expression e))
-	(newline))
-       (when decorated?
-	(pp (abstract->decorated-concrete-expression e))
+	(pp (abstract->concrete (first result)))
 	(newline))
        (when evaluated?
-	(write (evaluate e))
+	(pp
+	 (externalize
+	  (evaluate (first result) (append *value-bindings* (second result)))))
 	(newline)))
       (loop)))))))
 

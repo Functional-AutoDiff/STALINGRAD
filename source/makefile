@@ -352,9 +352,7 @@ error_no_error:
 #IP28-IRIX64-6.2       $(INSTALLLIBA)/libX11.a stalingradlib-*.o -lm
 
 arc:
-	-csh -cf "rm -rf ../archive/`archive-date`"
-	csh -cf "mkdir ../archive/`archive-date`"
-	-csh -cf "cp makefile *.{sc,c,h} ../archive/`archive-date`/."
+	../arc stalingrad
 
 clean:
 	-rm -f *.o core a.out
