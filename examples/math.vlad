@@ -2,8 +2,6 @@
 
 (define (identity x) x)
 
-(define (not x) (if x #f #t))
-
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (sqr x) (* x x))

@@ -10,6 +10,8 @@
        ;; procedure
        (else (lambda (y) (plus (x1 y) (x2 y))))))
 
+(define (not x) (if x #f #t))
+
 (define (j* x)
  (cond
   ((null? x) (cons x '()))
@@ -60,18 +62,16 @@
   ((equal? x positive?) (lambda (x x-acute) (cons (positive? x) '())))
   ;; needs work: to check that x-acute is real
   ((equal? x negative?) (lambda (x x-acute) (cons (negative? x) '())))
-  ((equal? x null?) (lambda (x) (cons (if (pair? x) (null? (car x)) #f) '())))
+  ((equal? x null?) (lambda (x) (cons (and (pair? x) (null? (car x))) '())))
   ((equal? x boolean?)
-   (lambda (x) (cons (if (pair? x) (boolean? (car x)) #f) '())))
-  ((equal? x real?) (lambda (x) (cons (if (pair? x) (real? (car x)) #f) '())))
+   (lambda (x) (cons (and (pair? x) (boolean? (car x))) '())))
+  ((equal? x real?) (lambda (x) (cons (and (pair? x) (real? (car x))) '())))
   ((equal? x pair?)
    (lambda (x)
-    (cons (if (pair? x)
-	      (cond ((null? (car x)) #f)
-		    ((boolean? (car x)) #f)
-		    ((real? (car x)) #f)
-		    (else #t))
-	      #f)
+    (cons (and (pair? x)
+	       (not (null? (car x)))
+	       (not (boolean? (car x)))
+	       (not (real? (car x))))
 	  '())))
   ((equal? x procedure?) (lambda (x) (cons (procedure? x) '())))
   ((equal? x car) car)
@@ -82,8 +82,8 @@
   ((equal? x equal?)
    (lambda (x1 x2)
     (cons (if (procedure? x1)
-	      (if (procedure? x2) (equal? x1 x2) #f)
-	      (if (procedure? x2) #f (equal? (car x1) (car x2))))
+	      (and (procedure? x2) (equal? x1 x2))
+	      (and (not (procedure? x2)) (equal? (car x1) (car x2))))
 	  '())))
   ;; needs work: not sure if this is correct
   ((equal? x map-closure) map-closure)
@@ -174,23 +174,20 @@
    (lambda (x x-tilde) (cons (negative? x) (lambda (y-grave) #f))))
   ((equal? x null?)
    ;; needs work: to check that y-grave is null
-   (lambda (x) (cons (if (pair? x) (null? (car x)) #f) (lambda (y-grave) #f))))
+   (lambda (x) (cons (and (pair? x) (null? (car x))) (lambda (y-grave) #f))))
   ((equal? x boolean?)
    (lambda (x)
-    (cons (if (pair? x) (boolean? (car x)) #f)
-	  ;; needs work: to check that y-grave is null
-	  (lambda (y-grave) #f))))
+    ;; needs work: to check that y-grave is null
+    (cons (and (pair? x) (boolean? (car x))) (lambda (y-grave) #f))))
   ((equal? x real?)
    ;; needs work: to check that y-grave is null
-   (lambda (x) (cons (if (pair? x) (real? (car x)) #f) (lambda (y-grave) #f))))
+   (lambda (x) (cons (and (pair? x) (real? (car x))) (lambda (y-grave) #f))))
   ((equal? x pair?)
    (lambda (x)
-    (cons (if (pair? x)
-	      (cond ((null? (car x)) #f)
-		    ((boolean? (car x)) #f)
-		    ((real? (car x)) #f)
-		    (else #t))
-	      #f)
+    (cons (and (pair? x)
+	       (not (null? (car x)))
+	       (not (boolean? (car x)))
+	       (not (real? (car x))))
 	  ;; needs work: to check that y-grave is null
 	  (lambda (y-grave) #f))))
   ((equal? x procedure?)
@@ -204,8 +201,8 @@
   ((equal? x equal?)
    (lambda (x1 x2)
     (cons (if (procedure? x1)
-	      (if (procedure? x2) (equal? x1 x2) #f)
-	      (if (procedure? x2) #f (equal? (car x1) (car x2))))
+	      (and (procedure? x2) (equal? x1 x2))
+	      (and (not (procedure? x2)) (equal? (car x1) (car x2))))
 	  ;; needs work: to check that y-grave is null
 	  (lambda (y-grave) #f))))
   ;; needs work: not sure if this is correct
