@@ -51,6 +51,7 @@
 ;;;  5. () -> '()
 ;;;  6. quoted list constants
 ;;;  7. unary -
+;;;  8. variable access by constant-time index rather than linear search
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -499,6 +500,36 @@
       bs))))
   (else (fuck-up))))
 
+(define (same? x1 x2)
+ (or (and (null? x1) (null? x2))
+     (and (boolean? x1) (boolean? x2) (eq? x1 x2))
+     (and (real? x1) (real? x2) (= x1 x2))
+     (and (pair? x1)
+	  (pair? x2)
+	  (same? (car x1) (car x2))
+	  (same? (cdr x1) (cdr x2)))
+     (and (primitive-procedure? x1)
+	  (primitive-procedure? x2)
+	  (eq? x1 x2))
+     (and (closure? x1)
+	  (closure? x2)
+	  (eq? (closure-body x1) (closure-body x2))
+	  (every (lambda (b1 b2)
+		  (same? (value-binding-value b1) (value-binding-value b2)))
+		 (closure-value-bindings x1)
+		 (closure-value-bindings x2)))
+     (and (recursive-closure? x1)
+	  (recursive-closure? x2)
+	  (= (length (recursive-closure-bodies x1))
+	     (length (recursive-closure-bodies x2)))
+	  (every eq?
+		 (recursive-closure-bodies x1)
+		 (recursive-closure-bodies x2))
+	  (every (lambda (b1 b2)
+		  (same? (value-binding-value b1) (value-binding-value b2)))
+		 (recursive-closure-value-bindings x1)
+		 (recursive-closure-value-bindings x2)))))
+
 (define (define-primitive-basis-constant x procedure)
  (set! *basis-constants* (cons x *basis-constants*))
  (set! *variable-bindings*
@@ -648,20 +679,10 @@
    (unless (boolean? (caar x)) (run-time-error "Antecedent is not boolean" x))
    (if (caar x) (cdar x) (cdr x))))
  (define-primitive-basis-constant
-  'eq?
+  'equal?
   (lambda (x)
-   (unless (pair? x) (run-time-error "Invalid argument to eq?" x))
-   (or (eq? (car x) (cdr x))
-       (and (closure? (car x))
-	    (closure? (cdr x))
-	    (eq? (closure-body (car x)) (closure-body (cdr x))))
-       (and (recursive-closure? (car x))
-	    (recursive-closure? (cdr x))
-	    (= (length (recursive-closure-bodies (car x)))
-	       (length (recursive-closure-bodies (cdr x))))
-	    (every eq?
-		   (recursive-closure-bodies (car x))
-		   (recursive-closure-bodies (cdr x)))))))
+   (unless (pair? x) (run-time-error "Invalid argument to equal?" x))
+   (same? (car x) (cdr x))))
  (define-primitive-basis-constant
   'map-closure
   (lambda (x)

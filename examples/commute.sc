@@ -13,9 +13,6 @@
 		 ;; procedure
 		 (else (lambda (y) (plus (x1 y) (x2 y)))))))
 	 (identity (lambda (x) x))
-	 (not (lambda (x) (if x #f #t)))
-	 (abs (lambda (x) (if (negative? x) (- 0 x) x)))
-	 (sqr (lambda (x) (* x x)))
 	 (j*
 	  (lambda (x)
 	   (cond
@@ -240,100 +237,17 @@
 	    ;; needs work: not sure if this is correct
 	    ((equal? x j*) j*)
 	    ((equal? x *j) *j)
-	    (else (map-closure *j x)))))
-	 (derivative-using-j* (lambda (f) (lambda (x) (cdr ((j* f) x 1)))))
-	 (derivative-using-*j
-	  (lambda (f) (lambda (x) ((cdr ((*j f) x identity)) 1))))
-	 (derivative (lambda (f) (derivative-using-*j f)))
-	 (root (lambda (f x epsilon)
-		(let* ((x-prime (- x (/ (f x) ((derivative f) x)))))
-		 (if (<= (abs (- x x-prime)) epsilon)
-		     x
-		     (root f x-prime epsilon)))))
-	 ;; needs work: To rule out maxima and inflection points.
-	 (argmin (lambda (f x epsilon) (root (derivative f) x epsilon)))
-	 ;; An n-dimensional vector with x in position i and zeros elsewhere.
-	 (ex (lambda (x i n)
-	      (if (zero? n)
-		  ()
-		  (cons (if (zero? i) x 0) (ex x (- i 1) (- n 1))))))
-	 ;; The ith n-dimensional basis vector.
-	 (e (lambda (i n) (ex 1 i n)))
-	 (first (lambda (x) (car x)))
-	 (rest (lambda (x) (cdr x)))
-	 (append (lambda (x y)
-		  (if (null? x) y (cons (first x) (append (rest x) y)))))
-	 (map-n (lambda (f n)
-		 (if (zero? n)
-		     ()
-		     ;; needs work: To use list.
-		     (append (map-n f (- n 1)) (cons (f (- n 1)) ())))))
-	 ;; The nxn identity matrix.
-	 (i (lambda (n) (map-n (lambda (i) (e i n)) n)))
-	 (map (lambda (f l)
-	       (if (null? l) () (cons (f (first l)) (map f (rest l))))))
-	 ;; needs work: To merge with map.
-	 (map2 (lambda (f l1 l2)
-		(if (null? l1)
-		    ()
-		    (cons (f (first l1) (first l2))
-			  (map2 f (rest l1) (rest l2))))))
-	 (forward-conjoint
-	  (lambda (primal adjoint)
-	   (if (null? primal)
-	       (cons () ())
-	       (cons (cons (first primal) (first adjoint))
-		     (forward-conjoint (rest primal) (rest adjoint))))))
-	 (reverse-conjoint
-	  (lambda (primal adjoint)
-	   (if (null? primal)
-	       (cons () (lambda (y-grave) #f))
-	       (cons (cons (first primal) (first adjoint))
-		     (reverse-conjoint (rest primal) (rest adjoint))))))
-	 (reduce (lambda (f i)
-		  (lambda (l)
-		   (if (null? l)
-		       i
-		       (f (first l) ((reduce f i) (rest l)))))))
-	 (length (lambda (l) (if (null? l) 0 (+ (length (rest l)) 1))))
-	 (gradient-using-j*
-	  (lambda (f)
-	   (lambda (x)
-	    (let* ((n (length x)))
-	     (map-n (lambda (i) (cdr ((j* f) (forward-conjoint x (e i n)))))
-		    n)))))
-	 (gradient-using-*j
-	  (lambda (f)
-	   (lambda (x)
-	    (let* ((n (length x)))
-	     ((cdr
-	       ((*j f)
-		(reverse-conjoint
-		 x
-		 (map-n (lambda (i) (lambda (y-grave) (ex y-grave i n))) n))))
-	      1)))))
-	 (gradient (lambda (f) (gradient-using-*j f)))
-	 (v+ (lambda (u v) (map2 + u v)))
-	 (k*v (lambda (k v) (map (lambda (x) (* k x)) v)))
-	 (magnitude-squared (lambda (x) ((reduce + 0) (map sqr x))))
-	 (magnitude (lambda (x) (sqrt (magnitude-squared x))))
-	 (gradient-descent
-	  (lambda (f x epsilon)
-	   (let* ((g ((gradient f) x)))
-	    (if (<= (magnitude g) epsilon)
-		x
-		(gradient-descent
-		 f
-		 (v+
-		  x
-		  (k*v (argmin (lambda (k) (f (v+ x (k*v k g)))) 0 epsilon) g))
-		 epsilon))))))
- ;;((derivative (derivative (lambda (x) (+ x x)))) 4)
- ;;((derivative (derivative sqrt)) 4)
- ;;((derivative (derivative (derivative sqrt))) 4)
- ;;((derivative (lambda (x) (car (cons x x)))) 4)
- ;;((derivative (derivative (lambda (x) (car (cons x x))))) 4)
- ;;(root (lambda (x) (- (sqr x) 4)) 5 1e-5)
- ;;(argmin (lambda (x) (sqr (- x 4))) 5 1e-5)
- ;;((gradient magnitude) (cons 3 (cons 4 ())))
- (gradient-descent magnitude-squared (cons 3 (cons 4 ())) 1e-5))
+	    (else (map-closure *j x))))))
+ (cons (let* ((f ((*j (j* sqrt)) (cons (cons 4 identity) (cons 1 identity)))))
+	(cons (car (car f))
+	      (cons (car (cdr f))
+		    (cons ((cdr (car f)) 1)
+			  (cons ((cdr (cdr f)) 1)
+				())))))
+       (cons (let* ((f ((j* (*j sqrt)) (cons (cons 4 1) identity))))
+	      (cons (car (car f))
+		    (cons (cdr (car f))
+			  (cons (car ((cdr f) (cons 1 1)))
+				(cons (cdr ((cdr f) (cons 1 1)))
+				      ())))))
+	     ())))
