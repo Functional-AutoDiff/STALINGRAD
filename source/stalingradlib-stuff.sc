@@ -396,7 +396,8 @@
 (define (coalesce-constants result)
  (let ((bss (transitive-equivalence-classesp
 	     (lambda (b1 b2)
-	      (same? (value-binding-value b1) (value-binding-value b2)))
+	      (coalesce-same? (value-binding-value b1)
+			      (value-binding-value b2)))
 	     (second result))))
   (define (rename x)
    (let ((bs (find-if
@@ -880,35 +881,67 @@
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     (f x1 x2)))))
 
-(define (same? v1 v2)
+(define (coalesce-same? v1 v2)
+ (or (and (null? v1) (null? v2))
+     (and (boolean? v1) (boolean? v2) (eq? v1 v2))
+     (and (real? v1) (real? v2) (= v1 v2))
+     (and (pair? v1)
+	  (pair? v2)
+	  (coalesce-same? (car v1) (car v2))
+	  (coalesce-same? (cdr v1) (cdr v2)))
+     (and (primitive-procedure? v1)
+	  (primitive-procedure? v2)
+	  (eq? v1 v2))
+     (and (closure? v1)
+	  (closure? v2)
+	  (eq? (closure-body v1) (closure-body v2))
+	  (every-vector coalesce-same?
+			(closure-values v1)
+			(closure-values v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (= (vector-length (recursive-closure-bodies v1))
+	     (vector-length (recursive-closure-bodies v2)))
+	  (= (recursive-closure-index v1) (recursive-closure-index v2))
+	  (every-vector eq?
+			(recursive-closure-bodies v1)
+			(recursive-closure-bodies v2))
+	  (every-vector coalesce-same?
+			(recursive-closure-values v1)
+			(recursive-closure-values v2)))))
+
+(define (same? curried-equal? v1 v2)
  (cond
-  ((generic-zero? v1) (same? (generic-zero-dereference v1) v2))
-  ((generic-zero? v2) (same? v1 (generic-zero-dereference v2)))
-  (else (or (and (null? v1) (null? v2))
-	    (and (boolean? v1) (boolean? v2) (eq? v1 v2))
-	    (and (real? v1) (real? v2) (= v1 v2))
-	    (and (pair? v1)
-		 (pair? v2)
-		 (same? (car v1) (car v2))
-		 (same? (cdr v1) (cdr v2)))
-	    (and (primitive-procedure? v1)
-		 (primitive-procedure? v2)
-		 (eq? v1 v2))
-	    (and (closure? v1)
-		 (closure? v2)
-		 (eq? (closure-body v1) (closure-body v2))
-		 (every-vector same? (closure-values v1) (closure-values v2)))
-	    (and (recursive-closure? v1)
-		 (recursive-closure? v2)
-		 (= (vector-length (recursive-closure-bodies v1))
-		    (vector-length (recursive-closure-bodies v2)))
-		 (= (recursive-closure-index v1) (recursive-closure-index v2))
-		 (every-vector eq?
-			       (recursive-closure-bodies v1)
-			       (recursive-closure-bodies v2))
-		 (every-vector same?
-			       (recursive-closure-values v1)
-			       (recursive-closure-values v2)))))))
+  ((generic-zero? v1) (same? curried-equal? (generic-zero-dereference v1) v2))
+  ((generic-zero? v2) (same? curried-equal? v1 (generic-zero-dereference v2)))
+  (else
+   (or (and (null? v1) (null? v2))
+       (and (boolean? v1) (boolean? v2) (eq? v1 v2))
+       (and (real? v1) (real? v2) (= v1 v2))
+       (and (pair? v1)
+	    (pair? v2)
+	    (call (call curried-equal? (car v1)) (car v2))
+	    (call (call curried-equal? (cdr v1)) (cdr v2)))
+       (and (primitive-procedure? v1)
+	    (primitive-procedure? v2)
+	    (eq? v1 v2))
+       (and (closure? v1)
+	    (closure? v2)
+	    (eq? (closure-body v1) (closure-body v2))
+	    (every-vector (lambda (v1 v2) (call (call curried-equal? v1) v2))
+			  (closure-values v1)
+			  (closure-values v2)))
+       (and (recursive-closure? v1)
+	    (recursive-closure? v2)
+	    (= (vector-length (recursive-closure-bodies v1))
+	       (vector-length (recursive-closure-bodies v2)))
+	    (= (recursive-closure-index v1) (recursive-closure-index v2))
+	    (every-vector eq?
+			  (recursive-closure-bodies v1)
+			  (recursive-closure-bodies v2))
+	    (every-vector (lambda (v1 v2) (call (call curried-equal? v1) v2))
+			  (recursive-closure-values v1)
+			  (recursive-closure-values v2)))))))
 
 (define (vlad-procedure? v)
  (or (primitive-procedure? v) (closure? v) (recursive-closure? v)))
@@ -944,7 +977,7 @@
    (cons (plus (car v1) (car v2)) (plus (cdr v1) (cdr v2))))
   ((and (vlad-procedure? v1) (vlad-procedure? v2))
    ;; Note that we can't apply a j operator to this or compare these results
-   ;; with equal?.
+   ;; with same?.
    (make-primitive-procedure
     "plus" (lambda (y) (plus (call v1 y) (call v2 y)))))
   (else (run-time-error "Invalid argument to plus" (cons v1 v2)))))
@@ -989,26 +1022,31 @@
   (lambda (x) (vlad-procedure? (generic-zero-dereference x))))
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
- (define-primitive-procedure
-  'cons-procedure
+ (define-primitive-procedure 'cons-procedure
   ;; Note that we can't apply a j operator to the result of (cons-procedure e)
-  ;; or compare results of (cons-procedure e) with equal?.
+  ;; or compare results of (cons-procedure e) with same?.
   (lambda (x1)
    (make-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
- (define-primitive-procedure
-  'if-procedure
+ (define-primitive-procedure 'if-procedure
   ;; Note that we can't apply a j operator to the result of (if-procedure e1)
   ;; or ((if-procedure e1) e2) or compare results of (if-procedure e1) or
-  ;; ((if-procedure e1) e2) with equal?.
+  ;; ((if-procedure e1) e2) with same?.
   (lambda (x1)
    (make-primitive-procedure
     "if-procedure 0"
     (lambda (x2)
      (make-primitive-procedure
       "if-procedure 1" (lambda (x3) (if x1 x2 x3)))))))
- (define-primitive-procedure 'equal? (binary same? "equal?"))
- (define-primitive-procedure
-  'map-closure
+ (define-primitive-procedure 'same?
+  ;; Note that we can't apply a j operator to the result of (same? e1) or
+  ;; ((same? e1) e2) or compare results of (same? e1) or ((same? e1) e2) with
+  ;; same?.
+  (lambda (x1)
+   (make-primitive-procedure
+    "same? 0"
+    (lambda (x2)
+     (make-primitive-procedure "same? 1" (lambda (x3) (same? x1 x2 x3)))))))
+ (define-primitive-procedure 'map-closure
   (binary-procedure
    (lambda (x1 x2)
     (cond
