@@ -57,6 +57,7 @@
 ;;;  a: concrete or abstract type variable
 ;;;  i: index
 ;;;  b: blah blah blah
+;;;  d: differentiation
 
 ;;; Macros
 
@@ -96,7 +97,7 @@
 
 (define-structure closure value-bindings lambda-expression)
 
-(define-structure primitive-function procedure forward-value)
+(define-structure primitive-function procedure forward-value reverse-value)
 
 ;;; Variables
 
@@ -146,6 +147,10 @@
 	 ((_>)
 	  (unless (= (length t) 2) (panic (format #f "Invalid type: ~s" t)))
 	  (syntax-check-type! (second t)))
+	 ((<_)
+	  (unless (= (length t) 3) (panic (format #f "Invalid type: ~s" t)))
+	  (syntax-check-type! (second t))
+	  (syntax-check-type! (third t)))
 	 (else (panic (format #f "Invalid type: ~s" t)))))
        (else (panic (format #f "Invalid type: ~s" t)))))
 
@@ -272,22 +277,32 @@
 	 xs))))))
    (else (panic (format #f "Invalid expression: ~s" e))))))
 
-(define (create-type-variable differentiations)
- (let ((a (make-type-variable #f differentiations #f)))
+(define (create-type-variable ds)
+ (let ((a (make-type-variable #f ds #f)))
   (set-type-variable-type! a a)
   (set-type-variable-clone! a a)
   a))
 
-(define (clone-type-variable a differentiations)
+(define (clone-type-variable a ds)
+ (when (bound? a) (fuck-up))
  (let loop ((a1 a))
-  (cond ((equal? (type-variable-differentiations a1) differentiations) a1)
-	((eq? (type-variable-clone a1) a)
-	 (let ((a2 (make-type-variable #f differentiations #f)))
-	  (set-type-variable-type! a2 a2)
-	  (set-type-variable-clone! a2 a)
-	  (set-type-variable-clone! a a2)
-	  a2))
-	(else (loop (type-variable-clone a1))))))
+  (cond
+   ((equal? (map first (type-variable-differentiations a1))
+	    (map first ds))
+    (for-each (lambda (d1 d2)
+	       ;; I'm not sure whether there is a need to backtrack over
+	       ;; unification failures.
+	       (when (eq? (first d1) '<_) (unify! (second d1) (second d2))))
+	      (type-variable-differentiations a1)
+	      ds)
+    a1)
+   ((eq? (type-variable-clone a1) a)
+    (let ((a2 (make-type-variable #f ds #f)))
+     (set-type-variable-type! a2 a2)
+     (set-type-variable-clone! a2 a)
+     (set-type-variable-clone! a a2)
+     a2))
+   (else (loop (type-variable-clone a1))))))
 
 (define (bound? a) (not (eq? (type-variable-type a) a)))
 
@@ -324,27 +339,30 @@
 			(string (integer->char (+ (char->integer #\A) i))))
 		       a))
 		     (abstract-type-variables-in t))))
-  (let loop ((t t))
+  (let outer ((t t))
    (cond
     ((eq? t 'unit) 'unit)
     ((eq? t 'boolean) 'boolean)
     ((eq? t 'real) 'real)
     ((type-variable? t)
      (if (bound? t)
-	 (loop (type-variable-type t))
-	 (let loop ((differentiations (type-variable-differentiations t)))
-	  (if (null? differentiations)
+	 (outer (type-variable-type t))
+	 (let inner ((ds (type-variable-differentiations t)))
+	  (if (null? ds)
 	      `',(type-binding-concrete
 		  (find-if (lambda (type-binding)
 			    (clones? (type-binding-abstract type-binding) t))
 			   type-bindings))
-	      `(_> ,(loop (rest differentiations)))))))
+	      (case (first (first ds))
+	       ((_>) `(_> ,(inner (rest ds))))
+	       ((<_) `(<_ ,(outer (second (first ds))) ,(inner (rest ds))))
+	       (else (fuck-up)))))))
     ((function-type? t)
-     `(=> ,(loop (function-type-parameter-type t))
-	  ,(loop (function-type-result-type t))))
+     `(=> ,(outer (function-type-parameter-type t))
+	  ,(outer (function-type-result-type t))))
     ((cons-type? t)
-     `(cons ,(loop (cons-type-car-type t))
-	    ,(loop (cons-type-cdr-type t))))
+     `(cons ,(outer (cons-type-car-type t))
+	    ,(outer (cons-type-cdr-type t))))
     (else (fuck-up))))))
 
 (define (abstract->undecorated-concrete-parameter p)
@@ -443,78 +461,114 @@
 	 ((cons) (unionq (concrete-type-variables-in (second t))
 			 (concrete-type-variables-in (third t))))
 	 ((_>) (concrete-type-variables-in (second t)))
+	 ((<_) (unionq (concrete-type-variables-in (second t))
+		       (concrete-type-variables-in (third t))))
 	 (else (fuck-up))))
        (else (fuck-up))))
 
 (define (occurs? a t)
- (or (eq? a t)
-     (and (type-variable? t) (bound? t) (occurs? a (type-variable-type t)))
-     (and (function-type? t)
-	  (or (occurs? a (function-type-parameter-type t))
-	      (occurs? a (function-type-result-type t))))
-     (and (cons-type? t)
-	  (or (occurs? a (cons-type-car-type t))
-	      (occurs? a (cons-type-cdr-type t))))))
+ (or
+  (eq? a t)
+  (and (type-variable? t)
+       (if (bound? t)
+	   (occurs? a (type-variable-type t))
+	   (some (lambda (d) (and (eq? (first d) '<_) (occurs? a (second d))))
+		 (type-variable-differentiations t))))
+  (and (function-type? t)
+       (or (occurs? a (function-type-parameter-type t))
+	   (occurs? a (function-type-result-type t))))
+  (and (cons-type? t)
+       (or (occurs? a (cons-type-car-type t))
+	   (occurs? a (cons-type-cdr-type t))))))
 
-(define (unwind-differentiations t differentiations)
- (if (null? differentiations)
+(define (unwind-differentiations t ds)
+ (if (null? ds)
      t
-     (case (first differentiations)
-      ((_>)
-       (unwind-differentiations (forwardize-type t) (rest differentiations)))
-      (else (fuck-up)))))
+     (let ((t (unwind-differentiations t (rest ds))))
+      (case (first (first ds))
+       ((_>) (forwardize-type t))
+       ((<_) (reversize-type t (second (first ds))))
+       (else (fuck-up))))))
 
 (define (bind-all-clones! a t)
  (let loop ()
   (let ((again? #f))
    (let loop ((a1 a))
-    (let ((t (unwind-differentiations
-	      t (reverse (type-variable-differentiations a1)))))
+    (let ((t (unwind-differentiations t (type-variable-differentiations a1))))
      (unless (bound? a1)
       (set-type-variable-type! a1 t)
       (set! again? #t)))
     (unless (eq? (type-variable-clone a1) a) (loop (type-variable-clone a1))))
    (when again? (loop)))))
 
+(define (appropriate-clone a1 a2 a3)
+ ;; The appropriate clone differentiation is illustrated by the following
+ ;; example. Suppose you unify (_> a1) and a2. And a1 has a clone
+ ;; (_> (_> a1)). Then you share (_> (_> a1)) with the clone (_> a2) of a2. Or
+ ;; if you unify (_> a1) and (_> (_> a2)). And (_> a1) has a clone a1. Then
+ ;; you share a1 with the clone (_> a2) of (_> (_> a2)). More generally,
+ ;; suppose (F1 (G a1)) has a clone (F2 (G a1)), where G is maximal. Then you
+ ;; can only unify (F1 (G a1)) with (F1 (H a2)). When you do so, you share
+ ;; (F2 (G a1)) with the clone (F2 (H a2)) of (F1 (H a2)).
+ (let loop ((ds1 (reverse (type-variable-differentiations a1)))
+	    (ds3 (reverse (type-variable-differentiations a3))))
+  (cond
+   ((and (not (null? ds1))
+	 (not (null? ds3))
+	 (eq? (first (first ds1)) (first (first ds3))))
+    (when (eq? (first (first ds1)) '<_)
+     ;; I'm not sure whether there is a need to backtrack over unification
+     ;; failures.
+     (unify! (second (first ds1)) (second (first ds3))))
+    (loop (rest ds1) (rest ds3)))
+   (else
+    (let loop ((ds1 (reverse ds1)) (ds2 (type-variable-differentiations a2)))
+     (cond ((and (not (null? ds1))
+		 (not (null? ds2))
+		 (eq? (first (first ds1)) (first (first ds2))))
+	    (when (eq? (first (first ds1)) '<_)
+	     ;; I'm not sure whether there is a need to backtrack over
+	     ;; unification failures.
+	     (unify! (second (first ds1)) (second (first ds2))))
+	    (loop (rest ds1) (rest ds2)))
+	   ((not (null? ds1)) (panic "Unification failure"))
+	   (else (clone-type-variable a2 (append (reverse ds3) ds2)))))))))
+
 (define (share-all-clones! a1 a2)
+ ;; a1 and a2 are unbound type variables that are to be unified. We loop over
+ ;; all of the clones a3 of a1 and share a3 with the appropriate clone
+ ;; differentiation a4 of a2. And we loop over all of the clones a3 of a2 and
+ ;; share a3 with the appropriate clone differentiation a4 of a1.
  (let loop ()
   (let ((again? #f))
    (let loop ((a3 a1))
-    (unless (bound? a2)
-     (when (negative?
-	    (+ (- (length (type-variable-differentiations a3))
-		  (length (type-variable-differentiations a1)))
-	       (length (type-variable-differentiations a2))))
-      (fuck-up))
-     (let ((a4 (clone-type-variable
-		a2
-		;; needs work: This is hardwired to forward mode.
-		(map-n (lambda (i) '_>)
-		       (+ (- (length (type-variable-differentiations a3))
-			     (length (type-variable-differentiations a1)))
-			  (length (type-variable-differentiations a2)))))))
+    ;; I'm not sure whether you need to follow the binding of a3 if it is
+    ;; bound.
+    (unless (bound? a3)
+     (let ((a4 (appropriate-clone a1 a2 a3)))
+      ;; This is in case creating the clone a4 can bind a3. I'm not sure that
+      ;; this can happen.
+      ;; I'm not sure whether you need to follow the binding of a3 if it is
+      ;; bound.
       (unless (bound? a3)
        (set-type-variable-type! a3 a4)
        (set! again? #t))))
-    (unless (eq? (type-variable-clone a3) a1) (loop (type-variable-clone a3))))
+    (unless (eq? (type-variable-clone a3) a1)
+     (loop (type-variable-clone a3))))
    (let loop ((a3 a2))
-    (unless (bound? a1)
-     (when (negative?
-	    (+ (- (length (type-variable-differentiations a3))
-		  (length (type-variable-differentiations a2)))
-	       (length (type-variable-differentiations a1))))
-      (fuck-up))
-     (let ((a4 (clone-type-variable
-		a1
-		;; needs work: This is hardwired to forward mode.
-		(map-n (lambda (i) '_>)
-		       (+ (- (length (type-variable-differentiations a3))
-			     (length (type-variable-differentiations a2)))
-			  (length (type-variable-differentiations a1)))))))
+    ;; I'm not sure whether you need to follow the binding of a3 if it is
+    ;; bound.
+    (unless (bound? a3)
+     (let ((a4 (appropriate-clone a2 a1 a3)))
+      ;; This is in case creating the clone a4 can bind a3. I'm not sure this
+      ;; this can happen.
+      ;; I'm not sure whether you need to follow the binding of a3 if it is
+      ;; bound.
       (unless (bound? a3)
        (set-type-variable-type! a3 a4)
        (set! again? #t))))
-    (unless (eq? (type-variable-clone a3) a2) (loop (type-variable-clone a3))))
+    (unless (eq? (type-variable-clone a3) a2)
+     (loop (type-variable-clone a3))))
    (when again? (loop)))))
 
 (define (unify! t1 t2)
@@ -583,20 +637,38 @@
     (else (fuck-up))))))
 
 (define (forwardize-type t)
+ (cond ((eq? t 'unit) (make-cons-type 'unit 'unit))
+       ((eq? t 'boolean) (make-cons-type 'boolean 'unit))
+       ((eq? t 'real) (make-cons-type 'real 'real))
+       ((type-variable? t)
+	(if (bound? t)
+	    (forwardize-type (type-variable-type t))
+	    (clone-type-variable
+	     t (cons '(_>) (type-variable-differentiations t)))))
+       ((function-type? t)
+	(make-function-type (forwardize-type (function-type-parameter-type t))
+			    (forwardize-type (function-type-result-type t))))
+       ((cons-type? t)
+	(make-cons-type (forwardize-type (cons-type-car-type t))
+			(forwardize-type (cons-type-cdr-type t))))
+       (else (fuck-up))))
+
+(define (reversize-type t1 t2)
  (cond
-  ((eq? t 'unit) (make-cons-type 'unit 'unit))
-  ((eq? t 'boolean) (make-cons-type 'boolean 'unit))
-  ((eq? t 'real) (make-cons-type 'real 'real))
-  ((type-variable? t)
-   (if (bound? t)
-       (forwardize-type (type-variable-type t))
-       (clone-type-variable t (cons '_> (type-variable-differentiations t)))))
-  ((function-type? t)
-   (make-function-type (forwardize-type (function-type-parameter-type t))
-		       (forwardize-type (function-type-result-type t))))
-  ((cons-type? t)
-   (make-cons-type (forwardize-type (cons-type-car-type t))
-		   (forwardize-type (cons-type-cdr-type t))))
+  ((eq? t2 'unit) (make-cons-type 'unit (make-function-type 'unit t1)))
+  ((eq? t2 'boolean) (make-cons-type 'boolean (make-function-type 'unit t1)))
+  ((eq? t2 'real) (make-cons-type 'real (make-function-type 'real t1)))
+  ((type-variable? t2)
+   (if (bound? t2)
+       (reversize-type t1 (type-variable-type t2))
+       (clone-type-variable
+	t2 (cons `(<_ ,t1) (type-variable-differentiations t2)))))
+  ((function-type? t2)
+   (make-function-type (reversize-type t1 (function-type-parameter-type t2))
+		       (reversize-type t1 (function-type-result-type t2))))
+  ((cons-type? t2)
+   (make-cons-type (reversize-type t1 (cons-type-car-type t2))
+		   (reversize-type t1 (cons-type-cdr-type t2))))
   (else (fuck-up))))
 
 (define (concrete->abstract-type t)
@@ -617,6 +689,7 @@
 	   ((=>) (make-function-type (loop (second t)) (loop (third t))))
 	   ((cons) (make-cons-type (loop (second t)) (loop (third t))))
 	   ((_>) (forwardize-type (loop (second t))))
+	   ((<_) (reversize-type (loop (second t)) (loop (third t))))
 	   (else (fuck-up))))
 	 (else (fuck-up))))))
 
@@ -673,7 +746,7 @@
     (make-application
      (make-lambda-expression
       (make-cons-parameter (make-variable-parameter 'x 'boolean)
-			   (make-variable-parameter 'x-hat 'unit)
+			   (make-variable-parameter 'x-forward 'unit)
 			   (make-cons-type 'boolean 'unit))
       (make-variable-access-expression 'x 'boolean)
       (make-function-type (make-cons-type 'boolean 'unit) 'boolean))
@@ -691,7 +764,7 @@
 
 (define (j-forward value)
  (cond
-  ((eq? value 'unit) (cons 'value 'unit))
+  ((eq? value 'unit) (cons value 'unit))
   ((boolean? value) (cons value 'unit))
   ((real? value) (cons value 0))
   ((pair? value) (cons (j-forward (car value)) (j-forward (cdr value))))
@@ -703,6 +776,107 @@
 			      (j-forward (value-binding-value value-binding))))
 	 (closure-value-bindings value))
     (forwardize-expression (closure-lambda-expression value))))
+  (else (fuck-up))))
+
+(define (reversize-parameter t p)
+ (cond ((variable-parameter? p)
+	(make-variable-parameter (variable-parameter-variable p)
+				 (reversize-type t (parameter-type p))))
+       ((cons-parameter? p)
+	(make-cons-parameter
+	 (reversize-parameter t (cons-parameter-car-parameter p))
+	 (reversize-parameter t (cons-parameter-cdr-parameter p))
+	 (reversize-type t (parameter-type p))))
+       (else (fuck-up))))
+
+(define (reversize-expression t e)
+ (cond
+  ((constant-expression? e)
+   (make-constant-expression (j-reverse t (constant-expression-value e))
+			     (reversize-type t (expression-type e))))
+  ((variable-access-expression? e)
+   (make-variable-access-expression (variable-access-expression-variable e)
+				    (reversize-type t (expression-type e))))
+  ((application? e)
+   (make-application (reversize-expression t (application-callee e))
+		     (reversize-expression t (application-argument e))
+		     (reversize-type t (expression-type e))))
+  ;; needs work
+  ((lambda-expression? e)
+   (make-lambda-expression
+    (reversize-parameter t (lambda-expression-parameter e))
+    (reversize-expression t (lambda-expression-body e))
+    (reversize-type t (expression-type e))))
+  ;; needs work
+  ((let-expression? e)
+   (make-let-expression (reversize-parameter t (let-expression-parameter e))
+			(reversize-expression t (let-expression-expression e))
+			(reversize-expression t (let-expression-body e))
+			(reversize-type t (expression-type e))))
+  ((if-expression? e)
+   (make-if-expression
+    (make-application
+     ;; needs work: t1 is the type of x-backpropagator
+     (let ((t1 'needs-work))
+      (make-lambda-expression
+       (make-cons-parameter
+	(make-variable-parameter 'x 'boolean)
+	(make-variable-parameter 'x-backpropagator t1)
+	(make-cons-type 'boolean t1))
+       (make-variable-access-expression 'x 'boolean)
+       (make-function-type (make-cons-type 'boolean t1) 'boolean)))
+     (reversize-expression t (if-expression-antecedent e))
+     'boolean)
+    (reversize-expression t (if-expression-consequent e))
+    (reversize-expression t (if-expression-alternate e))
+    (reversize-type t (expression-type e))))
+  ((cons-expression? e)
+   (make-cons-expression
+    (reversize-expression t (cons-expression-car-argument e))
+    (reversize-expression t (cons-expression-cdr-argument e))
+    (reversize-type t (expression-type e))))
+  (else (fuck-up))))
+
+(define (zero-of-type t)
+ (cond
+  ;; I'm not sure that this can happen.
+  ((eq? t 'unit) (make-constant-expression 'unit t))
+  ;; I'm not sure that this can happen.
+  ((eq? t 'boolean) (make-constant-expression #f t))
+  ((eq? t 'real) (make-constant-expression 0 t))
+  ((type-variable? t)
+   (unless (bound? t) (panic "Cannot create a zero of polymorphic type"))
+   (zero-of-type (type-variable-type t)))
+  ((function-type? t)
+   ;; I'm not sure that this is correct.
+   (make-lambda-expression
+    (make-variable-parameter 'x-reverse (function-type-parameter-type t))
+    (zero-of-type (function-type-result-type t))
+    t))
+  ((cons-type? t)
+   (make-cons-expression (zero-of-type (cons-type-car-type t))
+			 (zero-of-type (cons-type-cdr-type t))
+			 t))
+  (else (fuck-up))))
+
+(define (j-reverse t value)
+ (cond
+  ((eq? value 'unit)
+   (cons value (make-closure '() (zero-of-type (make-function-type 'unit t)))))
+  ((boolean? value)
+   (cons
+    value (make-closure '() (zero-of-type (make-function-type 'boolean t)))))
+  ((real? value)
+   (cons value (make-closure '() (zero-of-type (make-function-type 'real t)))))
+  ((pair? value) (cons (j-reverse t (car value)) (j-reverse t (cdr value))))
+  ((primitive-function? value) (primitive-function-reverse-value value))
+  ((closure? value)
+   (make-closure (map (lambda (value-binding)
+		       (make-value-binding
+			(value-binding-variable value-binding)
+			(j-reverse t (value-binding-value value-binding))))
+		      (closure-value-bindings value))
+		 (reversize-expression t (closure-lambda-expression value))))
   (else (fuck-up))))
 
 (define (parameter-variable-bindings p quantified-type-variables)
@@ -864,7 +1038,7 @@
 
 (define (evaluate e) (evaluate-internal e *value-bindings*))
 
-(define (define-basis-constant variable value forward-value t)
+(define (define-basis-constant variable value forward-value reverse-value t)
  (let ((t (concrete->abstract-type t)))
   (set! *basis-constants* (cons variable *basis-constants*))
   (set! *variable-bindings*
@@ -872,11 +1046,12 @@
 	      *variable-bindings*))
   (set! *value-bindings*
 	(cons (make-value-binding
-	       variable (make-primitive-function value forward-value))
+	       variable
+	       (make-primitive-function value forward-value reverse-value))
 	      *value-bindings*))))
 
 (define (make-circular-primitive-function value)
- (let ((primitive-function (make-primitive-function value #f)))
+ (let ((primitive-function (make-primitive-function value #f #f)))
   (set-primitive-function-forward-value! primitive-function primitive-function)
   primitive-function))
 
@@ -891,112 +1066,140 @@
 	       variable (make-circular-primitive-function value))
 	      *value-bindings*))))
 
-(define (forwardize-basis!)
+(define (forwardize-and-reversize-basis!)
  (for-each (lambda (value-binding)
 	    (let* ((primitive-function (value-binding-value value-binding))
 		   (forward-value
-		    (primitive-function-forward-value primitive-function)))
+		    (primitive-function-forward-value primitive-function))
+		   (reverse-value
+		    (primitive-function-reverse-value primitive-function)))
 	     (syntax-check-expression! forward-value)
+	     (syntax-check-expression! reverse-value)
 	     (set-primitive-function-forward-value!
 	      primitive-function
-	      (evaluate (concrete->abstract-expression forward-value)))))
+	      (evaluate (concrete->abstract-expression forward-value)))
+	     (set-primitive-function-reverse-value!
+	      primitive-function
+	      (evaluate (concrete->abstract-expression reverse-value)))))
 	   *value-bindings*))
 
 (define (intialize-basis!)
+ ;; needs work: reversize
  (define-basis-constant
   '+
   (lambda (x) (+ (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (+ x y) (+ x-hat y-hat)))
+  '(lambda ((cons x x-forward) (cons y y-forward))
+    (cons (+ x y) (+ x-forward y-forward)))
+  'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   '-
   (lambda (x) (- (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (- x y) (- x-hat y-hat)))
+  '(lambda ((cons x x-forward) (cons y y-forward))
+    (cons (- x y) (- x-forward y-forward)))
+  'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   '*
   (lambda (x) (* (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat))
-    (cons (* x y) (+ (* x y-hat) (* y x-hat))))
+  '(lambda ((cons x x-forward) (cons y y-forward))
+    (cons (* x y) (+ (* x y-forward) (* y x-forward))))
+  'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   '/
   (lambda (x) (/ (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat))
-    (cons (/ x y) (/ (- (* y x-hat) (* x y-hat)) (* y y))))
+  '(lambda ((cons x x-forward) (cons y y-forward))
+    (cons (/ x y) (/ (- (* y x-forward) (* x y-forward)) (* y y))))
+  'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   'sqrt
   sqrt
-  '(lambda (x x-hat) (cons (sqrt x) (/ x (* 2 (sqrt x)))))
+  '(lambda (x x-forward) (cons (sqrt x) (/ x (* 2 (sqrt x)))))
+  'needs-work
   '(=> real real))
  (define-basis-constant
   'exp
   exp
-  '(lambda (x x-hat) (cons (exp x) (* x-hat (exp x))))
+  '(lambda (x x-forward) (cons (exp x) (* x-forward (exp x))))
+  'needs-work
   '(=> real real))
  (define-basis-constant
   'log
   log
-  '(lambda (x x-hat) (cons (log x) (/ x-hat x)))
+  '(lambda (x x-forward) (cons (log x) (/ x-forward x)))
+  'needs-work
   '(=> real real))
  (define-basis-constant
   'sin
   sin
-  '(lambda (x x-hat) (cons (sin x) (* x-hat (cos x))))
+  '(lambda (x x-forward) (cons (sin x) (* x-forward (cos x))))
+  'needs-work
   '(=> real real))
  (define-basis-constant
   'cos
   cos
-  '(lambda (x x-hat) (cons (cos x) (- 0 (* x-hat (sin x)))))
+  '(lambda (x x-forward) (cons (cos x) (- 0 (* x-forward (sin x)))))
+  'needs-work
   '(=> real real))
  (define-basis-constant
   'atan
   (lambda (x) (atan (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat))
-    (cons (atan y x) (/ (- (* x y-hat) (* y x-hat)) (+ (* x x) (* y y)))))
+  '(lambda ((cons x x-forward) (cons y y-forward))
+    (cons (atan y x)
+	  (/ (- (* x y-forward) (* y x-forward)) (+ (* x x) (* y y)))))
+  'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   '=
   (lambda (x) (= (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (= x y) unit))
+  '(lambda ((cons x x-forward) (cons y y-forward)) (cons (= x y) unit))
+  'needs-work
   '(=> (cons real real) boolean))
  (define-basis-constant
   '<
   (lambda (x) (< (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (< x y) unit))
+  '(lambda ((cons x x-forward) (cons y y-forward)) (cons (< x y) unit))
+  'needs-work
   '(=> (cons real real) boolean))
  (define-basis-constant
   '>
   (lambda (x) (> (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (> x y) unit))
+  '(lambda ((cons x x-forward) (cons y y-forward)) (cons (> x y) unit))
+  'needs-work
   '(=> (cons real real) boolean))
  (define-basis-constant
   '<=
   (lambda (x) (<= (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (<= x y) unit))
+  '(lambda ((cons x x-forward) (cons y y-forward)) (cons (<= x y) unit))
+  'needs-work
   '(=> (cons real real) boolean))
  (define-basis-constant
   '>=
   (lambda (x) (>= (car x) (cdr x)))
-  '(lambda ((cons x x-hat) (cons y y-hat)) (cons (>= x y) unit))
+  '(lambda ((cons x x-forward) (cons y y-forward)) (cons (>= x y) unit))
+  'needs-work
   '(=> (cons real real) boolean))
  (define-basis-constant
   'zero?
   zero?
-  '(lambda (x x-hat) (cons (zero? x) unit))
+  '(lambda (x x-forward) (cons (zero? x) unit))
+  'needs-work
   '(=> real boolean))
  (define-basis-constant
   'positive?
   positive?
-  '(lambda (x x-hat) (cons (positive? x) unit))
+  '(lambda (x x-forward) (cons (positive? x) unit))
+  'needs-work
   '(=> real boolean))
  (define-basis-constant
   'negative?
   negative?
-  '(lambda (x x-hat) (cons (negative? x) unit))
+  '(lambda (x x-forward) (cons (negative? x) unit))
+  'needs-work
   '(=> real boolean))
- (forwardize-basis!)
+ (forwardize-and-reversize-basis!)
  (define-circular-basis-constant
   'y
   (lambda (f)
@@ -1009,8 +1212,11 @@
 	   (make-circular-primitive-function
 	    (lambda (x) (call (call f (call g g)) x)))))))
   '(=> (=> (=> 'a 'b) (=> 'a 'b)) (=> 'a 'b)))
- ;; needs work: I'm not sure that J-forward is actually circular.
- (define-circular-basis-constant 'j-forward j-forward '(=> 'a (_> 'a))))
+ ;; I'm not sure that J-forward is actually circular.
+ (define-circular-basis-constant 'j-forward j-forward '(=> 'a (_> 'a)))
+ ;; I'm not sure that J-reverse is actually circular.
+ ;; needs work: j-reverse needs to take the type argument.
+ (define-circular-basis-constant 'j-reverse j-reverse '(=> 'a (<_ 'a 'a))))
 
 ;;; Commands
 
