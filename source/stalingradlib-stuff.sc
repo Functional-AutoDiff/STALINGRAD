@@ -536,8 +536,8 @@
   ;; needs work: to ensure that you don't shadow if-procedure
   ((if)
    (unless (= (length e) 4) (panic (format #f "Invalid expression: ~s" e)))
-   `((((if-procedure ,(second e)) (lambda () ,(third e)))
-      (lambda () ,(fourth e)))))
+   `((if-procedure
+      ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e)))))
   ;; needs work: to ensure that you don't shadow cons-procedure
   ((cons)
    (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
@@ -1585,6 +1585,16 @@
    (unless (pair? x) (run-time-error (format #f "Invalid argument to ~a" s) x))
    (f (car x) (cdr x)))))
 
+(define (ternary f s)
+ (lambda (x)
+  (let ((x123 (generic-zero-dereference-as-pair x)))
+   (unless (pair? x123)
+    (run-time-error (format #f "Invalid argument to ~a" s) x))
+   (let ((x1 (car x123)) (x23 (generic-zero-dereference-as-pair (cdr x123))))
+    (unless (pair? x23)
+     (run-time-error (format #f "Invalid argument to ~a" s) x))
+    (f x1 (car x23) (cdr x23))))))
+
 (define (binary-real f s)
  (lambda (x)
   (let ((x (generic-zero-dereference-as-pair x)))
@@ -1669,15 +1679,7 @@
   (lambda (x1)
    (create-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
  (define-primitive-procedure 'if-procedure
-  ;; Note that we can't apply a j operator to the result of (if-procedure e1)
-  ;; or ((if-procedure e1) e2) or compare results of (if-procedure e1) or
-  ;; ((if-procedure e1) e2) with the old equal?.
-  (lambda (x1)
-   (create-primitive-procedure
-    "if-procedure 0"
-    (lambda (x2)
-     (create-primitive-procedure
-      "if-procedure 1" (lambda (x3) (if x1 x2 x3)))))))
+  (ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure"))
  (define-primitive-procedure 'eq?
   (lambda (x)
    (unless (pair? x) (run-time-error "Invalid argument to eq?" x))

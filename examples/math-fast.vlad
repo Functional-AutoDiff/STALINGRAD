@@ -60,26 +60,25 @@
 ;;; Derivatives
 
 (define (conjoint primal adjoint)
- (if (null? primal)
-     '(() . ())
-     (cons (cons (first primal) (first adjoint))
-	   (conjoint (rest primal) (rest adjoint)))))
+ (cond ((pair? primal)
+	(cons (conjoint (car primal) (car adjoint))
+	      (conjoint (cdr primal) (cdr adjoint))))
+       ((real? primal) (cons primal adjoint))
+       (else primal)))
 
 (define (primal conjoint)
- (cond ((procedure? conjoint) conjoint)
-       ((boolean? (car conjoint)) (car conjoint))
-       ((null? (car conjoint)) '())
-       ((real? (car conjoint)) (car conjoint))
-       ;; pair
-       (else (cons (primal (car conjoint)) (primal (cdr conjoint))))))
+ (if (pair? conjoint)
+     (if (real? (car conjoint))
+	 (car conjoint)
+	 (cons (primal (car conjoint)) (primal (cdr conjoint))))
+     conjoint))
 
 (define (adjoint conjoint)
- (cond ((procedure? conjoint) conjoint)
-       ((boolean? (car conjoint)) (cdr conjoint))
-       ((null? (car conjoint)) '())
-       ((real? (car conjoint)) (cdr conjoint))
-       ;; pair
-       (else (cons (adjoint (car conjoint)) (adjoint (cdr conjoint))))))
+ (if (pair? conjoint)
+     (if (real? (car conjoint))
+	 (cdr conjoint)
+	 (cons (adjoint (car conjoint)) (adjoint (cdr conjoint))))
+     '()))
 
 (define (ungenericize x x-grave)
  (cond ((generic-zero? x-grave)
