@@ -72,8 +72,12 @@
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
 		 (at-most-one ("trace-closures" trace-closures?))
+		 (at-most-one
+		  ("trace-recursive-closures" trace-recursive-closures?))
 		 (at-most-one ("trace-argument/result" trace-argument/result?))
 		 (at-most-one ("unabbreviate-closures" unabbreviate-closures?))
+		 (at-most-one ("unabbreviate-recursive-closures"
+			       unabbreviate-recursive-closures?))
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
 		  ("length" length? (length "n" integer-argument #f)))
@@ -86,8 +90,10 @@
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
  (set! *trace-closures?* trace-closures?)
+ (set! *trace-recursive-closures?* trace-recursive-closures?)
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-closures?* unabbreviate-closures?)
+ (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
  (set! *y* (genname 'y))
  (set! *y-tilde* (genname 'y-tilde))

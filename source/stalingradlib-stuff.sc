@@ -48,7 +48,7 @@
 ;;;  2. begin, case, delay, do, named let, quasiquote, unquote,
 ;;;     unquote-splicing, internal defines
 ;;;  3. chars, ports, eof object, symbols, continuations, strings, vectors
-;;;  4. enforce don't shadow: car, cdr, cons-procedure, ys, and if-procedure
+;;;  4. enforce don't shadow: car, cdr, cons-procedure, and if-procedure
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -74,11 +74,24 @@
 (define-structure lambda-expression
  free-variables free-variable-indices variable body)
 
+(define-structure letrec-expression
+ procedure-variables
+ argument-variables
+ bodies-free-variables
+ bodies-free-variable-indices
+ body-free-variables
+ body-free-variable-indices
+ bodies
+ body)
+
 (define-structure variable-binding variable expression)
 
 (define-structure value-binding variable value)
 
 (define-structure closure variables values keys variable body)
+
+(define-structure recursive-closure
+ variables values keys procedure-variables argument-variables bodies index)
 
 (define-structure primitive-procedure name procedure meter)
 
@@ -128,9 +141,13 @@
 
 (define *trace-closures?* #f)
 
+(define *trace-recursive-closures?* #f)
+
 (define *trace-argument/result?* #f)
 
 (define *unabbreviate-closures?* #f)
+
+(define *unabbreviate-recursive-closures?* #f)
 
 (define *pp?* #f)
 
@@ -139,6 +156,26 @@
 (define (new-lambda-expression x e)
  (let ((xs (removeq-vector x (free-variables e))))
   (make-lambda-expression xs #f x e)))
+
+(define (new-letrec-expression procedure-variables argument-variables es e)
+ (make-letrec-expression
+  procedure-variables
+  argument-variables
+  (letrec-free-variables procedure-variables argument-variables es)
+  #f
+  (set-differenceq-vector
+   (unionq-vector
+    (reduce-vector
+     unionq-vector
+     (map-vector (lambda (x e) (removeq-vector x (free-variables e)))
+		 argument-variables
+		 es)
+     '#())
+    (free-variables e))
+   procedure-variables)
+  #f
+  es
+  e))
 
 ;;; needs work: We don't gc keys so there is a risk that we run out. We don't
 ;;;             check for running out of keys.
@@ -225,21 +262,6 @@
 	(append (reverse (read-source (search-include-path (second e)))) es)))
       (else (loop (cons e es)))))))))
 
-(define (standard-prelude e)
- `(let ((ys (let* ((y (lambda (f)
-		       ((lambda (g) (lambda (x) ((f (g g)) x)))
-			(lambda (g) (lambda (x) ((f (g g)) x))))))
-		   (map (lambda (f)
-			 (y (lambda (map)
-			     (lambda (l)
-			      (if (null? l)
-				  '()
-				  (cons (f (car l)) (map (cdr l))))))))))
-	     (y (lambda (ys)
-		 (lambda (fs)
-		  ((map (lambda (f) (lambda (x) ((f (ys fs)) x)))) fs)))))))
-   ,e))
-
 (define (definition? d)
  (and (list? d)
       (= (length d) 3)
@@ -254,14 +276,17 @@
 	    (unless (definition? d)
 	     (panic (format #t "Invalid definition: ~s" d))))
 	   ds)
- (standard-prelude
-  `(letrec ,(map (lambda (d)
-		  (if (symbol? (second d))
-		      `(,(second d) ,(third d))
-		      `(,(first (second d))
-			(lambda ,(rest (second d)) ,(third d)))))
-		 ds)
-    ,e)))
+ `(letrec ,(map (lambda (d)
+		 (if (symbol? (second d))
+		     `(,(second d) ,(third d))
+		     `(,(first (second d))
+		       (lambda ,(rest (second d)) ,(third d)))))
+		ds)
+   ,e))
+
+(define (duplicatesq? xs)
+ (and (not (null? xs))
+      (or (memq (first xs) (rest xs)) (duplicatesq? (rest xs)))))
 
 (define (gensym)
  (let ((gensym *gensym*))
@@ -316,21 +341,6 @@
 	 (else (panic (format #f "Invalid parameter: ~s" p)))))
        (else (panic (format #f "Invalid parameter: ~s" p))))))
     (else `(lambda ((cons* ,@(second e))) ,(third e)))))
-  ((letrec)
-   (unless (and (= (length e) 3)
-		(list? (second e))
-		(every
-		 (lambda (b)
-		  (and (list? b) (= (length b) 2) (symbol? (first b))))
-		 (second e)))
-    (panic (format #f "Invalid expression: ~s" e)))
-   `(let (((list ,@(map first (second e)))
-	   ;; needs work: to ensure that you don't shadow ys
-	   (ys (list ,@(map (lambda (b)
-			     `(lambda ((list ,@(map first (second e))))
-			       ,(second b)))
-			    (second e))))))
-     ,(third e)))
   ((let) (unless (and (= (length e) 3)
 		      (list? (second e))
 		      (every (lambda (b) (and (list? b) (= (length b) 2)))
@@ -433,7 +443,27 @@
 		   (loop (third e) (cons (first (second e)) xs)))
 		  (else (loop (macro-expand e) xs))))
        (else (loop (macro-expand e) xs))))
-     ((letrec) (loop (macro-expand e) xs))
+     ((letrec)
+      (unless (and (= (length e) 3)
+		   (list? (second e))
+		   (every (lambda (b)
+			   (and (list? b)
+				(= (length b) 2)
+				(symbol? (first b))))
+			  (second e)))
+       (panic (format #f "Invalid expression: ~s" e)))
+      (let ((xs0 (map first (second e))))
+       (when (duplicatesq? xs0)
+	(panic (format #f "Duplicate variables: ~s" e)))
+       (for-each (lambda (b)
+		  (let ((e1 (macro-expand (second b))))
+		   (unless (and (list? e1)
+				(= (length e1) 3)
+				(eq? (first e1) 'lambda))
+		    (panic (format #f "Invalid expression: ~s" e)))
+		   (loop e1  (append xs0 xs))))
+		 (second e))
+       (loop (third e) (append xs0 xs))))
      ((let) (loop (macro-expand e) xs))
      ((let*) (loop (macro-expand e) xs))
      ((if) (loop (macro-expand e) xs))
@@ -496,11 +526,20 @@
        ((lambda-expression? e)
 	`(lambda (,(lambda-expression-variable e))
 	  ,(abstract->concrete (lambda-expression-body e))))
+       ((letrec-expression? e)
+	`(letrec ,(vector->list
+		   (map-vector (lambda (x1 x2 e)
+				`(,x1 (lambda (,x2) ,(abstract->concrete e))))
+			       (letrec-expression-procedure-variables e)
+			       (letrec-expression-argument-variables e)
+			       (letrec-expression-bodies e)))
+	  ,(abstract->concrete (letrec-expression-body e))))
        (else (fuck-up))))
 
 (define (same? v1 v2)
  (or (and (null? v1) (null? v2))
      (and (boolean? v1) (boolean? v2) (eq? v1 v2))
+     (and (key? v1) (key? v2) (key=? v1 v2))
      (and (real? v1) (real? v2) (= v1 v2))
      (and (pair? v1)
 	  (pair? v2)
@@ -512,7 +551,22 @@
      (and (closure? v1)
 	  (closure? v2)
 	  (eq? (closure-body v1) (closure-body v2))
-	  (every-vector same? (closure-values v1) (closure-values v2)))))
+	  (every-vector same? (closure-values v1) (closure-values v2))
+	  (every-vector same? (closure-keys v1) (closure-keys v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (= (vector-length (recursive-closure-bodies v1))
+	     (vector-length (recursive-closure-bodies v2)))
+	  (= (recursive-closure-index v1) (recursive-closure-index v2))
+	  (every-vector eq?
+			(recursive-closure-bodies v1)
+			(recursive-closure-bodies v2))
+	  (every-vector same?
+			(recursive-closure-values v1)
+			(recursive-closure-values v2))
+	  (every-vector same?
+			(recursive-closure-keys v1)
+			(recursive-closure-keys v2)))))
 
 (define (coalesce-constants result)
  (let ((bss (transitive-equivalence-classesp
@@ -525,20 +579,27 @@
 	       (some (lambda (b) (eq? (value-binding-variable b) x)) bs))
 	      bss)))
     (if bs (value-binding-variable (first bs)) x)))
-  (list (let loop ((e (first result)))
-	 (cond ((variable-access-expression? e)
-		(make-variable-access-expression
-		 (rename (variable-access-expression-variable e)) #f))
-	       ((key-expression? e)
-		(make-key-expression (rename (key-expression-variable e)) #f))
-	       ((application? e)
-		(make-application (loop (application-callee e))
-				  (loop (application-argument e))))
-	       ((lambda-expression? e)
-		(new-lambda-expression (lambda-expression-variable e)
-				       (loop (lambda-expression-body e))))
-	       (else (fuck-up))))
-	(map first bss))))
+  (list
+   (let loop ((e (first result)))
+    (cond
+     ((variable-access-expression? e)
+      (make-variable-access-expression
+       (rename (variable-access-expression-variable e)) #f))
+     ((key-expression? e)
+      (make-key-expression (rename (key-expression-variable e)) #f))
+     ((application? e)
+      (make-application (loop (application-callee e))
+			(loop (application-argument e))))
+     ((lambda-expression? e)
+      (new-lambda-expression (lambda-expression-variable e)
+			     (loop (lambda-expression-body e))))
+     ((letrec-expression? e)
+      (new-letrec-expression (letrec-expression-procedure-variables e)
+			     (letrec-expression-argument-variables e)
+			     (map-vector loop (letrec-expression-bodies e))
+			     (loop (letrec-expression-body e))))
+     (else (fuck-up))))
+   (map first bss))))
 
 (define (unionq-vector xs1 xs2)
  (list->vector (unionq (vector->list xs1) (vector->list xs2))))
@@ -551,6 +612,15 @@
 (define (set-differenceq-vector xs1 xs2)
  (list->vector (set-differenceq (vector->list xs1) (vector->list xs2))))
 
+(define (letrec-free-variables procedure-variables argument-variables es)
+ (set-differenceq-vector
+  (reduce-vector
+   unionq-vector
+   (map-vector
+    (lambda (x e) (removeq-vector x (free-variables e))) argument-variables es)
+   '#())
+  procedure-variables))
+
 (define (free-variables e)
  (cond ((variable-access-expression? e)
 	(vector (variable-access-expression-variable e)))
@@ -559,6 +629,7 @@
 	(unionq-vector (free-variables (application-callee e))
 		       (free-variables (application-argument e))))
        ((lambda-expression? e) (lambda-expression-free-variables e))
+       ((letrec-expression? e) (letrec-expression-body-free-variables e))
        (else (fuck-up))))
 
 (define (vector-append . vss)
@@ -585,6 +656,24 @@
 				(index (lambda-expression-variable e)
 				       (free-variables e)
 				       (lambda-expression-body e))))
+       ((letrec-expression? e)
+	(make-letrec-expression
+	 (letrec-expression-procedure-variables e)
+	 (letrec-expression-argument-variables e)
+	 (letrec-expression-bodies-free-variables e)
+	 (map-vector lookup (letrec-expression-bodies-free-variables e))
+	 (letrec-expression-body-free-variables e)
+	 (map-vector lookup (letrec-expression-body-free-variables e))
+	 (let ((xs
+		(vector-append (letrec-expression-procedure-variables e)
+			       (letrec-expression-bodies-free-variables e))))
+	  (map-vector (lambda (x e) (index x xs e))
+		      (letrec-expression-argument-variables e)
+		      (letrec-expression-bodies e)))
+	 (index x
+		(vector-append (letrec-expression-procedure-variables e)
+			       (letrec-expression-body-free-variables e))
+		(letrec-expression-body e))))
        (else (fuck-up))))
 
 (define (concrete->abstract-expression e)
@@ -631,7 +720,32 @@
 			 (second result))))
 		 (else (loop (macro-expand e) bs))))
 	       (else (loop (macro-expand e) bs))))
-	     ((letrec) (loop (macro-expand e) bs))
+	     ((letrec)
+	      (let* ((bs
+		      (append
+		       (map (lambda (b)
+			     (make-variable-binding
+			      (first b)
+			      (make-variable-access-expression (first b) #f)))
+			    (second e))
+		       bs))
+		     (results
+		      (map (lambda (b) (loop (macro-expand (second b)) bs))
+			   (second e)))
+		     (result (loop (third e) bs))
+		     (xs1 (map first (second e)))
+		     (xs2 (map (lambda (result)
+				(lambda-expression-variable (first result)))
+			       results))
+		     (es (map (lambda (result)
+			       (lambda-expression-body (first result)))
+			      results))
+		     (e (first result)))
+	       (list
+		(new-letrec-expression
+		 (list->vector xs1) (list->vector xs2) (list->vector es) e)
+		(append
+		 (second result) (reduce append (map second results) '())))))
 	     ((let) (loop (macro-expand e) bs))
 	     ((let*) (loop (macro-expand e) bs))
 	     ((if) (loop (macro-expand e) bs))
@@ -661,6 +775,80 @@
 	(list->vector (map value-binding-value (second result))))))
 
 ;;; J* and *J
+
+(define (clone-name x)
+ ;; debugging
+ (if #t
+     (let ((gensym *gensym*))
+      (set! *gensym* (+ *gensym* 1))
+      (string->uninterned-symbol
+       (string-append (symbol->string x) "-" (number->string *gensym*))))
+     (string->uninterned-symbol (symbol->string x))))
+
+(define (alpha-rename e bs)
+ (cond ((variable-access-expression? e)
+	(let ((b (find-if (lambda (b)
+			   (eq? (variable-binding-variable b)
+				(variable-access-expression-variable e)))
+			  bs)))
+	 (if b (variable-binding-expression b) e)))
+       ((key-expression? e)
+	(let ((b (find-if (lambda (b)
+			   (eq? (variable-binding-variable b)
+				(key-expression-variable e)))
+			  bs)))
+	 (if b
+	     (make-key-expression (variable-access-expression-variable
+				   (variable-binding-expression b))
+				  #f)
+	     e)))
+       ((application? e)
+	(make-application (alpha-rename (application-callee e) bs)
+			  (alpha-rename (application-argument e) bs)))
+       ((lambda-expression? e)
+	(let ((x (clone-name (lambda-expression-variable e))))
+	 (new-lambda-expression
+	  x
+	  (alpha-rename (lambda-expression-body e)
+			(cons (make-variable-binding
+			       (lambda-expression-variable e)
+			       (make-variable-access-expression x #f))
+			      bs)))))
+       ((letrec-expression? e)
+	(let ((xs1 (map-vector clone-name
+			       (letrec-expression-procedure-variables e)))
+	      (xs2 (map-vector clone-name
+			       (letrec-expression-argument-variables e))))
+	 (new-letrec-expression
+	  xs1
+	  xs2
+	  (map-vector
+	   (lambda (e1 x x2)
+	    (alpha-rename
+	     e1
+	     (cons (make-variable-binding
+		    x (make-variable-access-expression x2 #f))
+		   (append (map
+			    (lambda (x x1)
+			     (make-variable-binding
+			      x (make-variable-access-expression x1 #f)))
+			    (vector->list
+			     (letrec-expression-procedure-variables e))
+			    (vector->list xs1))
+			   bs))))
+	   (letrec-expression-bodies e)
+	   (letrec-expression-argument-variables e)
+	   xs2)
+	  (alpha-rename
+	   (letrec-expression-body e)
+	   (append (map
+		    (lambda (x x1)
+		     (make-variable-binding
+		      x (make-variable-access-expression x1 #f)))
+		    (vector->list (letrec-expression-procedure-variables e))
+		    (vector->list xs1))
+		   bs)))))
+       (else (fuck-up))))
 
 (define (basis-value x)
  (value-binding-value
@@ -719,7 +907,7 @@
     (make-car bs (forward-transform bs (application-callee e) xs x-acutes))
     (forward-transform bs (application-argument e) xs x-acutes)))
   ((lambda-expression? e)
-   (let ((x (lambda-expression-variable e)) (x-acute (gensym)))
+   (let* ((x (lambda-expression-variable e)) (x-acute (genname x 'acute)))
     (make-cons
      bs
      (create-lambda-expression
@@ -728,9 +916,58 @@
       (forward-transform
        bs (lambda-expression-body e) (cons x xs) (cons x-acute x-acutes)))
      (make-constant bs '()))))
+  ((letrec-expression? e)
+   (let* ((xs1 (letrec-expression-procedure-variables e))
+	  (x-acutes1 (map-vector (lambda (x) (genname x 'acute)) xs1))
+	  (xs2 (letrec-expression-argument-variables e))
+	  (x-acutes2 (map-vector (lambda (x) (genname x 'acute)) xs2))
+	  (x-conjoints2 (map-vector (lambda (x) (genname x 'conjoint)) xs2)))
+    ;; This could be a let.
+    (create-let*
+     bs
+     (vector->list x-acutes1)
+     (vector->list (map-vector (lambda (x) (make-constant bs '())) x-acutes1))
+     (new-letrec-expression
+      xs1
+      x-conjoints2
+      (map-vector
+       (lambda (x-conjoint x x-acute e)
+	(create-let
+	 bs
+	 `(cons ,x ,x-acute)
+	 (make-variable-access-expression x-conjoint #f)
+	 (forward-transform
+	  bs
+	  e
+	  (cons x (append (vector->list xs1) xs))
+	  (cons x-acute (append (vector->list x-acutes1) x-acutes)))))
+       x-conjoints2
+       xs2
+       x-acutes2
+       (letrec-expression-bodies e))
+      (forward-transform bs
+			 (letrec-expression-body e)
+			 (append (vector->list xs1) xs)
+			 (append (vector->list x-acutes1) x-acutes))))))
   (else (fuck-up))))
 
-(define (wrap-partial-internal
+(define (wrapped-primal e) (application-argument (application-callee e)))
+
+(define (wrapped-primal-variable e)
+ (lambda-expression-variable (wrapped-primal e)))
+
+(define (wrapped-primal-body e)
+ (lambda-expression-body (wrapped-primal e)))
+
+(define (wrapped-backpropagator e) (application-argument e))
+
+(define (wrapped-backpropagator-variable e)
+ (lambda-expression-variable (wrapped-backpropagator e)))
+
+(define (wrapped-backpropagator-body e)
+ (lambda-expression-body (wrapped-backpropagator e)))
+
+(define (wrap-primal-internal
 	 bs
 	 ;; This is an individual variable for the input.
 	 x x-tilde x-grave
@@ -748,83 +985,92 @@
   (create-lambda-expression
    bs
    `(,z-tilde ,x ,x-tilde)
-   (create-let
+   ;; This could be a let.
+   (create-let*
     bs
-    `(cons ,*y* ,*y-tilde*)
-    ;; This could be a let.
-    (create-let*
+    x-tildes
+    (map (lambda (x-tilde) (make-variable-access-expression x-tilde #f))
+	 x-tildes)
+    (create-let
      bs
-     `(,x-tilde ,@x-tildes)
-     (cons
+     `(cons ,*y* ,*y-tilde*)
+     ;; This could be a let.
+     (create-let*
+      bs
+      `(,x-tilde ,@x-tildes)
+      (cons
+       (create-lambda-expression
+	bs
+	`(,x-grave ,*r*)
+	(make-accumulate bs
+			 (make-key-expression x #f)
+			 (make-variable-access-expression *r* #f)
+			 (make-variable-access-expression x-grave #f)))
+       (map (lambda (x-tilde x-grave)
+	     (create-lambda-expression
+	      bs
+	      `(,x-grave ,*r*)
+	      (make-accumulate bs
+			       (make-key-expression x-tilde #f)
+			       (make-variable-access-expression *r* #f)
+			       (make-variable-access-expression x-grave #f))))
+	    x-tildes
+	    x-graves))
+      e)
+     (make-cons
+      bs
+      (make-variable-access-expression *y* #f)
       (create-lambda-expression
        bs
-       `(,x-grave ,*r*)
-       (make-accumulate bs
-			(make-key-expression x #f)
-			(make-variable-access-expression *r* #f)
-			(make-variable-access-expression x-grave #f)))
-      (map (lambda (x-tilde x-grave)
-	    (create-lambda-expression
+       `(,*y-grave* ,*r*)
+       (create-let*
+	bs
+	(cons *r*
+	      (map (lambda (x-grave) `(cons ,x-grave ,*r*))
+		   (reverse x-graves)))
+	(cons
+	 (create-application
+	  bs
+	  (make-variable-access-expression x-tilde #f)
+	  (make-exit
+	   bs
+	   (make-key-expression x #f)
+	   (create-application
+	    bs
+	    (make-variable-access-expression *y-tilde* #f)
+	    (make-variable-access-expression *y-grave* #f)
+	    (make-add
 	     bs
-	     `(,x-grave ,*r*)
-	     (make-accumulate bs
-			      (make-key-expression x-tilde #f)
-			      (make-variable-access-expression *r* #f)
-			      (make-variable-access-expression x-grave #f))))
-	   x-tildes
-	   x-graves))
-     e)
-    (make-cons
-     bs
-     (make-variable-access-expression *y* #f)
-     (create-lambda-expression
-      bs
-      `(,*y-grave* ,*r*)
-      (create-let*
-       bs
-       (cons
-	*r* (map (lambda (x-grave) `(cons ,x-grave ,*r*)) (reverse x-graves)))
-       (cons
+	     (make-key-expression x #f)
+	     (let loop ((x-tildes (reverse x-tildes))
+			(xs (reverse xs)))
+	      (if (null? x-tildes)
+		  (make-variable-access-expression *r* #f)
+		  (make-add
+		   bs
+		   (make-key-expression (first x-tildes) #f)
+		   (loop (rest x-tildes) (rest xs))
+		   (make-variable-access-expression (first xs) #f))))
+	     (make-variable-access-expression x #f)))))
+	 (map (lambda (x-tilde)
+	       (make-exit bs
+			  (make-key-expression x-tilde #f)
+			  (make-variable-access-expression *r* #f)))
+	      (reverse x-tildes)))
 	(create-application
 	 bs
-	 (make-variable-access-expression x-tilde #f)
-	 (make-exit
+	 (make-variable-access-expression z-tilde #f)
+	 (make-cons*
 	  bs
-	  (make-key-expression x #f)
-	  (create-application
-	   bs
-	   (make-variable-access-expression *y-tilde* #f)
-	   (make-variable-access-expression *y-grave* #f)
-	   (make-add
-	    bs
-	    (make-key-expression x #f)
-	    (let loop ((x-tildes (reverse x-tildes)) (xs (reverse xs)))
-	     (if (null? x-tildes)
-		 (make-variable-access-expression *r* #f)
-		 (make-add bs
-			   (make-key-expression (first x-tildes) #f)
-			   (loop (rest x-tildes) (rest xs))
-			   (make-variable-access-expression (first xs) #f))))
-	    (make-variable-access-expression x #f)))))
-	(map (lambda (x-tilde)
-	      (make-exit bs
-			 (make-key-expression x-tilde #f)
-			 (make-variable-access-expression *r* #f)))
-	     (reverse x-tildes)))
-       (create-application
-	bs
-	(make-variable-access-expression z-tilde #f)
-	(make-cons*
-	 bs
-	 (map (lambda (z z-grave)
-	       (if (memq z-grave x-graves)
-		   (make-variable-access-expression z-grave #f)
-		   (make-zero bs (make-variable-access-expression z #f))))
-	      zs
-	      z-graves))
-	(make-variable-access-expression *r* #f)))))))))
+	  (map (lambda (z z-grave)
+		(if (memq z-grave x-graves)
+		    (make-variable-access-expression z-grave #f)
+		    (make-zero bs (make-variable-access-expression z #f))))
+	       zs
+	       z-graves))
+	 (make-variable-access-expression *r* #f))))))))))
 
-(define (wrap-full-internal
+(define (wrap-conjoint-internal
 	 bs
 	 ;; This is an individual variable for the input.
 	 x x-tilde x-grave
@@ -837,7 +1083,7 @@
 	 zs z-graves
 	 e)
  (make-cons bs
-	    (wrap-partial-internal
+	    (wrap-primal-internal
 	     bs x x-tilde x-grave xs x-tildes x-graves zs z-graves e)
 	    (create-lambda-expression
 	     bs
@@ -854,7 +1100,7 @@
 		    ;; converges.
 		    (else (loop (rest x-tildes) (rest x-graves))))))))
 
-(define (wrap-partial
+(define (wrap-primal
 	 bs
 	 ;; This is an individual variable for the input.
 	 x x-tilde x-grave
@@ -865,7 +1111,7 @@
 	 xs x-tildes x-graves
 	 e)
  (let loop ((zs '()) (z-graves '()))
-  (let* ((e0 (wrap-partial-internal
+  (let* ((e0 (wrap-primal-internal
 	      bs x x-tilde x-grave xs x-tildes x-graves zs z-graves e))
 	 (zs0 (vector->list (free-variables e0))))
    (if (equal? zs zs0)
@@ -877,7 +1123,7 @@
 		       (genname z 'z-grave)))
 		  zs0))))))
 
-(define (wrap-full
+(define (wrap-conjoint
 	 bs
 	 ;; This is an individual variable for the input.
 	 x x-tilde x-grave
@@ -888,11 +1134,11 @@
 	 xs x-tildes x-graves
 	 e)
  (let loop ((zs '()) (z-graves '()))
-  (let* ((e0 (wrap-partial-internal
+  (let* ((e0 (wrap-primal-internal
 	      bs x x-tilde x-grave xs x-tildes x-graves zs z-graves e))
 	 (zs0 (vector->list (free-variables e0))))
    (if (equal? zs zs0)
-       (wrap-full-internal
+       (wrap-conjoint-internal
 	bs x x-tilde x-grave xs x-tildes x-graves zs z-graves e)
        (loop zs0
 	     (map (lambda (z)
@@ -901,8 +1147,50 @@
 		       (genname z 'z-grave)))
 		  zs0))))))
 
+(define (wrap-conjoints
+	 bs
+	 ;; This is a vector of individual variables for the procedure
+	 ;; variables.
+	 xs1
+	 ;; This is a vector of individual variables for the argument
+	 ;; variables.
+	 xs2 x-tildes2 x-graves2
+	 ;; This is a list of internal freely-referenced variables. This is
+	 ;; the same both before and after the transformation since the
+	 ;; transformation can only introduce external freely-referenced
+	 ;; variables.
+	 xs0 x-tildes0 x-graves0
+	 es)
+ (let loop ((zs '()) (z-graves '()))
+  (let* ((es0 (map-vector
+	       (lambda (x x-tilde x-grave e)
+		(wrap-conjoint-internal
+		 bs x x-tilde x-grave xs0 x-tildes0 x-graves0 zs z-graves e))
+	       xs2 x-tildes2 x-graves2 es))
+	 (zs0 (vector->list (letrec-free-variables
+			     xs1
+			     (vector-append
+			      (map-vector wrapped-primal-variable es0)
+			      (map-vector wrapped-backpropagator-variable es0))
+			     (vector-append
+			      (map-vector wrapped-primal-body es0)
+			      (map-vector wrapped-backpropagator-body es0))))))
+   (if (equal? zs zs0)
+       es0
+       (loop zs0
+	     (map (lambda (z)
+		   (if (memq z xs0)
+		       (list-ref x-graves0 (positionq z xs0))
+		       (genname z 'z-grave)))
+		  zs0))))))
+
 (define (reverse-transform bs e xs x-tildes x-graves)
  ;; xs, x-tildes, and x-graves are the internal freely-referencable variables.
+ ;; debugging
+ (when #f
+  (let ((dups (remove-duplicatesq
+	       (remove-if (lambda (x) (one (lambda (y) (eq? x y)) xs)) xs))))
+   (unless (null? dups) (format #t "duplicates: ~s~%" dups))))
  (cond
   ((variable-access-expression? e)
    (let ((x (variable-access-expression-variable e)))
@@ -941,7 +1229,7 @@
 			       (lambda (x-x-tilde-x-grave)
 				(memq (first x-x-tilde-x-grave) zs))
 			       (map list xs x-tildes x-graves))))
-    (wrap-full
+    (wrap-conjoint
      bs
      x
      x-tilde
@@ -956,6 +1244,55 @@
 			(cons x xs)
 			(cons x-tilde x-tildes)
 			(cons x-grave x-graves)))))
+  ((letrec-expression? e)
+   (let* ((xs1 (letrec-expression-procedure-variables e))
+	  (x-tildes1 (map-vector (lambda (x) (genname x 'tilde)) xs1))
+	  (x-graves1 (map-vector (lambda (x) (genname x 'grave)) xs1))
+	  (xs2 (letrec-expression-argument-variables e))
+	  (x-tildes2 (map-vector (lambda (x) (genname x 'tilde)) xs2))
+	  (x-graves2 (map-vector (lambda (x) (genname x 'grave)) xs2))
+	  (zs (append
+	       (vector->list xs1)
+	       (vector->list
+		(letrec-free-variables xs1 xs2 (letrec-expression-bodies e)))))
+	  (x-x-tilde-x-graves (remove-if-not
+			       (lambda (x-x-tilde-x-grave)
+				(memq (first x-x-tilde-x-grave) zs))
+			       (map list xs x-tildes x-graves)))
+	  (es (wrap-conjoints
+	       bs
+	       (vector-append xs1 x-tildes1)
+	       xs2
+	       x-tildes2
+	       x-graves2
+	       ;; We only shadow the backpropagators for internal
+	       ;; freely-referenced variables.
+	       (map first x-x-tilde-x-graves)
+	       (map second x-x-tilde-x-graves)
+	       (map third x-x-tilde-x-graves)
+	       (map-vector
+		(lambda (x x-tilde x-grave e)
+		 (reverse-transform
+		  bs
+		  e
+		  (cons x (append (vector->list xs1) xs))
+		  (cons x-tilde (append (vector->list x-tildes1) x-tildes))
+		  (cons x-grave (append (vector->list x-graves1) x-graves))))
+		xs2
+		x-tildes2
+		x-graves2
+		(letrec-expression-bodies e)))))
+    (new-letrec-expression
+     (vector-append xs1 x-tildes1)
+     (vector-append (map-vector wrapped-primal-variable es)
+		    (map-vector wrapped-backpropagator-variable es))
+     (vector-append (map-vector wrapped-primal-body es)
+		    (map-vector wrapped-backpropagator-body es))
+     (reverse-transform bs
+			(letrec-expression-body e)
+			(append (vector->list xs1) xs)
+			(append (vector->list x-tildes1) x-tildes)
+			(append (vector->list x-graves1) x-graves)))))
   (else (fuck-up))))
 
 ;;; Evaluator
@@ -973,6 +1310,33 @@
 	       ,(abstract->concrete (closure-body v))))
 	    `(lambda (,(closure-variable v))
 	      ,(abstract->concrete (closure-body v)))))
+       ((recursive-closure? v)
+	;; debugging
+	(if *unabbreviate-recursive-closures?*
+	    (if #t
+		`(recursive-closure
+		  ,(map-n (lambda (i)
+			   (list
+			    (vector-ref (recursive-closure-variables v) i)
+			    (externalize
+			     (vector-ref (recursive-closure-values v) i))))
+			  (vector-length (recursive-closure-values v)))
+		  ,(map-vector (lambda (x e) `(,x ,(abstract->concrete e)))
+			       (recursive-closure-procedure-variables v)
+			       (recursive-closure-bodies v))
+		  ,(vector-ref (recursive-closure-procedure-variables v)
+			       (recursive-closure-index v)))
+		`(recursive-closure
+		  ,(map-n (lambda (i)
+			   (list
+			    (vector-ref (recursive-closure-variables v) i)
+			    (externalize
+			     (vector-ref (recursive-closure-values v) i))))
+			  (vector-length (recursive-closure-values v)))
+		  ,(vector-ref (recursive-closure-procedure-variables v)
+			       (recursive-closure-index v))))
+	    (vector-ref (recursive-closure-procedure-variables v)
+			(recursive-closure-index v))))
        (else (fuck-up))))
 
 (define (externalize v)
@@ -1018,6 +1382,7 @@
  (set! *stack* (cons (list callee argument) *stack*))
  (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	     ((closure? callee) *trace-closures?*)
+	     ((recursive-closure? callee) *trace-recursive-closures?*)
 	     (else (fuck-up)))
   (if *trace-argument/result?*
       (format #t "~aentering ~s ~s~%"
@@ -1039,10 +1404,34 @@
 				(create-key)
 				(closure-values callee)
 				(closure-keys callee)))
+		     ((recursive-closure? callee)
+		      (evaluate
+		       (vector-ref (recursive-closure-bodies callee)
+				   (recursive-closure-index callee))
+		       argument
+		       (create-key)
+		       (vector-append
+			(map-n-vector
+			 (lambda (i)
+			  (make-recursive-closure
+			   (recursive-closure-variables callee)
+			   (recursive-closure-values callee)
+			   (recursive-closure-keys callee)
+			   (recursive-closure-procedure-variables callee)
+			   (recursive-closure-argument-variables callee)
+			   (recursive-closure-bodies callee)
+			   i))
+			 (vector-length (recursive-closure-bodies callee)))
+			(recursive-closure-values callee))
+		       (vector-append
+			(map-vector (lambda (e) (create-key))
+				    (recursive-closure-bodies callee))
+			(recursive-closure-keys callee))))
 		     (else (fuck-up)))))
   (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	      ((closure? callee) *trace-closures?*)
+	      ((recursive-closure? callee) *trace-recursive-closures?*)
 	      (else (fuck-up)))
    (set! *trace-level* (- *trace-level* 1))
    (if *trace-argument/result?*
@@ -1060,7 +1449,14 @@
  (define (lookup-key i) (if (= i -1) n (vector-ref ns i)))
  (cond ((variable-access-expression? e)
 	(lookup-value (variable-access-expression-index e)))
-       ((key-expression? e) (lookup-key (key-expression-index e)))
+       ((key-expression? e)
+	;; debugging
+	(when #f
+	 (format #t "~a ~a~%"
+		 (key-expression-variable e)
+		 (lookup-key (key-expression-index e)))
+	 (newline))
+	(lookup-key (key-expression-index e)))
        ((application? e)
 	;; This LET* is to specify the evaluation order.
 	(let* ((callee (evaluate (application-callee e) v n vs ns))
@@ -1073,6 +1469,35 @@
 	 (map-vector lookup-key (lambda-expression-free-variable-indices e))
 	 (lambda-expression-variable e)
 	 (lambda-expression-body e)))
+       ((letrec-expression? e)
+	(evaluate
+	 (letrec-expression-body e)
+	 v
+	 n
+	 (vector-append
+	  (let ((vs (map-vector
+		     lookup-value
+		     (letrec-expression-bodies-free-variable-indices e)))
+		(ns (map-vector
+		     lookup-key
+		     (letrec-expression-bodies-free-variable-indices e))))
+	   (map-n-vector (lambda (i)
+			  (make-recursive-closure
+			   (letrec-expression-bodies-free-variables e)
+			   vs
+			   ns
+			   (letrec-expression-procedure-variables e)
+			   (letrec-expression-argument-variables e)
+			   (letrec-expression-bodies e)
+			   i))
+			 (vector-length (letrec-expression-bodies e))))
+	  (map-vector lookup-value
+		      (letrec-expression-body-free-variable-indices e)))
+
+	 (vector-append
+	  (map-vector (lambda (e) (create-key)) (letrec-expression-bodies e))
+	  (map-vector lookup-key
+		      (letrec-expression-body-free-variable-indices e)))))
        (else (fuck-up))))
 
 (define (divide x1 x2)
@@ -1103,7 +1528,8 @@
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (f x1 x2))))
 
-(define (vlad-procedure? v) (or (primitive-procedure? v) (closure? v)))
+(define (vlad-procedure? v)
+ (or (primitive-procedure? v) (closure? v) (recursive-closure? v)))
 
 (define (consify xs)
  (cond ((null? xs) '())
@@ -1118,6 +1544,8 @@
        ((pair? x) (cons (zero (car x)) (zero (cdr x))))
        ((primitive-procedure? x) '())
        ((closure? x) (consify (map zero (vector->list (closure-values x)))))
+       ((recursive-closure? x)
+	(consify (map zero (vector->list (recursive-closure-values x)))))
        (else '())))
 
 (define (conform? x1 x2)
@@ -1142,7 +1570,20 @@
 (define (contains? n r)
  (and (not (null? r)) (or (key=? (car (car r)) n) (contains? n (cdr r)))))
 
-(define (add n r x) (cons (cons n (zero x)) r))
+(define (add n r x)
+ ;; debugging
+ (when #f
+  (display "x: ")
+  (pp (externalize x))
+  (newline)
+  (when (recursive-closure? x)
+   (display "free variables: ")
+   (write (recursive-closure-variables x))
+   (newline))
+  (display "(zero x): ")
+  (write (externalize (zero x)))
+  (newline))
+ (cons (cons n (zero x)) r))
 
 (define (accumulate n r x)
  (if (key=? (car (car r)) n)
@@ -1224,6 +1665,13 @@
 		(key? (car x))
 		(store? (car (cdr x)))
 		(not (contains? (car x) (car (cdr x)))))
+    ;; debugging
+    (when (and (pair? x)
+	       (pair? (cdr x))
+	       (key? (car x))
+	       (store? (car (cdr x)))
+	       (contains? (car x) (car (cdr x))))
+     (run-time-error "Duplicate key during add" x))
     (run-time-error "Invalid argument to add" x))
    (add (car x) (car (cdr x)) (cdr (cdr x)))))
  (define-primitive-procedure 'accumulate
@@ -1236,7 +1684,18 @@
 		(contains? (car x) (car (cdr x)))
 		(conform? (lookup (car x) (car (cdr x))) (cdr (cdr x))))
     ;; debugging
-    (when (and (pair? x) (pair? (cdr x)) (key? (car x)) (store? (car (cdr x))))
+    (when (and (pair? x)
+	       (pair? (cdr x))
+	       (key? (car x))
+	       (store? (car (cdr x)))
+	       (not (contains? (car x) (car (cdr x)))))
+     (run-time-error "Missing key during accumulate" x))
+    ;; debugging
+    (when (and (pair? x)
+	       (pair? (cdr x))
+	       (key? (car x))
+	       (store? (car (cdr x)))
+	       (contains? (car x) (car (cdr x))))
      (write (lookup (car x) (car (cdr x))))
      (newline)
      (write (cdr (cdr x)))
@@ -1258,77 +1717,220 @@
    (unless (and (pair? x) (vlad-procedure? (car x)) (vlad-procedure? (cdr x)))
     (run-time-error "Invalid argument to map-closure-forward" x))
    (let ((f (car x)) (g (cdr x)))
-    (unless (closure? g)
-     (run-time-error "Invalid argument to map-closure-forward" x))
-    (let* ((x (closure-variable g))
-	   (x-acute (gensym))
-	   (bs (map (lambda (v) (make-value-binding (gensym) v))
-		    (cons '() (map value-binding-value *value-bindings*))))
-	   (e (create-lambda-expression
-	       bs
-	       `(,x ,x-acute)
-	       (forward-transform
-		bs (closure-body g) (list x) (list x-acute))))
-	   (x (lambda-expression-variable e))
-	   (e (lambda-expression-body e))
-	   (xs (removeq-vector x (free-variables e))))
-     (make-closure
-      xs
-      (map-vector
-       (lambda (x)
-	(let ((i (positionq-vector x (closure-variables g))))
-	 (if i
-	     (call f (vector-ref (closure-values g) i))
-	     (value-binding-value
-	      (find-if (lambda (b) (eq? (value-binding-variable b) x)) bs)))))
-       xs)
-      (map-vector (lambda (x)
-		   (let ((i (positionq-vector x (closure-variables g))))
-		    (if i (vector-ref (closure-keys g) i) (create-key))))
-		  xs)
-      x
-      (index x xs e))))))
+    (cond
+     ((closure? g)
+      (let* ((x (closure-variable g))
+	     (x-acute (genname x 'acute))
+	     (bs (map (lambda (v) (make-value-binding (gensym) v))
+		      (cons '() (map value-binding-value *value-bindings*))))
+	     (e (create-lambda-expression
+		 bs
+		 `(,x ,x-acute)
+		 (forward-transform
+		  bs (closure-body g) (list x) (list x-acute))))
+	     (x (lambda-expression-variable e))
+	     (e (lambda-expression-body e))
+	     (xs (removeq-vector x (free-variables e))))
+       (make-closure
+	xs
+	(map-vector
+	 (lambda (x)
+	  (let ((i (positionq-vector x (closure-variables g))))
+	   (if i
+	       (call f (vector-ref (closure-values g) i))
+	       (value-binding-value
+		(find-if (lambda (b) (eq? (value-binding-variable b) x))
+			 bs)))))
+	 xs)
+	(map-vector (lambda (x)
+		     (let ((i (positionq-vector x (closure-variables g))))
+		      (if i (vector-ref (closure-keys g) i) (create-key))))
+		    xs)
+	x
+	(index x xs e))))
+     ((recursive-closure? g)
+      (let* ((bs (map (lambda (v) (make-value-binding (gensym) v))
+		      (cons '() (map value-binding-value *value-bindings*))))
+	     (xs1 (recursive-closure-procedure-variables g))
+	     (x-acutes1 (map-vector (lambda (x) (genname x 'acute)) xs1))
+	     (xs2 (recursive-closure-argument-variables g))
+	     (x-conjoints2
+	      (map-vector (lambda (x) (genname x 'conjoint)) xs2))
+	     (x-acutes2 (map-vector (lambda (x) (genname x 'acute)) xs2))
+	     (es (map-vector
+		  (lambda (x-conjoint x x-acute e)
+		   (create-let
+		    bs
+		    `(cons ,x ,x-acute)
+		    (make-variable-access-expression x-conjoint #f)
+		    (forward-transform
+		     bs
+		     e
+		     (cons x (vector->list xs1))
+		     (cons x-acute (vector->list x-acutes1)))))
+		  x-conjoints2
+		  xs2
+		  x-acutes2
+		  (recursive-closure-bodies g)))
+	     (zs (letrec-free-variables xs1 x-conjoints2 es)))
+       (make-recursive-closure
+	zs
+	(map-vector
+	 (lambda (z)
+	  (let ((i (positionq-vector z (recursive-closure-variables g))))
+	   (cond (i (call f (vector-ref (recursive-closure-values g) i)))
+		 ((positionq-vector z x-acutes1) '())
+		 (else
+		  (value-binding-value
+		   (find-if (lambda (b) (eq? (value-binding-variable b) z))
+			    bs))))))
+	 zs)
+	(map-vector
+	 (lambda (z)
+	  (let ((i (positionq-vector z (recursive-closure-variables g))))
+	   (if i (vector-ref (recursive-closure-keys g) i) (create-key))))
+	 zs)
+	xs1
+	x-conjoints2
+	(map-vector (lambda (x e) (index x (vector-append xs1 zs) e))
+		    x-conjoints2
+		    es)
+	(recursive-closure-index g))))
+     (else (run-time-error "Invalid argument to map-closure-forward" x))))))
  (define-primitive-procedure 'map-closure-reverse
   (lambda (x)
    (unless (and (pair? x) (vlad-procedure? (car x)) (vlad-procedure? (cdr x)))
     (run-time-error "Invalid argument to map-closure-reverse" x))
    (let ((f (car x)) (g (cdr x)))
-    (unless (closure? g)
-     (run-time-error "Invalid argument to map-closure-reverse" x))
-    (let* ((x (closure-variable g))
-	   (x-tilde (genname x 'tilde))
-	   (x-grave (genname x 'grave))
-	   (bs (map (lambda (v) (make-value-binding (gensym) v))
-		    (cons '() (map value-binding-value *value-bindings*))))
-	   (e (wrap-partial
+    (cond
+     ((closure? g)
+      (let* ((x (clone-name (closure-variable g)))
+	     (e (alpha-rename (closure-body g)
+			      (list (make-variable-binding
+				     (closure-variable g)
+				     (make-variable-access-expression x #f)))))
+	     (x-tilde (genname x 'tilde))
+	     (x-grave (genname x 'grave))
+	     (bs (map (lambda (v) (make-value-binding (gensym) v))
+		      (cons '() (map value-binding-value *value-bindings*))))
+	     (e (wrap-primal
+		 bs
+		 x
+		 x-tilde
+		 x-grave
+		 '()
+		 '()
+		 '()
+		 (reverse-transform
+		  bs e (list x) (list x-tilde) (list x-grave))))
+	     (x (lambda-expression-variable e))
+	     (e (lambda-expression-body e))
+	     (xs (removeq-vector x (free-variables e))))
+       (make-closure
+	xs
+	(map-vector
+	 (lambda (x)
+	  (let ((i (positionq-vector x (closure-variables g))))
+	   (if i
+	       (call f (vector-ref (closure-values g) i))
+	       (value-binding-value
+		(find-if (lambda (b) (eq? (value-binding-variable b) x))
+			 bs)))))
+	 xs)
+	(map-vector (lambda (x)
+		     (let ((i (positionq-vector x (closure-variables g))))
+		      (if i (vector-ref (closure-keys g) i) (create-key))))
+		    xs)
+	x
+	(index x xs e))))
+     ((recursive-closure? g)
+      (let* ((bs (map (lambda (v) (make-value-binding (gensym) v))
+		      (cons '() (map value-binding-value *value-bindings*))))
+	     (xs1 (map-vector clone-name
+			      (recursive-closure-procedure-variables g)))
+	     (x-tildes1 (map-vector (lambda (x) (genname x 'tilde)) xs1))
+	     (x-graves1 (map-vector (lambda (x) (genname x 'grave)) xs1))
+	     (xs2 (map-vector clone-name
+			      (recursive-closure-argument-variables g)))
+	     (x-tildes2 (map-vector (lambda (x) (genname x 'tilde)) xs2))
+	     (x-graves2 (map-vector (lambda (x) (genname x 'grave)) xs2))
+	     (es (let ((bs (vector->list
+			    (map-vector
+			     (lambda (x1 x1-prime)
+			      (make-variable-binding
+			       x1
+			       (make-variable-access-expression x1-prime #f)))
+			     (recursive-closure-procedure-variables g)
+			     xs1))))
+		  (map-vector
+		   (lambda (x2 x2-prime e)
+		    (alpha-rename
+		     e
+		     (cons (make-variable-binding
+			    x2
+			    (make-variable-access-expression x2-prime #f))
+			   bs)))
+		   (recursive-closure-argument-variables g)
+		   xs2
+		   (recursive-closure-bodies g))))
+	     (es
+	      (wrap-conjoints
 	       bs
-	       x
-	       x-tilde
-	       x-grave
-	       '()
-	       '()
-	       '()
-	       (reverse-transform
-		bs (closure-body g) (list x) (list x-tilde) (list x-grave))))
-	   (x (lambda-expression-variable e))
-	   (e (lambda-expression-body e))
-	   (xs (removeq-vector x (free-variables e))))
-     (make-closure
-      xs
-      (map-vector
-       (lambda (x)
-	(let ((i (positionq-vector x (closure-variables g))))
-	 (if i
-	     (call f (vector-ref (closure-values g) i))
-	     (value-binding-value
-	      (find-if (lambda (b) (eq? (value-binding-variable b) x)) bs)))))
-       xs)
-      (map-vector (lambda (x)
-		   (let ((i (positionq-vector x (closure-variables g))))
-		    (if i (vector-ref (closure-keys g) i) (create-key))))
-		  xs)
-      x
-      (index x xs e))))))
+	       (vector-append xs1 x-tildes1)
+	       xs2
+	       x-tildes2
+	       x-graves2
+	       ;; We only shadow the backpropagators for internal
+	       ;; freely-referenced variables.
+	       (vector->list xs1)
+	       (vector->list x-tildes1)
+	       (vector->list x-graves1)
+	       (map-vector
+		(lambda (x x-tilde x-grave e)
+		 (reverse-transform bs
+				    e
+				    (cons x (vector->list xs1))
+				    (cons x-tilde (vector->list x-tildes1))
+				    (cons x-grave (vector->list x-graves1))))
+		xs2
+		x-tildes2
+		x-graves2
+		es)))
+	     (zs (letrec-free-variables
+		  (vector-append xs1 x-tildes1)
+		  (vector-append
+		   (map-vector wrapped-primal-variable es)
+		   (map-vector wrapped-backpropagator-variable es))
+		  (vector-append
+		   (map-vector wrapped-primal-body es)
+		   (map-vector wrapped-backpropagator-body es)))))
+       (make-recursive-closure
+	zs
+	(map-vector
+	 (lambda (z)
+	  (let ((i (positionq-vector z (recursive-closure-variables g))))
+	   (if i
+	       (call f (vector-ref (recursive-closure-values g) i))
+	       (value-binding-value
+		(find-if (lambda (b) (eq? (value-binding-variable b) z))
+			 bs)))))
+	 zs)
+	(map-vector
+	 (lambda (z)
+	  (let ((i (positionq-vector z (recursive-closure-variables g))))
+	   (if i (vector-ref (recursive-closure-keys g) i) (create-key))))
+	 zs)
+	(vector-append xs1 x-tildes1)
+	(vector-append (map-vector wrapped-primal-variable es)
+		       (map-vector wrapped-backpropagator-variable es))
+	(map-vector
+	 (lambda (x e) (index x (vector-append xs1 x-tildes1 zs) e))
+	 (vector-append (map-vector wrapped-primal-variable es)
+			(map-vector wrapped-backpropagator-variable es))
+	 (vector-append (map-vector wrapped-primal-body es)
+			(map-vector wrapped-backpropagator-body es)))
+	(recursive-closure-index g))))
+     (else (run-time-error "Invalid argument to map-closure-reverse" x))))))
  (define-primitive-procedure 'write
   (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)))
 

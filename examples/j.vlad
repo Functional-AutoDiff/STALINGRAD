@@ -219,5 +219,6 @@
   ((eq? x map-closure-forward) map-closure-forward)
   ;; needs work
   ((eq? x map-closure-reverse) map-closure-reverse)
+  ;; needs work
   ((eq? x write) write)
   (else (map-closure-reverse *j x))))
