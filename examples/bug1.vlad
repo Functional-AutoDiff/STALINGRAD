@@ -17,7 +17,7 @@
 (define (derivative-using-*j f)
  (let ((f-*j (*j f))) (lambda (x) (ungenericize x (cdr ((cdr (f-*j x)) 1))))))
 
-(define (g b) (lambda (c) b))
+(define ((g b) c) b)
 
 (define (f a) ((g a) 1))
 

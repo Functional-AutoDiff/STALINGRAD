@@ -144,7 +144,7 @@
 
 (define *pp?* #f)
 
-(define *letrec?* #f)
+(define *letrec-as-y?* #f)
 
 ;;; Procedures
 
@@ -418,14 +418,19 @@
 		  ((map (lambda (f) (lambda (x) ((f (ys fs)) x)))) fs)))))))
    ,e))
 
+(define (definens? e)
+ (or (symbol? e) (and (list? e) (not (null? e)) (definens? (first e)))))
+
 (define (definition? d)
- (and (list? d)
-      (= (length d) 3)
-      (eq? (first d) 'define)
-      (or (symbol? (second d))
-	  (and (list? (second d))
-	       (not (null? (second d)))
-	       (symbol? (first (second d)))))))
+ (and
+  (list? d) (= (length d) 3) (eq? (first d) 'define) (definens? (second d))))
+
+(define (definens-name e) (if (symbol? e) e (definens-name (first e))))
+
+(define (definens-expression e1 e2)
+ (if (symbol? e1)
+     e2
+     (definens-expression (first e1) `(lambda ,(rest e1) ,e2))))
 
 (define (expand-definitions ds e)
  (for-each (lambda (d)
@@ -433,13 +438,11 @@
 	     (panic (format #t "Invalid definition: ~s" d))))
 	   ds)
  (let ((e `(letrec ,(map (lambda (d)
-			  (if (symbol? (second d))
-			      `(,(second d) ,(third d))
-			      `(,(first (second d))
-				(lambda ,(rest (second d)) ,(third d)))))
+			  `(,(definens-name (second d))
+			    ,(definens-expression (second d) (third d))))
 			 ds)
 	    ,e)))
-  (if *letrec?* e (standard-prelude e))))
+  (if *letrec-as-y?* (standard-prelude e) e)))
 
 (define (duplicatesq? xs)
  (and (not (null? xs))
@@ -609,28 +612,27 @@
 		  (else (loop (macro-expand e) xs))))
        (else (loop (macro-expand e) xs))))
      ((letrec)
-      (cond (*letrec?*
-	     (unless (and (= (length e) 3)
-			  (list? (second e))
-			  (every (lambda (b)
-				  (and (list? b)
-				       (= (length b) 2)
-				       (symbol? (first b))))
-				 (second e)))
-	      (panic (format #f "Invalid expression: ~s" e)))
-	     (let ((xs0 (map first (second e))))
-	      (when (duplicatesq? xs0)
-	       (panic (format #f "Duplicate variables: ~s" e)))
-	      (for-each (lambda (b)
-			 (let ((e1 (macro-expand (second b))))
-			  (unless (and (list? e1)
-				       (= (length e1) 3)
-				       (eq? (first e1) 'lambda))
-			   (panic (format #f "Invalid expression: ~s" e)))
-			  (loop e1  (append xs0 xs))))
-			(second e))
-	      (loop (third e) (append xs0 xs))))
-	    (else (loop (macro-expand e) xs))))
+      (cond (*letrec-as-y?* (loop (macro-expand e) xs))
+	    (else (unless (and (= (length e) 3)
+			       (list? (second e))
+			       (every (lambda (b)
+				       (and (list? b)
+					    (= (length b) 2)
+					    (symbol? (first b))))
+				      (second e)))
+		   (panic (format #f "Invalid expression: ~s" e)))
+		  (let ((xs0 (map first (second e))))
+		   (when (duplicatesq? xs0)
+		    (panic (format #f "Duplicate variables: ~s" e)))
+		   (for-each (lambda (b)
+			      (let ((e1 (macro-expand (second b))))
+			       (unless (and (list? e1)
+					    (= (length e1) 3)
+					    (eq? (first e1) 'lambda))
+				(panic (format #f "Invalid expression: ~s" e)))
+			       (loop e1  (append xs0 xs))))
+			     (second e))
+		   (loop (third e) (append xs0 xs))))))
      ((let) (loop (macro-expand e) xs))
      ((let*) (loop (macro-expand e) xs))
      ((if) (loop (macro-expand e) xs))
@@ -900,7 +902,8 @@
 		 (else (loop (macro-expand e) bs))))
 	       (else (loop (macro-expand e) bs))))
 	     ((letrec)
-	      (if *letrec?*
+	      (if *letrec-as-y?*
+		  (loop (macro-expand e) bs)
 		  (let* ((bs
 			  (append
 			   (map
@@ -925,8 +928,7 @@
 			 (e (first result)))
 		   (list (new-lightweight-letrec-expression xs1 xs2 es e)
 			 (append (second result)
-				 (reduce append (map second results) '()))))
-		  (loop (macro-expand e) bs)))
+				 (reduce append (map second results) '()))))))
 	     ((let) (loop (macro-expand e) bs))
 	     ((let*) (loop (macro-expand e) bs))
 	     ((if) (loop (macro-expand e) bs))
@@ -1679,7 +1681,7 @@
  (define-primitive-procedure 'eq?
   (lambda (x)
    (unless (pair? x) (run-time-error "Invalid argument to eq?" x))
-   (eq? (car x) (cdr x))))
+   (same? (car x) (cdr x))))
  (define-primitive-procedure 'zero (lambda (x) 'generic-zero))
  (define-primitive-procedure 'generic-zero? generic-zero?)
  (define-primitive-procedure 'plus (binary plus "plus"))

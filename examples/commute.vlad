@@ -1,0 +1,9 @@
+(include "j")
+
+(list (car ((*j (j* sqrt)) (cons 4 1)))
+      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 1 0)))
+      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 0 1))))
+
+(list (car ((j* (*j sqrt)) (cons 4 1)))
+      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 1 0)))
+      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 0 1))))

@@ -43,7 +43,7 @@
 ;;; needs work: To rule out minima and inflection points.
 (define (argmax f x epsilon) (root (derivative f) x epsilon))
 
-(define (invert f) (lambda (y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5)))
+(define ((invert f) y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
 ;;; An n-dimensional vector with x in position i and zeros elsewhere.
 (define (ex x i n)

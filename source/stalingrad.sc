@@ -65,7 +65,7 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
-		 (at-most-one ("letrec" letrec?))
+		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("evaluated" evaluated?))
 		 (at-most-one ("metered" metered?))
@@ -87,7 +87,7 @@
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
- (set! *letrec?* letrec?)
+ (set! *letrec-as-y?* letrec-as-y?)
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)

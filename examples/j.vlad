@@ -58,14 +58,12 @@
      (lambda (x3)
       (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((eq? x eq?) (lambda (x1 x2) (cons (eq? x1 x2) '())))
-  ((eq? x zero) (lambda (x) (zero)))
+  ((eq? x zero) zero)
   ((eq? x generic-zero?)
    (lambda (x)
     (cons (or (generic-zero? x) (and (pair? x) (generic-zero? (car x)))) '())))
   ((eq? x plus) plus)
-  ;; needs work
   ((eq? x map-closure-forward) map-closure-forward)
-  ;; needs work
   ((eq? x map-closure-reverse) map-closure-reverse)
   ((eq? x write) write)
   (else (map-closure-forward j* x))))
@@ -186,9 +184,16 @@
     (cons (plus x1 x2)
 	  (lambda (y-grave) (cons (zero) (cons y-grave y-grave))))))
   ;; needs work
-  ((eq? x map-closure-forward) map-closure-forward)
+  ((eq? x map-closure-forward)
+   (lambda (x1 x2)
+    (cons (map-closure-forward x1 x2)
+	  (lambda (y-grave) (cons (zero) (cons (zero) (zero)))))))
   ;; needs work
-  ((eq? x map-closure-reverse) map-closure-reverse)
-  ;; needs work
-  ((eq? x write) write)
+  ((eq? x map-closure-reverse)
+   (lambda (x1 x2)
+    (cons (map-closure-reverse x1 x2)
+	  (lambda (y-grave) (cons (zero) (cons (zero) (zero)))))))
+  ((eq? x write)
+   (lambda (x)
+    (cons (write x) (lambda (y-grave) (cons (zero) (write y-grave))))))
   (else (map-closure-reverse *j x))))
