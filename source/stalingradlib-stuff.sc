@@ -924,8 +924,8 @@
   (create-application bs (make-constant bs (basis-value 'cons-procedure)) e1)
   e2))
 
-(define (make-zero bs e)
- (create-application bs (make-constant bs (basis-value 'zero)) e))
+(define (make-zero bs)
+ (create-application bs (make-constant bs (basis-value 'zero))))
 
 (define (make-plus bs e1 e2)
  (create-application bs (make-constant bs (basis-value 'plus)) e1 e2))
@@ -1054,15 +1054,9 @@
 		,@(if (null? (anf-letrec-bindings anf))
 		      '()
 		      (list `(cons* ,@(map gravify ws)))))
-	      `(,@(map (lambda (x)
-			(make-zero
-			 bs (make-variable-access-expression x #f)))
-		       xs)
-		,(make-zero bs (make-variable-access-expression x #f))
-		,@(map (lambda (f)
-			(make-zero
-			 bs (make-variable-access-expression f #f)))
-		       fs)
+	      `(,@(map (lambda (x) (make-zero bs)) xs)
+		,(make-zero bs)
+		,@(map (lambda (f) (make-zero bs)) fs)
 		,(make-variable-access-expression y-grave #f)
 		,@(map variable-binding-expression bs0)
 		,@(if (null? (anf-letrec-bindings anf))
@@ -1122,7 +1116,7 @@
 	  (xs-prime (free-variables e)))
     (if (equal? xs xs-prime) e (loop xs-prime))))))
 
-(define (reverse-transforms bs used-binding-maps fs es)
+(define (reverse-transforms bs used-binding-maps gs es)
  (let* ((xs (map lambda-expression-variable es))
 	(x-graves (map (lambda (x) (genname x 'grave)) xs))
 	(y-graves (map (lambda (x) (genname x 'y-grave)) xs))
@@ -1135,23 +1129,23 @@
 			  tss))
 	(t-gravess (map (lambda (ts) (map (lambda (t) (genname t 'grave)) ts))
 			tss))
-	(fs0 (list->vector fs))
-	(f-graves (map-vector (lambda (f) (genname f 'grave)) fs0)))
-  (unless (every (lambda (anf) (null? (anf-letrec-bindings anf))) anfs)
-   (panic "unimplemented"))
-  (let loop ((zs (letrec-free-variables fs xs es)))
-   (let* ((es
-	   (map
-	    (lambda (x x-grave y-grave anf t-twiddles t-graves used-bindings)
-	     (reverse-transform-internal
-	      bs x x-grave y-grave anf t-twiddles t-graves
-	      (vector->list
-	       (map-vector (lambda (i) (vector-ref fs0 i)) used-bindings))
-	      (vector->list
-	       (map-vector (lambda (i) (vector-ref f-graves i)) used-bindings))
-	      zs))
-	    xs x-graves y-graves anfs t-twiddless t-gravess used-binding-maps))
-	  (zs-prime (letrec-free-variables fs xs es)))
+	(fss (map (lambda (anf)
+		   (map variable-binding-variable (anf-letrec-bindings anf)))
+		  anfs))
+	(f-gravess (map (lambda (fs) (map (lambda (f) (genname f 'grave)) fs))
+			fss)))
+  (let loop ((zs (letrec-free-variables gs xs es)))
+   (let* ((es (map
+	       (lambda (x x-grave y-grave anf t-twiddles t-graves fs f-graves
+			  used-bindings)
+		(reverse-transform-internal
+		 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves
+		 (append (map (lambda (i) (list-ref gs i))
+			      (vector->list used-bindings))
+			 zs)))
+	       xs x-graves y-graves anfs t-twiddless t-gravess fss f-gravess
+	       used-binding-maps))
+	  (zs-prime (letrec-free-variables gs xs es)))
     (if (equal? zs zs-prime) es (loop zs-prime))))))
 
 ;;; Evaluator
