@@ -1204,7 +1204,7 @@
  (define-primitive-procedure 'real?
   (lambda (x) (real? (generic-zero-dereference x))))
  (define-primitive-procedure 'pair?
-  (lambda (x) (pair? (generic-zero-dereference x))))
+  (lambda (x) (or (generic-zero? x) (pair? (generic-zero-dereference x)))))
  (define-primitive-procedure 'procedure? vlad-procedure?)
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))

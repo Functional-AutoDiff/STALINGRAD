@@ -520,8 +520,6 @@
 ;;;      (all-three (lambda (x) (+ x x)) 4)
 ;;;      (all-three (lambda (x) (car (cons x x))) 4))
 
-(triple331 (lambda (x) (car (cons x x))) 4)
-
 (single0 sqrt 4)
 (single1 sqrt 4)
 (single2 sqrt 4)
@@ -775,6 +773,6 @@
 (triple322 (lambda (x) (car (cons x x))) 4)
 (triple323 (lambda (x) (car (cons x x))) 4)
 (triple330 (lambda (x) (car (cons x x))) 4)
-;(triple331 (lambda (x) (car (cons x x))) 4)
+(triple331 (lambda (x) (car (cons x x))) 4)
 (triple332 (lambda (x) (car (cons x x))) 4)
 (triple333 (lambda (x) (car (cons x x))) 4)

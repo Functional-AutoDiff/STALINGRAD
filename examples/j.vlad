@@ -25,6 +25,7 @@
 
 (define (conjoint-j* x)
  (cond
+  ((generic-zero? x) (zero))
   ((null? x) (cons x '()))
   ((boolean? x) (cons x '()))
   ((real? x) (cons x 0))
@@ -103,6 +104,7 @@
 
 (define (conjoint-*j x)
  (cond
+  ((generic-zero? x) (zero))
   ;; needs work: to check that y-grave is null
   ((null? x) (cons x zero))
   ;; needs work: to check that y-grave is null
@@ -207,6 +209,7 @@
 
 (define (conjoined-j* x)
  (cond
+  ((generic-zero? x) (cons (zero) (zero)))
   ((null? x) (cons x '()))
   ((boolean? x) (cons x '()))
   ((real? x) (cons x 0))
@@ -313,6 +316,7 @@
 
 (define (conjoined-*j x)
  (cond
+  ((generic-zero? x) (cons (zero) zero))
   ;; needs work: to check that y-grave is null
   ((null? x) (cons x zero))
   ;; needs work: to check that y-grave is null

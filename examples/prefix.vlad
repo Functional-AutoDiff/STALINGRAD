@@ -75,6 +75,6 @@
 ((jacobian-using-conjoint-j* prefix) '(0 1 2 3 4))
 ((jacobian-using-conjoint-*j prefix) '(0 1 2 3 4))
 ((jacobian-using-conjoined-j* prefix) '(0 1 2 3 4))
-;((jacobian-using-conjoined-*j prefix) '(0 1 2 3 4))
+;;;((jacobian-using-conjoined-*j prefix) '(0 1 2 3 4))
 ((conjoint-j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
 ((conjoined-j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
