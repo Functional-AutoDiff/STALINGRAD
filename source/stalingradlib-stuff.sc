@@ -93,7 +93,18 @@
 
 ;;; needs work: Is a real generic zero a positive IEEE zero or a negative IEEE
 ;;;             zero?
-(define-structure generic-zero index binding)
+(define-structure generic-zero
+ index
+ binding
+ null?
+ real?
+ pair?
+ procedure?
+ cons-procedure
+ if-procedure
+ ;; Can't use null because it is defined as the constant 0.
+ null-procedure
+ zero)
 
 ;;; Variables
 
@@ -612,21 +623,29 @@
   (list (index #f xs (first result))
 	(list->vector (map value-binding-value (second result))))))
 
-(define (create-generic-zero)
+(define (create-generic-zero
+	 null?
+	 real?
+	 pair?
+	 procedure?
+	 cons-procedure
+	 if-procedure
+	 ;; Can't use null because it is defined as the constant 0.
+	 null-procedure
+	 zero)
  (set! *generic-zero-index* (+ *generic-zero-index* 1))
- (make-generic-zero *generic-zero-index* #f))
+ (make-generic-zero *generic-zero-index*
+		    #f
+		    null?
+		    real?
+		    pair?
+		    procedure?
+		    cons-procedure
+		    if-procedure
+		    null-procedure
+		    zero))
 
 (define (generic-zero-bound? v) (not (eq? (generic-zero-binding v) #f)))
-
-(define (as v)
- (cond ((null? v) '())
-       ((real? v) 0)
-       ((pair? v) (cons (create-generic-zero) (create-generic-zero)))
-       ((procedure? v)
-	(make-closure (vector (create-generic-zero))
-		      'x
-		      (make-variable-access-expression 'zero 0)))
-       (else (fuck-up))))
 
 (define (generic-zero-dereference-as-null v)
  (cond ((generic-zero? v)
@@ -644,7 +663,24 @@
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
 	 (set-generic-zero-binding!
-	  v (cons (create-generic-zero) (create-generic-zero))))
+	  v (cons (create-generic-zero
+		   (generic-zero-null? v)
+		   (generic-zero-real? v)
+		   (generic-zero-pair? v)
+		   (generic-zero-procedure? v)
+		   (generic-zero-cons-procedure v)
+		   (generic-zero-if-procedure v)
+		   (generic-zero-null-procedure v)
+		   (generic-zero-zero v))
+		  (create-generic-zero
+		   (generic-zero-null? v)
+		   (generic-zero-real? v)
+		   (generic-zero-pair? v)
+		   (generic-zero-procedure? v)
+		   (generic-zero-cons-procedure v)
+		   (generic-zero-if-procedure v)
+		   (generic-zero-null-procedure v)
+		   (generic-zero-zero v)))))
 	(generic-zero-dereference-as-pair (generic-zero-binding v)))
        (else v)))
 
@@ -653,17 +689,103 @@
 	(unless (generic-zero-bound? v)
 	 (set-generic-zero-binding!
 	  v
-	  (make-closure (vector (create-generic-zero))
+	  (make-closure (vector (create-generic-zero
+				 (generic-zero-null? v)
+				 (generic-zero-real? v)
+				 (generic-zero-pair? v)
+				 (generic-zero-procedure? v)
+				 (generic-zero-cons-procedure v)
+				 (generic-zero-if-procedure v)
+				 (generic-zero-null-procedure v)
+				 (generic-zero-zero v)))
 			'x
 			(make-variable-access-expression 'zero 0))))
 	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
        (else v)))
 
+(define (generic-zero-as v1 v2)
+ (call
+  (call
+   (call
+    (call (generic-zero-if-procedure v2) (call (generic-zero-null? v2) v1))
+    (make-primitive-procedure
+     "generic-zero-as internal 0"
+     (lambda (x) (call (generic-zero-null-procedure v2) '()))))
+   (make-primitive-procedure
+    "generic-zero-as internal 1"
+    (lambda (x)
+     (call
+      (call
+       (call
+	(call (generic-zero-if-procedure v2) (call (generic-zero-real? v2) v1))
+	(make-primitive-procedure
+	 "generic-zero-as internal 2"
+	 (lambda (x) (call (generic-zero-zero v2) '()))))
+       (make-primitive-procedure
+	"generic-zero-as internal 3"
+	(lambda (x)
+	 (call
+	  (call
+	   (call
+	    (call (generic-zero-if-procedure v2)
+		  (call (generic-zero-pair? v2) v1))
+	    (make-primitive-procedure
+	     "generic-zero-as internal 4"
+	     (lambda (x)
+	      (call (call (generic-zero-cons-procedure v2)
+			  (create-generic-zero
+			   (generic-zero-null? v2)
+			   (generic-zero-real? v2)
+			   (generic-zero-pair? v2)
+			   (generic-zero-procedure? v2)
+			   (generic-zero-cons-procedure v2)
+			   (generic-zero-if-procedure v2)
+			   (generic-zero-null-procedure v2)
+			   (generic-zero-zero v2)))
+		    (create-generic-zero
+		     (generic-zero-null? v2)
+		     (generic-zero-real? v2)
+		     (generic-zero-pair? v2)
+		     (generic-zero-procedure? v2)
+		     (generic-zero-cons-procedure v2)
+		     (generic-zero-if-procedure v2)
+		     (generic-zero-null-procedure v2)
+		     (generic-zero-zero v2))))))
+	   (make-primitive-procedure
+	    "generic-zero-as internal 5"
+	    (lambda (x)
+	     (call
+	      (call
+	       (call
+		(call (generic-zero-if-procedure v2)
+		      (call (generic-zero-procedure? v2) v1))
+		(make-primitive-procedure
+		 "generic-zero-as internal 6"
+		 (lambda (x)
+		  (make-closure (vector (create-generic-zero
+					 (generic-zero-null? v2)
+					 (generic-zero-real? v2)
+					 (generic-zero-pair? v2)
+					 (generic-zero-procedure? v2)
+					 (generic-zero-cons-procedure v2)
+					 (generic-zero-if-procedure v2)
+					 (generic-zero-null-procedure v2)
+					 (generic-zero-zero v2)))
+				'x
+				(make-variable-access-expression 'zero 0)))))
+	       (make-primitive-procedure
+		"generic-zero-as internal 7"
+		(lambda (x) (fuck-up))))
+	      '()))))
+	  '()))))
+      '()))))
+  '()))
+
 (define (generic-zero-dereference-as v1 v2)
  (cond ((generic-zero? v2)
 	(unless (generic-zero-bound? v2)
-	 (set-generic-zero-binding! v2 (as v1)))
-	(generic-zero-dereference-as-procedure (generic-zero-binding v2)))
+	 (set-generic-zero-binding! v2 (generic-zero-as v1 v2)))
+	(generic-zero-dereference-as v1 (generic-zero-binding v2)))
        (else v2)))
 
 (define (generic-zero-dereference v)
@@ -1592,7 +1714,33 @@
        (recursive-closure-index x2)))
      (else (run-time-error "Invalid argument to map-closure" (cons x1 x2)))))
    "map-closure"))
- (define-primitive-procedure 'zero (lambda (x) (create-generic-zero)))
+ (define-primitive-procedure 'zero-primitive
+  ;; Note that we can't apply a j operator to the result of
+  ;; (zerp-primitive e1), ... or compare results of (zero-primitive e1), ...
+  ;; with equal?-primitive.
+  (lambda (x1)
+   (make-primitive-procedure
+    "zero-primitive 0"
+    (lambda (x2)
+     (make-primitive-procedure
+      "zero-primitive 1"
+      (lambda (x3)
+       (make-primitive-procedure
+	"zero-primitive 2"
+	(lambda (x4)
+	 (make-primitive-procedure
+	  "zero-primitive 3"
+	  (lambda (x5)
+	   (make-primitive-procedure
+	    "zero-primitive 4"
+	    (lambda (x6)
+	     (make-primitive-procedure
+	      "zero-primitive 5"
+	      (lambda (x7)
+	       (make-primitive-procedure
+		"zero-primitive 6"
+		(lambda (x8)
+		 (create-generic-zero x1 x2 x3 x4 x5 x6 x7 x8)))))))))))))))))
  (define-primitive-procedure 'plus-primitive
   ;; Note that we can't apply a j operator to the result of
   ;; (plus-primitive e1), ... or compare results of (plus-primitive e1), ...

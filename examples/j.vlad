@@ -4,6 +4,8 @@
 
 (define (false) #f)
 
+(define (naught) 0)
+
 (define (curried-equal? x1)
  (lambda (x2)
   ((((((((((((((equal?-primitive curried-equal?)
@@ -41,6 +43,16 @@
    x2)))
 
 (define (plus x1 x2) ((curried-plus x1) x2))
+
+(define (zero y)
+ ((((((((zero-primitive null?)
+	real?)
+       pair?)
+      procedure?)
+     cons-procedure)
+    if-procedure)
+   null)
+  naught))
 
 (define (not x) (if x #f #t))
 
@@ -112,7 +124,7 @@
       (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?-primitive) equal?-primitive)
   ((equal? x map-closure) map-closure)
-  ((equal? x zero) zero)
+  ((equal? x zero-primitive) zero-primitive)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
   (else (map-closure conjoint-j* x))))
@@ -211,7 +223,7 @@
       (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?-primitive) equal?-primitive)
   ((equal? x map-closure) map-closure)
-  ((equal? x zero) zero)
+  ((equal? x zero-primitive) zero-primitive)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
   (else (map-closure conjoint-*j x))))
@@ -311,7 +323,7 @@
       (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?-primitive) equal?-primitive)
   ((equal? x map-closure) map-closure)
-  ((equal? x zero) zero)
+  ((equal? x zero-primitive) zero-primitive)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
   (else (map-closure conjoined-j* x))))
@@ -466,7 +478,7 @@
       (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?-primitive) equal?-primitive)
   ((equal? x map-closure) map-closure)
-  ((equal? x zero) zero)
+  ((equal? x zero-primitive) zero-primitive)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
   (else (map-closure conjoined-*j x))))
