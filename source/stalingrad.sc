@@ -88,16 +88,19 @@
        (trace-closures-by-body? (set! *trace* 'body)))
  (set! *trace-argument/result?* *trace-argument/result?*)
  (set! *unabbreviate-recursive-closures?* *unabbreviate-recursive-closures?*)
- (let ((es (read-source pathname)))
+ (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
-   (let ((e (expand-definitions (but-last es) (last es))))
-    (syntax-check-expression! e)
-    (let ((result (concrete->abstract-expression e)))
-     (when undecorated?
-      (pp (abstract->concrete (first result)))
-      (newline))
-     (when evaluated?
-      (pp (externalize (evaluate (first result) #f (second result))))
-      (newline)))))))
+   (if (definition? (first es))
+       (loop (rest es) (cons (first es) ds))
+       (let ((e (expand-definitions (reverse ds) (first es))))
+	(syntax-check-expression! e)
+	(let ((result (concrete->abstract-expression e)))
+	 (when undecorated?
+	  (pp (abstract->concrete (first result)))
+	  (newline))
+	 (when evaluated?
+	  (pp (externalize (evaluate (first result) #f (second result))))
+	  (newline)))
+	(loop (rest es) ds))))))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
