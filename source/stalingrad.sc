@@ -1,7 +1,7 @@
 (MODULE STALINGRAD (WITH QOBISCHEME XLIB STALINGRADLIB-STUFF) (MAIN MAIN))
 ;;; LaHaShem HaAretz U'Mloah
 
-;;; Stalingrad 0.1 - A global optimizing compiler for Scheme
+;;; Stalingrad 0.1 - AD for VLAD, a functional language.
 ;;; Copyright 2004 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
@@ -65,6 +65,7 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("letrec" letrec?))
 		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("evaluated" evaluated?))
 		 (at-most-one ("metered" metered?))
@@ -86,6 +87,7 @@
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *letrec?* letrec?)
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
@@ -95,14 +97,6 @@
  (set! *unabbreviate-closures?* unabbreviate-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
- (set! *y* (genname 'y))
- (set! *y-tilde* (genname 'y-tilde))
- (set! *y-grave* (genname 'y-grave))
- (set! *r* (genname 'r))
- (set! *x1* (genname 'x1))
- (set! *x1-tilde* (genname 'x1-tilde))
- (set! *x2* (genname 'x2))
- (set! *x2-tilde* (genname 'x2-tilde))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -130,10 +124,7 @@
 	       (externalize
 		(evaluate (first result)
 			  'unspecified
-			  (create-key)
-			  (second result)
-			  (map-vector (lambda (v) (create-key))
-				      (second result)))))))))
+			  (list->vector (second result)))))))))
 	  (newline)
 	  (when metered?
 	   (for-each (lambda (b)

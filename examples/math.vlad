@@ -2,26 +2,31 @@
 
 (define (identity x) x)
 
-(define (not x) (if x #f #t))
-
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (sqr x) (* x x))
+
+(define (ungenericize x x-grave)
+ (cond ((generic-zero? x-grave)
+	(cond ((null? x) '())
+	      ((boolean? x) '())
+	      ((real? x) 0)
+	      ((pair? x) (cons (ungenericize (car x) (car x-grave))
+			       (ungenericize (cdr x) (cdr x-grave))))
+	      ;; procedure: technically this is wrong because it doesn't return
+	      ;;            zeros of the free variables
+	      (else '())))
+       ((pair? x-grave) (cons (ungenericize (car x) (car x-grave))
+			      (ungenericize (cdr x) (cdr x-grave))))
+       (else x-grave)))
 
 (define (derivative-using-j* f)
  (let ((f-j* (j* f))) (lambda (x) (cdr (f-j* x 1)))))
 
 (define (derivative-using-*j f)
- (let ((f-*j (*j f)))
-  (lambda (x)
-   (car (exit (key x)
-	      ((cdr (f-*j
-		     cdr
-		     x
-		     (lambda (x-grave rho) (accumulate (key x) rho x-grave))))
-	       1 (add (key x) '() x)))))))
+ (let ((f-*j (*j f))) (lambda (x) (ungenericize x (cdr ((cdr (f-*j x)) 1))))))
 
-(define (derivative f) (derivative-using-j* f))
+(define (derivative f) (derivative-using-*j f))
 
 (define (root f x epsilon)
  (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
@@ -67,14 +72,21 @@
 
 (define (length l) (if (null? l) 0 (+ (length (rest l)) 1)))
 
+(define (conjoint primal adjoint)
+ (if (null? primal)
+     '(() . ())
+     (cons (cons (first primal) (first adjoint))
+	   (conjoint (rest primal) (rest adjoint)))))
+
 (define (gradient-using-j* f)
  (let ((f-j* (j* f)))
   (lambda (x)
-   (let ((n (length x))) (map-n (lambda (i) (cdr (f-j* x (e i n)))) n)))))
+   (let ((n (length x)))
+    (map-n (lambda (i) (cdr (f-j* (conjoint x (e i n))))) n)))))
 
 (define (gradient-using-*j f) (derivative-using-*j f))
 
-(define (gradient f) (gradient-using-j* f))
+(define (gradient f) (gradient-using-*j f))
 
 (define (v+ u v) (map2 + u v))
 

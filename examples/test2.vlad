@@ -1,7 +1,12 @@
 (include "j")
 
-(define (f x) (+ x 1))
+(define (derivative-using-*j f)
+ (let ((f-*j (*j f))) (lambda (x) (cdr ((cdr (f-*j x)) 1)))))
 
-(define (g x) (+ (f x) 1))
+;;; nonconformance
 
-((j* g) 4 1)
+((derivative-using-*j
+  (derivative-using-*j
+   (let ((f-j* (lambda (x x-acute) (cons (exp x) (* (exp x) x-acute)))))
+    (lambda (x) (cdr (f-j* x 1))))))
+ 4)
