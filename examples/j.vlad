@@ -115,6 +115,10 @@
   ((equal? x zero) zero)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
+  ((equal? x conjoint-j*) conjoint-j*)
+  ((equal? x conjoint-*j) conjoint-*j)
+  ((equal? x conjoined-j*) conjoined-j*)
+  ((equal? x conjoined-*j) conjoined-*j)
   (else (map-closure conjoint-j* x))))
 
 (define (conjoint-*j x)
@@ -214,6 +218,10 @@
   ((equal? x zero) zero)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
+  ((equal? x conjoint-j*) conjoint-j*)
+  ((equal? x conjoint-*j) conjoint-*j)
+  ((equal? x conjoined-j*) conjoined-j*)
+  ((equal? x conjoined-*j) conjoined-*j)
   (else (map-closure conjoint-*j x))))
 
 (define (conjoined-j* x)
@@ -314,6 +322,10 @@
   ((equal? x zero) zero)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
+  ((equal? x conjoint-j*) conjoint-j*)
+  ((equal? x conjoint-*j) conjoint-*j)
+  ((equal? x conjoined-j*) conjoined-j*)
+  ((equal? x conjoined-*j) conjoined-*j)
   (else (map-closure conjoined-j* x))))
 
 (define (conjoined-*j x)
@@ -378,11 +390,10 @@
     (cons (cos x) (lambda (y-grave) (x-tilde (- 0 (* (sin x) y-grave)))))))
   ((equal? x atan)
    (lambda ((cons x1 x2) x-tilde)
-    (cons
-     (atan x2 x1)
-     (lambda (y-grave)
-      (x-tilde (cons (- 0 (/ (* x2 y-grave) (+ (* x1 x1) (* x2 x2))))
-		     (/ (* x1 y-grave) (+ (* x1 x1) (* x2 x2)))))))))
+    (cons (atan x2 x1)
+	  (lambda (y-grave)
+	   (x-tilde (cons (- 0 (/ (* x2 y-grave) (+ (* x1 x1) (* x2 x2))))
+			  (/ (* x1 y-grave) (+ (* x1 x1) (* x2 x2)))))))))
   ;; needs work: to check that y-grave is null
   ((equal? x =) (lambda ((cons x1 x2) x-tilde) (cons (= x1 x2) zero)))
   ;; needs work: to check that y-grave is null
@@ -469,4 +480,8 @@
   ((equal? x zero) zero)
   ((equal? x plus-primitive) plus-primitive)
   ((equal? x write) write)
+  ((equal? x conjoint-j*) conjoint-j*)
+  ((equal? x conjoint-*j) conjoint-*j)
+  ((equal? x conjoined-j*) conjoined-j*)
+  ((equal? x conjoined-*j) conjoined-*j)
   (else (map-closure conjoined-*j x))))

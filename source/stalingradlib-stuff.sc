@@ -93,7 +93,8 @@
 
 ;;; needs work: Is a real generic zero a positive IEEE zero or a negative IEEE
 ;;;             zero?
-(define-structure generic-zero index binding)
+(define-structure generic-zero
+ index binding not-null? not-real? not-pair? not-procedure?)
 
 ;;; Variables
 
@@ -110,6 +111,12 @@
 (define *trace-level* 0)
 
 (define *generic-zero-index* -1)
+
+(define *error-message* #f)
+
+(define *error-v* #f)
+
+(define *error-stack* #f)
 
 ;;; Parameters
 
@@ -637,26 +644,31 @@
 
 (define (create-generic-zero)
  (set! *generic-zero-index* (+ *generic-zero-index* 1))
- (make-generic-zero *generic-zero-index* #f))
+ (make-generic-zero *generic-zero-index* #f #f #f #f #f))
 
 (define (generic-zero-bound? v) (not (eq? (generic-zero-binding v) #f)))
 
 (define (generic-zero-dereference-as-null v)
  (cond ((generic-zero? v)
-	(unless (generic-zero-bound? v) (set-generic-zero-binding! v '()))
+	(unless (generic-zero-bound? v)
+	 (when (generic-zero-not-null? v) (fail))
+	 (local-set-generic-zero-binding! v '()))
 	(generic-zero-dereference-as-null (generic-zero-binding v)))
        (else v)))
 
 (define (generic-zero-dereference-as-real v)
  (cond ((generic-zero? v)
-	(unless (generic-zero-bound? v) (set-generic-zero-binding! v 0))
+	(unless (generic-zero-bound? v)
+	 (when (generic-zero-not-real? v) (fail))
+	 (local-set-generic-zero-binding! v 0))
 	(generic-zero-dereference-as-real (generic-zero-binding v)))
        (else v)))
 
 (define (generic-zero-dereference-as-pair v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
-	 (set-generic-zero-binding!
+	 (when (generic-zero-not-pair? v) (fail))
+	 (local-set-generic-zero-binding!
 	  v (cons (create-generic-zero) (create-generic-zero))))
 	(generic-zero-dereference-as-pair (generic-zero-binding v)))
        (else v)))
@@ -664,7 +676,8 @@
 (define (generic-zero-dereference-as-procedure v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
-	 (set-generic-zero-binding!
+	 (when (generic-zero-not-procedure? v) (fail))
+	 (local-set-generic-zero-binding!
 	  v
 	  (make-closure "generic zero"
 			(vector (create-generic-zero))
@@ -728,6 +741,126 @@
 	  "Cannot apply this primitive to an unbound generic zero" v))
 	(generic-zero-dereference (generic-zero-binding v)))
        (else v)))
+
+(define (generic-zero-dereference-maybe-null? v)
+ (if (generic-zero? v)
+     (cond
+      ((generic-zero-bound? v)
+       (generic-zero-dereference-maybe-null? (generic-zero-binding v)))
+      (else
+       (either
+	(begin (when (generic-zero-not-null? v) (fail))
+	       (local-set-generic-zero-binding! v '())
+	       #t)
+	(begin (local-set-generic-zero-not-null?! v #t)
+	       (cond ((and (generic-zero-not-pair? v)
+			   (generic-zero-not-procedure? v))
+		      (local-set-generic-zero-binding! v 0))
+		     ((and (generic-zero-not-real? v)
+			   (generic-zero-not-procedure? v))
+		      (local-set-generic-zero-binding!
+		       v
+		       (cons (create-generic-zero) (create-generic-zero))))
+		     ((and (generic-zero-not-real? v)
+			   (generic-zero-not-pair? v))
+		      (local-set-generic-zero-binding!
+		       v
+		       (make-closure
+			"generic zero"
+			(vector (create-generic-zero))
+			'x
+			(make-variable-access-expression 'zero 0)))))
+	       #f))))
+     (null? v)))
+
+(define (generic-zero-dereference-maybe-real? v)
+ (if (generic-zero? v)
+     (cond
+      ((generic-zero-bound? v)
+       (generic-zero-dereference-maybe-real? (generic-zero-binding v)))
+      (else
+       (either (begin (when (generic-zero-not-real? v) (fail))
+		      (local-set-generic-zero-binding! v 0)
+		      #t)
+	       (begin (local-set-generic-zero-not-real?! v #t)
+		      (cond ((and (generic-zero-not-pair? v)
+				  (generic-zero-not-procedure? v))
+			     (local-set-generic-zero-binding! v '()))
+			    ((and (generic-zero-not-null? v)
+				  (generic-zero-not-procedure? v))
+			     (local-set-generic-zero-binding!
+			      v
+			      (cons (create-generic-zero)
+				    (create-generic-zero))))
+			    ((and (generic-zero-not-null? v)
+				  (generic-zero-not-pair? v))
+			     (local-set-generic-zero-binding!
+			      v
+			      (make-closure
+			       "generic zero"
+			       (vector (create-generic-zero))
+			       'x
+			       (make-variable-access-expression 'zero 0)))))
+		      #f))))
+     (real? v)))
+
+(define (generic-zero-dereference-maybe-pair? v)
+ (if (generic-zero? v)
+     (cond
+      ((generic-zero-bound? v)
+       (generic-zero-dereference-maybe-pair? (generic-zero-binding v)))
+      (else
+       (either (begin (when (generic-zero-not-pair? v) (fail))
+		      (local-set-generic-zero-binding!
+		       v (cons (create-generic-zero) (create-generic-zero)))
+		      #t)
+	       (begin (local-set-generic-zero-not-pair?! v #t)
+		      (cond ((and (generic-zero-not-real? v)
+				  (generic-zero-not-procedure? v))
+			     (local-set-generic-zero-binding! v '()))
+			    ((and (generic-zero-not-null? v)
+				  (generic-zero-not-procedure? v))
+			     (local-set-generic-zero-binding! v 0))
+			    ((and (generic-zero-not-null? v)
+				  (generic-zero-not-real? v))
+			     (local-set-generic-zero-binding!
+			      v
+			      (make-closure
+			       "generic zero"
+			       (vector (create-generic-zero))
+			       'x
+			       (make-variable-access-expression 'zero 0)))))
+		      #f))))
+     (pair? v)))
+
+(define (generic-zero-dereference-maybe-procedure? v)
+ (if (generic-zero? v)
+     (cond
+      ((generic-zero-bound? v)
+       (generic-zero-dereference-maybe-procedure? (generic-zero-binding v)))
+      (else
+       (either
+	(begin (when (generic-zero-not-procedure? v) (fail))
+	       (local-set-generic-zero-binding!
+		v
+		(make-closure "generic zero"
+			      (vector (create-generic-zero))
+			      'x
+			      (make-variable-access-expression 'zero 0)))
+	       #t)
+	(begin (local-set-generic-zero-not-procedure?! v #t)
+	       (cond ((and (generic-zero-not-real? v)
+			   (generic-zero-not-pair? v))
+		      (local-set-generic-zero-binding! v '()))
+		     ((and (generic-zero-not-null? v)
+			   (generic-zero-not-pair? v))
+		      (local-set-generic-zero-binding! v 0))
+		     ((and (generic-zero-not-null? v)
+			   (generic-zero-not-real? v))
+		      (local-set-generic-zero-binding!
+		       v (cons (create-generic-zero) (create-generic-zero)))))
+	       #f))))
+     (vlad-procedure? v)))
 
 (define (generic-zero-unbound? v)
  (or (and (generic-zero? v)
@@ -796,28 +929,19 @@
   (set-write-level! m)))
 
 (define (run-time-error message v)
- (format #t "Stack trace~%")
- (set-write-level! *n*)
- (set-write-length! *n*)
- (for-each (lambda (record)
-	    (display "Procedure: ")
-	    (write (name (first record)))
-	    (newline)
-	    (display "Argument: ")
-	    (write (externalize (second record)))
-	    (newline)
-	    (newline))
-	   *stack*)
- (newline)
- (pp (externalize v))
- (newline)
- (panic message))
+ (set! *error-message* message)
+ ;; needs work: Backtracking can undo bindings to *error-v* and values on
+ ;;             *error-stack*.
+ (set! *error-v* v)
+ (set! *error-stack* (map identity *stack*))
+ (fail))
 
 (define (call callee argument)
  (let ((callee (generic-zero-dereference-as-procedure callee)))
   (unless (vlad-procedure? callee)
    (run-time-error "Target is not a procedure" callee))
-  (set! *stack* (cons (list callee argument) *stack*))
+  ;; needs work
+  ;;(set! *stack* (cons (list callee argument) *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	      ((closure? callee) *trace-closures?*)
 	      ((recursive-closure? callee) *trace-recursive-closures?*)
@@ -830,7 +954,9 @@
        (format #t "~aentering ~a~%"
 	       (make-string *trace-level* #\space)
 	       (name callee)))
-   (set! *trace-level* (+ *trace-level* 1)))
+   ;; needs work
+   ;;(set! *trace-level* (+ *trace-level* 1))
+   )
   (let ((result
 	 (cond
 	  ((primitive-procedure? callee)
@@ -853,12 +979,14 @@
 			    (vector-length (recursive-closure-bodies callee)))
 			   (recursive-closure-values callee))))
 	  (else (fuck-up)))))
-   (set! *stack* (rest *stack*))
+   ;; needs work
+   ;;(set! *stack* (rest *stack*))
    (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	       ((closure? callee) *trace-closures?*)
 	       ((recursive-closure? callee) *trace-recursive-closures?*)
 	       (else (fuck-up)))
-    (set! *trace-level* (- *trace-level* 1))
+    ;; needs work
+    ;;(set! *trace-level* (- *trace-level* 1))
     (if *trace-argument/result?*
 	(format #t "~aexiting ~a ~s~%"
 		(make-string *trace-level* #\space)
@@ -1371,15 +1499,12 @@
  (define-primitive-procedure 'zero? (unary-real zero? "zero?"))
  (define-primitive-procedure 'positive? (unary-real positive? "positive?"))
  (define-primitive-procedure 'negative? (unary-real negative? "negative?"))
- (define-primitive-procedure 'null?
-  (lambda (x) (null? (generic-zero-dereference x))))
+ (define-primitive-procedure 'null? generic-zero-dereference-maybe-null?)
  (define-primitive-procedure 'boolean? boolean?)
- (define-primitive-procedure 'real?
-  (lambda (x) (real? (generic-zero-dereference x))))
- (define-primitive-procedure 'pair?
-  (lambda (x) (pair? (generic-zero-dereference x))))
+ (define-primitive-procedure 'real? generic-zero-dereference-maybe-real?)
+ (define-primitive-procedure 'pair? generic-zero-dereference-maybe-pair?)
  (define-primitive-procedure 'procedure?
-  (lambda (x) (vlad-procedure? (generic-zero-dereference x))))
+  generic-zero-dereference-maybe-procedure?)
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
  (define-primitive-procedure 'cons-procedure
