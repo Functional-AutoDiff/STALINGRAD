@@ -44,7 +44,7 @@
 (include "stalingrad.sch")
 
 (set! *program* "stalingrad")
-(set! *panic?* #f)			;debugging
+(set! *panic?* #t)
 
 ;;; Macros
 

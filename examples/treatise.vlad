@@ -1,0 +1,36 @@
+(include "/home/qobi/stalingrad/garden-path/v33/examples/j")
+
+(define (j*^-1 x)
+ (cond ((null? x) x)
+       ((boolean? x) x)
+       ((pair? x)
+	(if (real? (car x)) (car x) (cons (j*^-1 (car x)) (j*^-1 (cdr x)))))
+       ;; procedure
+       (else (lambda (x-prime) (j*^-1 (x (j* x-prime)))))))
+
+(define (*j^-1 x)
+ (cond ((null? x) x)
+       ((boolean? x) x)
+       ((real? x) x)
+       ((pair? x) (cons (*j^-1 (car x)) (*j^-1 (cdr x))))
+       ;; procedure
+       (else (lambda (x-prime) (*j^-1 (car (x (*j x-prime))))))))
+
+(define (condition-a f x) (equal? (f x) (j*^-1 ((j* f) (j* x)))))
+
+(define (condition-b f x) (equal? (f x) (*j^-1 (car ((*j f) (*j x))))))
+
+(condition-a + '(3 . 4))
+(condition-a zero '(3 . 4))
+(condition-a (let ((x 0)) (lambda (y) x)) 0)
+;; gives wrong answer
+(condition-a zero (let ((x 0)) (lambda (y) x)))
+(condition-a zero +)
+(condition-a (lambda (x) (zero +)) 0)
+
+(condition-b + '(3 . 4))
+(condition-b zero '(3 . 4))
+(condition-b (let ((x 0)) (lambda (y) x)) 0)
+(condition-b zero (let ((x 0)) (lambda (y) x)))
+(condition-b zero +)
+(condition-b (lambda (x) (zero +)) 0)

@@ -212,16 +212,15 @@
     self))
   ((equal? x cons-procedure)
    (letrec ((self
-	     (lambda (magic)
-	      (cons
-	       (letrec ((self
-			 (lambda (x2)
-			  (cons (cons magic x2)
-				(lambda (magic-grave x2-grave)
-				 (cons (cons magic-grave (cdr (zero self)))
-				       x2-grave))))))
-		self)
-	       (lambda (magic-grave rest) (cons (zero self) magic-grave))))))
+	     (lambda (x1)
+	      (cons (letrec ((self
+			      (lambda (x2)
+			       (cons (cons x1 x2)
+				     (lambda (x1-grave x2-grave)
+				      (cons (cons x1-grave (cdr (zero self)))
+					    x2-grave))))))
+		     self)
+		    (lambda (x1-grave rest) (cons (zero self) x1-grave))))))
     self))
   ((equal? x if-procedure)
    (letrec ((self
