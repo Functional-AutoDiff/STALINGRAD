@@ -1,0 +1,57 @@
+10-Feb-2004, qobi (entered by barak)
+
+  Changes to stalingrad.sc:
+
+    (a) Y is no longer syntax. It is part of the standard basis and is
+	a first-class polymorphic function. One less builtin abstract
+	syntactic construct.
+
+    (b) eliminated abstract syntax for basis constants. Basis
+	constants now are handled as top-level let bindings for ordinary
+	variables. Two less builtin abstract syntactic constructs.
+
+    (c) There used to be two concrete syntactic forms: LET and
+	LET*. LET corresponded to builtin abstract syntax and LET* was a
+	macro. LET supported only one binding. Now there is just one
+	concrete syntactic form: LET*. With one binding, it corresponds to
+	the builtin abstract syntax (which is still called
+	let-expression). With zero bindings or more than one binding, it
+	is a macro. Upshot: LET* behaves just like in Scheme and there is
+	no LET.
+
+    (d) The concrete syntax for LAMBDA used to be
+	(LAMBDA <parameter> <expression>). I changed it to
+	(LAMBDA (<parameter>) <expression>) to conform to Scheme. I also
+	added macros that support concrete lambda expressions with zero
+	parameters or more than one parameter.
+	(LAMBDA (<p1> <p2> <p3> ... <pn>) <expression>) expands into
+	(LAMBDA ((cons (cons (cons <p1> <p2>) <p3>) ... <pn>)) <expression>).
+	Thunks, i.e. (LAMBDA () <expression>), are not yet supported but
+	will be when I add units.
+
+    (e) I extended the concrete syntax for applications to allow
+	applications with zero arguments and more than one argument. These
+	are macros.
+        (<e> <e1> <e2> <e3> ... <en>) expands into
+        (<e> (cons (cons (cons <e1> <e2>) <e3>) ... <en>)). Thunks,
+	i.e. (<e>), are not yet supported but will be when I add
+	units. Upshot: LAMBDA and applications behave like in Scheme
+	except that
+	 - varargs are not supported
+	 - destructuring is supported
+	 - call sites need not match targets in arity so long as the types
+	   match under structuring/destructuring
+
+  Changes to factorial.sc:
+
+	new version, now utilizes (d) and (e) above and looks more
+	Schemely.
+
+	One can define car and cdr in an even more cute fashion now with
+	(d) and (e):
+
+	(let* ((car (lambda (a d) a))
+	       (cdr (lambda (a d) d)))
+	 ...)
+
+	Verified that stalingrad compiles with stalin 0.10alpha2
