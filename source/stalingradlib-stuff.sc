@@ -44,9 +44,11 @@
 (include "stalingradlib-stuff.sch")
 
 ;;; To do:
-;;;  1. type inference
-;;;  2. evaluator
-;;;  3. let, let*, cond
+;;;  1. polymorphism
+;;;     let polymorphism
+;;;     exponential aspect
+;;;  2. scoping of concrete type variables is screwed up
+;;;  3. datatypes
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -56,6 +58,7 @@
 ;;;  x: concrete variable
 ;;;  a: concrete or abstract type variable
 ;;;  i: index
+;;;  b: blah blah blah
 
 ;;; Macros
 
@@ -75,6 +78,8 @@
 
 (define-structure variable-access-expression lambda-expression path type)
 
+(define-structure basis-constant name value type)
+
 (define-structure application callee argument type)
 
 (define-structure lambda-expression parameter body type)
@@ -89,11 +94,17 @@
 
 (define-structure y-expression argument type)
 
-(define-structure binding variable lambda-expression path)
+(define-structure parameter-binding parameter lambda-expression path)
 
 (define-structure type-binding concrete abstract)
 
+(define-structure copy-binding old new)
+
+(define-structure value-binding lambda-expression value)
+
 ;;; Variables
+
+(define *basis-constants* '())
 
 ;;; Parameters
 
@@ -107,11 +118,11 @@
 (define (expression-type e)
  (cond ((constant-expression? e) (constant-expression-type e))
        ((variable-access-expression? e) (variable-access-expression-type e))
+       ((basis-constant? e) (basis-constant-type e))
        ((application? e) (application-type e))
        ((lambda-expression? e) (lambda-expression-type e))
        ((if-expression? e) (if-expression-type e))
        ((car-expression? e) (car-expression-type e))
-       ((cdr-expression? e) (cdr-expression-type e))
        ((cdr-expression? e) (cdr-expression-type e))
        ((cons-expression? e) (cons-expression-type e))
        ((y-expression? e) (y-expression-type e))
@@ -170,50 +181,92 @@
 (define (duplicatesq? l)
  (and (not (null? l)) (or (memq (first l) (rest l)) (duplicatesq? (rest l)))))
 
-(define (syntax-check-expression! e xs)
- (cond
-  ((boolean? e) #f)
-  ((number? e) #f)
-  ((symbol? e)
-   (unless (memq e xs)
-    (panic (format #f "Unbound variable: ~s" e)))
-   #f)
-  ((and (list? e) (not (null? e)))
-   (case (first e)
-    ((:)
-     (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs)
-     (syntax-check-type! (third e)))
-    ((lambda)
-     (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-parameter! (second e))
-     (let ((xs0 (parameter-variables (second e))))
-      (when (duplicatesq? xs0)
-       (panic (format #f "Duplicate variables: ~s" (second e))))
-      (syntax-check-expression! (third e) (append xs0 xs))))
-    ((if)
-     (unless (= (length e) 4) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs)
-     (syntax-check-expression! (third e) xs)
-     (syntax-check-expression! (fourth e) xs))
-    ((car)
-     (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs))
-    ((cdr)
-     (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs))
-    ((cons)
-     (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs)
-     (syntax-check-expression! (third e) xs))
-    ((y)
-     (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs))
-    (else
-     (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (first e) xs)
-     (syntax-check-expression! (second e) xs))))
-  (else (panic (format #f "Invalid expression: ~s" e)))))
+(define (syntax-check-expression! e)
+ (let loop ((e e) (xs (map basis-constant-name *basis-constants*)))
+  (cond
+   ((boolean? e) #f)
+   ((number? e) #f)
+   ((symbol? e)
+    (unless (memq e xs)
+     (panic (format #f "Unbound variable: ~s" e)))
+    #f)
+   ((and (list? e) (not (null? e)))
+    (case (first e)
+     ((:)
+      (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs)
+      (syntax-check-type! (third e)))
+     ((lambda)
+      (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
+      (syntax-check-parameter! (second e))
+      (let ((xs0 (parameter-variables (second e))))
+       (when (duplicatesq? xs0)
+	(panic (format #f "Duplicate variables: ~s" (second e))))
+       (loop (third e) (append xs0 xs))))
+     ((if)
+      (unless (= (length e) 4) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs)
+      (loop (third e) xs)
+      (loop (fourth e) xs))
+     ((car)
+      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs))
+     ((cdr)
+      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs))
+     ((cons)
+      (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs)
+      (loop (third e) xs))
+     ((y)
+      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (second e) xs))
+     ((let)
+      (unless (and (= (length e) 3)
+		   (list? (second e))
+		   (every (lambda (b) (and (list? b) (= (length b) 2)))
+			  (second e)))
+       (panic (format #f "Invalid expression: ~s" e)))
+      (loop (if (null? (second e))
+		(third e)
+		`((lambda ,(let loop ((ps (map first (second e))))
+			    (if (null? (rest ps))
+				(first ps)
+				`(cons ,(first ps) ,(loop (rest ps)))))
+		   ,(third e))
+		  ,(let loop ((es (map second (second e))))
+		    (if (null? (rest es))
+			(first es)
+			`(cons ,(first es) ,(loop (rest es)))))))
+	    xs))
+     ((let*)
+      (unless (and (= (length e) 3)
+		   (list? (second e))
+		   (every (lambda (b) (and (list? b) (= (length b) 2)))
+			  (second e)))
+       (panic (format #f "Invalid expression: ~s" e)))
+      (loop
+       (if (null? (second e))
+	   (third e)
+	   `(let (,(first (second e))) (let* ,(rest (second e)) ,(third e))))
+       xs))
+     ((cond)
+      (unless (and (>= (length e) 2)
+		   (every (lambda (b) (and (list? b) (= (length b) 2)))
+			  (rest e))
+		   (eq? (first (last e)) 'else))
+       (panic (format #f "Invalid expression: ~s" e)))
+      (loop (if (null? (rest (rest e)))
+		(second (second e))
+		`(if ,(first (second e))
+		     ,(second (second e))
+		     (cond ,@(rest (rest e)))))
+	    xs))
+     (else
+      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
+      (loop (first e) xs)
+      (loop (second e) xs))))
+   (else (panic (format #f "Invalid expression: ~s" e))))))
 
 (define (create-type-variable)
  (let ((a (make-type-variable #f)))
@@ -294,11 +347,13 @@
 		  (variable-access-expression-lambda-expression e)))
 	      (path (variable-access-expression-path e)))
     (if (null? path)
-	p
+	(variable-parameter-variable p)
 	(case (first path)
 	 ((car) (loop (cons-parameter-car-parameter p) (rest path)))
 	 ((cdr) (loop (cons-parameter-cdr-parameter p) (rest path)))
 	 (else (fuck-up))))))
+  ;; This assumes that no manipulation can cause capture.
+  ((basis-constant? e) (basis-constant-name e))
   ((application? e)
    `(,(abstract->undecorated-concrete-expression (application-callee e))
      ,(abstract->undecorated-concrete-expression (application-argument e))))
@@ -338,11 +393,13 @@
 		       (variable-access-expression-lambda-expression e)))
 		   (path (variable-access-expression-path e)))
 	 (if (null? path)
-	     p
+	     (variable-parameter-variable p)
 	     (case (first path)
 	      ((car) (loop (cons-parameter-car-parameter p) (rest path)))
 	      ((cdr) (loop (cons-parameter-cdr-parameter p) (rest path)))
 	      (else (fuck-up))))))
+       ;; This assumes that no manipulation can cause capture.
+       ((basis-constant? e) (basis-constant-name e))
        ((application? e)
 	`(,(abstract->decorated-concrete-expression (application-callee e))
 	  ,(abstract->decorated-concrete-expression (application-argument e))))
@@ -404,14 +461,14 @@
  (cond ((type-variable? t1)
 	(cond ((bound? t1) (unify! (type-variable-type t1) t2))
 	      (else (when (occurs? t1 t2)
-		     (format #f "Cannot unify types: ~s and: ~s"
+		     (format #f "Cannot unify types ~s and ~s"
 			     (abstract->concrete-type t1)
 			     (abstract->concrete-type t2)))
 		    (set-type-variable-type! t1 t2))))
        ((type-variable? t2)
 	(cond ((bound? t2) (unify! t1 (type-variable-type t2)))
 	      (else (when (occurs? t2 t1)
-		     (format #f "Cannot unify types: ~s and: ~s"
+		     (format #f "Cannot unify types ~s and ~s"
 			     (abstract->concrete-type t1)
 			     (abstract->concrete-type t2)))
 		    (set-type-variable-type! t2 t1))))
@@ -425,9 +482,31 @@
        ((and (cons-type? t1) (cons-type? t2))
 	(unify! (cons-type-car-type t1) (cons-type-car-type t2))
 	(unify! (cons-type-cdr-type t1) (cons-type-cdr-type t2)))
-       (else (panic (format #f "Cannot unify types: ~s and: ~s"
+       (else (panic (format #f "Cannot unify types ~s and ~s"
 			    (abstract->concrete-type t1)
 			    (abstract->concrete-type t2))))))
+
+(define (copy-type t)
+ (let ((copy-bindings
+	(map (lambda (a) (make-copy-binding a (create-type-variable)))
+	     (abstract-type-variables-in t))))
+  (let loop ((t t))
+   (cond ((eq? t 'boolean) t)
+	 ((eq? t 'real) t)
+	 ((type-variable? t)
+	  (if (bound? t)
+	      (loop (type-variable-type t))
+	      (copy-binding-new
+	       (find-if (lambda (copy-binding)
+			 (eq? (copy-binding-old copy-binding) t))
+			copy-bindings))))
+	 ((function-type? t)
+	  (make-function-type (loop (function-type-parameter-type t))
+			      (loop (function-type-result-type t))))
+	 ((cons-type? t)
+	  (make-cons-type (loop (cons-type-car-type t))
+			  (loop (cons-type-cdr-type t))))
+	 (else (fuck-up))))))
 
 (define (concrete->abstract-type t)
  (let ((type-bindings
@@ -453,85 +532,252 @@
        ((list? p)
 	(case (first p)
 	 ((:) (let ((p0 (concrete->abstract-parameter (second p))))
+	       ;; needs work: How does this interact with polymorphism?
 	       (unify! (parameter-type p0)
 		       (concrete->abstract-type (third p)))
 	       p0))
-	 ((cons) (make-cons-parameter
-		  (concrete->abstract-parameter (second p))
-		  (concrete->abstract-parameter (third p))
-		  (create-type-variable)))
+	 ((cons)
+	  (let ((p0 (concrete->abstract-parameter (second p)))
+		(p1 (concrete->abstract-parameter (third p))))
+	   (make-cons-parameter
+	    p0
+	    p1
+	    (make-cons-type (parameter-type p0) (parameter-type p1)))))
 	 (else (fuck-up))))
        (else (fuck-up))))
 
-(define (parameter-bindings p e path)
- (cond
-  ((variable-parameter? p)
-   (list (make-binding (variable-parameter-variable p) e path)))
-  ((cons-parameter? p)
-   (append
-    (parameter-bindings (cons-parameter-car-parameter p) e (cons 'car path))
-    (parameter-bindings (cons-parameter-cdr-parameter p) e (cons 'cdr path))))
-  (else (fuck-up))))
+(define (lambda-expression-parameter-bindings e)
+ (let loop ((p (lambda-expression-parameter e)) (e e) (path '()))
+  (cond
+   ((variable-parameter? p) (list (make-parameter-binding p e path)))
+   ((cons-parameter? p)
+    (append (loop (cons-parameter-car-parameter p) e (append path '(car)))
+	    (loop (cons-parameter-cdr-parameter p) e (append path '(cdr)))))
+   (else (fuck-up)))))
 
-(define (concrete->abstract-expression e bindings)
- (cond ((boolean? e) (make-constant-expression e (create-type-variable)))
-       ((number? e) (make-constant-expression e (create-type-variable)))
-       ((symbol? e)
-	(let ((binding
-	       (find-if (lambda (binding) (eq? (binding-variable binding) e))
-			bindings)))
+(define (concrete->abstract-expression e)
+ (let loop ((e e) (parameter-bindings '()))
+  (cond
+   ((boolean? e) (make-constant-expression e 'boolean))
+   ((number? e) (make-constant-expression e 'real))
+   ((symbol? e)
+    (let ((parameter-binding
+	   (find-if (lambda (parameter-binding)
+		     (eq? (variable-parameter-variable
+			   (parameter-binding-parameter parameter-binding))
+			  e))
+		    parameter-bindings)))
+     (if parameter-binding
 	 (make-variable-access-expression
-	  (binding-lambda-expression binding)
-	  (binding-path binding)
-	  (create-type-variable))))
-       ((list? e)
-	(case (first e)
-	 ((:) (let ((e0 (concrete->abstract-expression (second e) bindings)))
-	       (unify! (expression-type e0)
-		       (concrete->abstract-type (third e)))
-	       e0))
-	 ((lambda)
-	  (let ((e0 (make-lambda-expression
-		     (concrete->abstract-parameter (second e))
-		     #f
-		     (create-type-variable))))
-	   (set-lambda-expression-body!
-	    e0
-	    (concrete->abstract-expression
-	     (third e)
-	     (append
-	      (parameter-bindings (lambda-expression-parameter e0) e0 '())
-	      bindings)))
+	  (parameter-binding-lambda-expression parameter-binding)
+	  (parameter-binding-path parameter-binding)
+	  (variable-parameter-type
+	   (parameter-binding-parameter parameter-binding)))
+	 (find-if (lambda (basis-constant)
+		   (eq? (basis-constant-name basis-constant) e))
+		  *basis-constants*))))
+   ((list? e)
+    (case (first e)
+     ((:) (let ((e0 (loop (second e) parameter-bindings)))
+	   ;; needs work: How does this interact with polymorphism?
+	   (unify! (expression-type e0) (concrete->abstract-type (third e)))
 	   e0))
-	 ((if) (make-if-expression
-		(concrete->abstract-expression (second e) bindings)
-		(concrete->abstract-expression (third e) bindings)
-		(concrete->abstract-expression (fourth e) bindings)
-		(create-type-variable)))
-	 ((car) (make-car-expression
-		 (concrete->abstract-expression (second e) bindings)
-		 (create-type-variable)))
-	 ((cdr) (make-cdr-expression
-		 (concrete->abstract-expression (second e) bindings)
-		 (create-type-variable)))
-	 ((cons) (make-cons-expression
-		  (concrete->abstract-expression (second e) bindings)
-		  (concrete->abstract-expression (third e) bindings)
-		  (create-type-variable)))
-	 ((y) (make-y-expression
-	       (concrete->abstract-expression (second e) bindings)
-	       (create-type-variable)))
-	 ((let)
-	  'needs-work)
-	 ((let*)
-	  'needs-work)
-	 ((cond)
-	  'needs-work)
-	 (else (make-application
-		(concrete->abstract-expression (first e) bindings)
-		(concrete->abstract-expression (second e) bindings)
-		(create-type-variable)))))
-       (else (fuck-up))))
+     ((lambda)
+      (let* ((p (concrete->abstract-parameter (second e)))
+	     (e0 (make-lambda-expression
+		  p
+		  #f
+		  (make-function-type
+		   (parameter-type p) (create-type-variable)))))
+       (set-lambda-expression-body!
+	e0
+	(loop (third e)
+	      (append (lambda-expression-parameter-bindings e0)
+		      parameter-bindings)))
+       (unify! (function-type-result-type (expression-type e0))
+	       (expression-type (lambda-expression-body e0)))
+       e0))
+     ((if) (let ((e (make-if-expression
+		     (loop (second e) parameter-bindings)
+		     (loop (third e) parameter-bindings)
+		     (loop (fourth e) parameter-bindings)
+		     (create-type-variable))))
+	    (unify! (expression-type (if-expression-antecedent e)) 'boolean)
+	    ;; needs work: How does this interact with polymorphism?
+	    (unify! (expression-type (if-expression-consequent e))
+		    (expression-type e))
+	    ;; needs work: How does this interact with polymorphism?
+	    (unify! (expression-type (if-expression-alternate e))
+		    (expression-type e))
+	    e))
+     ((car)
+      (let ((e (make-car-expression
+		(loop (second e) parameter-bindings) (create-type-variable))))
+       (unify! (expression-type (car-expression-argument e))
+	       (make-cons-type (expression-type e) (create-type-variable)))
+       e))
+     ((cdr)
+      (let ((e (make-cdr-expression
+		(loop (second e) parameter-bindings) (create-type-variable))))
+       (unify! (expression-type (cdr-expression-argument e))
+	       (make-cons-type (create-type-variable) (expression-type e)))
+       e))
+     ((cons)
+      (let ((e (make-cons-expression (loop (second e) parameter-bindings)
+				     (loop (third e) parameter-bindings)
+				     (create-type-variable))))
+       (unify! (expression-type e)
+	       (make-cons-type
+		(expression-type (cons-expression-car-argument e))
+		(expression-type (cons-expression-cdr-argument e))))
+       e))
+     ((y) (let ((e (make-y-expression
+		    (loop (second e) parameter-bindings)
+		    (make-function-type (create-type-variable)
+					(create-type-variable)))))
+	   ;; needs work: How does this interact with polymorphism?
+	   (unify!
+	    (expression-type (y-expression-argument e))
+	    (make-function-type (expression-type e) (expression-type e)))
+	   e))
+     ((let) (loop (if (null? (second e))
+		      (third e)
+		      `((lambda ,(let loop ((ps (map first (second e))))
+				  (if (null? (rest ps))
+				      (first ps)
+				      `(cons ,(first ps) ,(loop (rest ps)))))
+			 ,(third e))
+			,(let loop ((es (map second (second e))))
+			  (if (null? (rest es))
+			      (first es)
+			      `(cons ,(first es) ,(loop (rest es)))))))
+		  parameter-bindings))
+     ((let*)
+      (loop
+       (if (null? (second e))
+	   (third e)
+	   `(let (,(first (second e))) (let* ,(rest (second e)) ,(third e))))
+       parameter-bindings))
+     ((cond) (loop (if (null? (rest (rest e)))
+		       (second (second e))
+		       `(if ,(first (second e))
+			    ,(second (second e))
+			    (cond ,@(rest (rest e)))))
+		   parameter-bindings))
+     (else (let ((e (make-application
+		     (loop (first e) parameter-bindings)
+		     (loop (second e) parameter-bindings)
+		     (create-type-variable))))
+	    ;; needs work: How does this interact with polymorphism?
+	    (unify! (expression-type (application-callee e))
+		    (make-function-type
+		     (expression-type (application-argument e))
+		     (expression-type e)))
+	    e))))
+   (else (fuck-up)))))
+
+(define (evaluate e)
+ (let loop ((e e) (value-bindings '()))
+  (cond ((constant-expression? e) (constant-expression-value e))
+	((variable-access-expression? e)
+	 (let loop ((path (variable-access-expression-path e))
+		    (value
+		     (value-binding-value
+		      (find-if
+		       (lambda (value-binding)
+			(eq? (value-binding-lambda-expression value-binding)
+			     (variable-access-expression-lambda-expression e)))
+		       value-bindings))))
+	  (if (null? path)
+	      value
+	      (loop (rest path)
+		    (case (first path)
+		     ((car) (car value))
+		     ((cdr) (cdr value))
+		     (else (fuck-up)))))))
+	((basis-constant? e) (basis-constant-value e))
+	((application? e)
+	 ((loop (application-callee e) value-bindings)
+	  (loop (application-argument e) value-bindings)))
+	((lambda-expression? e)
+	 (lambda (value)
+	  (loop (lambda-expression-body e)
+		(cons (make-value-binding e value) value-bindings))))
+	((if-expression? e)
+	 (if (loop (if-expression-antecedent e) value-bindings)
+	     (loop (if-expression-consequent e) value-bindings)
+	     (loop (if-expression-alternate e) value-bindings)))
+	((car-expression? e)
+	 (car (loop (car-expression-argument e) value-bindings)))
+	((cdr-expression? e)
+	 (cdr (loop (cdr-expression-argument e) value-bindings)))
+	((cons-expression? e)
+	 (cons (loop (cons-expression-car-argument e) value-bindings)
+	       (loop (cons-expression-cdr-argument e) value-bindings)))
+	((y-expression? e)
+	 (let ((f (loop (y-expression-argument e) value-bindings)))
+	  ((lambda (g) (lambda (x) ((f (g g)) x)))
+	   (lambda (g) (lambda (x) ((f (g g)) x))))))
+	(else (fuck-up)))))
+
+(define (define-basis-constant name value t)
+ (set! *basis-constants*
+       (cons (make-basis-constant name value (concrete->abstract-type t))
+	     *basis-constants*)))
+
+(define (intialize-basis!)
+ (define-basis-constant
+  '+
+  (lambda (x) (+ (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant
+  '-
+  (lambda (x) (- (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant
+  '*
+  (lambda (x) (* (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant
+  '/
+  (lambda (x) (/ (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant 'sqrt sqrt '(=> real real))
+ (define-basis-constant 'exp exp '(=> real real))
+ (define-basis-constant 'log log '(=> real real))
+ (define-basis-constant
+  'expt
+  (lambda (x) (expt (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant 'sin sin '(=> real real))
+ (define-basis-constant 'cos cos '(=> real real))
+ (define-basis-constant
+  'atan
+  (lambda (x) (atan (car x) (cdr x)))
+  '(=> (cons real real) real))
+ (define-basis-constant
+  '=
+  (lambda (x) (= (car x) (cdr x)))
+  '(=> (cons real real) boolean))
+ (define-basis-constant
+  '<
+  (lambda (x) (< (car x) (cdr x)))
+  '(=> (cons real real) boolean))
+ (define-basis-constant
+  '>
+  (lambda (x) (> (car x) (cdr x)))
+  '(=> (cons real real) boolean))
+ (define-basis-constant
+  '<=
+  (lambda (x) (<= (car x) (cdr x)))
+  '(=> (cons real real) boolean))
+ (define-basis-constant
+  '>=
+  (lambda (x) (>= (car x) (cdr x)))
+  '(=> (cons real real) boolean))
+ (define-basis-constant 'zero? zero? '(=> real boolean))
+ (define-basis-constant 'positive? positive? '(=> real boolean))
+ (define-basis-constant 'negative? negative? '(=> real boolean)))
 
 ;;; Commands
 

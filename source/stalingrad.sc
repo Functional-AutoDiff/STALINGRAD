@@ -44,7 +44,7 @@
 (include "stalingrad.sch")
 
 (set! *program* "stalingrad")
-(set! *panic?* #f)
+(set! *panic?* #t)
 
 ;;; Macros
 
@@ -62,19 +62,24 @@
 
 (define-command (main (at-most-one ("undecorated" undecorated?))
 		      (at-most-one ("decorated" decorated?))
+		      (at-most-one ("evaluated" evaluated?))
 		      (required (pathname "pathname" string-argument)))
+ (intialize-basis!)
  (call-with-input-file (default-extension pathname "sc")
   (lambda (input-port)
    (let loop ()
     (let ((e (read input-port)))
      (unless (eof-object? e)
-      (syntax-check-expression! e '())
-      (let ((e (concrete->abstract-expression e '())))
+      (syntax-check-expression! e)
+      (let ((e (concrete->abstract-expression e)))
        (when undecorated?
 	(pp (abstract->undecorated-concrete-expression e))
 	(newline))
        (when decorated?
 	(pp (abstract->decorated-concrete-expression e))
+	(newline))
+       (when evaluated?
+	(write (evaluate e))
 	(newline)))
       (loop)))))))
 
