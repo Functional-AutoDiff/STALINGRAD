@@ -1,19 +1,5 @@
 (include "math")
 
-(define (adjoint conjoint)
- (cond ((procedure? conjoint) conjoint)
-       ((boolean? (car conjoint)) (cdr conjoint))
-       ((null? (car conjoint)) '())
-       ((real? (car conjoint)) (cdr conjoint))
-       ;; pair
-       (else (cons (adjoint (car conjoint)) (adjoint (cdr conjoint))))))
-
-(define (list-ref l i) (if (zero? i) (first l) (list-ref (rest l) (- i 1))))
-
-(define (transpose a)
- (let ((m (length a)) (n (length (first a))))
-  (map-n (lambda (j) (map-n (lambda (i) (list-ref (list-ref a i) j)) m)) n)))
-
 (define (jacobian-using-j* f)
  (let ((f-j* (j* f)))
   (lambda (x)

@@ -15,4 +15,5 @@ time stalingrad -evaluated sqrt
 time stalingrad -evaluated triple
 time stalingrad -evaluated commute
 time stalingrad -evaluated factor16
+time stalingrad -evaluated hessian
 #time stalingrad -evaluated double-agent
