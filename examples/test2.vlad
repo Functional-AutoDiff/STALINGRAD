@@ -1,0 +1,7 @@
+(include "j")
+
+(define (f x) (+ x 1))
+
+(define (g x) (+ (f x) 1))
+
+((j* g) 4 1)

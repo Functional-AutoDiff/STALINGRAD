@@ -1,0 +1,19 @@
+(include "j")
+
+(define (derivative-using-*j f)
+ (let ((f-*j (*j f)))
+  (lambda (x)
+   (car (exit (key x)
+	      ((cdr (f-*j
+		     cdr
+		     x
+		     (lambda (x-grave rho) (accumulate (key x) rho x-grave))))
+	       1 (add (key x) '() x)))))))
+
+(define (g b) (lambda (c) b))
+
+(define (h p) (+ (p 1) (p 1)))
+
+(define (f a) (h (g a)))
+
+((derivative-using-*j f) 4)

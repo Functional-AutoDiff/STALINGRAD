@@ -1,0 +1,30 @@
+(include "j")
+
+(define (derivative-using-*j f)
+ (let ((f-*j (*j f)))
+  (lambda (x)
+   (car (exit (key x)
+	      ((cdr (f-*j
+		     cdr
+		     x
+		     (lambda (x-grave rho) (accumulate (key x) rho x-grave))))
+	       1 (add (key x) '() x)))))))
+
+(define (single1 f x) ((derivative-using-*j f) x))
+
+(define (double11 f x) ((derivative-using-*j (derivative-using-*j f)) x))
+
+(define (triple111 f x)
+ ((derivative-using-*j (derivative-using-*j (derivative-using-*j f))) x))
+
+(single1 sqrt 4)
+(single1 (lambda (x) (+ x x)) 4)
+(single1 (lambda (x) (car (cons x x))) 4)
+
+(double11 sqrt 4)
+(double11 (lambda (x) (+ x x)) 4)
+(double11 (lambda (x) (car (cons x x))) 4)
+
+(triple111 sqrt 4)
+(triple111 (lambda (x) (+ x x)) 4)
+(triple111 (lambda (x) (car (cons x x))) 4)

@@ -1,0 +1,41 @@
+(include "j")
+
+(define (length l) (if (null? l) 0 (+ (length (rest l)) 1)))
+
+;;; An n-dimensional vector with x in position i and zeros elsewhere.
+(define (ex x i n)
+ (if (zero? n) '() (cons (if (zero? i) x 0) (ex x (- i 1) (- n 1)))))
+
+;;; The ith n-dimensional basis vector.
+(define (e i n) (ex 1 i n))
+
+(define (first x) (car x))
+
+(define (rest x) (cdr x))
+
+(define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
+
+(define (map-n f n)
+ (if (zero? n) '() (append (map-n f (- n 1)) (list (f (- n 1))))))
+
+(define (list-ref l i) (if (zero? i) (first l) (list-ref (rest l) (- i 1))))
+
+(define (transpose a)
+ (let ((m (length a)) (n (length (first a))))
+  (map-n (lambda (j) (map-n (lambda (i) (list-ref (list-ref a i) j)) m)) n)))
+
+(define (jacobian-using-j* f)
+ (let ((f-j* (j* f)))
+  (lambda (x)
+   (let ((n (length x))) (map-n (lambda (i) (cdr (f-j* x (e i n)))) n)))))
+
+(define (jacobian f) (jacobian-using-j* f))
+
+(define (prefix l)
+ (letrec ((loop (lambda (a l)
+		 (if (null? l)
+		     '()
+		     (let ((a (+ a (first l)))) (cons a (loop a (rest l))))))))
+  (loop 0 l)))
+
+((jacobian-using-j* prefix) '(0 1 2 3 4))

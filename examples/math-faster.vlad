@@ -21,11 +21,16 @@
 		     (lambda (x-grave rho) (accumulate (key x) rho x-grave))))
 	       1 (add (key x) '() x)))))))
 
-(define (derivative f) (derivative-using-j* f))
+(define (derivative f) (derivative-using-*j f))
 
 (define (root f x epsilon)
- (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
-  (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon))))
+ (let ((f-prime (derivative f)))
+  (letrec ((loop (lambda (x)
+		  (let ((x-prime (- x (/ (f x) (f-prime x)))))
+		   (if (<= (abs (- x x-prime)) epsilon)
+		       x
+		       (loop x-prime))))))
+   (loop x))))
 
 ;;; needs work: To rule out maxima and inflection points.
 (define (argmin f x epsilon) (root (derivative f) x epsilon))
@@ -74,7 +79,7 @@
 
 (define (gradient-using-*j f) (derivative-using-*j f))
 
-(define (gradient f) (gradient-using-j* f))
+(define (gradient f) (gradient-using-*j f))
 
 (define (v+ u v) (map2 + u v))
 
@@ -85,10 +90,28 @@
 (define (magnitude x) (sqrt (magnitude-squared x)))
 
 (define (gradient-descent f x epsilon)
- (let ((g ((gradient f) x)))
-  (if (<= (magnitude g) epsilon)
-      x
-      (gradient-descent
-       f
-       (v+ x (k*v (argmin (lambda (k) (f (v+ x (k*v k g)))) 0 epsilon) g))
-       epsilon))))
+ (let* ((del-f (gradient f))
+	(line (lambda (x g k) (f (v+ x (k*v k g)))))
+	(line-j* (j* line))
+	(line-prime (lambda (x g k)
+		     (cdr (line-j* (cons x (cons g k))
+				   (cons (zero x) (cons (zero g) 1))))))
+	(line-prime-j* (j* line-prime))
+	(line-prime-prime
+	 (lambda (x g k)
+	  (cdr (line-prime-j* (cons x (cons g k))
+			      (cons (zero x) (cons (zero g) 1)))))))
+  (letrec ((loop
+	    (lambda (x)
+	     (let ((g (del-f x)))
+	      (letrec ((argmin (lambda (k)
+				(let ((k-prime
+				       (- k (/ (line-prime x g k)
+					       (line-prime-prime x g k)))))
+				 (if (<= (abs (- k k-prime)) epsilon)
+				     k
+				     (argmin k-prime))))))
+	       (if (<= (magnitude g) epsilon)
+		   x
+		   (loop (v+ x (k*v (argmin 0) g)))))))))
+   (loop x))))

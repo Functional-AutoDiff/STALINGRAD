@@ -1,0 +1,25 @@
+(include "j")
+
+(define (derivative-using-*j f)
+ (let ((f-*j (*j f)))
+  (lambda (x)
+   (car (exit (key x)
+	      ((cdr (f-*j
+		     cdr
+		     x
+		     (lambda (x-grave rho) (accumulate (key x) rho x-grave))))
+	       1 (add (key x) '() x)))))))
+
+((derivative-using-*j
+  (let ((g (lambda (b) (lambda (c) b)))) (lambda (a) ((g 1) 1))))
+ 4)
+
+((derivative-using-*j
+  (let ((g (lambda (b) (lambda (c) b)))) (lambda (a) ((g a) 1))))
+ 4)
+
+((derivative-using-*j
+  (let ((g (lambda (b) (lambda (c) b))))
+   (let ((h (lambda (p) (+ (p 1) (p 1)))))
+    (lambda (a) (h (g a))))))
+ 4)

@@ -72,12 +72,8 @@
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
 		 (at-most-one ("trace-closures" trace-closures?))
-		 (at-most-one
-		  ("trace-recursive-closures" trace-recursive-closures?))
 		 (at-most-one ("trace-argument/result" trace-argument/result?))
 		 (at-most-one ("unabbreviate-closures" unabbreviate-closures?))
-		 (at-most-one ("unabbreviate-recursive-closures"
-			       unabbreviate-recursive-closures?))
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
 		  ("length" length? (length "n" integer-argument #f)))
@@ -90,11 +86,17 @@
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
  (set! *trace-closures?* trace-closures?)
- (set! *trace-recursive-closures?* trace-recursive-closures?)
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-closures?* unabbreviate-closures?)
- (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
+ (set! *y* (genname 'y))
+ (set! *y-tilde* (genname 'y-tilde))
+ (set! *y-grave* (genname 'y-grave))
+ (set! *r* (genname 'r))
+ (set! *x1* (genname 'x1))
+ (set! *x1-tilde* (genname 'x1-tilde))
+ (set! *x2* (genname 'x2))
+ (set! *x2-tilde* (genname 'x2-tilde))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -119,7 +121,13 @@
 	     length
 	     (lambda ()
 	      ((if *pp?* pp write)
-	       (externalize (evaluate (first result) #f (second result))))))))
+	       (externalize
+		(evaluate (first result)
+			  'unspecified
+			  (create-key)
+			  (second result)
+			  (map-vector (lambda (v) (create-key))
+				      (second result)))))))))
 	  (newline)
 	  (when metered?
 	   (for-each (lambda (b)
