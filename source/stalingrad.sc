@@ -75,9 +75,7 @@
 	(pp (abstract->concrete (first result)))
 	(newline))
        (when evaluated?
-	(pp
-	 (externalize
-	  (evaluate (first result) (append *value-bindings* (second result)))))
+	(pp (externalize (evaluate (first result) #f (second result))))
 	(newline)))
       (loop)))))))
 

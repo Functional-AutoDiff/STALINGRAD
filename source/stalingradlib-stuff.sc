@@ -45,13 +45,12 @@
 
 ;;; needs work
 ;;;  1. LET, AND, and OR macros and NOT procedure
-;;;  2. factor common constants
-;;;  3. spread arguments should be lists
-;;;  4. DEFINE
-;;;  5. () -> '()
-;;;  6. quoted list constants
-;;;  7. unary -
-;;;  8. variable access by constant-time index rather than linear search
+;;;  2. spread arguments should be lists
+;;;  3. DEFINE
+;;;  4. () -> '()
+;;;  5. quoted list constants
+;;;  6. unary -
+;;;  7. variable access by constant-time index rather than linear search
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -66,23 +65,28 @@
 
 ;;; Structures
 
-(define-structure variable-access-expression variable)
+(define-structure variable-access-expression variable index)
 
 (define-structure application callee argument)
 
 (define-structure lambda-expression variable free-variables body)
 
 (define-structure letrec-expression
- procedure-variables argument-variables bodies body)
+ procedure-variables
+ argument-variables
+ bodies-free-variables
+ body-free-variables
+ bodies
+ body)
 
 (define-structure variable-binding variable expression)
 
 (define-structure value-binding variable value)
 
-(define-structure closure value-bindings variable body)
+(define-structure closure values variable body)
 
 (define-structure recursive-closure
- value-bindings procedure-variables argument-variables bodies)
+ values procedure-variables argument-variables bodies index)
 
 (define-structure primitive-procedure procedure)
 
@@ -233,11 +237,12 @@
    `(lambda (,(lambda-expression-variable e))
      ,(abstract->concrete (lambda-expression-body e))))
   ((letrec-expression? e)
-   `(letrec ,(map (lambda (x1 x2 e)
-		   `(,x1 (lambda (,x2) ,(abstract->concrete e))))
-		  (letrec-expression-procedure-variables e)
-		  (letrec-expression-argument-variables e)
-		  (letrec-expression-bodies e))
+   `(letrec ,(vector->list
+	      (map-vector (lambda (x1 x2 e)
+			   `(,x1 (lambda (,x2) ,(abstract->concrete e))))
+			  (letrec-expression-procedure-variables e)
+			  (letrec-expression-argument-variables e)
+			  (letrec-expression-bodies e)))
      ,(abstract->concrete (letrec-expression-body e))))
   (else (fuck-up))))
 
@@ -250,7 +255,7 @@
        (else (fuck-up))))
 
 (define (parameter-variable-bindings x p)
- (let loop ((p p) (e (make-variable-access-expression x)))
+ (let loop ((p p) (e (make-variable-access-expression x #f)))
   (cond ((symbol? p) (list (make-variable-binding p e)))
 	((list? p)
 	 (case (first p)
@@ -258,11 +263,11 @@
 	   (append (loop (second p)
 			 (make-application
 			  ;; needs work: to ensure that you don't shadow car
-			  (make-variable-access-expression 'car) e))
+			  (make-variable-access-expression 'car #f) e))
 		   (loop (third p)
 			 (make-application
 			  ;; needs work: to ensure that you don't shadow cdr
-			  (make-variable-access-expression 'cdr) e))))
+			  (make-variable-access-expression 'cdr #f) e))))
 	  (else (fuck-up))))
 	(else (fuck-up)))))
 
@@ -272,112 +277,226 @@
        ((application? e)
 	(unionq (free-variables-in (application-callee e))
 		(free-variables-in (application-argument e))))
-       ((lambda-expression? e) (lambda-expression-free-variables e))
+       ((lambda-expression? e)
+	(vector->list (lambda-expression-free-variables e)))
        ((letrec-expression? e)
-	(set-differenceq
-	 (unionq (reduce unionq
-			 (map (lambda (x e) (removeq x (free-variables-in e)))
-			      (letrec-expression-argument-variables e)
-			      (letrec-expression-bodies e))
-			 '())
-		 (free-variables-in (letrec-expression-body e)))
-	 (letrec-expression-procedure-variables e)))
+	(vector->list (letrec-expression-body-free-variables e)))
        (else (fuck-up))))
 
+(define (remove-duplicatesq-vector xs)
+ (list->vector (remove-duplicatesq (vector->list xs))))
+
+(define (coalesce-constants result)
+ (let ((bss (transitive-equivalence-classesp
+	     (lambda (b1 b2)
+	      (same? (value-binding-value b1) (value-binding-value b2)))
+	     (second result))))
+  (define (rename x)
+   (let ((bs (find-if
+	      (lambda (bs)
+	       (some (lambda (b) (eq? (value-binding-variable b) x)) bs))
+	      bss)))
+    (if bs (value-binding-variable (first bs)) x)))
+  (list
+   (let loop ((e (first result)))
+    (cond
+     ((variable-access-expression? e)
+      (make-variable-access-expression
+       (rename (variable-access-expression-variable e)) #f))
+     ((application? e)
+      (make-application (loop (application-callee e))
+			(loop (application-argument e))))
+     ((lambda-expression? e)
+      (make-lambda-expression
+       (lambda-expression-variable e)
+       (remove-duplicatesq-vector
+	(map-vector rename (lambda-expression-free-variables e)))
+       (loop (lambda-expression-body e))))
+     ((letrec-expression? e)
+      (make-letrec-expression
+       (letrec-expression-procedure-variables e)
+       (letrec-expression-argument-variables e)
+       (remove-duplicatesq-vector
+	(map-vector rename (letrec-expression-bodies-free-variables e)))
+       (remove-duplicatesq-vector
+	(map-vector rename (letrec-expression-body-free-variables e)))
+       (map-vector loop (letrec-expression-bodies e))
+       (loop (letrec-expression-body e))))
+     (else (fuck-up))))
+   (map first bss))))
+
+(define (vector-append vs1 vs2)
+ (list->vector (append (vector->list vs1) (vector->list vs2))))
+
+(define (index x xs e)
+ (define (lookup x-prime)
+  (if (eq? x-prime x) -1 (positionq x-prime (vector->list xs))))
+ (cond
+  ((variable-access-expression? e)
+   (make-variable-access-expression
+    (variable-access-expression-variable e)
+    (lookup (variable-access-expression-variable e))))
+  ((application? e)
+   (make-application (index x xs (application-callee e))
+		     (index x xs (application-argument e))))
+  ((lambda-expression? e)
+   (make-lambda-expression
+    (lambda-expression-variable e)
+    (map-vector lookup (lambda-expression-free-variables e))
+    (index (lambda-expression-variable e)
+	   (lambda-expression-free-variables e)
+	   (lambda-expression-body e))))
+  ((letrec-expression? e)
+   (make-letrec-expression
+    (letrec-expression-procedure-variables e)
+    (letrec-expression-argument-variables e)
+    (map-vector lookup (letrec-expression-bodies-free-variables e))
+    (map-vector lookup (letrec-expression-body-free-variables e))
+    (let ((xs (vector-append (letrec-expression-procedure-variables e)
+			     (letrec-expression-bodies-free-variables e))))
+     (map-vector (lambda (x e) (index x xs e))
+		 (letrec-expression-argument-variables e)
+		 (letrec-expression-bodies e)))
+    (index x
+	   (vector-append (letrec-expression-procedure-variables e)
+			  (letrec-expression-body-free-variables e))
+	   (letrec-expression-body e))))
+  (else (fuck-up))))
+
 (define (concrete->abstract-expression e)
- (let loop ((e e) (bs *variable-bindings*))
-  (cond
-   ((null? e)
-    (let ((x (gensym)))
-     (list (make-variable-access-expression x)
-	   (list (make-value-binding x e)))))
-   ((boolean? e)
-    (let ((x (gensym)))
-     (list (make-variable-access-expression x)
-	   (list (make-value-binding x e)))))
-   ((real? e)
-    (let ((x (gensym)))
-     (list (make-variable-access-expression x)
-	   (list (make-value-binding x e)))))
-   ((symbol? e)
-    (list (variable-binding-expression
-	   (find-if (lambda (b) (eq? (variable-binding-variable b) e)) bs))
-	  '()))
-   ((list? e)
-    (case (first e)
-     ((lambda)
-      (case (length (second e))
-       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs))
-       ((1) (let* ((x (concrete->abstract-parameter (first (second e))))
-		   (result
-		    (loop
-		     (third e)
-		     (append
-		      (parameter-variable-bindings x (first (second e))) bs))))
-	     (list (make-lambda-expression
-		    x
-		    (removeq x (free-variables-in (first result)))
-		    (first result))
-		   (second result))))
-       (else (loop `(lambda ((cons ,(first (second e)) ,(second (second e)))
-			     ,@(rest (rest (second e))))
-		     ,(third e))
-		   bs))))
-     ((letrec)
-      (let* ((bs
-	      (append
-	       (map (lambda (b)
-		     (make-variable-binding
-		      (first b) (make-variable-access-expression (first b))))
-		    (second e))
+ (let* ((result
+	 (let loop ((e e) (bs *variable-bindings*))
+	  (cond
+	   ((null? e)
+	    (let ((x (gensym)))
+	     (list (make-variable-access-expression x #f)
+		   (list (make-value-binding x e)))))
+	   ((boolean? e)
+	    (let ((x (gensym)))
+	     (list (make-variable-access-expression x #f)
+		   (list (make-value-binding x e)))))
+	   ((real? e)
+	    (let ((x (gensym)))
+	     (list (make-variable-access-expression x #f)
+		   (list (make-value-binding x e)))))
+	   ((symbol? e)
+	    (list
+	     (variable-binding-expression
+	      (find-if (lambda (b) (eq? (variable-binding-variable b) e)) bs))
+	     '()))
+	   ((list? e)
+	    (case (first e)
+	     ((lambda)
+	      (case (length (second e))
+	       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs))
+	       ((1)
+		(let* ((x (concrete->abstract-parameter (first (second e))))
+		       (result (loop (third e)
+				     (append
+				      (parameter-variable-bindings
+				       x (first (second e))) bs))))
+		 (list (make-lambda-expression
+			x
+			(list->vector
+			 (removeq x (free-variables-in (first result))))
+			(first result))
+		       (second result))))
+	       (else
+		(loop `(lambda ((cons ,(first (second e)) ,(second (second e)))
+				,@(rest (rest (second e))))
+			,(third e))
+		      bs))))
+	     ((letrec)
+	      (let* ((bs
+		      (append
+		       (map (lambda (b)
+			     (make-variable-binding
+			      (first b)
+			      (make-variable-access-expression (first b) #f)))
+			    (second e))
+		       bs))
+		     (results
+		      (map (lambda (b) (loop (second b) bs)) (second e)))
+		     (result (loop (third e) bs))
+		     (xs1 (map first (second e)))
+		     (xs2 (map (lambda (result)
+				(lambda-expression-variable (first result)))
+			       results))
+		     (es (map (lambda (result)
+			       (lambda-expression-body (first result)))
+			      results))
+		     (e (first result)))
+	       (list
+		(make-letrec-expression
+		 (list->vector xs1)
+		 (list->vector xs2)
+		 (list->vector
+		  (set-differenceq
+		   (reduce
+		    unionq
+		    (map (lambda (x e) (removeq x (free-variables-in e)))
+			 xs2 es)
+		    '())
+		   xs1))
+		 (list->vector
+		  (set-differenceq
+		   (unionq
+		    (reduce
+		     unionq
+		     (map (lambda (x e) (removeq x (free-variables-in e)))
+			  xs2 es)
+		     '())
+		    (free-variables-in e))
+		   xs1))
+		 (list->vector es)
+		 e)
+		(append
+		 (second result) (reduce append (map second results) '())))))
+	     ((let*)
+	      (case (length (second e))
+	       ((0) (loop (third e) bs))
+	       ((1) (loop `((lambda (,(first (first (second e)))) ,(third e))
+			    ,(second (first (second e))))
+			  bs))
+	       (else
+		(loop
+		 `(let* (,(first (second e)))
+		   (let* ,(rest (second e)) ,(third e)))
+		 bs))))
+	     ((if)
+	      (loop
+	       ;; needs work: to ensure that you don't shadow if-procedure
+	       `((if-procedure
+		  ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
 	       bs))
-	     (results (map (lambda (b) (loop (second b) bs)) (second e)))
-	     (result (loop (third e) bs)))
-       (list
-	(make-letrec-expression
-	 (map first (second e))
-	 (map (lambda (result) (lambda-expression-variable (first result)))
-	      results)
-	 (map (lambda (result) (lambda-expression-body (first result)))
-	      results)
-	 (first result))
-	(append (second result) (reduce append (map second results) '())))))
-     ((let*)
-      (case (length (second e))
-       ((0) (loop (third e) bs))
-       ((1) (loop `((lambda (,(first (first (second e)))) ,(third e))
-		    ,(second (first (second e))))
-		  bs))
-       (else
-	(loop
-	 `(let* (,(first (second e))) (let* ,(rest (second e)) ,(third e)))
-	 bs))))
-     ((if) (loop
-	    ;; needs work: to ensure that you don't shadow if-procedure
-	    `((if-procedure
-	       ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
-	    bs))
-     ((cons)
-      ;; needs work: to ensure that you don't shadow cons-procedure
-      (loop `((cons-procedure ,(second e)) ,(third e)) bs))
-     ((cond) (loop (if (null? (rest (rest e)))
-		       (second (second e))
-		       `(if ,(first (second e))
-			    ,(second (second e))
-			    (cond ,@(rest (rest e)))))
-		   bs))
-     (else
-      (case (length (rest e))
-       ((0) (loop `(,(first e) ()) bs))
-       ((1) (let ((result1 (loop (first e) bs))
-		  (result2 (loop (second e) bs)))
-	     (list (make-application (first result1) (first result2))
-		   (append (second result1) (second result2)))))
-       (else
-	(loop
-	 `(,(first e) (cons ,(second e) ,(third e)) ,@(rest (rest (rest e))))
-	 bs))))))
-   (else (fuck-up)))))
+	     ((cons)
+	      ;; needs work: to ensure that you don't shadow cons-procedure
+	      (loop `((cons-procedure ,(second e)) ,(third e)) bs))
+	     ((cond) (loop (if (null? (rest (rest e)))
+			       (second (second e))
+			       `(if ,(first (second e))
+				    ,(second (second e))
+				    (cond ,@(rest (rest e)))))
+			   bs))
+	     (else
+	      (case (length (rest e))
+	       ((0) (loop `(,(first e) ()) bs))
+	       ((1) (let ((result1 (loop (first e) bs))
+			  (result2 (loop (second e) bs)))
+		     (list (make-application (first result1) (first result2))
+			   (append (second result1) (second result2)))))
+	       (else
+		(loop `(,(first e)
+			(cons ,(second e) ,(third e)) ,@(rest (rest (rest e))))
+		      bs))))))
+	   (else (fuck-up)))))
+	(xs (free-variables-in (first result)))
+	(bs (remove-if-not (lambda (b) (memq (value-binding-variable b) xs))
+			   (append *value-bindings* (second result))))
+	(result (coalesce-constants (list (first result) bs)))
+	(xs (list->vector (map value-binding-variable (second result)))))
+  (list (index #f xs (first result))
+	(list->vector (map value-binding-value (second result))))))
 
 (define (externalize v)
  (cond
@@ -387,22 +506,26 @@
   ((pair? v) (cons (externalize (car v)) (externalize (cdr v))))
   ((primitive-procedure? v) 'primitive-procedure)
   ((closure? v)
-   `(closure ,(map (lambda (b)
-		    (list (value-binding-variable b)
-			  (externalize (value-binding-value b))))
-		   (closure-value-bindings v))
-	     (lambda (,(closure-variable v))
-	      ,(abstract->concrete (closure-body v)))))
+   `(closure
+     ,(map-n (lambda (i)
+	      ;; needs work: to reconstruct free variables
+	      (list i (externalize (vector-ref (closure-values v) i))))
+	     (vector-length (closure-values v)))
+     (lambda (,(closure-variable v)) ,(abstract->concrete (closure-body v)))))
   ((recursive-closure? v)
    `(recursive-closure
-     ,(map (lambda (b)
-	    (list (value-binding-variable b)
-		  (externalize (value-binding-value b))))
-	   (recursive-closure-value-bindings v))
-     ,(map (lambda (x1 x2 e) `(,x1 (lambda (,x2) ,(abstract->concrete e))))
-	   (recursive-closure-procedure-variables v)
-	   (recursive-closure-argument-variables v)
-	   (recursive-closure-bodies v))))
+     ,(map-n
+       (lambda (i)
+	;; needs work: to reconstruct free variables
+	(list i (externalize (vector-ref (recursive-closure-values v) i))))
+       (vector-length (recursive-closure-values v)))
+     ,(vector->list
+       (map-vector
+	(lambda (x1 x2 e) `(,x1 (lambda (,x2) ,(abstract->concrete e))))
+	(recursive-closure-procedure-variables v)
+	(recursive-closure-argument-variables v)
+	(recursive-closure-bodies v)))
+     ,(recursive-closure-index v)))
   (else (fuck-up))))
 
 (define (run-time-error message v)
@@ -423,117 +546,87 @@
   ((primitive-procedure? callee)
    ((primitive-procedure-procedure callee) argument))
   ((closure? callee)
-   (evaluate (closure-body callee)
-	     (cons (make-value-binding (closure-variable callee) argument)
-		   (closure-value-bindings callee))))
+   (evaluate (closure-body callee) argument (closure-values callee)))
   ((recursive-closure? callee)
-   (evaluate
-    (first (recursive-closure-bodies callee))
-    (cons
-     (make-value-binding
-      (first (recursive-closure-argument-variables callee)) argument)
-     (append
-      (map-indexed
-       (lambda (x i)
-	(make-value-binding
-	 x
-	 (make-recursive-closure
-	  (recursive-closure-value-bindings callee)
-	  (cons (list-ref (recursive-closure-procedure-variables callee) i)
-		(list-remove (recursive-closure-procedure-variables callee) i))
-	  (cons (list-ref (recursive-closure-argument-variables callee) i)
-		(list-remove (recursive-closure-argument-variables callee) i))
-	  (cons (list-ref (recursive-closure-bodies callee) i)
-		(list-remove (recursive-closure-bodies callee) i)))))
-       (recursive-closure-procedure-variables callee))
-      (recursive-closure-value-bindings callee)))))
+   (evaluate (vector-ref (recursive-closure-bodies callee)
+			 (recursive-closure-index callee))
+	     argument
+	     (vector-append (map-n-vector
+			     (lambda (i)
+			      (make-recursive-closure
+			       (recursive-closure-values callee)
+			       (recursive-closure-procedure-variables callee)
+			       (recursive-closure-argument-variables callee)
+			       (recursive-closure-bodies callee)
+			       i))
+			     (vector-length (recursive-closure-bodies callee)))
+			    (recursive-closure-values callee))))
   (else (run-time-error "Target is not a procedure" callee))))
 
-(define (evaluate e bs)
+(define (evaluate e v vs)
+ (define (lookup i) (if (= i -1) v (vector-ref vs i)))
  (cond
   ((variable-access-expression? e)
-   (value-binding-value
-    (find-if (lambda (b)
-	      (eq? (value-binding-variable b)
-		   (variable-access-expression-variable e)))
-	     bs)))
+   (lookup (variable-access-expression-index e)))
   ((application? e)
-   (let ((v1 (evaluate (application-callee e) bs))
-	 (v2 (evaluate (application-argument e) bs)))
+   (let ((v1 (evaluate (application-callee e) v vs))
+	 (v2 (evaluate (application-argument e) v vs)))
     (set! *last*
 	  (cons (list e v1 v2)
 		(if (>= (length *last*) 10) (but-last *last*) *last*)))
     (call v1 v2)))
   ((lambda-expression? e)
-   (let ((free-variables (free-variables-in e)))
-    (make-closure
-     (remove-if-not
-      (lambda (b) (memq (value-binding-variable b) free-variables)) bs)
-     (lambda-expression-variable e)
-     (lambda-expression-body e))))
+   (make-closure (map-vector lookup (lambda-expression-free-variables e))
+		 (lambda-expression-variable e)
+		 (lambda-expression-body e)))
   ((letrec-expression? e)
-   (let* ((xs1 (letrec-expression-procedure-variables e))
-	  (xs2 (letrec-expression-argument-variables e))
-	  (es (letrec-expression-bodies e))
-	  (free-variables
-	   (set-differenceq
-	    (reduce
-	     unionq
-	     (map (lambda (x e) (removeq x (free-variables-in e))) xs2 es)
-	     '())
-	    xs1)))
-    (evaluate
-     (letrec-expression-body e)
-     (append
-      (let ((bs (remove-if-not
-		 (lambda (b) (memq (value-binding-variable b) free-variables))
-		 bs)))
-       (map-indexed (lambda (x i)
-		     (make-value-binding
-		      x
-		      (make-recursive-closure
-		       bs
-		       (cons (list-ref xs1 i) (list-remove xs1 i))
-		       (cons (list-ref xs2 i) (list-remove xs2 i))
-		       (cons (list-ref es i) (list-remove es i)))))
-		    xs1))
-      bs))))
+   (evaluate (letrec-expression-body e)
+	     v
+	     (vector-append
+	      (let ((vs (map-vector
+			 lookup (letrec-expression-bodies-free-variables e))))
+	       (map-n-vector (lambda (i)
+			      (make-recursive-closure
+			       vs
+			       (letrec-expression-procedure-variables e)
+			       (letrec-expression-argument-variables e)
+			       (letrec-expression-bodies e)
+			       i))
+			     (vector-length (letrec-expression-bodies e))))
+	      (map-vector lookup (letrec-expression-body-free-variables e)))))
   (else (fuck-up))))
 
-(define (same? x1 x2)
- (or (and (null? x1) (null? x2))
-     (and (boolean? x1) (boolean? x2) (eq? x1 x2))
-     (and (real? x1) (real? x2) (= x1 x2))
-     (and (pair? x1)
-	  (pair? x2)
-	  (same? (car x1) (car x2))
-	  (same? (cdr x1) (cdr x2)))
-     (and (primitive-procedure? x1)
-	  (primitive-procedure? x2)
-	  (eq? x1 x2))
-     (and (closure? x1)
-	  (closure? x2)
-	  (eq? (closure-body x1) (closure-body x2))
-	  (every (lambda (b1 b2)
-		  (same? (value-binding-value b1) (value-binding-value b2)))
-		 (closure-value-bindings x1)
-		 (closure-value-bindings x2)))
-     (and (recursive-closure? x1)
-	  (recursive-closure? x2)
-	  (= (length (recursive-closure-bodies x1))
-	     (length (recursive-closure-bodies x2)))
-	  (every eq?
-		 (recursive-closure-bodies x1)
-		 (recursive-closure-bodies x2))
-	  (every (lambda (b1 b2)
-		  (same? (value-binding-value b1) (value-binding-value b2)))
-		 (recursive-closure-value-bindings x1)
-		 (recursive-closure-value-bindings x2)))))
+(define (same? v1 v2)
+ (or (and (null? v1) (null? v2))
+     (and (boolean? v1) (boolean? v2) (eq? v1 v2))
+     (and (real? v1) (real? v2) (= v1 v2))
+     (and (pair? v1)
+	  (pair? v2)
+	  (same? (car v1) (car v2))
+	  (same? (cdr v1) (cdr v2)))
+     (and (primitive-procedure? v1)
+	  (primitive-procedure? v2)
+	  (eq? v1 v2))
+     (and (closure? v1)
+	  (closure? v2)
+	  (eq? (closure-body v1) (closure-body v2))
+	  (every-vector same? (closure-values v1) (closure-values v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (= (recursive-closure-index v1) (recursive-closure-index v2))
+	  (= (vector-length (recursive-closure-bodies v1))
+	     (vector-length (recursive-closure-bodies v2)))
+	  (every-vector eq?
+			(recursive-closure-bodies v1)
+			(recursive-closure-bodies v2))
+	  (every-vector same?
+			(recursive-closure-values v1)
+			(recursive-closure-values v2)))))
 
 (define (define-primitive-basis-constant x procedure)
  (set! *basis-constants* (cons x *basis-constants*))
  (set! *variable-bindings*
-       (cons (make-variable-binding x (make-variable-access-expression x))
+       (cons (make-variable-binding x (make-variable-access-expression x #f))
 	     *variable-bindings*))
  (set! *value-bindings*
        (cons (make-value-binding x (make-primitive-procedure procedure))
@@ -690,23 +783,17 @@
     (run-time-error "Invalid argument to map-closure" x))
    (cond ((closure? (cdr x))
 	  (make-closure
-	   (map (lambda (b)
-		 (make-value-binding
-		  (value-binding-variable b)
-		  (call (car x) (value-binding-value b))))
-		(closure-value-bindings (cdr x)))
+	   (map-vector (lambda (v) (call (car x) v)) (closure-values (cdr x)))
 	   (closure-variable (cdr x))
 	   (closure-body (cdr x))))
 	 ((recursive-closure? (cdr x))
 	  (make-recursive-closure
-	   (map (lambda (b)
-		 (make-value-binding
-		  (value-binding-variable b)
-		  (call (car x) (value-binding-value b))))
-		(recursive-closure-value-bindings (cdr x)))
+	   (map-vector (lambda (v) (call (car x) v))
+		       (recursive-closure-values (cdr x)))
 	   (recursive-closure-procedure-variables (cdr x))
 	   (recursive-closure-argument-variables (cdr x))
-	   (recursive-closure-bodies (cdr x))))
+	   (recursive-closure-bodies (cdr x))
+	   (recursive-closure-index (cdr x))))
 	 (else (fuck-up)))))
  (define-primitive-basis-constant
   'write
