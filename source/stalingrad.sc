@@ -117,24 +117,7 @@
 	     length
 	     (lambda ()
 	      (pp (externalize
-		   ;; (triple032 sqrt 4) and (triple033 sqrt 4), inter alia,
-		   ;; have multiple values
-		   (one-value (evaluate (first result) #f (second result))
-			      (begin
-			       (format #t "Stack trace~%")
-			       (for-each (lambda (record)
-					  (display "Procedure: ")
-					  (write (name (first record)))
-					  (newline)
-					  (display "Argument: ")
-					  (write (externalize (second record)))
-					  (newline)
-					  (newline))
-					 *error-stack*)
-			       (newline)
-			       (pp (externalize *error-v*))
-			       (newline)
-			       (panic *error-message*)))))))))
+		   (evaluate (first result) #f (second result))))))))
 	  (newline)
 	  (when metered?
 	   (for-each (lambda (b)
