@@ -13,4 +13,4 @@
 ;;;(root (lambda (x) (- (sqr x) 4)) 5 1e-5)
 ;;;(argmin (lambda (x) (sqr (- x 4))) 5 1e-5)
 ;;;((gradient magnitude) (list 3 4))
-(gradient-descent magnitude-squared (list 3 4) 1e-5)
+;;;(gradient-descent magnitude-squared (list 3 4) 1e-5)

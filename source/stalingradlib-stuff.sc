@@ -109,8 +109,6 @@
 
 (define *trace-level* 0)
 
-(define *zero* #f)
-
 (define *generic-zero-index* -1)
 
 ;;; Parameters
@@ -642,10 +640,13 @@
        (else v)))
 
 (define (generic-zero-dereference-as-procedure v)
- ;; needs work: If a generic zero is dereferenced as a procedure then it must
- ;;             return the same result every time it is called.
  (cond ((generic-zero? v)
-	(unless (generic-zero-bound? v) (set-generic-zero-binding! v *zero*))
+	(unless (generic-zero-bound? v)
+	 (set-generic-zero-binding!
+	  v
+	  (make-closure (vector (create-generic-zero))
+			'x
+			(make-variable-access-expression 'zero 0))))
 	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
        (else v)))
 
@@ -1063,10 +1064,7 @@
        (recursive-closure-index x2)))
      (else (run-time-error "Invalid argument to map-closure" (cons x1 x2)))))
    "map-closure"))
- (let ((zero
-	(make-primitive-procedure 'zero (lambda (x) (create-generic-zero)))))
-  (set! *zero* zero)
-  (define-primitive-constant 'zero zero))
+ (define-primitive-procedure 'zero (lambda (x) (create-generic-zero)))
  (define-primitive-procedure 'plus (binary plus "plus"))
  (define-primitive-procedure 'write
   (lambda (x) (write (externalize x)) (newline) x)))
