@@ -1,0 +1,80 @@
+(include "math")
+
+(define (primal conjoint)
+ (cond ((procedure? conjoint) conjoint)
+       ((boolean? (car conjoint)) (car conjoint))
+       ((null? (car conjoint)) '())
+       ((real? (car conjoint)) (car conjoint))
+       ;; pair
+       (else (cons (primal (car conjoint)) (primal (cdr conjoint))))))
+
+(define (adjoint conjoint)
+ (cond ((procedure? conjoint) conjoint)
+       ((boolean? (car conjoint)) (cdr conjoint))
+       ((null? (car conjoint)) '())
+       ((real? (car conjoint)) (cdr conjoint))
+       ;; pair
+       (else (cons (adjoint (car conjoint)) (adjoint (cdr conjoint))))))
+
+(define (list-ref l i) (if (zero? i) (first l) (list-ref (rest l) (- i 1))))
+
+(define (transpose a)
+ (let ((m (length a)) (n (length (first a))))
+  (map-n (lambda (j) (map-n (lambda (i) (list-ref (list-ref a i) j)) m)) n)))
+
+(define (jacobian-using-conjoint-j* f)
+ (lambda (x)
+  (let ((n (length x)))
+   (map-n
+    (lambda (i) (adjoint ((conjoint-j* f) (forward-conjoint x (e i n))))) n))))
+
+(define (jacobian-using-conjoint-*j f)
+ (lambda (x)
+  (let ((n (length x)))
+   (transpose
+    (map
+     (lambda (y-tilde) (y-tilde 1))
+     (adjoint
+      ((conjoint-*j f)
+       (reverse-conjoint
+	x (map-n (lambda (i) (lambda (y-grave) (ex y-grave i n))) n)))))))))
+
+(define (jacobian-using-conjoined-j* f)
+ (lambda (x)
+  (let ((n (length x)))
+   (map-n (lambda (i) (cdr ((conjoined-j* f) x (e i n)))) n))))
+
+(define (jacobian-using-conjoined-*j f)
+ (lambda (x)
+  (let ((n (length x)) (y-tilde (cdr ((conjoined-*j f) x identity))))
+   (transpose (map-n (lambda (i) (y-tilde (e i n))) n)))))
+
+(define (jacobian f) (jacobian-using-conjoint-j* f))
+
+(define (conjoint-j-transpose*v f)
+ (lambda (x y-grave)
+  (let ((n (length x)))
+   ((reduce plus (zero))
+    (map2 (lambda (y-tilde y-grave) (y-tilde y-grave))
+	  (adjoint
+	   ((conjoint-*j f)
+	    (reverse-conjoint
+	     x (map-n (lambda (i) (lambda (y-grave) (ex y-grave i n))) n))))
+	  y-grave)))))
+
+(define (conjoined-j-transpose*v f)
+ (lambda (x y-grave) ((cdr ((conjoined-*j f) x identity)) y-grave)))
+
+(define (prefix l)
+ (letrec ((loop (lambda (a l)
+		 (if (null? l)
+		     '()
+		     (let ((a (+ a (car l)))) (cons a (loop a (cdr l))))))))
+  (loop 0 l)))
+
+((jacobian-using-conjoint-j* prefix) '(0 1 2 3 4))
+((jacobian-using-conjoint-*j prefix) '(0 1 2 3 4))
+((jacobian-using-conjoined-j* prefix) '(0 1 2 3 4))
+;((jacobian-using-conjoined-*j prefix) '(0 1 2 3 4))
+((conjoint-j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
+((conjoined-j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
