@@ -1,0 +1,16 @@
+#!/bin/tcsh -f
+time stalingrad -evaluated -letrec factorial.vlad
+time stalingrad -evaluated -letrec even-odd.vlad
+time stalingrad -evaluated -letrec bug-a.vlad
+time stalingrad -evaluated -letrec bug-b.vlad
+time stalingrad -evaluated -letrec bug-c.vlad
+time stalingrad -evaluated -letrec bug0.vlad
+time stalingrad -evaluated -letrec bug1.vlad
+time stalingrad -evaluated -letrec bug2.vlad
+time stalingrad -evaluated -letrec bug3.vlad
+time stalingrad -evaluated -letrec bug4.vlad
+time stalingrad -evaluated -letrec example.vlad
+time stalingrad -evaluated -letrec prefix.vlad
+time stalingrad -evaluated -letrec sqrt.vlad
+time stalingrad -evaluated -letrec triple.vlad
+#time stalingrad -evaluated -letrec double-agent.vlad

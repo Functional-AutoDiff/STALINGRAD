@@ -75,7 +75,6 @@
 (define-structure application callee argument)
 
 (define-structure letrec-expression
- used-binding-maps			;vector vector
  procedure-variables
  argument-variables
  bodies-free-variables
@@ -100,7 +99,6 @@
 (define-structure recursive-closure
  variables
  values					;vector
- used-binding-maps			;vector vector
  procedure-variables			;vector
  argument-variables			;vector
  bodies					;vector
@@ -153,46 +151,115 @@
 (define (new-lambda-expression x e)
  (make-lambda-expression (removeq x (free-variables e)) #f x e))
 
+(define (reference-graph procedure-variables argument-variables es e)
+ (list
+  (map (lambda (x1 x2 e)
+	(list x1
+	      (intersectionq procedure-variables
+			     (free-variables (new-lambda-expression x2 e)))))
+       procedure-variables
+       argument-variables
+       es)
+  (intersectionq procedure-variables (free-variables e))))
+
+(define (transitive-closure arms)
+ (let loop ((arms arms))
+  (let ((new-arms
+	 (map
+	  (lambda (arm)
+	   (list
+	    (first arm)
+	    (unionq (second arm)
+		    (reduce unionq
+			    (map (lambda (target) (second (assq target arms)))
+				 (second arm))
+			    '()))))
+	  arms)))
+   (if (every (lambda (arm new-arm)
+	       (set-equalq? (second arm) (second new-arm)))
+	      arms
+	      new-arms)
+       arms
+       (loop new-arms)))))
+
+(define (strongly-connected-components arms transitive-arms)
+ (equivalence-classesp (lambda (x1 x2)
+			(and (memq x1 (second (assq x2 transitive-arms)))
+			     (memq x2 (second (assq x1 transitive-arms)))))
+		       (map first arms)))
+
+(define (lightweight-letrec-conversion
+	 procedure-variables argument-variables es e)
+ (let* ((reference-graph
+	 (reference-graph procedure-variables argument-variables es e))
+	(arms (first reference-graph))
+	(xs (second reference-graph))
+	(transitive-arms (transitive-closure arms)))
+  (map
+   (lambda (this)
+    (list
+     this
+     (or (not (null? (rest this)))
+	 (not (not (memq (first this) (second (assq (first this) arms))))))))
+   (topological-sort
+    ;; component2 calls component1
+    (lambda (component1 component2)
+     (some (lambda (x2)
+	    (some (lambda (x1) (memq x1 (second (assq x2 transitive-arms))))
+		  component1))
+	   component2))
+    (remove-if-not
+     (lambda (component)
+      (some (lambda (x1)
+	     (some (lambda (x2)
+		    (or (eq? x2 x1)
+			(memq x2 (second (assq x1 transitive-arms)))))
+		   component))
+	    xs))
+     (strongly-connected-components arms transitive-arms))))))
+
+(define (new-lightweight-letrec-expression
+	 procedure-variables argument-variables es e)
+ (let loop ((clusters (lightweight-letrec-conversion
+		       procedure-variables argument-variables es e)))
+  (if (null? clusters)
+      e
+      (let ((cluster (first clusters)))
+       (if (second cluster)
+	   (new-letrec-expression
+	    (first cluster)
+	    (map (lambda (x)
+		  (list-ref
+		   argument-variables (positionq x procedure-variables)))
+		 (first cluster))
+	    (map (lambda (x) (list-ref es (positionq x procedure-variables)))
+		 (first cluster))
+	    (loop (rest clusters)))
+	   (let ((x (first (first cluster))))
+	    (make-application
+	     (new-lambda-expression x (loop (rest clusters)))
+	     (new-lambda-expression
+	      (list-ref argument-variables (positionq x procedure-variables))
+	      (list-ref es (positionq x procedure-variables))))))))))
+
 (define (new-letrec-expression procedure-variables argument-variables es e)
- (let* ((body-used-procedure-variables
-	 (letrec-body-used-procedure-variables
-	  procedure-variables argument-variables es e))
-	(triples
-	 (remove-if-not
-	  (lambda (triple) (memq (first triple) body-used-procedure-variables))
-	  (map list procedure-variables argument-variables es)))
-	(procedure-variables (map first triples))
-	(argument-variables (map second triples))
-	(es (map third triples))
-	(bodies-used-procedure-variables
-	 (letrec-bodies-used-procedure-variables
-	  procedure-variables argument-variables es)))
-  (make-letrec-expression
-   (list->vector
-    (map (lambda (body-used-procedure-variables)
-	  (list->vector
-	   (removeq
-	    #f
-	    (map-indexed
-	     (lambda (x i) (if (memq x body-used-procedure-variables) i #f))
-	     procedure-variables))))
-	 bodies-used-procedure-variables))
-   procedure-variables
-   argument-variables
-   (letrec-free-variables procedure-variables argument-variables es)
-   #f
-   (sort-variables
-    (set-differenceq
-     (unionq (reduce unionq
-		     (map (lambda (x e) (removeq x (free-variables e)))
-			  argument-variables
-			  es)
-		     '())
-	     (free-variables e))
-     procedure-variables))
-   #f
-   es
-   e)))
+ (make-letrec-expression
+  procedure-variables
+  argument-variables
+  (letrec-free-variables procedure-variables argument-variables es)
+  #f
+  (sort-variables
+   (set-differenceq
+    (unionq (reduce unionq
+		    (map (lambda (x e) (removeq x (free-variables e)))
+			 argument-variables
+			 es)
+		    '())
+	    (free-variables e))
+    procedure-variables))
+  #f
+  es
+  e))
 
 (define (create-primitive-procedure name procedure)
  (make-primitive-procedure name procedure 0))
@@ -232,8 +299,7 @@
 	      (else (fuck-up)))))
   (else (create-lambda-expression bs `((cons* ,@ps)) e))))
 
-(define (create-application bs e . es)
- (make-application e (make-cons* bs es)))
+(define (create-application bs e . es) (make-application e (make-cons* bs es)))
 
 (define (create-let bs p e1 e2)
  (create-application bs (create-lambda-expression bs (list p) e2) e1))
@@ -623,59 +689,6 @@
 	  (else (fuck-up))))
    (map first bss))))
 
-(define (letrec-body-used-procedure-variables
-	 procedure-variables argument-variables es e)
- (let loop ((xs (intersectionq procedure-variables (free-variables e))))
-  (let ((xs-prime
-	 (unionq
-	  (intersectionq procedure-variables (free-variables e))
-	  (reduce unionq
-		  (map (lambda (x1 x2 e)
-			(if (memq x1 xs)
-			    (intersectionq procedure-variables
-					   (removeq x2 (free-variables e)))
-			    '()))
-		       procedure-variables
-		       argument-variables
-		       es)
-		  '()))))
-   (if (set-equalq? xs xs-prime) xs (loop xs-prime)))))
-
-(define (letrec-bodies-used-procedure-variables
-	 procedure-variables argument-variables es)
- ;; needs work: The (list x1) makes each recursive closure contain its own
- ;;             binding. This is not necessary if a recursive closure can't
- ;;             call itself. But then it doesn't need to be a recursive
- ;;             closure and can be converted into a closure. We don't do that
- ;;             optimization (yet). Because the current implementation of
- ;;             recursive closures has no other way to have a body except in
- ;;             bodies, we must make such a self binding even if the recursive
- ;;             closure can't call itself.
- (map
-  (lambda (x1 x2 e)
-   (let loop ((xs (unionq (list x1)
-			  (intersectionq procedure-variables
-					 (removeq x2 (free-variables e))))))
-    (let ((xs-prime
-	   (unionq
-	    (unionq (list x1)
-		    (intersectionq procedure-variables
-				   (removeq x2 (free-variables e))))
-	    (reduce unionq
-		    (map (lambda (x1 x2 e)
-			  (if (memq x1 xs)
-			      (intersectionq procedure-variables
-					     (removeq x2 (free-variables e)))
-			      '()))
-			 procedure-variables
-			 argument-variables
-			 es)
-		    '()))))
-     (if (set-equalq? xs xs-prime) xs (loop xs-prime)))))
-  procedure-variables
-  argument-variables
-  es))
-
 (define (letrec-free-variables procedure-variables argument-variables es)
  (sort-variables
   (set-differenceq
@@ -721,26 +734,17 @@
 		     (index x xs (application-argument e))))
   ((letrec-expression? e)
    (make-letrec-expression
-    (letrec-expression-used-binding-maps e)
     (letrec-expression-procedure-variables e)
     (letrec-expression-argument-variables e)
     (letrec-expression-bodies-free-variables e)
     (list->vector (map lookup (letrec-expression-bodies-free-variables e)))
     (letrec-expression-body-free-variables e)
     (list->vector (map lookup (letrec-expression-body-free-variables e)))
-    (let ((xs1 (list->vector (letrec-expression-procedure-variables e)))
-	  (xs2 (letrec-expression-bodies-free-variables e)))
-     (map
-      (lambda (used-bindings x e)
-       (index
-	x
-	(append (vector->list
-		 (map-vector (lambda (i) (vector-ref xs1 i)) used-bindings))
-		xs2)
-	e))
-      (vector->list (letrec-expression-used-binding-maps e))
-      (letrec-expression-argument-variables e)
-      (letrec-expression-bodies e)))
+    (let ((xs (append (letrec-expression-procedure-variables e)
+		      (letrec-expression-bodies-free-variables e))))
+     (map (lambda (x e) (index x xs e))
+	  (letrec-expression-argument-variables e)
+	  (letrec-expression-bodies e)))
     (index x
 	   (append (letrec-expression-procedure-variables e)
 		   (letrec-expression-body-free-variables e))
@@ -804,7 +808,7 @@
 				   (lambda-expression-body (first result)))
 				  results))
 			 (e (first result)))
-		   (list (new-letrec-expression xs1 xs2 es e)
+		   (list (new-lightweight-letrec-expression xs1 xs2 es e)
 			 (append (second result)
 				 (reduce append (map second results) '()))))
 		  (loop (macro-expand e) bs)))
@@ -887,14 +891,13 @@
 	    (letrec-expression-bodies e)
 	    (letrec-expression-argument-variables e)
 	    xs2)
-	   (loop
-	    (letrec-expression-body e)
-	    (append (map (lambda (x x1)
-			  (make-variable-binding
-			   x (make-variable-access-expression x1 #f)))
-			 (letrec-expression-procedure-variables e)
-			 xs1)
-		    bs)))))
+	   (loop (letrec-expression-body e)
+		 (append (map (lambda (x x1)
+			       (make-variable-binding
+				x (make-variable-access-expression x1 #f)))
+			      (letrec-expression-procedure-variables e)
+			      xs1)
+			 bs)))))
 	(else (fuck-up)))))
 
 (define (basis-value x)
@@ -963,7 +966,6 @@
 		  (letrec-expression-procedure-variables e)
 		  (reverse-transforms
 		   bs
-		   (vector->list (letrec-expression-used-binding-maps e))
 		   (letrec-expression-procedure-variables e)
 		   (map new-lambda-expression
 			(letrec-expression-argument-variables e)
@@ -972,7 +974,8 @@
   (else (fuck-up))))
 
 (define (reverse-transform-internal
-	 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves xs)
+	 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves gs g-graves
+	 xs)
  (let* ((ts (map variable-binding-variable (anf-let-bindings anf)))
 	(es (map variable-binding-expression (anf-let-bindings anf)))
 	(x-graves (map (lambda (x) (genname x 'grave)) xs))
@@ -989,6 +992,7 @@
    (cond ((eq? z x) x-grave)
 	 ((memq z xs) (list-ref x-graves (positionq z xs)))
 	 ((memq z fs) (list-ref f-graves (positionq z fs)))
+	 ((memq z gs) (list-ref g-graves (positionq z gs)))
 	 ((memq z ts) (list-ref t-graves (positionq z ts)))
 	 ;; need before convergence to fixedpoint of free-variable
 	 ;; calculation
@@ -1049,6 +1053,7 @@
 	      `(,@x-graves
 		,x-grave
 		,@f-graves
+		,@g-graves
 		,(last t-graves)
 		,@(map variable-binding-variable bs0)
 		,@(if (null? (anf-letrec-bindings anf))
@@ -1057,6 +1062,7 @@
 	      `(,@(map (lambda (x) (make-zero bs)) xs)
 		,(make-zero bs)
 		,@(map (lambda (f) (make-zero bs)) fs)
+		,@(map (lambda (g) (make-zero bs)) gs)
 		,(make-variable-access-expression y-grave #f)
 		,@(map variable-binding-expression bs0)
 		,@(if (null? (anf-letrec-bindings anf))
@@ -1078,13 +1084,20 @@
 					(make-variable-access-expression
 					 (first f-graves) #f)
 					(loop (rest f-graves)))))))))
-	      (make-cons bs
-			 (make-cons*
-			  bs
-			  (map (lambda (x-grave)
-				(make-variable-access-expression x-grave #f))
-			       x-graves))
-			 (make-variable-access-expression x-grave #f))))))))
+	      (make-cons
+	       bs
+	       (let loop ((g-graves g-graves))
+		(if (null? g-graves)
+		    (make-cons*
+		     bs
+		     (map (lambda (x-grave)
+			   (make-variable-access-expression x-grave #f))
+			  x-graves))
+		    (make-plus
+		     bs
+		     (make-variable-access-expression (first g-graves) #f)
+		     (loop (rest g-graves)))))
+	       (make-variable-access-expression x-grave #f))))))))
    (create-lambda-expression
     bs
     (list x)
@@ -1112,11 +1125,12 @@
 	(f-graves (map (lambda (f) (genname f 'grave)) fs)))
   (let loop ((xs (free-variables e)))
    (let* ((e (reverse-transform-internal
-	      bs x x-grave y-grave anf t-twiddles t-graves fs f-graves xs))
+	      bs x x-grave y-grave anf t-twiddles t-graves fs f-graves '() '()
+	      xs))
 	  (xs-prime (free-variables e)))
     (if (equal? xs xs-prime) e (loop xs-prime))))))
 
-(define (reverse-transforms bs used-binding-maps gs es)
+(define (reverse-transforms bs gs es)
  (let* ((xs (map lambda-expression-variable es))
 	(x-graves (map (lambda (x) (genname x 'grave)) xs))
 	(y-graves (map (lambda (x) (genname x 'y-grave)) xs))
@@ -1133,18 +1147,15 @@
 		   (map variable-binding-variable (anf-letrec-bindings anf)))
 		  anfs))
 	(f-gravess (map (lambda (fs) (map (lambda (f) (genname f 'grave)) fs))
-			fss)))
+			fss))
+	(g-graves (map (lambda (g) (genname g 'grave)) gs)))
   (let loop ((zs (letrec-free-variables gs xs es)))
    (let* ((es (map
-	       (lambda (x x-grave y-grave anf t-twiddles t-graves fs f-graves
-			  used-bindings)
+	       (lambda (x x-grave y-grave anf t-twiddles t-graves fs f-graves)
 		(reverse-transform-internal
 		 bs x x-grave y-grave anf t-twiddles t-graves fs f-graves
-		 (append (map (lambda (i) (list-ref gs i))
-			      (vector->list used-bindings))
-			 zs)))
-	       xs x-graves y-graves anfs t-twiddless t-gravess fss f-gravess
-	       used-binding-maps))
+		 gs g-graves zs))
+	       xs x-graves y-graves anfs t-twiddless t-gravess fss f-gravess))
 	  (zs-prime (letrec-free-variables gs xs es)))
     (if (equal? zs zs-prime) es (loop zs-prime))))))
 
@@ -1274,38 +1285,15 @@
 		       (recursive-closure-index callee))
 	   argument
 	   (vector-append
-	    ;; needs work: This is quartic in the number of bindings.
-	    ;; needs work: Another optimization is possible. One can on a per
-	    ;;             binding basis, filter the variables/values.
-	    (map-n-vector
-	     (lambda (i)
-	      (let ((used-bindings
-		     (vector-ref
-		      (recursive-closure-used-binding-maps callee) i)))
-	       (make-recursive-closure
-		(recursive-closure-variables callee)
-		(recursive-closure-values callee)
-		(map-vector
-		 (lambda (i)
-		  (map-vector
-		   (lambda (i) (positionq i (vector->list used-bindings)))
-		   (vector-ref
-		    (recursive-closure-used-binding-maps callee) i)))
-		 used-bindings)
-		(map-vector
-		 (lambda (i)
-		  (vector-ref
-		   (recursive-closure-procedure-variables callee) i))
-		 used-bindings)
-		(map-vector
-		 (lambda (i)
-		  (vector-ref (recursive-closure-argument-variables callee) i))
-		 used-bindings)
-		(map-vector
-		 (lambda (i) (vector-ref (recursive-closure-bodies callee) i))
-		 used-bindings)
-		(positionq i (vector->list used-bindings)))))
-	     (vector-length (recursive-closure-bodies callee)))
+	    (map-n-vector (lambda (i)
+			   (make-recursive-closure
+			    (recursive-closure-variables callee)
+			    (recursive-closure-values callee)
+			    (recursive-closure-procedure-variables callee)
+			    (recursive-closure-argument-variables callee)
+			    (recursive-closure-bodies callee)
+			    i))
+			  (vector-length (recursive-closure-bodies callee)))
 	    (recursive-closure-values callee))))
 	 (else (fuck-up)))))
   (set! *stack* (rest *stack*))
@@ -1350,26 +1338,10 @@
 		(xs0 (list->vector (letrec-expression-procedure-variables e)))
 		(xs1 (list->vector (letrec-expression-argument-variables e)))
 		(es (list->vector (letrec-expression-bodies e))))
-	   ;; needs work: This is quartic in the number of bindings.
-	   ;; needs work: Another optimization is possible. One can on a per
-	   ;;             binding basis, filter the variables/values.
 	   (map-n-vector
 	    (lambda (i)
-	     (let ((used-bindings
-		    (vector-ref (letrec-expression-used-binding-maps e) i)))
-	      (make-recursive-closure
-	       (letrec-expression-bodies-free-variables e)
-	       vs
-	       (map-vector
-		(lambda (i)
-		 (map-vector
-		  (lambda (i) (positionq i (vector->list used-bindings)))
-		  (vector-ref (letrec-expression-used-binding-maps e) i)))
-		used-bindings)
-	       (map-vector (lambda (i) (vector-ref xs0 i)) used-bindings)
-	       (map-vector (lambda (i) (vector-ref xs1 i)) used-bindings)
-	       (map-vector (lambda (i) (vector-ref es i)) used-bindings)
-	       (positionq i (vector->list used-bindings)))))
+	     (make-recursive-closure
+	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
 	    (vector-length es)))
 	  (map-vector lookup-value
 		      (letrec-expression-body-free-variable-indices e)))))
@@ -1512,7 +1484,6 @@
       (make-recursive-closure
        (recursive-closure-variables g)
        (map-vector (lambda (v) (call f v)) (recursive-closure-values g))
-       (recursive-closure-used-binding-maps g)
        (recursive-closure-procedure-variables g)
        (recursive-closure-argument-variables g)
        (recursive-closure-bodies g)
@@ -1554,7 +1525,6 @@
 		      (cons '() (map value-binding-value *value-bindings*))))
 	     (es (reverse-transforms
 		  bs
-		  (vector->list (recursive-closure-used-binding-maps g))
 		  (vector->list (recursive-closure-procedure-variables g))
 		  (vector->list
 		   (map-vector new-lambda-expression
@@ -1575,22 +1545,15 @@
 		     (find-if (lambda (b) (eq? (value-binding-variable b) x))
 			      bs)))))
 	      xs))
-	(recursive-closure-used-binding-maps g)
 	(recursive-closure-procedure-variables g)
 	(list->vector (map lambda-expression-variable es))
 	(list->vector
 	 (map
-	  (lambda (used-bindings e)
+	  (lambda (e)
 	   (index (lambda-expression-variable e)
 		  (append
-		   (vector->list
-		    (map-vector
-		     (lambda (i)
-		      (vector-ref (recursive-closure-procedure-variables g) i))
-		     used-bindings))
-		   xs)
+		   (vector->list (recursive-closure-procedure-variables g)) xs)
 		  (lambda-expression-body e)))
-	  (vector->list (recursive-closure-used-binding-maps g))
 	  es))
 	(recursive-closure-index g))))
      (else (run-time-error "Invalid argument to map-closure-reverse" x))))))
