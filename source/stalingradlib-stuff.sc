@@ -44,11 +44,10 @@
 (include "stalingradlib-stuff.sch")
 
 ;;; To do:
-;;;  1. polymorphism
-;;;     let polymorphism
-;;;     exponential aspect
+;;;  1. the value rule or whatever it is called
 ;;;  2. scoping of concrete type variables is screwed up
 ;;;  3. datatypes
+;;;  4. reflective API
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -76,7 +75,7 @@
 
 (define-structure constant-expression value type)
 
-(define-structure variable-access-expression lambda-expression path type)
+(define-structure variable-access-expression binding-expression path type)
 
 (define-structure basis-constant name value type)
 
@@ -84,23 +83,22 @@
 
 (define-structure lambda-expression parameter body type)
 
+(define-structure let-expression
+ parameter quantified-type-variables expression body type)
+
 (define-structure if-expression antecedent consequent alternate type)
-
-(define-structure car-expression argument type)
-
-(define-structure cdr-expression argument type)
 
 (define-structure cons-expression car-argument cdr-argument type)
 
 (define-structure y-expression argument type)
 
-(define-structure parameter-binding parameter lambda-expression path)
+(define-structure parameter-binding parameter binding-expression path)
 
 (define-structure type-binding concrete abstract)
 
-(define-structure copy-binding old new)
+(define-structure instantiate-binding old new)
 
-(define-structure value-binding lambda-expression value)
+(define-structure value-binding binding-expression value)
 
 ;;; Variables
 
@@ -121,11 +119,20 @@
        ((basis-constant? e) (basis-constant-type e))
        ((application? e) (application-type e))
        ((lambda-expression? e) (lambda-expression-type e))
+       ((let-expression? e) (let-expression-type e))
        ((if-expression? e) (if-expression-type e))
-       ((car-expression? e) (car-expression-type e))
-       ((cdr-expression? e) (cdr-expression-type e))
        ((cons-expression? e) (cons-expression-type e))
        ((y-expression? e) (y-expression-type e))
+       (else (fuck-up))))
+
+(define (binding-expression-parameter e)
+ (cond ((lambda-expression? e) (lambda-expression-parameter e))
+       ((let-expression? e) (let-expression-parameter e))
+       (else (fuck-up))))
+
+(define (binding-expression-quantified-type-variables e)
+ (cond ((lambda-expression? e) '())
+       ((let-expression? e) (let-expression-quantified-type-variables e))
        (else (fuck-up))))
 
 (define (syntax-check-type! t)
@@ -151,7 +158,7 @@
 (define (syntax-check-parameter! p)
  (cond
   ((symbol? p)
-   (when (memq p '(: lambda if car cdr cons y let let* cond))
+   (when (memq p '(: lambda let if cons y let* cond))
     (panic (format #f "Invalid variable: ~s" p)))
    #f)
   ((and (list? p) (not (null? p)))
@@ -203,6 +210,20 @@
        (when (duplicatesq? xs0)
 	(panic (format #f "Duplicate variables: ~s" (second e))))
        (loop (third e) (append xs0 xs))))
+     ((let)
+      (unless (and (= (length e) 3)
+		   (list? (second e))
+		   (= (length (second e)) 1)
+		   (list? (first (second e)))
+		   (= (length (first (second e))) 2))
+       (panic (format #f "Invalid expression: ~s" e)))
+      (syntax-check-parameter! (first (first (second e))))
+      (loop (second (first (second e))) xs)
+      (let ((xs0 (parameter-variables (first (first (second e))))))
+       (when (duplicatesq? xs0)
+	(panic
+	 (format #f "Duplicate variables: ~s" (first (first (second e))))))
+       (loop (third e) (append xs0 xs))))
      ((if)
       (unless (= (length e) 4) (panic (format #f "Invalid expression: ~s" e)))
       (loop (second e) xs)
@@ -221,24 +242,6 @@
      ((y)
       (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
       (loop (second e) xs))
-     ((let)
-      (unless (and (= (length e) 3)
-		   (list? (second e))
-		   (every (lambda (b) (and (list? b) (= (length b) 2)))
-			  (second e)))
-       (panic (format #f "Invalid expression: ~s" e)))
-      (loop (if (null? (second e))
-		(third e)
-		`((lambda ,(let loop ((ps (map first (second e))))
-			    (if (null? (rest ps))
-				(first ps)
-				`(cons ,(first ps) ,(loop (rest ps)))))
-		   ,(third e))
-		  ,(let loop ((es (map second (second e))))
-		    (if (null? (rest es))
-			(first es)
-			`(cons ,(first es) ,(loop (rest es)))))))
-	    xs))
      ((let*)
       (unless (and (= (length e) 3)
 		   (list? (second e))
@@ -343,8 +346,8 @@
   ((constant-expression? e) (constant-expression-value e))
   ((variable-access-expression? e)
    ;; This assumes that no manipulation can cause capture.
-   (let loop ((p (lambda-expression-parameter
-		  (variable-access-expression-lambda-expression e)))
+   (let loop ((p (binding-expression-parameter
+		  (variable-access-expression-binding-expression e)))
 	      (path (variable-access-expression-path e)))
     (if (null? path)
 	(variable-parameter-variable p)
@@ -361,6 +364,12 @@
    `(lambda ,(abstract->undecorated-concrete-parameter
 	      (lambda-expression-parameter e))
      ,(abstract->undecorated-concrete-expression (lambda-expression-body e))))
+  ((let-expression? e)
+   `(let ((,(abstract->undecorated-concrete-parameter
+	     (let-expression-parameter e))
+	   ,(abstract->undecorated-concrete-expression
+	     (let-expression-expression e))))
+     ,(abstract->undecorated-concrete-expression (let-expression-body e))))
   ((if-expression? e)
    `(if ,(abstract->undecorated-concrete-expression
 	  (if-expression-antecedent e))
@@ -368,12 +377,6 @@
 	  (if-expression-consequent e))	
 	,(abstract->undecorated-concrete-expression
 	  (if-expression-alternate e))))
-  ((car-expression? e)
-   `(car ,(abstract->undecorated-concrete-expression
-	   (car-expression-argument e))))
-  ((cdr-expression? e)
-   `(cdr ,(abstract->undecorated-concrete-expression
-	   (cdr-expression-argument e))))
   ((cons-expression? e)
    `(cons ,(abstract->undecorated-concrete-expression
 	    (cons-expression-car-argument e))
@@ -389,8 +392,8 @@
        ((constant-expression? e) (constant-expression-value e))
        ((variable-access-expression? e)
 	;; This assumes that no manipulation can cause capture.
-	(let loop ((p (lambda-expression-parameter
-		       (variable-access-expression-lambda-expression e)))
+	(let loop ((p (binding-expression-parameter
+		       (variable-access-expression-binding-expression e)))
 		   (path (variable-access-expression-path e)))
 	 (if (null? path)
 	     (variable-parameter-variable p)
@@ -408,6 +411,12 @@
 		   (lambda-expression-parameter e))
 	  ,(abstract->decorated-concrete-expression
 	    (lambda-expression-body e))))
+       ((let-expression? e)
+	`(let ((,(abstract->decorated-concrete-parameter
+		  (let-expression-parameter e))
+		,(abstract->decorated-concrete-expression
+		  (let-expression-expression e))))
+	  ,(abstract->decorated-concrete-expression (let-expression-body e))))
        ((if-expression? e)
 	`(if ,(abstract->decorated-concrete-expression
 	       (if-expression-antecedent e))
@@ -415,12 +424,6 @@
 	       (if-expression-consequent e))	
 	     ,(abstract->decorated-concrete-expression
 	       (if-expression-alternate e))))
-       ((car-expression? e)
-	`(car ,(abstract->decorated-concrete-expression
-		(car-expression-argument e))))
-       ((cdr-expression? e)
-	`(cdr ,(abstract->decorated-concrete-expression
-		(cdr-expression-argument e))))
        ((cons-expression? e)
 	`(cons ,(abstract->decorated-concrete-expression
 		 (cons-expression-car-argument e))
@@ -486,20 +489,24 @@
 			    (abstract->concrete-type t1)
 			    (abstract->concrete-type t2))))))
 
-(define (copy-type t)
- (let ((copy-bindings
-	(map (lambda (a) (make-copy-binding a (create-type-variable)))
-	     (abstract-type-variables-in t))))
+(define (instantiate as t)
+ (let ((instantiate-bindings
+	(map (lambda (a) (make-instantiate-binding a (create-type-variable)))
+	     as)))
   (let loop ((t t))
    (cond ((eq? t 'boolean) t)
 	 ((eq? t 'real) t)
 	 ((type-variable? t)
 	  (if (bound? t)
 	      (loop (type-variable-type t))
-	      (copy-binding-new
-	       (find-if (lambda (copy-binding)
-			 (eq? (copy-binding-old copy-binding) t))
-			copy-bindings))))
+	      (let ((instantiate-binding
+		     (find-if
+		      (lambda (instantiate-binding)
+		       (eq? (instantiate-binding-old instantiate-binding) t))
+		      instantiate-bindings)))
+	       (if instantiate-binding
+		   (instantiate-binding-new instantiate-binding)
+		   t))))
 	 ((function-type? t)
 	  (make-function-type (loop (function-type-parameter-type t))
 			      (loop (function-type-result-type t))))
@@ -531,23 +538,19 @@
  (cond ((symbol? p) (make-variable-parameter p (create-type-variable)))
        ((list? p)
 	(case (first p)
-	 ((:) (let ((p0 (concrete->abstract-parameter (second p))))
-	       ;; needs work: How does this interact with polymorphism?
-	       (unify! (parameter-type p0)
-		       (concrete->abstract-type (third p)))
-	       p0))
+	 ((:) (let ((p1 (concrete->abstract-parameter (second p))))
+	       (unify! (parameter-type p1) (concrete->abstract-type (third p)))
+	       p1))
 	 ((cons)
-	  (let ((p0 (concrete->abstract-parameter (second p)))
-		(p1 (concrete->abstract-parameter (third p))))
+	  (let ((p1 (concrete->abstract-parameter (second p)))
+		(p2 (concrete->abstract-parameter (third p))))
 	   (make-cons-parameter
-	    p0
-	    p1
-	    (make-cons-type (parameter-type p0) (parameter-type p1)))))
+	    p1 p2 (make-cons-type (parameter-type p1) (parameter-type p2)))))
 	 (else (fuck-up))))
        (else (fuck-up))))
 
-(define (lambda-expression-parameter-bindings e)
- (let loop ((p (lambda-expression-parameter e)) (e e) (path '()))
+(define (binding-expression-parameter-bindings e)
+ (let loop ((p (binding-expression-parameter e)) (e e) (path '()))
   (cond
    ((variable-parameter? p) (list (make-parameter-binding p e path)))
    ((cons-parameter? p)
@@ -569,89 +572,73 @@
 		    parameter-bindings)))
      (if parameter-binding
 	 (make-variable-access-expression
-	  (parameter-binding-lambda-expression parameter-binding)
+	  (parameter-binding-binding-expression parameter-binding)
 	  (parameter-binding-path parameter-binding)
-	  (variable-parameter-type
-	   (parameter-binding-parameter parameter-binding)))
+	  (instantiate
+	   (binding-expression-quantified-type-variables
+	    (parameter-binding-binding-expression parameter-binding))
+	   (variable-parameter-type
+	    (parameter-binding-parameter parameter-binding))))
 	 (find-if (lambda (basis-constant)
 		   (eq? (basis-constant-name basis-constant) e))
 		  *basis-constants*))))
    ((list? e)
     (case (first e)
-     ((:) (let ((e0 (loop (second e) parameter-bindings)))
-	   ;; needs work: How does this interact with polymorphism?
-	   (unify! (expression-type e0) (concrete->abstract-type (third e)))
-	   e0))
+     ((:) (let ((e1 (loop (second e) parameter-bindings)))
+	   (unify! (expression-type e1) (concrete->abstract-type (third e)))
+	   e1))
      ((lambda)
       (let* ((p (concrete->abstract-parameter (second e)))
-	     (e0 (make-lambda-expression
-		  p
-		  #f
-		  (make-function-type
-		   (parameter-type p) (create-type-variable)))))
-       (set-lambda-expression-body!
-	e0
-	(loop (third e)
-	      (append (lambda-expression-parameter-bindings e0)
-		      parameter-bindings)))
-       (unify! (function-type-result-type (expression-type e0))
-	       (expression-type (lambda-expression-body e0)))
-       e0))
-     ((if) (let ((e (make-if-expression
-		     (loop (second e) parameter-bindings)
-		     (loop (third e) parameter-bindings)
-		     (loop (fourth e) parameter-bindings)
-		     (create-type-variable))))
-	    (unify! (expression-type (if-expression-antecedent e)) 'boolean)
-	    ;; needs work: How does this interact with polymorphism?
-	    (unify! (expression-type (if-expression-consequent e))
-		    (expression-type e))
-	    ;; needs work: How does this interact with polymorphism?
-	    (unify! (expression-type (if-expression-alternate e))
-		    (expression-type e))
-	    e))
-     ((car)
-      (let ((e (make-car-expression
-		(loop (second e) parameter-bindings) (create-type-variable))))
-       (unify! (expression-type (car-expression-argument e))
-	       (make-cons-type (expression-type e) (create-type-variable)))
-       e))
-     ((cdr)
-      (let ((e (make-cdr-expression
-		(loop (second e) parameter-bindings) (create-type-variable))))
-       (unify! (expression-type (cdr-expression-argument e))
-	       (make-cons-type (create-type-variable) (expression-type e)))
-       e))
+	     (e-prime (make-lambda-expression p #f #f))
+	     (e1 (loop (third e)
+		       (append (binding-expression-parameter-bindings e-prime)
+			       parameter-bindings))))
+       (set-lambda-expression-body! e-prime e1)
+       (set-lambda-expression-type!
+	e-prime (make-function-type (parameter-type p) (expression-type e1)))
+       e-prime))
+     ((let)
+      (let* ((e1 (loop (second (first (second e))) parameter-bindings))
+	     (e-prime
+	      (make-let-expression
+	       (concrete->abstract-parameter (first (first (second e))))
+	       (set-differenceq
+		(abstract-type-variables-in (expression-type e1))
+		(reduce
+		 unionq
+		 (map (lambda (parameter-binding)
+		       (abstract-type-variables-in
+			(parameter-type
+			 (parameter-binding-parameter parameter-binding))))
+		      parameter-bindings)
+		 '()))
+	       e1
+	       #f
+	       #f)))
+       (unify! (parameter-type (binding-expression-parameter e-prime))
+	       (expression-type e1))
+       (let ((e2 (loop (third e)
+		       (append (binding-expression-parameter-bindings e-prime)
+			       parameter-bindings))))
+	(set-let-expression-body! e-prime e2)
+	(set-let-expression-type! e-prime (expression-type e2))
+	e-prime)))
+     ((if) (let ((e1 (loop (second e) parameter-bindings))
+		 (e2 (loop (third e) parameter-bindings))
+		 (e3 (loop (fourth e) parameter-bindings)))
+	    (unify! (expression-type e1) 'boolean)
+	    (unify! (expression-type e2) (expression-type e3))
+	    (make-if-expression e1 e2 e3 (expression-type e3))))
      ((cons)
-      (let ((e (make-cons-expression (loop (second e) parameter-bindings)
-				     (loop (third e) parameter-bindings)
-				     (create-type-variable))))
-       (unify! (expression-type e)
-	       (make-cons-type
-		(expression-type (cons-expression-car-argument e))
-		(expression-type (cons-expression-cdr-argument e))))
-       e))
-     ((y) (let ((e (make-y-expression
-		    (loop (second e) parameter-bindings)
-		    (make-function-type (create-type-variable)
-					(create-type-variable)))))
-	   ;; needs work: How does this interact with polymorphism?
-	   (unify!
-	    (expression-type (y-expression-argument e))
-	    (make-function-type (expression-type e) (expression-type e)))
-	   e))
-     ((let) (loop (if (null? (second e))
-		      (third e)
-		      `((lambda ,(let loop ((ps (map first (second e))))
-				  (if (null? (rest ps))
-				      (first ps)
-				      `(cons ,(first ps) ,(loop (rest ps)))))
-			 ,(third e))
-			,(let loop ((es (map second (second e))))
-			  (if (null? (rest es))
-			      (first es)
-			      `(cons ,(first es) ,(loop (rest es)))))))
-		  parameter-bindings))
+      (let ((e1 (loop (second e) parameter-bindings))
+	    (e2 (loop (third e) parameter-bindings)))
+       (make-cons-expression
+	e1 e2 (make-cons-type (expression-type e1) (expression-type e2)))))
+     ((y) (let ((e1 (loop (second e) parameter-bindings))
+		(t (make-function-type (create-type-variable)
+				       (create-type-variable))))
+	   (unify! (expression-type e1) (make-function-type t t))
+	   (make-y-expression e1 t)))
      ((let*)
       (loop
        (if (null? (second e))
@@ -664,61 +651,58 @@
 			    ,(second (second e))
 			    (cond ,@(rest (rest e)))))
 		   parameter-bindings))
-     (else (let ((e (make-application
-		     (loop (first e) parameter-bindings)
-		     (loop (second e) parameter-bindings)
-		     (create-type-variable))))
-	    ;; needs work: How does this interact with polymorphism?
-	    (unify! (expression-type (application-callee e))
-		    (make-function-type
-		     (expression-type (application-argument e))
-		     (expression-type e)))
-	    e))))
+     (else (let ((e1 (loop (first e) parameter-bindings))
+		 (e2 (loop (second e) parameter-bindings))
+		 (a (create-type-variable)))
+	    (unify!
+	     (expression-type e1) (make-function-type (expression-type e2) a))
+	    (make-application e1 e2 a)))))
    (else (fuck-up)))))
 
 (define (evaluate e)
  (let loop ((e e) (value-bindings '()))
-  (cond ((constant-expression? e) (constant-expression-value e))
-	((variable-access-expression? e)
-	 (let loop ((path (variable-access-expression-path e))
-		    (value
-		     (value-binding-value
-		      (find-if
-		       (lambda (value-binding)
-			(eq? (value-binding-lambda-expression value-binding)
-			     (variable-access-expression-lambda-expression e)))
-		       value-bindings))))
-	  (if (null? path)
-	      value
-	      (loop (rest path)
-		    (case (first path)
-		     ((car) (car value))
-		     ((cdr) (cdr value))
-		     (else (fuck-up)))))))
-	((basis-constant? e) (basis-constant-value e))
-	((application? e)
-	 ((loop (application-callee e) value-bindings)
-	  (loop (application-argument e) value-bindings)))
-	((lambda-expression? e)
-	 (lambda (value)
-	  (loop (lambda-expression-body e)
-		(cons (make-value-binding e value) value-bindings))))
-	((if-expression? e)
-	 (if (loop (if-expression-antecedent e) value-bindings)
-	     (loop (if-expression-consequent e) value-bindings)
-	     (loop (if-expression-alternate e) value-bindings)))
-	((car-expression? e)
-	 (car (loop (car-expression-argument e) value-bindings)))
-	((cdr-expression? e)
-	 (cdr (loop (cdr-expression-argument e) value-bindings)))
-	((cons-expression? e)
-	 (cons (loop (cons-expression-car-argument e) value-bindings)
-	       (loop (cons-expression-cdr-argument e) value-bindings)))
-	((y-expression? e)
-	 (let ((f (loop (y-expression-argument e) value-bindings)))
-	  ((lambda (g) (lambda (x) ((f (g g)) x)))
-	   (lambda (g) (lambda (x) ((f (g g)) x))))))
-	(else (fuck-up)))))
+  (cond
+   ((constant-expression? e) (constant-expression-value e))
+   ((variable-access-expression? e)
+    (let loop ((path (variable-access-expression-path e))
+	       (value
+		(value-binding-value
+		 (find-if
+		  (lambda (value-binding)
+		   (eq? (value-binding-binding-expression value-binding)
+			(variable-access-expression-binding-expression e)))
+		  value-bindings))))
+     (if (null? path)
+	 value
+	 (loop (rest path)
+	       (case (first path)
+		((car) (car value))
+		((cdr) (cdr value))
+		(else (fuck-up)))))))
+   ((basis-constant? e) (basis-constant-value e))
+   ((application? e)
+    ((loop (application-callee e) value-bindings)
+     (loop (application-argument e) value-bindings)))
+   ((lambda-expression? e)
+    (lambda (value)
+     (loop (lambda-expression-body e)
+	   (cons (make-value-binding e value) value-bindings))))
+   ((let-expression? e)
+    (let ((value (loop (let-expression-expression e) value-bindings)))
+     (loop (let-expression-body e)
+	   (cons (make-value-binding e value) value-bindings))))
+   ((if-expression? e)
+    (if (loop (if-expression-antecedent e) value-bindings)
+	(loop (if-expression-consequent e) value-bindings)
+	(loop (if-expression-alternate e) value-bindings)))
+   ((cons-expression? e)
+    (cons (loop (cons-expression-car-argument e) value-bindings)
+	  (loop (cons-expression-cdr-argument e) value-bindings)))
+   ((y-expression? e)
+    (let ((f (loop (y-expression-argument e) value-bindings)))
+     ((lambda (g) (lambda (x) ((f (g g)) x)))
+      (lambda (g) (lambda (x) ((f (g g)) x))))))
+   (else (fuck-up)))))
 
 (define (define-basis-constant name value t)
  (set! *basis-constants*
