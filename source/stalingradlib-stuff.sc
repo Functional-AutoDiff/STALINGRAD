@@ -49,7 +49,8 @@
 ;;;  3. spread arguments should be lists
 ;;;  4. DEFINE
 ;;;  5. () -> '()
-;;;  6. unary -
+;;;  6. quoted list constants
+;;;  7. unary -
 
 ;;; Key
 ;;;  e: concrete or abstract expression
