@@ -12,7 +12,7 @@
 
 (define (derivative-using-*j f) (lambda (x) ((cdr ((*j f) x identity)) 1)))
 
-(define (derivative f) (derivative-using-*j f))
+(define (derivative f) (derivative-using-j* f))
 
 (define (root f x epsilon)
  (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
@@ -65,7 +65,7 @@
 
 (define (gradient-using-*j f) (lambda (x) ((cdr ((*j f) x identity)) 1)))
 
-(define (gradient f) (gradient-using-*j f))
+(define (gradient f) (gradient-using-j* f))
 
 (define (v+ u v) (map2 + u v))
 
