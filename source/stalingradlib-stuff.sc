@@ -92,7 +92,12 @@
 ;;; needs work: Is a real generic zero a positive IEEE zero or a negative IEEE
 ;;;             zero?
 (define-structure generic-zero
- index binding not-null? not-real? not-pair? not-procedure?)
+ index
+ binding
+ ;; Can't use null because it is defined as the constant 0.
+ null-procedure
+ naught
+ cons-procedure)
 
 ;;; Variables
 
@@ -109,12 +114,6 @@
 (define *trace-level* 0)
 
 (define *generic-zero-index* -1)
-
-(define *error-message* #f)
-
-(define *error-v* #f)
-
-(define *error-stack* #f)
 
 ;;; Parameters
 
@@ -649,96 +648,251 @@
   (list (index #f xs (first result))
 	(list->vector (map value-binding-value (second result))))))
 
-(define (create-generic-zero)
+(define (create-generic-zero null-procedure naught cons-procedure)
  (set! *generic-zero-index* (+ *generic-zero-index* 1))
- (make-generic-zero *generic-zero-index* #f #f #f #f #f))
+ (make-generic-zero
+  *generic-zero-index* #f null-procedure naught cons-procedure))
 
 (define (generic-zero-bound? v) (not (eq? (generic-zero-binding v) #f)))
 
 (define (generic-zero-dereference-as-null v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
-	 (when (generic-zero-not-null? v) (fail))
-	 (local-set-generic-zero-binding! v '()))
+	 (set-generic-zero-binding!
+	  v (call (generic-zero-null-procedure v) '())))
 	(generic-zero-dereference-as-null (generic-zero-binding v)))
        (else v)))
 
 (define (generic-zero-dereference-as-real v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
-	 (when (generic-zero-not-real? v) (fail))
-	 (local-set-generic-zero-binding! v 0))
+	 (set-generic-zero-binding!
+	  v (call (generic-zero-naught v) '())))
 	(generic-zero-dereference-as-real (generic-zero-binding v)))
        (else v)))
 
 (define (generic-zero-dereference-as-pair v)
  (cond ((generic-zero? v)
 	(unless (generic-zero-bound? v)
-	 (when (generic-zero-not-pair? v) (fail))
-	 (local-set-generic-zero-binding!
-	  v (cons (create-generic-zero) (create-generic-zero))))
+	 (set-generic-zero-binding!
+	  v
+	  (call (call (generic-zero-cons-procedure v)
+		      (create-generic-zero (generic-zero-null-procedure v)
+					   (generic-zero-naught v)
+					   (generic-zero-cons-procedure v)))
+		(create-generic-zero (generic-zero-null-procedure v)
+				     (generic-zero-naught v)
+				     (generic-zero-cons-procedure v)))))
 	(generic-zero-dereference-as-pair (generic-zero-binding v)))
        (else v)))
 
-(define (generic-zero-dereference-as-procedure v)
- (cond ((generic-zero? v)
-	(unless (generic-zero-bound? v)
-	 (when (generic-zero-not-procedure? v) (fail))
-	 (local-set-generic-zero-binding!
-	  v
-	  (make-closure	(vector (create-generic-zero))
-			'x
-			(make-variable-access-expression 'zero 0))))
-	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
-       (else v)))
-
-(define (generic-zero-conforming-dereference v1 v2)
+(define (generic-zero-conforming-dereference
+	 null? real? pair? if-procedure v1 v2)
  (cond
   ((and (generic-zero? v1) (generic-zero-bound? v1))
-   (generic-zero-conforming-dereference (generic-zero-binding v1) v2))
+   (generic-zero-conforming-dereference
+    null? real? pair? if-procedure (generic-zero-binding v1) v2))
   ((and (generic-zero? v2) (generic-zero-bound? v2))
-   (generic-zero-conforming-dereference v1 (generic-zero-binding v2)))
+   (generic-zero-conforming-dereference
+    null? real? pair? if-procedure v1 (generic-zero-binding v2)))
   ((and (generic-zero? v1) (generic-zero? v2))
    (unless (eq? v1 v2) (set-generic-zero-binding! v1 v2))
    (cons v1 v2))
   ((generic-zero? v1)
-   (cond
-    ((null? v2)
-     (generic-zero-conforming-dereference
-      (generic-zero-dereference-as-null v1) v2))
-    ((real? v2)
-     (generic-zero-conforming-dereference
-      (generic-zero-dereference-as-real v1) v2))
-    ((pair? v2)
-     (generic-zero-conforming-dereference
-      (generic-zero-dereference-as-pair v1) v2))
-    ((vlad-procedure? v2)
-     (generic-zero-conforming-dereference
-      (generic-zero-dereference-as-procedure v1) v2))
-    (else (run-time-error "Invalid argument to plus-primitive" (cons v1 v2)))))
+   (call
+    (call
+     (call (call if-procedure (call null? v2))
+	   (create-primitive-procedure
+	    "generic-zero-conforming-dereference 0"
+	    (lambda (x)
+	     (generic-zero-conforming-dereference
+	      null?
+	      real?
+	      pair?
+	      if-procedure
+	      (generic-zero-dereference-as-null v1)
+	      v2))))
+     (create-primitive-procedure
+      "generic-zero-conforming-dereference 1"
+      (lambda (x)
+       (call
+	(call
+	 (call (call if-procedure (call real? v2))
+	       (create-primitive-procedure
+		"generic-zero-conforming-dereference 2"
+		(lambda (x)
+		 (generic-zero-conforming-dereference
+		  null?
+		  real?
+		  pair?
+		  if-procedure
+		  (generic-zero-dereference-as-real v1)
+		  v2))))
+	 (create-primitive-procedure
+	  "generic-zero-conforming-dereference 3"
+	  (lambda (x)
+	   (call (call (call (call if-procedure (call pair? v2))
+			     (create-primitive-procedure
+			      "generic-zero-conforming-dereference 4"
+			      (lambda (x)
+			       (generic-zero-conforming-dereference
+				null?
+				real?
+				pair?
+				if-procedure
+				(generic-zero-dereference-as-pair v1)
+				v2))))
+		       (create-primitive-procedure
+			"generic-zero-conforming-dereference 5"
+			(lambda (x)
+			 (run-time-error
+			  "Invalid argument to plus-primitive" (cons v1 v2)))))
+		 '()))))
+	'()))))
+    '()))
   ((generic-zero? v2)
-   (cond
-    ((null? v1)
-     (generic-zero-conforming-dereference
-      v1 (generic-zero-dereference-as-null v2)))
-    ((real? v1)
-     (generic-zero-conforming-dereference
-      v1 (generic-zero-dereference-as-real v2)))
-    ((pair? v1)
-     (generic-zero-conforming-dereference
-      v1 (generic-zero-dereference-as-pair v2)))
-    ((vlad-procedure? v1)
-     (generic-zero-conforming-dereference
-      v1 (generic-zero-dereference-as-procedure v2)))
-    (else (run-time-error "Invalid argument to plus-primitive" (cons v1 v2)))))
-  ((and (null? v1) (null? v2)) (cons v1 v2))
-  ((and (real? v1) (real? v2)) (cons v1 v2))
-  ((and (pair? v1) (pair? v2))
-   (let ((v3 (generic-zero-conforming-dereference (car v1) (car v2)))
-	 (v4 (generic-zero-conforming-dereference (cdr v1) (cdr v2))))
-    (cons (cons (car v3) (car v4)) (cons (cdr v3) (cdr v4)))))
-  ((and (vlad-procedure? v1) (vlad-procedure? v2)) (cons v1 v2))
-  (else (run-time-error "Invalid argument to plus-primitive" (cons v1 v2)))))
+   (call
+    (call
+     (call (call if-procedure (call null? v1))
+	   (create-primitive-procedure
+	    "generic-zero-conforming-dereference 6"
+	    (lambda (x)
+	     (generic-zero-conforming-dereference
+	      null?
+	      real?
+	      pair?
+	      if-procedure
+	      v1
+	      (generic-zero-dereference-as-null v2)))))
+     (create-primitive-procedure
+      "generic-zero-conforming-dereference 7"
+      (lambda (x)
+       (call
+	(call
+	 (call (call if-procedure (call real? v1))
+	       (create-primitive-procedure
+		"generic-zero-conforming-dereference 8"
+		(lambda (x)
+		 (generic-zero-conforming-dereference
+		  null?
+		  real?
+		  pair?
+		  if-procedure
+		  v1
+		  (generic-zero-dereference-as-real v2)))))
+	 (create-primitive-procedure
+	  "generic-zero-conforming-dereference 9"
+	  (lambda (x)
+	   (call (call (call (call if-procedure (call pair? v1))
+			     (create-primitive-procedure
+			      "generic-zero-conforming-dereference 10"
+			      (lambda (x)
+			       (generic-zero-conforming-dereference
+				null?
+				real?
+				pair?
+				if-procedure
+				v1
+				(generic-zero-dereference-as-pair v2)))))
+		       (create-primitive-procedure
+			"generic-zero-conforming-dereference 11"
+			(lambda (x)
+			 (run-time-error
+			  "Invalid argument to plus-primitive" (cons v1 v2)))))
+		 '()))))
+	'()))))
+    '()))
+  (else
+   (call
+    (call
+     (call
+      (call if-procedure (call null? v1))
+      (create-primitive-procedure
+       "generic-zero-conforming-dereference 12"
+       (lambda (x)
+	(call
+	 (call
+	  (call
+	   (call if-procedure (call null? v2))
+	   (create-primitive-procedure
+	    "generic-zero-conforming-dereference 13"
+	    (lambda (x) (cons v1 v2))))
+	  (create-primitive-procedure
+	   "generic-zero-conforming-dereference 14"
+	   (lambda (x)
+	    (run-time-error
+	     "Invalid argument to plus-primitive" (cons v1 v2)))))
+	 '()))))
+     (create-primitive-procedure
+      "generic-zero-conforming-dereference 15"
+      (lambda (x)
+       (call
+	(call
+	 (call
+	  (call if-procedure (call real? v1))
+	  (create-primitive-procedure
+	   "generic-zero-conforming-dereference 16"
+	   (lambda (x)
+	    (call
+	     (call
+	      (call
+	       (call if-procedure (call real? v2))
+	       (create-primitive-procedure
+		"generic-zero-conforming-dereference 17"
+		(lambda (x) (cons v1 v2))))
+	      (create-primitive-procedure
+	       "generic-zero-conforming-dereference 18"
+	       (lambda (x)
+		(run-time-error
+		 "Invalid argument to plus-primitive" (cons v1 v2)))))
+	     '()))))
+	 (create-primitive-procedure
+	  "generic-zero-conforming-dereference 19"
+	  (lambda (x)
+	   (call
+	    (call
+	     (call
+	      (call if-procedure (call pair? v1))
+	      (create-primitive-procedure
+	       "generic-zero-conforming-dereference 20"
+	       (lambda (x)
+		(call
+		 (call
+		  (call
+		   (call if-procedure (call pair? v2))
+		   (create-primitive-procedure
+		    "generic-zero-conforming-dereference 21"
+		    (lambda (x)
+		     (let ((v3 (generic-zero-conforming-dereference
+				null?
+				real?
+				pair?
+				if-procedure
+				(car v1)
+				(car v2)))
+			   (v4 (generic-zero-conforming-dereference
+				null?
+				real?
+				pair?
+				if-procedure
+				(cdr v1)
+				(cdr v2))))
+		      (cons (cons (car v3) (car v4))
+			    (cons (cdr v3) (cdr v4)))))))
+		  (create-primitive-procedure
+		   "generic-zero-conforming-dereference 22"
+		   (lambda (x)
+		    (run-time-error
+		     "Invalid argument to plus-primitive" (cons v1 v2)))))
+		 '()))))
+	     (create-primitive-procedure
+	      "generic-zero-conforming-dereference 23"
+	      (lambda (x)
+	       (run-time-error
+		"Invalid argument to plus-primitive" (cons v1 v2)))))
+	    '()))))
+	'()))))
+    '()))))
 
 (define (generic-zero-dereference v)
  (cond ((generic-zero? v)
@@ -747,130 +901,6 @@
 	  "Cannot apply this primitive to an unbound generic zero" v))
 	(generic-zero-dereference (generic-zero-binding v)))
        (else v)))
-
-(define (trail-stack-and-trace-level!)
- (let ((stack *stack*) (trace-level *trace-level*))
-  (upon-failure (set! *stack* stack) (set! *trace-level* trace-level))))
-
-(define (generic-zero-dereference-maybe-null? v)
- (if (generic-zero? v)
-     (cond
-      ((generic-zero-bound? v)
-       (generic-zero-dereference-maybe-null? (generic-zero-binding v)))
-      (else
-       (either
-	(begin (trail-stack-and-trace-level!)
-	       (when (generic-zero-not-null? v) (fail))
-	       (local-set-generic-zero-binding! v '())
-	       #t)
-	(begin (local-set-generic-zero-not-null?! v #t)
-	       (cond ((and (generic-zero-not-pair? v)
-			   (generic-zero-not-procedure? v))
-		      (local-set-generic-zero-binding! v 0))
-		     ((and (generic-zero-not-real? v)
-			   (generic-zero-not-procedure? v))
-		      (local-set-generic-zero-binding!
-		       v
-		       (cons (create-generic-zero) (create-generic-zero))))
-		     ((and (generic-zero-not-real? v)
-			   (generic-zero-not-pair? v))
-		      (local-set-generic-zero-binding!
-		       v
-		       (make-closure
-			(vector (create-generic-zero))
-			'x
-			(make-variable-access-expression 'zero 0)))))
-	       #f))))
-     (null? v)))
-
-(define (generic-zero-dereference-maybe-real? v)
- (if (generic-zero? v)
-     (cond
-      ((generic-zero-bound? v)
-       (generic-zero-dereference-maybe-real? (generic-zero-binding v)))
-      (else
-       (either (begin (trail-stack-and-trace-level!)
-		      (when (generic-zero-not-real? v) (fail))
-		      (local-set-generic-zero-binding! v 0)
-		      #t)
-	       (begin (local-set-generic-zero-not-real?! v #t)
-		      (cond ((and (generic-zero-not-pair? v)
-				  (generic-zero-not-procedure? v))
-			     (local-set-generic-zero-binding! v '()))
-			    ((and (generic-zero-not-null? v)
-				  (generic-zero-not-procedure? v))
-			     (local-set-generic-zero-binding!
-			      v
-			      (cons (create-generic-zero)
-				    (create-generic-zero))))
-			    ((and (generic-zero-not-null? v)
-				  (generic-zero-not-pair? v))
-			     (local-set-generic-zero-binding!
-			      v
-			      (make-closure
-			       (vector (create-generic-zero))
-			       'x
-			       (make-variable-access-expression 'zero 0)))))
-		      #f))))
-     (real? v)))
-
-(define (generic-zero-dereference-maybe-pair? v)
- (if (generic-zero? v)
-     (cond
-      ((generic-zero-bound? v)
-       (generic-zero-dereference-maybe-pair? (generic-zero-binding v)))
-      (else
-       (either (begin (trail-stack-and-trace-level!)
-		      (when (generic-zero-not-pair? v) (fail))
-		      (local-set-generic-zero-binding!
-		       v (cons (create-generic-zero) (create-generic-zero)))
-		      #t)
-	       (begin (local-set-generic-zero-not-pair?! v #t)
-		      (cond ((and (generic-zero-not-real? v)
-				  (generic-zero-not-procedure? v))
-			     (local-set-generic-zero-binding! v '()))
-			    ((and (generic-zero-not-null? v)
-				  (generic-zero-not-procedure? v))
-			     (local-set-generic-zero-binding! v 0))
-			    ((and (generic-zero-not-null? v)
-				  (generic-zero-not-real? v))
-			     (local-set-generic-zero-binding!
-			      v
-			      (make-closure
-			       (vector (create-generic-zero))
-			       'x
-			       (make-variable-access-expression 'zero 0)))))
-		      #f))))
-     (pair? v)))
-
-(define (generic-zero-dereference-maybe-procedure? v)
- (if (generic-zero? v)
-     (cond
-      ((generic-zero-bound? v)
-       (generic-zero-dereference-maybe-procedure? (generic-zero-binding v)))
-      (else
-       (either
-	(begin (trail-stack-and-trace-level!)
-	       (when (generic-zero-not-procedure? v) (fail))
-	       (local-set-generic-zero-binding!
-		v
-		(make-closure (vector (create-generic-zero))
-			      'x
-			      (make-variable-access-expression 'zero 0)))
-	       #t)
-	(begin (local-set-generic-zero-not-procedure?! v #t)
-	       (cond ((and (generic-zero-not-real? v)
-			   (generic-zero-not-pair? v))
-		      (local-set-generic-zero-binding! v '()))
-		     ((and (generic-zero-not-null? v)
-			   (generic-zero-not-pair? v))
-		      (local-set-generic-zero-binding! v 0))
-		     ((and (generic-zero-not-null? v)
-			   (generic-zero-not-real? v))
-		      (local-set-generic-zero-binding!
-		       v (cons (create-generic-zero) (create-generic-zero)))))
-	       #f))))
-     (vlad-procedure? v)))
 
 (define (generic-zero-unbound? v)
  (or (and (generic-zero? v)
@@ -934,89 +964,78 @@
   (thunk)
   (set-write-length! m)))
 
-(define (groundify v)
- (cond ((generic-zero? v)
-	(if (generic-zero-bound? v) (groundify (generic-zero-binding v)) v))
-       ((null? v) v)
-       ((boolean? v) v)
-       ((real? v) v)
-       ((pair? v) (cons (groundify (car v)) (groundify (cdr v))))
-       ((primitive-procedure? v) v)
-       ((closure? v)
-	(make-closure (map-vector groundify (closure-values v))
-		      (closure-variable v)
-		      (closure-body v)))
-       ((recursive-closure? v)
-	(make-recursive-closure
-	 (map-vector groundify (recursive-closure-values v))
-	 (recursive-closure-procedure-variables v)
-	 (recursive-closure-bodies v)
-	 (recursive-closure-index v)))
-       (else (fuck-up))))
-
 (define (run-time-error message v)
- (set! *error-message* message)
- (set! *error-v* (groundify v))
- (set! *error-stack* (groundify *stack*))
- (fail))
+ (format #t "Stack trace~%")
+ (for-each (lambda (record)
+	    (display "Procedure: ")
+	    (write (name (first record)))
+	    (newline)
+	    (display "Argument: ")
+	    (write (externalize (second record)))
+	    (newline)
+	    (newline))
+	   *stack*)
+ (newline)
+ (pp (externalize v))
+ (newline)
+ (panic message))
 
 (define (call callee argument)
- (let ((callee (generic-zero-dereference-as-procedure callee)))
-  (unless (vlad-procedure? callee)
-   (run-time-error "Target is not a procedure" callee))
-  (set! *stack* (cons (list callee argument) *stack*))
+ (unless (vlad-procedure? callee)
+  (run-time-error "Target is not a procedure" callee))
+ (set! *stack* (cons (list callee argument) *stack*))
+ (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
+	     ((closure? callee) *trace-closures?*)
+	     ((recursive-closure? callee) *trace-recursive-closures?*)
+	     (else (fuck-up)))
+  (if *trace-argument/result?*
+      (format #t "~aentering ~a ~s~%"
+	      (make-string *trace-level* #\space)
+	      (name callee)
+	      (externalize argument))
+      (format #t "~aentering ~a~%"
+	      (make-string *trace-level* #\space)
+	      (name callee)))
+  (set! *trace-level* (+ *trace-level* 1)))
+ (when (and *metered?* (primitive-procedure? callee))
+  (set-primitive-procedure-meter!
+   callee (+ (primitive-procedure-meter callee) 1)))
+ (let ((result
+	(cond
+	 ((primitive-procedure? callee)
+	  ((primitive-procedure-procedure callee) argument))
+	 ((closure? callee)
+	  (evaluate (closure-body callee) argument (closure-values callee)))
+	 ((recursive-closure? callee)
+	  (evaluate
+	   (vector-ref (recursive-closure-bodies callee)
+		       (recursive-closure-index callee))
+	   argument
+	   (vector-append (map-n-vector
+			   (lambda (i)
+			    (make-recursive-closure
+			     (recursive-closure-values callee)
+			     (recursive-closure-procedure-variables callee)
+			     (recursive-closure-bodies callee)
+			     i))
+			   (vector-length (recursive-closure-bodies callee)))
+			  (recursive-closure-values callee))))
+	 (else (fuck-up)))))
+  (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	      ((closure? callee) *trace-closures?*)
 	      ((recursive-closure? callee) *trace-recursive-closures?*)
 	      (else (fuck-up)))
+   (set! *trace-level* (- *trace-level* 1))
    (if *trace-argument/result?*
-       (format #t "~aentering ~a ~s~%"
+       (format #t "~aexiting ~a ~s~%"
 	       (make-string *trace-level* #\space)
 	       (name callee)
-	       (externalize argument))
-       (format #t "~aentering ~a~%"
+	       (externalize result))
+       (format #t "~aexiting ~a~%"
 	       (make-string *trace-level* #\space)
-	       (name callee)))
-   (set! *trace-level* (+ *trace-level* 1)))
-  (when (and *metered?* (primitive-procedure? callee))
-   (set-primitive-procedure-meter!
-    callee (+ (primitive-procedure-meter callee) 1)))
-  (let ((result
-	 (cond
-	  ((primitive-procedure? callee)
-	   ((primitive-procedure-procedure callee) argument))
-	  ((closure? callee)
-	   (evaluate (closure-body callee) argument (closure-values callee)))
-	  ((recursive-closure? callee)
-	   (evaluate
-	    (vector-ref (recursive-closure-bodies callee)
-			(recursive-closure-index callee))
-	    argument
-	    (vector-append (map-n-vector
-			    (lambda (i)
-			     (make-recursive-closure
-			      (recursive-closure-values callee)
-			      (recursive-closure-procedure-variables callee)
-			      (recursive-closure-bodies callee)
-			      i))
-			    (vector-length (recursive-closure-bodies callee)))
-			   (recursive-closure-values callee))))
-	  (else (fuck-up)))))
-   (set! *stack* (rest *stack*))
-   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
-	       ((closure? callee) *trace-closures?*)
-	       ((recursive-closure? callee) *trace-recursive-closures?*)
-	       (else (fuck-up)))
-    (set! *trace-level* (- *trace-level* 1))
-    (if *trace-argument/result?*
-	(format #t "~aexiting ~a ~s~%"
-		(make-string *trace-level* #\space)
-		(name callee)
-		(externalize result))
-	(format #t "~aexiting ~a~%"
-		(make-string *trace-level* #\space)
-		(name callee))))
-   result)))
+	       (name callee))))
+  result))
 
 (define (evaluate e v vs)
  (define (lookup i) (if (= i -1) v (vector-ref vs i)))
@@ -1107,8 +1126,7 @@
 			(recursive-closure-values v1)
 			(recursive-closure-values v2)))))
 
-(define (equal?-primitive curried-equal?
-			  =
+(define (equal?-primitive =
 			  null?
 			  boolean?
 			  real?
@@ -1123,8 +1141,7 @@
 			  v2)
  (cond
   ((generic-zero? v1)
-   (equal?-primitive curried-equal?
-		     =
+   (equal?-primitive =
 		     null?
 		     boolean?
 		     real?
@@ -1138,8 +1155,7 @@
 		     (generic-zero-dereference v1)
 		     v2))
   ((generic-zero? v2)
-   (equal?-primitive curried-equal?
-		     =
+   (equal?-primitive =
 		     null?
 		     boolean?
 		     real?
@@ -1275,16 +1291,38 @@
 		  (call
 		   (call
 		    (call if-procedure
-			  (call (call curried-equal? (call car v1))
-				(call car v2)))
+			  (equal?-primitive =
+					    null?
+					    boolean?
+					    real?
+					    pair?
+					    car
+					    cdr
+					    cons-procedure
+					    if-procedure
+					    true
+					    false
+					    (call car v1)
+					    (call car v2)))
 		    (create-primitive-procedure
 		     "equal?-primitive internal 22"
 		     (lambda (x)
 		      (call
 		       (call
 			(call (call if-procedure
-				    (call (call curried-equal? (call cdr v1))
-					  (call cdr v2)))
+				    (equal?-primitive =
+						      null?
+						      boolean?
+						      real?
+						      pair?
+						      car
+						      cdr
+						      cons-procedure
+						      if-procedure
+						      true
+						      false
+						      (call cdr v1)
+						      (call cdr v2)))
 			      (create-primitive-procedure
 			       "equal?-primitive internal 23"
 			       (lambda (x) #t)))
@@ -1322,9 +1360,19 @@
 		    (call
 		     (call
 		      if-procedure
-		      (call
-		       (call curried-equal? (vector-ref (closure-values v1) i))
-		       (vector-ref (closure-values v2) i)))
+		      (equal?-primitive =
+					null?
+					boolean?
+					real?
+					pair?
+					car
+					cdr
+					cons-procedure
+					if-procedure
+					true
+					false
+					(vector-ref (closure-values v1) i)
+					(vector-ref (closure-values v2) i)))
 		     (create-primitive-procedure
 		      "equal?-primitive internal 28"
 		      (lambda (x) (loop (+ i 1)))))
@@ -1350,9 +1398,20 @@
 		    (call
 		     (call
 		      if-procedure
-		      (call (call curried-equal?
-				  (vector-ref (recursive-closure-values v1) i))
-			    (vector-ref (recursive-closure-values v2) i)))
+		      (equal?-primitive
+		       =
+		       null?
+		       boolean?
+		       real?
+		       pair?
+		       car
+		       cdr
+		       cons-procedure
+		       if-procedure
+		       true
+		       false
+		       (vector-ref (recursive-closure-values v1) i)
+		       (vector-ref (recursive-closure-values v2) i)))
 		     (create-primitive-procedure
 		      "equal?-primitive internal 30"
 		      (lambda (x) (loop (+ i 1)))))
@@ -1366,12 +1425,10 @@
  (or (primitive-procedure? v) (closure? v) (recursive-closure? v)))
 
 (define (plus-primitive
-	 curried-plus
 	 +
 	 null?
 	 real?
 	 pair?
-	 procedure?
 	 car
 	 cdr
 	 cons-procedure
@@ -1381,7 +1438,8 @@
 	 false
 	 v1
 	 v2)
- (let* ((v (generic-zero-conforming-dereference v1 v2))
+ (let* ((v (generic-zero-conforming-dereference
+	    null? real? pair? if-procedure v1 v2))
 	(v1 (car v))
 	(v2 (cdr v)))
   (if (and (generic-zero-unbound? v1) (generic-zero-unbound? v2))
@@ -1439,54 +1497,43 @@
 		 (create-primitive-procedure
 		  "plus-primitive internal 10"
 		  (lambda (x)
-		   (call
-		    (call
-		     cons-procedure
-		     (call (call curried-plus (call car v1)) (call car v2)))
-		    (call (call curried-plus (call cdr v1)) (call cdr v2))))))
+		   (call (call cons-procedure
+			       (plus-primitive +
+					       null?
+					       real?
+					       pair?
+					       car
+					       cdr
+					       cons-procedure
+					       if-procedure
+					       null-procedure
+					       false
+					       (call car v1)
+					       (call car v2)))
+			 (plus-primitive +
+					 null?
+					 real?
+					 pair?
+					 car
+					 cdr
+					 cons-procedure
+					 if-procedure
+					 null-procedure
+					 false
+					 (call cdr v1)
+					 (call cdr v2))))))
 		(create-primitive-procedure
 		 "plus-primitive internal 11"
 		 (lambda (x)
-		  (call
-		   (call
-		    (call
-		     (call
-		      if-procedure
-		      (call
-		       (call
-			(call
-			 (call if-procedure (call procedure? v1))
-			 (create-primitive-procedure
-			  "plus-primitive internal 12"
-			  (lambda (x) (call procedure? v2))))
-			(create-primitive-procedure
-			 "plus-primitive internal 13"
-			 (lambda (x) (call false '()))))
-		       '()))
-		     (create-primitive-procedure
-		      "plus-primitive internal 14"
-		      (lambda (x)
-		       (make-closure
-			(vector curried-plus v1 v2)
-			'y
-			(make-application
-			 (make-application
-			  (make-variable-access-expression 'curried-plus 0)
-			  (make-application
-			   (make-variable-access-expression 'v1 1)
-			   (make-variable-access-expression 'y -1)))
-			 (make-application
-			  (make-variable-access-expression 'v2 2)
-			  (make-variable-access-expression 'y -1)))))))
-		    (create-primitive-procedure
-		     "plus-primitive internal 15"
-		     (lambda (x)
-		      (run-time-error
-		       "Invalid argument to plus-primitive" (cons v1 v2)))))
-		   '()))))
+		  (run-time-error
+		   "Invalid argument to plus-primitive" (cons v1 v2)))))
 	       '()))))
 	   '()))))
        '()))))
+
+(define (procedure-tree? v)
+ (or (vlad-procedure? v)
+     (and (pair? v) (procedure-tree? (car v)) (procedure-tree? (cdr v)))))
 
 (define (define-primitive-constant x value)
  (set! *basis-constants* (cons x *basis-constants*))
@@ -1517,12 +1564,14 @@
  (define-primitive-procedure 'zero? (unary-real zero? "zero?"))
  (define-primitive-procedure 'positive? (unary-real positive? "positive?"))
  (define-primitive-procedure 'negative? (unary-real negative? "negative?"))
- (define-primitive-procedure 'null? generic-zero-dereference-maybe-null?)
+ (define-primitive-procedure 'null?
+  (lambda (x) (null? (generic-zero-dereference x))))
  (define-primitive-procedure 'boolean? boolean?)
- (define-primitive-procedure 'real? generic-zero-dereference-maybe-real?)
- (define-primitive-procedure 'pair? generic-zero-dereference-maybe-pair?)
- (define-primitive-procedure 'procedure?
-  generic-zero-dereference-maybe-procedure?)
+ (define-primitive-procedure 'real?
+  (lambda (x) (real? (generic-zero-dereference x))))
+ (define-primitive-procedure 'pair?
+  (lambda (x) (pair? (generic-zero-dereference x))))
+ (define-primitive-procedure 'procedure? vlad-procedure?)
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
  (define-primitive-procedure 'cons-procedure
@@ -1581,24 +1630,20 @@
 			 (create-primitive-procedure
 			  "equal?-primitive 11"
 			  (lambda (x13)
-			   (create-primitive-procedure
-			    "equal?-primitive 12"
-			    (lambda (x14)
-			     (equal?-primitive
-			      x1
-			      x2
-			      x3
-			      x4
-			      x5
-			      x6
-			      x7
-			      x8
-			      x9
-			      x10
-			      x11
-			      x12
-			      x13
-			      x14)))))))))))))))))))))))))))))
+			   (equal?-primitive
+			    x1
+			    x2
+			    x3
+			    x4
+			    x5
+			    x6
+			    x7
+			    x8
+			    x9
+			    x10
+			    x11
+			    x12
+			    x13)))))))))))))))))))))))))))
  (define-primitive-procedure 'map-closure
   (lambda (x)
    (unless (and (pair? x) (vlad-procedure? (car x)) (vlad-procedure? (cdr x)))
@@ -1616,7 +1661,16 @@
 	   (recursive-closure-bodies (cdr x))
 	   (recursive-closure-index (cdr x))))
 	 (else (run-time-error "Invalid argument to map-closure" x)))))
- (define-primitive-procedure 'zero (lambda (x) (create-generic-zero)))
+ (define-primitive-procedure 'zero-primitive
+  ;; Note that we can't apply a j operator to the result of
+  ;; (zero-primitive e1), ... or compare results of (zero-primitive e1), ...
+  ;; with equal?-primitive.
+  (lambda (x1)
+   (create-primitive-procedure
+    "zero-primitive 0"
+    (lambda (x2)
+     (create-primitive-procedure
+      "zero-primitive 1" (lambda (x3) (create-generic-zero x1 x2 x3)))))))
  (define-primitive-procedure 'plus-primitive
   ;; Note that we can't apply a j operator to the result of
   ;; (plus-primitive e1), ... or compare results of (plus-primitive e1), ...
@@ -1655,27 +1709,19 @@
 		       (create-primitive-procedure
 			"plus-primitive 10"
 			(lambda (x12)
-			 (create-primitive-procedure
-			  "plus-primitive 11"
-			  (lambda (x13)
-			   (create-primitive-procedure
-			    "plus-primitive 12"
-			    (lambda (x14)
-			     (plus-primitive
-			      x1
-			      x2
-			      x3
-			      x4
-			      x5
-			      x6
-			      x7
-			      x8
-			      x9
-			      x10
-			      x11
-			      x12
-			      x13
-			      x14)))))))))))))))))))))))))))))
+			 (plus-primitive x1
+					 x2
+					 x3
+					 x4
+					 x5
+					 x6
+					 x7
+					 x8
+					 x9
+					 x10
+					 x11
+					 x12)))))))))))))))))))))))))
+ (define-primitive-procedure 'procedure-tree? procedure-tree?)
  (define-primitive-procedure 'write
   (lambda (x) (write (externalize x)) (newline) x)))
 
