@@ -60,23 +60,26 @@
 
 ;;; Top Level
 
-(define-command (main (at-most-one ("undecorated" undecorated?))
+(define-command (main (any-number
+		       ("I"
+			include-path?
+			(include-path "include-directory" string-argument)))
+		      (at-most-one ("undecorated" undecorated?))
 		      (at-most-one ("evaluated" evaluated?))
 		      (required (pathname "pathname" string-argument)))
  (initialize-basis!)
- (call-with-input-file (default-extension pathname "sc")
-  (lambda (input-port)
-   (let loop ()
-    (let ((e (read input-port)))
-     (unless (eof-object? e)
-      (syntax-check-expression! e)
-      (let ((result (concrete->abstract-expression e)))
-       (when undecorated?
-	(pp (abstract->concrete (first result)))
-	(newline))
-       (when evaluated?
-	(pp (externalize (evaluate (first result) #f (second result))))
-	(newline)))
-      (loop)))))))
+ (set! *include-path*
+       (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (let ((es (read-source pathname)))
+  (unless (null? es)
+   (let ((e (expand-definitions (but-last es) (last es))))
+    (syntax-check-expression! e)
+    (let ((result (concrete->abstract-expression e)))
+     (when undecorated?
+      (pp (abstract->concrete (first result)))
+      (newline))
+     (when evaluated?
+      (pp (externalize (evaluate (first result) #f (second result))))
+      (newline)))))))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam

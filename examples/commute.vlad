@@ -1,0 +1,13 @@
+(include "math")
+
+(cons (let ((f ((*j (j* sqrt)) (cons (cons 4 identity) (cons 1 identity)))))
+       (cons (car (car f))
+	     (cons (car (cdr f))
+		   (cons ((cdr (car f)) 1)
+			 (cons ((cdr (cdr f)) 1) '())))))
+      (cons (let ((f ((j* (*j sqrt)) (cons (cons 4 1) identity))))
+	     (cons (car (car f))
+		   (cons (cdr (car f))
+			 (cons (car ((cdr f) (cons 1 1)))
+			       (cons (cdr ((cdr f) (cons 1 1))) '())))))
+	    '()))
