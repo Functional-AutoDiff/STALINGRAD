@@ -44,13 +44,12 @@
 (include "stalingradlib-stuff.sch")
 
 ;;; needs work
-;;;  1. list as parameter
-;;;  2. list* or multiarg cons both as expression and as parameter
-;;;  3. spread arguments should be lists
-;;;  4. unary -
-;;;  5. begin, case, delay, do, named let, quasiquote, unquote,
+;;;  1. list* or multiarg cons both as expression and as parameter
+;;;  2. spread arguments should be lists
+;;;  3. unary -
+;;;  4. begin, case, delay, do, named let, quasiquote, unquote,
 ;;;     unquote-splicing, internal defines
-;;;  6. chars, ports, eof object, symbols, continuations, strings, vectors
+;;;  5. chars, ports, eof object, symbols, continuations, strings, vectors
 
 ;;; Key
 ;;;  e: concrete or abstract expression
@@ -70,7 +69,7 @@
 
 (define-structure application callee argument)
 
-(define-structure lambda-expression name variable free-variables body)
+(define-structure lambda-expression variable free-variables body)
 
 (define-structure letrec-expression
  procedure-variables
@@ -84,12 +83,11 @@
 
 (define-structure value-binding variable value)
 
-(define-structure closure name values variable body)
+(define-structure closure values variable body)
 
-(define-structure recursive-closure
- values procedure-variables argument-variables bodies index)
+(define-structure recursive-closure values procedure-variables bodies index)
 
-(define-structure primitive-procedure name procedure)
+(define-structure primitive-procedure name procedure meter)
 
 ;;; needs work: Is a real generic zero a positive IEEE zero or a negative IEEE
 ;;;             zero?
@@ -122,6 +120,8 @@
 
 (define *include-path* '())
 
+(define *metered?* #f)
+
 (define *show-access-indices?* #f)
 
 (define *trace-primitive-procedures?* #f)
@@ -136,9 +136,10 @@
 
 (define *unabbreviate-recursive-closures?* #f)
 
-(define *n* #f)
-
 ;;; Procedures
+
+(define (create-primitive-procedure name procedure)
+ (make-primitive-procedure name procedure 0))
 
 (define (search-include-path-without-extension pathname)
  (cond ((can-open-file-for-input? pathname) pathname)
@@ -205,6 +206,11 @@
      (unless (= (length p) 3) (panic (format #f "Invalid parameter: ~s" p)))
      (syntax-check-parameter! (second p))
      (syntax-check-parameter! (third p)))
+    ((list)
+     (syntax-check-parameter!
+      (if (null? (rest p))
+	  ''()
+	  `(cons ,(second p) (list ,@(rest (rest p)))))))
     (else (panic (format #f "Invalid parameter: ~s" p)))))
   (else (panic (format #f "Invalid parameter: ~s" p)))))
 
@@ -215,6 +221,9 @@
    (case (first p)
     ((cons)
      (append (parameter-variables (second p)) (parameter-variables (third p))))
+    ((list)
+     (parameter-variables
+      (if (null? (rest p)) ''() `(cons ,(second p) (list ,@(rest (rest p)))))))
     (else (fuck-up))))
   (else (fuck-up))))
 
@@ -372,6 +381,11 @@
        ((list? p)
 	(case (first p)
 	 ((cons) (gensym))
+	 ((list)
+	  (concrete->abstract-parameter
+	   (if (null? (rest p))
+	       ''()
+	       `(cons ,(second p) (list ,@(rest (rest p)))))))
 	 (else (fuck-up))))
        (else (fuck-up))))
 
@@ -389,6 +403,12 @@
 			 (make-application
 			  ;; needs work: to ensure that you don't shadow cdr
 			  (make-variable-access-expression 'cdr #f) e))))
+	  ((list)
+	   (parameter-variable-bindings
+	    x
+	    (if (null? (rest p))
+		''()
+		`(cons ,(second p) (list ,@(rest (rest p)))))))
 	  (else (fuck-up))))
 	(else (fuck-up)))))
 
@@ -429,7 +449,6 @@
 			(loop (application-argument e))))
      ((lambda-expression? e)
       (make-lambda-expression
-       (lambda-expression-name e)
        (lambda-expression-variable e)
        (remove-duplicatesq-vector
 	(map-vector rename (lambda-expression-free-variables e)))
@@ -464,7 +483,6 @@
   ((lambda-expression? e)
    (let ((xs (lambda-expression-free-variables e)))
     (make-lambda-expression
-     (lambda-expression-name e)
      (lambda-expression-variable e)
      (map-vector lookup xs)
      (index (lambda-expression-variable e) xs (lambda-expression-body e)))))
@@ -487,7 +505,7 @@
 
 (define (concrete->abstract-expression e)
  (let* ((result
-	 (let loop ((e e) (bs *variable-bindings*) (name "top level"))
+	 (let loop ((e e) (bs *variable-bindings*))
 	  (cond
 	   ((boolean? e)
 	    (let ((x (gensym)))
@@ -509,17 +527,15 @@
 			     (list (make-value-binding x (second e))))))
 	     ((lambda)
 	      (case (length (second e))
-	       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs name))
+	       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs))
 	       ((1)
 		(let* ((x (concrete->abstract-parameter (first (second e))))
 		       (result (loop (third e)
 				     (append
 				      (parameter-variable-bindings
 				       x (first (second e)))
-				      bs)
-				     `(inside ,name))))
+				      bs))))
 		 (list (make-lambda-expression
-			name
 			x
 			(list->vector
 			 (removeq x (free-variables-in (first result))))
@@ -529,8 +545,7 @@
 		(loop `(lambda ((cons ,(first (second e)) ,(second (second e)))
 				,@(rest (rest (second e))))
 			,(third e))
-		      bs
-		      name))))
+		      bs))))
 	     ((letrec)
 	      (let* ((bs
 		      (append
@@ -540,9 +555,9 @@
 			      (make-variable-access-expression (first b) #f)))
 			    (second e))
 		       bs))
-		     (results (map (lambda (b) (loop (second b) bs (first b)))
+		     (results (map (lambda (b) (loop (second b) bs))
 				   (second e)))
-		     (result (loop (third e) bs name))
+		     (result (loop (third e) bs))
 		     (xs1 (map first (second e)))
 		     (xs2 (map (lambda (result)
 				(lambda-expression-variable (first result)))
@@ -579,60 +594,52 @@
 		 (second result) (reduce append (map second results) '())))))
 	     ((let) (loop `((lambda ,(map first (second e)) ,(third e))
 			    ,@(map second (second e)))
-			  bs
-			  name))
+			  bs))
 	     ((let*) (case (length (second e))
-		      ((0) (loop (third e) bs name))
-		      ((1) (loop `(let ,(second e) ,(third e))  bs name))
+		      ((0) (loop (third e) bs))
+		      ((1) (loop `(let ,(second e) ,(third e)) bs))
 		      (else (loop `(let (,(first (second e)))
 				    (let* ,(rest (second e)) ,(third e)))
-				  bs
-				  name))))
+				  bs))))
 	     ;; needs work: to ensure that you don't shadow if-procedure
 	     ((if) (loop `((((if-procedure ,(second e)) (lambda () ,(third e)))
 			    (lambda () ,(fourth e))))
-			 bs
-			 name))
+			 bs))
 	     ;; needs work: to ensure that you don't shadow cons-procedure
-	     ((cons) (loop `((cons-procedure ,(second e)) ,(third e)) bs name))
+	     ((cons) (loop `((cons-procedure ,(second e)) ,(third e)) bs))
 	     ((list) (loop (if (null? (rest e))
 			       ''()
 			       `(cons ,(second e) (list ,@(rest (rest e)))))
-			   bs
-			   name))
+			   bs))
 	     ((cond) (loop (if (null? (rest (rest e)))
 			       (second (second e))
 			       `(if ,(first (second e))
 				    ,(second (second e))
 				    (cond ,@(rest (rest e)))))
-			   bs
-			   name))
+			   bs))
 	     ((and) (loop (case (length (rest e))
 			   ((0) #t)
 			   ((1) (second e))
 			   (else `(if ,(second e) (and ,@(rest (rest e))) #f)))
-			  bs
-			  name))
+			  bs))
 	     ((or) (loop (case (length (rest e))
 			  ((0) #f)
 			  ((1) (second e))
 			  (else (let ((x (gensym)))
 				 `(let ((,x ,(second e)))
 				   (if ,x ,x (or ,@(rest (rest e))))))))
-			 bs
-			 name))
+			 bs))
 	     (else
 	      (case (length (rest e))
-	       ((0) (loop `(,(first e) '()) bs name))
-	       ((1) (let ((result1 (loop (first e) bs name))
-			  (result2 (loop (second e) bs name)))
+	       ((0) (loop `(,(first e) '()) bs))
+	       ((1) (let ((result1 (loop (first e) bs))
+			  (result2 (loop (second e) bs)))
 		     (list (make-application (first result1) (first result2))
 			   (append (second result1) (second result2)))))
 	       (else
 		(loop `(,(first e)
 			(cons ,(second e) ,(third e)) ,@(rest (rest (rest e))))
-		      bs
-		      name))))))
+		      bs))))))
 	   (else (fuck-up)))))
 	(xs (free-variables-in (first result)))
 	(bs (remove-if-not (lambda (b) (memq (value-binding-variable b) xs))
@@ -679,8 +686,7 @@
 	 (when (generic-zero-not-procedure? v) (fail))
 	 (local-set-generic-zero-binding!
 	  v
-	  (make-closure "generic zero"
-			(vector (create-generic-zero))
+	  (make-closure	(vector (create-generic-zero))
 			'x
 			(make-variable-access-expression 'zero 0))))
 	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
@@ -742,6 +748,10 @@
 	(generic-zero-dereference (generic-zero-binding v)))
        (else v)))
 
+(define (trail-stack-and-trace-level!)
+ (let ((stack *stack*) (trace-level *trace-level*))
+  (upon-failure (set! *stack* stack) (set! *trace-level* trace-level))))
+
 (define (generic-zero-dereference-maybe-null? v)
  (if (generic-zero? v)
      (cond
@@ -749,7 +759,8 @@
        (generic-zero-dereference-maybe-null? (generic-zero-binding v)))
       (else
        (either
-	(begin (when (generic-zero-not-null? v) (fail))
+	(begin (trail-stack-and-trace-level!)
+	       (when (generic-zero-not-null? v) (fail))
 	       (local-set-generic-zero-binding! v '())
 	       #t)
 	(begin (local-set-generic-zero-not-null?! v #t)
@@ -766,7 +777,6 @@
 		      (local-set-generic-zero-binding!
 		       v
 		       (make-closure
-			"generic zero"
 			(vector (create-generic-zero))
 			'x
 			(make-variable-access-expression 'zero 0)))))
@@ -779,7 +789,8 @@
       ((generic-zero-bound? v)
        (generic-zero-dereference-maybe-real? (generic-zero-binding v)))
       (else
-       (either (begin (when (generic-zero-not-real? v) (fail))
+       (either (begin (trail-stack-and-trace-level!)
+		      (when (generic-zero-not-real? v) (fail))
 		      (local-set-generic-zero-binding! v 0)
 		      #t)
 	       (begin (local-set-generic-zero-not-real?! v #t)
@@ -797,7 +808,6 @@
 			     (local-set-generic-zero-binding!
 			      v
 			      (make-closure
-			       "generic zero"
 			       (vector (create-generic-zero))
 			       'x
 			       (make-variable-access-expression 'zero 0)))))
@@ -810,7 +820,8 @@
       ((generic-zero-bound? v)
        (generic-zero-dereference-maybe-pair? (generic-zero-binding v)))
       (else
-       (either (begin (when (generic-zero-not-pair? v) (fail))
+       (either (begin (trail-stack-and-trace-level!)
+		      (when (generic-zero-not-pair? v) (fail))
 		      (local-set-generic-zero-binding!
 		       v (cons (create-generic-zero) (create-generic-zero)))
 		      #t)
@@ -826,7 +837,6 @@
 			     (local-set-generic-zero-binding!
 			      v
 			      (make-closure
-			       "generic zero"
 			       (vector (create-generic-zero))
 			       'x
 			       (make-variable-access-expression 'zero 0)))))
@@ -840,11 +850,11 @@
        (generic-zero-dereference-maybe-procedure? (generic-zero-binding v)))
       (else
        (either
-	(begin (when (generic-zero-not-procedure? v) (fail))
+	(begin (trail-stack-and-trace-level!)
+	       (when (generic-zero-not-procedure? v) (fail))
 	       (local-set-generic-zero-binding!
 		v
-		(make-closure "generic zero"
-			      (vector (create-generic-zero))
+		(make-closure (vector (create-generic-zero))
 			      'x
 			      (make-variable-access-expression 'zero 0)))
 	       #t)
@@ -874,19 +884,16 @@
  (cond ((primitive-procedure? callee) (primitive-procedure-name callee))
        ((closure? callee)
 	(if *unabbreviate-closures?*
-	    (if #f			;debugging
-		`(closure
-		  ,(map-n (lambda (i)
-			   ;; needs work: to reconstruct free variables
-			   (list i
-				 (externalize
-				  (vector-ref (closure-values callee) i))))
-			  (vector-length (closure-values callee)))
-		  (lambda (,(closure-variable callee))
-		   ,(abstract->concrete (closure-body callee))))
-		`(lambda (,(closure-variable callee))
-		  ,(abstract->concrete (closure-body callee))))
-	    (closure-name callee)))
+	    `(closure ,(map-n (lambda (i)
+			       ;; needs work: to reconstruct free variables
+			       (list i
+				     (externalize
+				      (vector-ref (closure-values callee) i))))
+			      (vector-length (closure-values callee)))
+		      (lambda (,(closure-variable callee))
+		       ,(abstract->concrete (closure-body callee))))
+	    `(lambda (,(closure-variable callee))
+	      ,(abstract->concrete (closure-body callee)))))
        ((recursive-closure? callee)	
 	(if *unabbreviate-recursive-closures?*
 	    `(recursive-closure
@@ -898,14 +905,7 @@
 		 (list i
 		       (externalize
 			(vector-ref (recursive-closure-values callee) i))))
-		(vector-length (recursive-closure-values callee)))
-	      ,(vector->list
-		(map-vector
-		 (lambda (x1 x2 e)
-		  `(,x1 (lambda (,x2) ,(abstract->concrete e))))
-		 (recursive-closure-procedure-variables callee)
-		 (recursive-closure-argument-variables callee)
-		 (recursive-closure-bodies callee))))
+		(vector-length (recursive-closure-values callee))))
 	    (vector-ref (recursive-closure-procedure-variables callee)
 			(recursive-closure-index callee))))
        (else (fuck-up))))
@@ -928,20 +928,43 @@
   (thunk)
   (set-write-level! m)))
 
+(define (with-write-length n thunk)
+ (let ((m (write-level)))
+  (set-write-length! n)
+  (thunk)
+  (set-write-length! m)))
+
+(define (groundify v)
+ (cond ((generic-zero? v)
+	(if (generic-zero-bound? v) (groundify (generic-zero-binding v)) v))
+       ((null? v) v)
+       ((boolean? v) v)
+       ((real? v) v)
+       ((pair? v) (cons (groundify (car v)) (groundify (cdr v))))
+       ((primitive-procedure? v) v)
+       ((closure? v)
+	(make-closure (map-vector groundify (closure-values v))
+		      (closure-variable v)
+		      (closure-body v)))
+       ((recursive-closure? v)
+	(make-recursive-closure
+	 (map-vector groundify (recursive-closure-values v))
+	 (recursive-closure-procedure-variables v)
+	 (recursive-closure-bodies v)
+	 (recursive-closure-index v)))
+       (else (fuck-up))))
+
 (define (run-time-error message v)
  (set! *error-message* message)
- ;; needs work: Backtracking can undo bindings to *error-v* and values on
- ;;             *error-stack*.
- (set! *error-v* v)
- (set! *error-stack* (map identity *stack*))
+ (set! *error-v* (groundify v))
+ (set! *error-stack* (groundify *stack*))
  (fail))
 
 (define (call callee argument)
  (let ((callee (generic-zero-dereference-as-procedure callee)))
   (unless (vlad-procedure? callee)
    (run-time-error "Target is not a procedure" callee))
-  ;; needs work
-  ;;(set! *stack* (cons (list callee argument) *stack*))
+  (set! *stack* (cons (list callee argument) *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	      ((closure? callee) *trace-closures?*)
 	      ((recursive-closure? callee) *trace-recursive-closures?*)
@@ -954,9 +977,10 @@
        (format #t "~aentering ~a~%"
 	       (make-string *trace-level* #\space)
 	       (name callee)))
-   ;; needs work
-   ;;(set! *trace-level* (+ *trace-level* 1))
-   )
+   (set! *trace-level* (+ *trace-level* 1)))
+  (when (and *metered?* (primitive-procedure? callee))
+   (set-primitive-procedure-meter!
+    callee (+ (primitive-procedure-meter callee) 1)))
   (let ((result
 	 (cond
 	  ((primitive-procedure? callee)
@@ -973,20 +997,17 @@
 			     (make-recursive-closure
 			      (recursive-closure-values callee)
 			      (recursive-closure-procedure-variables callee)
-			      (recursive-closure-argument-variables callee)
 			      (recursive-closure-bodies callee)
 			      i))
 			    (vector-length (recursive-closure-bodies callee)))
 			   (recursive-closure-values callee))))
 	  (else (fuck-up)))))
-   ;; needs work
-   ;;(set! *stack* (rest *stack*))
+   (set! *stack* (rest *stack*))
    (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	       ((closure? callee) *trace-closures?*)
 	       ((recursive-closure? callee) *trace-recursive-closures?*)
 	       (else (fuck-up)))
-    ;; needs work
-    ;;(set! *trace-level* (- *trace-level* 1))
+    (set! *trace-level* (- *trace-level* 1))
     (if *trace-argument/result?*
 	(format #t "~aexiting ~a ~s~%"
 		(make-string *trace-level* #\space)
@@ -1008,8 +1029,7 @@
 	  (argument (evaluate (application-argument e) v vs)))
     (call callee argument)))
   ((lambda-expression? e)
-   (make-closure (lambda-expression-name e)
-		 (map-vector lookup (lambda-expression-free-variables e))
+   (make-closure (map-vector lookup (lambda-expression-free-variables e))
 		 (lambda-expression-variable e)
 		 (lambda-expression-body e)))
   ((letrec-expression? e)
@@ -1022,7 +1042,6 @@
 			      (make-recursive-closure
 			       vs
 			       (letrec-expression-procedure-variables e)
-			       (letrec-expression-argument-variables e)
 			       (letrec-expression-bodies e)
 			       i))
 			     (vector-length (letrec-expression-bodies e))))
@@ -1138,18 +1157,18 @@
    ;; all of the subexpressions return a boolean.
    (if
     (call (call (call (call if-procedure (call null? v1))
-		      (make-primitive-procedure
+		      (create-primitive-procedure
 		       "equal?-primitive internal 0"
 		       (lambda (x)
 			(call (call (call (call if-procedure (call null? v2))
-					  (make-primitive-procedure
+					  (create-primitive-procedure
 					   "equal?-primitive internal 1"
 					   (lambda (x) #t)))
-				    (make-primitive-procedure
+				    (create-primitive-procedure
 				     "equal?-primitive internal 2"
 				     (lambda (x) #f)))
 			      '()))))
-		(make-primitive-procedure
+		(create-primitive-procedure
 		 "equal?-primitive internal 3"
 		 (lambda (x) #f)))
 	  '())
@@ -1159,46 +1178,46 @@
       (call
        (call
 	(call if-procedure (call boolean? v1))
-	(make-primitive-procedure
+	(create-primitive-procedure
 	 "equal?-primitive internal 4"
 	 (lambda (x)
 	  (call
 	   (call
 	    (call
 	     (call if-procedure (call boolean? v2))
-	     (make-primitive-procedure
+	     (create-primitive-procedure
 	      "equal?-primitive internal 5"
 	      (lambda (x)
 	       (call
 		(call (call (call if-procedure v1)
-			    (make-primitive-procedure
+			    (create-primitive-procedure
 			     "equal?-primitive internal 6"
 			     (lambda (x)
 			      (call (call (call (call if-procedure v2)
-						(make-primitive-procedure
+						(create-primitive-procedure
 						 "equal?-primitive internal 7"
 						 (lambda (x) #t)))
-					  (make-primitive-procedure
+					  (create-primitive-procedure
 					   "equal?-primitive internal 8"
 					   (lambda (x) #f)))
 				    '()))))
-		      (make-primitive-procedure
+		      (create-primitive-procedure
 		       "equal?-primitive internal 9"
 		       (lambda (x)
 			(call (call (call (call if-procedure v2)
-					  (make-primitive-procedure
+					  (create-primitive-procedure
 					   "equal?-primitive internal 10"
 					   (lambda (x) #f)))
-				    (make-primitive-procedure
+				    (create-primitive-procedure
 				     "equal?-primitive internal 11"
 				     (lambda (x) #t)))
 			      '()))))
 		'()))))
-	    (make-primitive-procedure
+	    (create-primitive-procedure
 	     "equal?-primitive internal 12"
 	     (lambda (x) #f)))
 	   '()))))
-       (make-primitive-procedure
+       (create-primitive-procedure
 	"equal?-primitive internal 13"
 	(lambda (x) #f)))
       '())
@@ -1208,31 +1227,31 @@
        (call
 	(call
 	 (call if-procedure (call real? v1))
-	 (make-primitive-procedure
+	 (create-primitive-procedure
 	  "equal?-primitive internal 14"
 	  (lambda (x)
 	   (call
 	    (call
 	     (call
 	      (call if-procedure (call real? v2))
-	      (make-primitive-procedure
+	      (create-primitive-procedure
 	       "equal?-primitive internal 15"
 	       (lambda (x)
 		(call
 		 (call (call (call if-procedure
 				   (call = (call (call cons-procedure v1) v2)))
-			     (make-primitive-procedure
+			     (create-primitive-procedure
 			      "equal?-primitive internal 16"
 			      (lambda (x) #t)))
-		       (make-primitive-procedure
+		       (create-primitive-procedure
 			"equal?-primitive internal 17"
 			(lambda (x) #f)))
 		 '()))))
-	     (make-primitive-procedure
+	     (create-primitive-procedure
 	      "equal?-primitive internal 18"
 	      (lambda (x) #f)))
 	    '()))))
-	(make-primitive-procedure
+	(create-primitive-procedure
 	 "equal?-primitive internal 19"
 	 (lambda (x) #f)))
        '())
@@ -1242,14 +1261,14 @@
 	(call
 	 (call
 	  (call if-procedure (call pair? v1))
-	  (make-primitive-procedure
+	  (create-primitive-procedure
 	   "equal?-primitive internal 20"
 	   (lambda (x)
 	    (call
 	     (call
 	      (call
 	       (call if-procedure (call pair? v2))
-	       (make-primitive-procedure
+	       (create-primitive-procedure
 		"equal?-primitive internal 21"
 		(lambda (x)
 		 (call
@@ -1258,7 +1277,7 @@
 		    (call if-procedure
 			  (call (call curried-equal? (call car v1))
 				(call car v2)))
-		    (make-primitive-procedure
+		    (create-primitive-procedure
 		     "equal?-primitive internal 22"
 		     (lambda (x)
 		      (call
@@ -1266,22 +1285,22 @@
 			(call (call if-procedure
 				    (call (call curried-equal? (call cdr v1))
 					  (call cdr v2)))
-			      (make-primitive-procedure
+			      (create-primitive-procedure
 			       "equal?-primitive internal 23"
 			       (lambda (x) #t)))
-			(make-primitive-procedure
+			(create-primitive-procedure
 			 "equal?-primitive internal 24"
 			 (lambda (x) #f)))
 		       '()))))
-		   (make-primitive-procedure
+		   (create-primitive-procedure
 		    "equal?-primitive internal 25"
 		    (lambda (x) #f)))
 		  '()))))
-	      (make-primitive-procedure
+	      (create-primitive-procedure
 	       "equal?-primitive internal 26"
 	       (lambda (x) #f)))
 	     '()))))
-	 (make-primitive-procedure
+	 (create-primitive-procedure
 	  "equal?-primitive internal 27"
 	  (lambda (x) #f)))
 	'())
@@ -1306,10 +1325,10 @@
 		      (call
 		       (call curried-equal? (vector-ref (closure-values v1) i))
 		       (vector-ref (closure-values v2) i)))
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "equal?-primitive internal 28"
 		      (lambda (x) (loop (+ i 1)))))
-		    (make-primitive-procedure
+		    (create-primitive-procedure
 		     "equal?-primitive internal 29"
 		     (lambda (x) #f)))
 		   '())))
@@ -1334,10 +1353,10 @@
 		      (call (call curried-equal?
 				  (vector-ref (recursive-closure-values v1) i))
 			    (vector-ref (recursive-closure-values v2) i)))
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "equal?-primitive internal 30"
 		      (lambda (x) (loop (+ i 1)))))
-		    (make-primitive-procedure
+		    (create-primitive-procedure
 		     "equal?-primitive internal 31"
 		     (lambda (x) (call false '()))))
 		   '())))
@@ -1371,34 +1390,34 @@
        (call
 	(call (call if-procedure
 		    (call (call (call (call if-procedure (call null? v1))
-				      (make-primitive-procedure
+				      (create-primitive-procedure
 				       "plus-primitive internal 0"
 				       (lambda (x) (call null? v2))))
-				(make-primitive-procedure
+				(create-primitive-procedure
 				 "plus-primitive internal 1"
 				 (lambda (x) (call false '()))))
 			  '()))
-	      (make-primitive-procedure
+	      (create-primitive-procedure
 	       "plus-primitive internal 2"
 	       (lambda (x) (call null-procedure '()))))
-	(make-primitive-procedure
+	(create-primitive-procedure
 	 "plus-primitive internal 3"
 	 (lambda (x)
 	  (call
 	   (call
 	    (call (call if-procedure
 			(call (call (call (call if-procedure (call real? v1))
-					  (make-primitive-procedure
+					  (create-primitive-procedure
 					   "plus-primitive internal 4"
 					   (lambda (x) (call real? v2))))
-				    (make-primitive-procedure
+				    (create-primitive-procedure
 				     "plus-primitive internal 5"
 				     (lambda (x) (call false '()))))
 			      '()))
-		  (make-primitive-procedure
+		  (create-primitive-procedure
 		   "plus-primitive internal 6"
 		   (lambda (x) (call + (call (call cons-procedure v1) v2)))))
-	    (make-primitive-procedure
+	    (create-primitive-procedure
 	     "plus-primitive internal 7"
 	     (lambda (x)
 	      (call
@@ -1410,14 +1429,14 @@
 		   (call
 		    (call
 		     (call if-procedure (call pair? v1))
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "plus-primitive internal 8"
 		      (lambda (x) (call pair? v2))))
-		    (make-primitive-procedure
+		    (create-primitive-procedure
 		     "plus-primitive internal 9"
 		     (lambda (x) (call false '()))))
 		   '()))
-		 (make-primitive-procedure
+		 (create-primitive-procedure
 		  "plus-primitive internal 10"
 		  (lambda (x)
 		   (call
@@ -1425,7 +1444,7 @@
 		     cons-procedure
 		     (call (call curried-plus (call car v1)) (call car v2)))
 		    (call (call curried-plus (call cdr v1)) (call cdr v2))))))
-		(make-primitive-procedure
+		(create-primitive-procedure
 		 "plus-primitive internal 11"
 		 (lambda (x)
 		  (call
@@ -1437,18 +1456,17 @@
 		       (call
 			(call
 			 (call if-procedure (call procedure? v1))
-			 (make-primitive-procedure
+			 (create-primitive-procedure
 			  "plus-primitive internal 12"
 			  (lambda (x) (call procedure? v2))))
-			(make-primitive-procedure
+			(create-primitive-procedure
 			 "plus-primitive internal 13"
 			 (lambda (x) (call false '()))))
 		       '()))
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "plus-primitive internal 14"
 		      (lambda (x)
 		       (make-closure
-			"plus primitive"
 			(vector curried-plus v1 v2)
 			'y
 			(make-application
@@ -1460,7 +1478,7 @@
 			 (make-application
 			  (make-variable-access-expression 'v2 2)
 			  (make-variable-access-expression 'y -1)))))))
-		    (make-primitive-procedure
+		    (create-primitive-procedure
 		     "plus-primitive internal 15"
 		     (lambda (x)
 		      (run-time-error
@@ -1478,7 +1496,7 @@
  (set! *value-bindings* (cons (make-value-binding x value) *value-bindings*)))
 
 (define (define-primitive-procedure x procedure)
- (define-primitive-constant x (make-primitive-procedure x procedure)))
+ (define-primitive-constant x (create-primitive-procedure x procedure)))
 
 (define (initialize-basis!)
  (define-primitive-procedure '+ (binary-real + "+"))
@@ -1511,59 +1529,59 @@
   ;; Note that we can't apply a j operator to the result of (cons-procedure e)
   ;; or compare results of (cons-procedure e) with equal?-primitive.
   (lambda (x1)
-   (make-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
+   (create-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
  (define-primitive-procedure 'if-procedure
   ;; Note that we can't apply a j operator to the result of (if-procedure e1)
   ;; or ((if-procedure e1) e2) or compare results of (if-procedure e1) or
   ;; ((if-procedure e1) e2) with equal?-primitive.
   (lambda (x1)
-   (make-primitive-procedure
+   (create-primitive-procedure
     "if-procedure 0"
     (lambda (x2)
-     (make-primitive-procedure
+     (create-primitive-procedure
       "if-procedure 1" (lambda (x3) (if x1 x2 x3)))))))
  (define-primitive-procedure 'equal?-primitive
   ;; Note that we can't apply a j operator to the result of
   ;; (equal?-primitive e1), ... or compare results of (equal?-primitive e1),
   ;; ... with equal?-primitive.
   (lambda (x1)
-   (make-primitive-procedure
+   (create-primitive-procedure
     "equal?-primitive 0"
     (lambda (x2)
-     (make-primitive-procedure
+     (create-primitive-procedure
       "equal?-primitive 1"
       (lambda (x3)
-       (make-primitive-procedure
+       (create-primitive-procedure
 	"equal?-primitive 2"
 	(lambda (x4)
-	 (make-primitive-procedure
+	 (create-primitive-procedure
 	  "equal?-primitive 3"
 	  (lambda (x5)
-	   (make-primitive-procedure
+	   (create-primitive-procedure
 	    "equal?-primitive 4"
 	    (lambda (x6)
-	     (make-primitive-procedure
+	     (create-primitive-procedure
 	      "equal?-primitive 5"
 	      (lambda (x7)
-	       (make-primitive-procedure
+	       (create-primitive-procedure
 		"equal?-primitive 6"
 		(lambda (x8)
-		 (make-primitive-procedure
+		 (create-primitive-procedure
 		  "equal?-primitive 7"
 		  (lambda (x9)
-		   (make-primitive-procedure
+		   (create-primitive-procedure
 		    "equal?-primitive 8"
 		    (lambda (x10)
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "equal?-primitive 9"
 		      (lambda (x11)
-		       (make-primitive-procedure
+		       (create-primitive-procedure
 			"equal?-primitive 10"
 			(lambda (x12)
-			 (make-primitive-procedure
+			 (create-primitive-procedure
 			  "equal?-primitive 11"
 			  (lambda (x13)
-			   (make-primitive-procedure
+			   (create-primitive-procedure
 			    "equal?-primitive 12"
 			    (lambda (x14)
 			     (equal?-primitive
@@ -1587,7 +1605,6 @@
     (run-time-error "Invalid argument to map-closure" x))
    (cond ((closure? (cdr x))
 	  (make-closure
-	   `(map-closure ,(name (car x)) ,(closure-name (cdr x)))
 	   (map-vector (lambda (v) (call (car x) v)) (closure-values (cdr x)))
 	   (closure-variable (cdr x))
 	   (closure-body (cdr x))))
@@ -1596,7 +1613,6 @@
 	   (map-vector (lambda (v) (call (car x) v))
 		       (recursive-closure-values (cdr x)))
 	   (recursive-closure-procedure-variables (cdr x))
-	   (recursive-closure-argument-variables (cdr x))
 	   (recursive-closure-bodies (cdr x))
 	   (recursive-closure-index (cdr x))))
 	 (else (run-time-error "Invalid argument to map-closure" x)))))
@@ -1606,43 +1622,43 @@
   ;; (plus-primitive e1), ... or compare results of (plus-primitive e1), ...
   ;; with equal?-primitive.
   (lambda (x1)
-   (make-primitive-procedure
+   (create-primitive-procedure
     "plus-primitive 0"
     (lambda (x2)
-     (make-primitive-procedure
+     (create-primitive-procedure
       "plus-primitive 1"
       (lambda (x3)
-       (make-primitive-procedure
+       (create-primitive-procedure
 	"plus-primitive 2"
 	(lambda (x4)
-	 (make-primitive-procedure
+	 (create-primitive-procedure
 	  "plus-primitive 3"
 	  (lambda (x5)
-	   (make-primitive-procedure
+	   (create-primitive-procedure
 	    "plus-primitive 4"
 	    (lambda (x6)
-	     (make-primitive-procedure
+	     (create-primitive-procedure
 	      "plus-primitive 5"
 	      (lambda (x7)
-	       (make-primitive-procedure
+	       (create-primitive-procedure
 		"plus-primitive 6"
 		(lambda (x8)
-		 (make-primitive-procedure
+		 (create-primitive-procedure
 		  "plus-primitive 7"
 		  (lambda (x9)
-		   (make-primitive-procedure
+		   (create-primitive-procedure
 		    "plus-primitive 8"
 		    (lambda (x10)
-		     (make-primitive-procedure
+		     (create-primitive-procedure
 		      "plus-primitive 9"
 		      (lambda (x11)
-		       (make-primitive-procedure
+		       (create-primitive-procedure
 			"plus-primitive 10"
 			(lambda (x12)
-			 (make-primitive-procedure
+			 (create-primitive-procedure
 			  "plus-primitive 11"
 			  (lambda (x13)
-			   (make-primitive-procedure
+			   (create-primitive-procedure
 			    "plus-primitive 12"
 			    (lambda (x14)
 			     (plus-primitive

@@ -67,6 +67,7 @@
 		   (include-path "include-directory" string-argument)))
 		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("evaluated" evaluated?))
+		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
@@ -77,11 +78,14 @@
 		 (at-most-one ("unabbreviate-closures" unabbreviate-closures?))
 		 (at-most-one ("unabbreviate-recursive-closures"
 			       unabbreviate-recursive-closures?))
-		 (at-most-one ("n" n? (n "n" integer-argument #f)))
+		 (at-most-one ("level" level? (level "n" integer-argument #f)))
+		 (at-most-one
+		  ("length" length? (length "n" integer-argument #f)))
 		 (required (pathname "pathname" string-argument)))
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
  (set! *trace-closures?* trace-closures?)
@@ -89,7 +93,6 @@
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-closures?* unabbreviate-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
- (when n? (set! *n* n))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -101,28 +104,48 @@
 	  (pp (abstract->concrete (first result)))
 	  (newline))
 	 (when evaluated?
-	  (pp (externalize
-	       ;; (triple032 sqrt 4) and (triple033 sqrt 4), inter alia, have
-	       ;; multiple values
-	       (one-value (evaluate (first result) #f (second result))
-			  (begin
-			   (format #t "Stack trace~%")
-			   (set-write-level! *n*)
-			   (set-write-length! *n*)
-			   (for-each (lambda (record)
-				      (display "Procedure: ")
-				      (write (name (first record)))
-				      (newline)
-				      (display "Argument: ")
-				      (write (externalize (second record)))
-				      (newline)
-				      (newline))
-				     *error-stack*)
-			   (newline)
-			   (pp (externalize *error-v*))
-			   (newline)
-			   (panic *error-message*)))))
-	  (newline)))
+	  (when metered?
+	   (for-each (lambda (b)
+		      (let ((v (value-binding-value b)))
+		       (when (primitive-procedure? v)
+			(set-primitive-procedure-meter! v 0))))
+		     *value-bindings*))
+	  (with-write-level
+	   level
+	   (lambda ()
+	    (with-write-length
+	     length
+	     (lambda ()
+	      (pp (externalize
+		   ;; (triple032 sqrt 4) and (triple033 sqrt 4), inter alia,
+		   ;; have multiple values
+		   (one-value (evaluate (first result) #f (second result))
+			      (begin
+			       (format #t "Stack trace~%")
+			       (for-each (lambda (record)
+					  (display "Procedure: ")
+					  (write (name (first record)))
+					  (newline)
+					  (display "Argument: ")
+					  (write (externalize (second record)))
+					  (newline)
+					  (newline))
+					 *error-stack*)
+			       (newline)
+			       (pp (externalize *error-v*))
+			       (newline)
+			       (panic *error-message*)))))))))
+	  (newline)
+	  (when metered?
+	   (for-each (lambda (b)
+		      (let ((v (value-binding-value b)))
+		       (when (and (primitive-procedure? v)
+				  (not (zero? (primitive-procedure-meter v))))
+			(format #t "~a ~s~%"
+				(number->string-of-length
+				 (primitive-procedure-meter v) 7)
+				(value-binding-variable b)))))
+		     (reverse *value-bindings*)))))
 	(loop (rest es) ds))))))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
