@@ -87,7 +87,13 @@
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
-((hessian f) '(3 4))
+((hessian-using-j*-j* f) '(3 4))
+
+;((hessian-using-j*-*j f) '(3 4))
+
+;((hessian-using-*j-j* f) '(3 4))
+
+;((hessian-using-*j-*j f) '(3 4))
 
 (alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
 
