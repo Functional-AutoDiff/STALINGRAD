@@ -140,7 +140,7 @@
 (define (syntax-check-parameter! p)
  (cond
   ((symbol? p)
-   (when (memq p '(: lambda if car cdr cons y))
+   (when (memq p '(: lambda if car cdr cons y let let* cond))
     (panic (format #f "Invalid variable: ~s" p)))
    #f)
   ((and (list? p) (not (null? p)))
@@ -211,8 +211,8 @@
      (syntax-check-expression! (second e) xs))
     (else
      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-     (syntax-check-expression! (second e) xs)
-     (syntax-check-expression! (third e) xs))))
+     (syntax-check-expression! (first e) xs)
+     (syntax-check-expression! (second e) xs))))
   (else (panic (format #f "Invalid expression: ~s" e)))))
 
 (define (create-type-variable)
@@ -220,7 +220,7 @@
   (set-type-variable-type! a a)
   a))
 
-(define (bound? a) (not (eq? (type-variable-type? a) a)))
+(define (bound? a) (not (eq? (type-variable-type a) a)))
 
 (define (abstract-type-variables-in t)
  (cond ((eq? t 'boolean) '())
@@ -294,7 +294,7 @@
 		  (variable-access-expression-lambda-expression e)))
 	      (path (variable-access-expression-path e)))
     (if (null? path)
-	parameter
+	p
 	(case (first path)
 	 ((car) (loop (cons-parameter-car-parameter p) (rest path)))
 	 ((cdr) (loop (cons-parameter-cdr-parameter p) (rest path)))
@@ -307,25 +307,25 @@
 	      (lambda-expression-parameter e))
      ,(abstract->undecorated-concrete-expression (lambda-expression-body e))))
   ((if-expression? e)
-   `(if ,(abstract->undecorated-concrete-parameter
+   `(if ,(abstract->undecorated-concrete-expression
 	  (if-expression-antecedent e))
-	,(abstract->undecorated-concrete-parameter
+	,(abstract->undecorated-concrete-expression
 	  (if-expression-consequent e))	
-	,(abstract->undecorated-concrete-parameter
+	,(abstract->undecorated-concrete-expression
 	  (if-expression-alternate e))))
   ((car-expression? e)
-   `(car ,(abstract->undecorated-concrete-parameter
+   `(car ,(abstract->undecorated-concrete-expression
 	   (car-expression-argument e))))
   ((cdr-expression? e)
-   `(cdr ,(abstract->undecorated-concrete-parameter
+   `(cdr ,(abstract->undecorated-concrete-expression
 	   (cdr-expression-argument e))))
   ((cons-expression? e)
-   `(cons ,(abstract->undecorated-concrete-parameter
+   `(cons ,(abstract->undecorated-concrete-expression
 	    (cons-expression-car-argument e))
-	  ,(abstract->undecorated-concrete-parameter
+	  ,(abstract->undecorated-concrete-expression
 	    (cons-expression-cdr-argument e))))
   ((y-expression? e)
-   `(y ,(abstract->undecorated-concrete-parameter
+   `(y ,(abstract->undecorated-concrete-expression
 	 (y-expression-argument e))))
   (else (fuck-up))))
 
@@ -338,7 +338,7 @@
 		       (variable-access-expression-lambda-expression e)))
 		   (path (variable-access-expression-path e)))
 	 (if (null? path)
-	     parameter
+	     p
 	     (case (first path)
 	      ((car) (loop (cons-parameter-car-parameter p) (rest path)))
 	      ((cdr) (loop (cons-parameter-cdr-parameter p) (rest path)))
@@ -352,25 +352,25 @@
 	  ,(abstract->decorated-concrete-expression
 	    (lambda-expression-body e))))
        ((if-expression? e)
-	`(if ,(abstract->decorated-concrete-parameter
+	`(if ,(abstract->decorated-concrete-expression
 	       (if-expression-antecedent e))
-	     ,(abstract->decorated-concrete-parameter
+	     ,(abstract->decorated-concrete-expression
 	       (if-expression-consequent e))	
-	     ,(abstract->decorated-concrete-parameter
+	     ,(abstract->decorated-concrete-expression
 	       (if-expression-alternate e))))
        ((car-expression? e)
-	`(car ,(abstract->decorated-concrete-parameter
+	`(car ,(abstract->decorated-concrete-expression
 		(car-expression-argument e))))
        ((cdr-expression? e)
-	`(cdr ,(abstract->decorated-concrete-parameter
+	`(cdr ,(abstract->decorated-concrete-expression
 		(cdr-expression-argument e))))
        ((cons-expression? e)
-	`(cons ,(abstract->decorated-concrete-parameter
+	`(cons ,(abstract->decorated-concrete-expression
 		 (cons-expression-car-argument e))
-	       ,(abstract->decorated-concrete-parameter
+	       ,(abstract->decorated-concrete-expression
 		 (cons-expression-cdr-argument e))))
        ((y-expression? e)
-	`(y ,(abstract->decorated-concrete-parameter
+	`(y ,(abstract->decorated-concrete-expression
 	      (y-expression-argument e))))
        (else (fuck-up)))
      ,(abstract->concrete-type (expression-type e))))
@@ -504,7 +504,7 @@
 	      bindings)))
 	   e0))
 	 ((if) (make-if-expression
-		(concrete->abstract-expression (second e) binding)
+		(concrete->abstract-expression (second e) bindings)
 		(concrete->abstract-expression (third e) bindings)
 		(concrete->abstract-expression (fourth e) bindings)
 		(create-type-variable)))
@@ -521,6 +521,12 @@
 	 ((y) (make-y-expression
 	       (concrete->abstract-expression (second e) bindings)
 	       (create-type-variable)))
+	 ((let)
+	  'needs-work)
+	 ((let*)
+	  'needs-work)
+	 ((cond)
+	  'needs-work)
 	 (else (make-application
 		(concrete->abstract-expression (first e) bindings)
 		(concrete->abstract-expression (second e) bindings)

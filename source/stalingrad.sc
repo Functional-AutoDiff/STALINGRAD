@@ -44,7 +44,7 @@
 (include "stalingrad.sch")
 
 (set! *program* "stalingrad")
-(set! *panic?* #t)
+(set! *panic?* #f)
 
 ;;; Macros
 
@@ -60,7 +60,22 @@
 
 ;;; Top Level
 
-(define-command (main)
- #f)
+(define-command (main (at-most-one ("undecorated" undecorated?))
+		      (at-most-one ("decorated" decorated?))
+		      (required (pathname "pathname" string-argument)))
+ (call-with-input-file (default-extension pathname "sc")
+  (lambda (input-port)
+   (let loop ()
+    (let ((e (read input-port)))
+     (unless (eof-object? e)
+      (syntax-check-expression! e '())
+      (let ((e (concrete->abstract-expression e '())))
+       (when undecorated?
+	(pp (abstract->undecorated-concrete-expression e))
+	(newline))
+       (when decorated?
+	(pp (abstract->decorated-concrete-expression e))
+	(newline)))
+      (loop)))))))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
