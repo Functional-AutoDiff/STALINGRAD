@@ -46,7 +46,7 @@
 ;;; needs work
 ;;;  1. The forward and reverse versions of the primitives will give car/cdr
 ;;;     errors instead of primitive-specific errors in certain circumstances.
-;;;  2. AND and OR macros and NOT function
+;;;  2. AND and OR macro and NOT function
 
 ;;; Key
 ;;;  e: concrete or abstract expression
