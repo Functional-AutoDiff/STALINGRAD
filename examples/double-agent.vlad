@@ -1,8 +1,5 @@
 (include "math")
 
-(define (agent wb pbb rbb o)
- (argmax (lambda (a) (rbb (pbb (wb ((invert pbb) o) a)))) 5 1e-5))
-
 (define (double-agent wa wab paa pab pabb raa rabb o)
  (argmax
   (lambda (a)
@@ -16,16 +13,11 @@
   5
   1e-5))
 
-(if #t
-    (agent (lambda (s a) (+ s a))
-	   (lambda (s) s)
-	   (lambda (o) (- 0 (sqr (- o 1))))
-	   2)
-    (double-agent (lambda (s a) (+ s a))
-		  (lambda (s a) (+ s a))
-		  (lambda (s) s)
-		  (lambda (s) s)
-		  (lambda (s) s)
-		  (lambda (o) (- 0 (sqr (- o 3))))
-		  (lambda (o) (- 0 (sqr (- o 1))))
-		  2))
+(double-agent (lambda (s a) (+ s a))
+	      (lambda (s a) (+ s a))
+	      (lambda (s) s)
+	      (lambda (s) s)
+	      (lambda (s) s)
+	      (lambda (o) (- 0 (sqr (- o 3))))
+	      (lambda (o) (- 0 (sqr (- o 1))))
+	      2)

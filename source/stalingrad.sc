@@ -60,21 +60,34 @@
 
 ;;; Top Level
 
-(define-command (main (any-number
-		       ("I"
-			include-path?
-			(include-path "include-directory" string-argument)))
-		      (at-most-one ("undecorated" undecorated?))
-		      (at-most-one ("evaluated" evaluated?))
-		      (at-most-one
-		       ("last"n-last? (n-last "n" integer-argument 10)))
-		      (at-most-one ("trace" trace?))
-		      (required (pathname "pathname" string-argument)))
+(define-command (main
+		 (any-number
+		  ("I"
+		   include-path?
+		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("undecorated" undecorated?))
+		 (at-most-one ("evaluated" evaluated?))
+		 (at-most-one ("show-access-indices" show-access-indices?))
+		 (at-most-one
+		  ("last"n-last? (n-last "n" integer-argument 10)))
+		 (at-most-one
+		  ("trace" trace?)
+		  ("trace-closures-by-argument" trace-closures-by-argument?)
+		  ("trace-closures-by-body" trace-closures-by-body?))
+		 (at-most-one ("trace-argument/result" trace-argument/result?))
+		 (at-most-one ("unabbreviate-recursive-closures"
+			       unabbreviate-recursive-closures?))
+		 (required (pathname "pathname" string-argument)))
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *show-access-indices?* show-access-indices?)
  (set! *n-last* n-last)
- (set! *trace?* trace?)
+ (cond (trace? (set! *trace* #t))
+       (trace-closures-by-argument? (set! *trace* 'argument))
+       (trace-closures-by-body? (set! *trace* 'body)))
+ (set! *trace-argument/result?* *trace-argument/result?*)
+ (set! *unabbreviate-recursive-closures?* *unabbreviate-recursive-closures?*)
  (let ((es (read-source pathname)))
   (unless (null? es)
    (let ((e (expand-definitions (but-last es) (last es))))

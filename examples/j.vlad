@@ -1,23 +1,11 @@
-;;; plus is used on the results of backpropagators. The input will always be a
-;;; pair of same-shape trees. Each tree will only contain nulls, numbers,
-;;; pairs, and procedures. #F is used to indicate a generic zero.
-(define (plus x1 x2)
- (cond ((boolean? x1) x2)
-       ((boolean? x2) x1)
-       ((null? x1) '())
-       ((real? x1) (+ x1 x2))
-       ((pair? x1) (cons (plus (car x1) (car x2)) (plus (cdr x1) (cdr x2))))
-       ;; procedure
-       (else (lambda (y) (plus (x1 y) (x2 y))))))
-
 (define (not x) (if x #f #t))
 
-(define (j* x)
+(define (conjoint-j* x)
  (cond
   ((null? x) (cons x '()))
   ((boolean? x) (cons x '()))
   ((real? x) (cons x 0))
-  ((pair? x) (cons (j* (car x)) (j* (cdr x))))
+  ((pair? x) (cons (conjoint-j* (car x)) (conjoint-j* (cdr x))))
   ((equal? x +)
    (lambda ((cons x1 x1-acute) (cons x2 x2-acute))
     (cons (+ x1 x2) (+ x1-acute x2-acute))))
@@ -68,40 +56,47 @@
   ((equal? x real?) (lambda (x) (cons (and (pair? x) (real? (car x))) '())))
   ((equal? x pair?)
    (lambda (x)
-    (cons (and (pair? x)
-	       (not (null? (car x)))
-	       (not (boolean? (car x)))
-	       (not (real? (car x))))
-	  '())))
+    (cons (and (pair? x) (or (pair? (car x)) (procedure? (car x)))) '())))
   ((equal? x procedure?) (lambda (x) (cons (procedure? x) '())))
   ((equal? x car) car)
   ((equal? x cdr) cdr)
   ((equal? x cons-procedure) cons-procedure)
   ((equal? x if-procedure)
-   (lambda ((cons x1 x1-acute) x2 x3) (if-procedure x1 x2 x3)))
+   (lambda (x1)
+    (lambda (x2)
+     (lambda (x3)
+      (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?)
    (lambda (x1 x2)
-    (cons (if (procedure? x1)
-	      (and (procedure? x2) (equal? x1 x2))
-	      (and (not (procedure? x2)) (equal? (car x1) (car x2))))
-	  '())))
-  ;; needs work: not sure if this is correct
+    (letrec ((loop
+	      (lambda (x1 x2)
+	       (or (and (pair? x1)
+			(pair? x2)
+			(if (or (null? (car x1))
+				(boolean? (car x1))
+				(real? (car x1)))
+			    (equal? x1 x2)
+			    (and (loop (car x1) (car x2))
+				 (loop (cdr x1) (cdr x2)))))
+		   ;; needs work: Comparing the closed-over values needs to
+		   ;;             ignore the adjoint.
+		   (and (procedure? x1) (procedure? x2) (equal? x1 x2))))))
+     (cons (loop x1 x2) '()))))
   ((equal? x map-closure) map-closure)
+  ((equal? x zero) zero)
+  ((equal? x plus) plus)
   ((equal? x write) write)
-  ((equal? x j*) j*)
-  ;; needs work: not sure if this is correct
-  ((equal? x *j) *j)
-  (else (map-closure j* x))))
+  (else (map-closure conjoint-j* x))))
 
-(define (*j x)
+(define (conjoint-*j x)
  (cond
   ;; needs work: to check that y-grave is null
-  ((null? x) (cons x (lambda (y-grave) #f)))
+  ((null? x) (cons x zero))
   ;; needs work: to check that y-grave is null
-  ((boolean? x) (cons x (lambda (y-grave) #f)))
+  ((boolean? x) (cons x zero))
   ;; needs work: to check that y-grave is real
-  ((real? x) (cons x (lambda (y-grave) #f)))
-  ((pair? x) (cons (*j (car x)) (*j (cdr x))))
+  ((real? x) (cons x zero))
+  ((pair? x) (cons (conjoint-*j (car x)) (conjoint-*j (cdr x))))
   ((equal? x +)
    (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
     (cons (+ x1 x2)
@@ -144,71 +139,296 @@
 	   (plus (x1-tilde (- 0 (/ (* x2 y-grave) (+ (* x1 x1) (* x2 x2)))))
 		 (x2-tilde (/ (* x1 y-grave) (+ (* x1 x1) (* x2 x2)))))))))
   ((equal? x =)
-   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
-    ;; needs work: to check that y-grave is null
-    (cons (= x1 x2) (lambda (y-grave) #f))))
+   ;; needs work: to check that y-grave is null
+   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde)) (cons (= x1 x2) zero)))
   ((equal? x <)
-   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
-    ;; needs work: to check that y-grave is null
-    (cons (< x1 x2) (lambda (y-grave) #f))))
+   ;; needs work: to check that y-grave is null
+   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde)) (cons (< x1 x2) zero)))
   ((equal? x >)
-   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
-    ;; needs work: to check that y-grave is null
-    (cons (> x1 x2) (lambda (y-grave) #f))))
+   ;; needs work: to check that y-grave is null
+   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde)) (cons (> x1 x2) zero)))
   ((equal? x <=)
-   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
-    ;; needs work: to check that y-grave is null
-    (cons (<= x1 x2) (lambda (y-grave) #f))))
+   ;; needs work: to check that y-grave is null
+   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde)) (cons (<= x1 x2) zero)))
   ((equal? x >=)
-   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde))
-    ;; needs work: to check that y-grave is null
-    (cons (>= x1 x2) (lambda (y-grave) #f))))
-  ((equal? x zero?)
    ;; needs work: to check that y-grave is null
-   (lambda (x x-tilde) (cons (zero? x) (lambda (y-grave) #f))))
-  ((equal? x positive?)
-   ;; needs work: to check that y-grave is null
-   (lambda (x x-tilde) (cons (positive? x) (lambda (y-grave) #f))))
-  ((equal? x negative?)
-   ;; needs work: to check that y-grave is null
-   (lambda (x x-tilde) (cons (negative? x) (lambda (y-grave) #f))))
-  ((equal? x null?)
-   ;; needs work: to check that y-grave is null
-   (lambda (x) (cons (and (pair? x) (null? (car x))) (lambda (y-grave) #f))))
+   (lambda ((cons x1 x1-tilde) (cons x2 x2-tilde)) (cons (>= x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x zero?) (lambda (x x-tilde) (cons (zero? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x positive?) (lambda (x x-tilde) (cons (positive? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x negative?) (lambda (x x-tilde) (cons (negative? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x null?) (lambda (x) (cons (and (pair? x) (null? (car x))) zero)))
   ((equal? x boolean?)
-   (lambda (x)
-    ;; needs work: to check that y-grave is null
-    (cons (and (pair? x) (boolean? (car x))) (lambda (y-grave) #f))))
-  ((equal? x real?)
    ;; needs work: to check that y-grave is null
-   (lambda (x) (cons (and (pair? x) (real? (car x))) (lambda (y-grave) #f))))
+   (lambda (x) (cons (and (pair? x) (boolean? (car x))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x real?) (lambda (x) (cons (and (pair? x) (real? (car x))) zero)))
   ((equal? x pair?)
    (lambda (x)
-    (cons (and (pair? x)
-	       (not (null? (car x)))
-	       (not (boolean? (car x)))
-	       (not (real? (car x))))
-	  ;; needs work: to check that y-grave is null
-	  (lambda (y-grave) #f))))
-  ((equal? x procedure?)
-   ;; needs work: to check that y-grave is null
-   (lambda (x) (cons (procedure? x) (lambda (y-grave) #f))))
+    ;; needs work: to check that y-grave is null
+    (cons (and (pair? x) (or (pair? (car x)) (procedure? (car x)))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x procedure?) (lambda (x) (cons (procedure? x) zero)))
   ((equal? x car) car)
   ((equal? x cdr) cdr)
   ((equal? x cons-procedure) cons-procedure)
   ((equal? x if-procedure)
-   (lambda ((cons x1 x1-tilde) x2 x3) (if-procedure x1 x2 x3)))
+   (lambda (x1)
+    (lambda (x2)
+     (lambda (x3)
+      (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
   ((equal? x equal?)
    (lambda (x1 x2)
-    (cons (if (procedure? x1)
-	      (and (procedure? x2) (equal? x1 x2))
-	      (and (not (procedure? x2)) (equal? (car x1) (car x2))))
-	  ;; needs work: to check that y-grave is null
-	  (lambda (y-grave) #f))))
-  ;; needs work: not sure if this is correct
+    (letrec ((loop
+	      (lambda (x1 x2)
+	       (or (and (pair? x1)
+			(pair? x2)
+			(if (or (null? (car x1))
+				(boolean? (car x1))
+				(real? (car x1)))
+			    (equal? x1 x2)
+			    (and (loop (car x1) (car x2))
+				 (loop (cdr x1) (cdr x2)))))
+		   ;; needs work: Comparing the closed-over values needs to
+		   ;;             ignore the adjoint.
+		   (and (procedure? x1) (procedure? x2) (equal? x1 x2))))))
+     ;; needs work: to check that y-grave is null
+     (cons (loop x1 x2) zero))))
   ((equal? x map-closure) map-closure)
+  ((equal? x zero) zero)
+  ((equal? x plus) plus)
   ((equal? x write) write)
-  ;; needs work: not sure if this is correct
-  ((equal? x j*) j*)
-  ((equal? x *j) *j)
-  (else (map-closure *j x))))
+  (else (map-closure conjoint-*j x))))
+
+(define (conjoined-j* x)
+ (cond
+  ((null? x) (cons x '()))
+  ((boolean? x) (cons x '()))
+  ((real? x) (cons x 0))
+  ((pair? x)
+   (let ((x1 (conjoined-j* (car x))) (x2 (conjoined-j* (cdr x))))
+    (cons (cons (if (procedure? x1) x1 (car x1))
+		(if (procedure? x2) x2 (car x2)))
+	  (cons (if (procedure? x1) x1 (cdr x1))
+		(if (procedure? x2) x2 (cdr x2))))))
+  ((equal? x +)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute))
+    (cons (+ x1 x2) (+ x1-acute x2-acute))))
+  ((equal? x -)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute))
+    (cons (- x1 x2) (- x1-acute x2-acute))))
+  ((equal? x *)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute))
+    (cons (* x1 x2) (+ (* x2 x1-acute) (* x1 x2-acute)))))
+  ((equal? x /)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute))
+    (cons (/ x1 x2) (/ (- (* x2 x1-acute) (* x1 x2-acute)) (* x2 x2)))))
+  ((equal? x sqrt)
+   (lambda (x x-acute) (cons (sqrt x) (/ x-acute (* 2 (sqrt x))))))
+  ((equal? x exp) (lambda (x x-acute) (cons (exp x) (* (exp x) x-acute))))
+  ((equal? x log) (lambda (x x-acute) (cons (log x) (/ x-acute x))))
+  ((equal? x sin) (lambda (x x-acute) (cons (sin x) (* (cos x) x-acute))))
+  ((equal? x cos)
+   (lambda (x x-acute) (cons (cos x) (- 0 (* (sin x) x-acute)))))
+  ((equal? x atan)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute))
+    (cons (atan x2 x1)
+	  (/ (- (* x1 x2-acute) (* x2 x1-acute)) (+ (* x1 x1) (* x2 x2))))))
+  ((equal? x =)
+   ;; needs work: to check that x1-acute and x2-acute are real
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons (= x1 x2) '())))
+  ((equal? x <)
+   ;; needs work: to check that x1-acute and x2-acute are real
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons (< x1 x2) '())))
+  ((equal? x >)
+   ;; needs work: to check that x1-acute and x2-acute are real
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons (> x1 x2) '())))
+  ((equal? x <=)
+   ;; needs work: to check that x1-acute and x2-acute are real
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons (<= x1 x2) '())))
+  ((equal? x >=)
+   ;; needs work: to check that x1-acute and x2-acute are real
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons (>= x1 x2) '())))
+  ;; needs work: to check that x-acute is real
+  ((equal? x zero?) (lambda (x x-acute) (cons (zero? x) '())))
+  ;; needs work: to check that x-acute is real
+  ((equal? x positive?) (lambda (x x-acute) (cons (positive? x) '())))
+  ;; needs work: to check that x-acute is real
+  ((equal? x negative?) (lambda (x x-acute) (cons (negative? x) '())))
+  ((equal? x null?) (lambda (x) (cons (and (pair? x) (null? (car x))) '())))
+  ((equal? x boolean?)
+   (lambda (x) (cons (and (pair? x) (boolean? (car x))) '())))
+  ((equal? x real?) (lambda (x) (cons (and (pair? x) (real? (car x))) '())))
+  ((equal? x pair?)
+   (lambda (x)
+    (cons (and (pair? x) (or (pair? (car x)) (procedure? (car x)))) '())))
+  ((equal? x procedure?) (lambda (x) (cons (procedure? x) '())))
+  ((equal? x car)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons x1 x1-acute)))
+  ((equal? x cdr)
+   (lambda ((cons x1 x2) (cons x1-acute x2-acute)) (cons x2 x2-acute)))
+  ((equal? x cons-procedure)
+   (lambda (x1)
+    (lambda (x2)
+     (cons (cons (if (procedure? x1) x1 (car x1))
+		 (if (procedure? x2) x2 (car x2)))
+	   (cons (if (procedure? x1) x1 (cdr x1))
+		 (if (procedure? x2) x2 (cdr x2)))))))
+  ((equal? x if-procedure)
+   (lambda (x1)
+    (lambda (x2)
+     (lambda (x3)
+      (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
+  ((equal? x equal?)
+   (lambda (x1 x2)
+    (letrec ((loop
+	      (lambda (x1 x2)
+	       (or (and (pair? x1)
+			(pair? x2)
+			(if (or (null? (car x1))
+				(boolean? (car x1))
+				(real? (car x1)))
+			    (equal? x1 x2)
+			    (and (loop (car x1) (car x2))
+				 (loop (cdr x1) (cdr x2)))))
+		   ;; needs work: Comparing the closed-over values needs to
+		   ;;             ignore the adjoint.
+		   (and (procedure? x1) (procedure? x2) (equal? x1 x2))))))
+     (cons (loop x1 x2) '()))))
+  ((equal? x map-closure) map-closure)
+  ((equal? x zero) zero)
+  ((equal? x plus) plus)
+  ((equal? x write) write)
+  ;; needs work: a hack for now
+  ((equal? x conjoined-j*) conjoined-j*)
+  (else (map-closure conjoined-j* x))))
+
+(define (conjoined-*j x)
+ (cond
+  ;; needs work: to check that y-grave is null
+  ((null? x) (cons x zero))
+  ;; needs work: to check that y-grave is null
+  ((boolean? x) (cons x zero))
+  ;; needs work: to check that y-grave is real
+  ((real? x) (cons x zero))
+  ((pair? x)
+   (let ((x1 (conjoined-*j (car x))) (x2 (conjoined-*j (cdr x))))
+    (cons (cons (if (procedure? x1) x1 (car x1))
+		(if (procedure? x2) x2 (car x2)))
+	  (plus (if (procedure? x1) x1 (cdr x1))
+		(if (procedure? x2) x2 (cdr x2))))))
+  ((equal? x +)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons (+ x1 x2) (lambda (y-grave) (x-tilde (cons y-grave y-grave))))))
+  ((equal? x -)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons (- x1 x2)
+	  (lambda (y-grave) (x-tilde (cons y-grave (- 0 y-grave)))))))
+  ((equal? x *)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons (* x1 x2)
+	  (lambda (y-grave) (x-tilde (cons (* x2 y-grave) (* x1 y-grave)))))))
+  ((equal? x /)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons
+     (/ x1 x2)
+     (lambda (y-grave)
+      (x-tilde (cons (/ y-grave x2) (- 0 (/ (* x1 y-grave) (* x2 x2)))))))))
+  ((equal? x sqrt)
+   (lambda (x x-tilde)
+    (cons (sqrt x) (lambda (y-grave) (x-tilde (/ y-grave (* 2 (sqrt x))))))))
+  ((equal? x exp)
+   (lambda (x x-tilde)
+    (cons (exp x) (lambda (y-grave) (x-tilde (* (exp x) y-grave))))))
+  ((equal? x log)
+   (lambda (x x-tilde)
+    (cons (log x) (lambda (y-grave) (x-tilde (/ y-grave x))))))
+  ((equal? x sin)
+   (lambda (x x-tilde)
+    (cons (sin x) (lambda (y-grave) (x-tilde (* (cos x) y-grave))))))
+  ((equal? x cos)
+   (lambda (x x-tilde)
+    (cons (cos x) (lambda (y-grave) (x-tilde (- 0 (* (sin x) y-grave)))))))
+  ((equal? x atan)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons
+     (atan x2 x1)
+     (lambda (y-grave)
+      (x-tilde (cons (- 0 (/ (* x2 y-grave) (+ (* x1 x1) (* x2 x2))))
+		     (/ (* x1 y-grave) (+ (* x1 x1) (* x2 x2)))))))))
+  ;; needs work: to check that y-grave is null
+  ((equal? x =) (lambda ((cons x1 x2) x-tilde) (cons (= x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x <) (lambda ((cons x1 x2) x-tilde) (cons (< x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x >) (lambda ((cons x1 x2) x-tilde) (cons (> x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x <=) (lambda ((cons x1 x2) x-tilde) (cons (<= x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x >=) (lambda ((cons x1 x2) x-tilde) (cons (>= x1 x2) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x zero?) (lambda (x x-tilde) (cons (zero? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x positive?) (lambda (x x-tilde) (cons (positive? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x negative?) (lambda (x x-tilde) (cons (negative? x) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x null?) (lambda (x) (cons (and (pair? x) (null? (car x))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x boolean?)
+   (lambda (x) (cons (and (pair? x) (boolean? (car x))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x real?) (lambda (x) (cons (and (pair? x) (real? (car x))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x pair?)
+   (lambda (x)
+    (cons (and (pair? x) (or (pair? (car x)) (procedure? (car x)))) zero)))
+  ;; needs work: to check that y-grave is null
+  ((equal? x procedure?) (lambda (x) (cons (procedure? x) zero)))
+  ((equal? x car)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons x1 (lambda (y-grave) (x-tilde (cons y-grave (zero)))))))
+  ((equal? x cdr)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons x2 (lambda (y-grave) (x-tilde (cons (zero) y-grave))))))
+  ((equal? x cons-procedure)
+   (lambda (x1)
+    (lambda (x2)
+     (cons (cons (if (procedure? x1) x1 (car x1))
+		 (if (procedure? x2) x2 (car x2)))
+	   (plus (if (procedure? x1) x1 (cdr x1))
+		 (if (procedure? x2) x2 (cdr x2)))))))
+  ((equal? x if-procedure)
+   (lambda (x1)
+    (lambda (x2)
+     (lambda (x3)
+      (if (or (not (pair? x1)) (not (boolean? (car x1))) (car x1)) x2 x3)))))
+  ((equal? x equal?)
+   (lambda (x1 x2)
+    (letrec ((loop
+	      (lambda (x1 x2)
+	       (or (and (pair? x1)
+			(pair? x2)
+			(if (or (null? (car x1))
+				(boolean? (car x1))
+				(real? (car x1)))
+			    (equal? x1 x2)
+			    (and (loop (car x1) (car x2))
+				 (loop (cdr x1) (cdr x2)))))
+		   ;; needs work: Comparing the closed-over values needs to
+		   ;;             ignore the adjoint.
+		   (and (procedure? x1) (procedure? x2) (equal? x1 x2))))))
+     ;; needs work: to check that y-grave is null
+     (cons (loop x1 x2) zero))))
+  ((equal? x map-closure) map-closure)
+  ((equal? x zero) zero)
+  ((equal? x plus)
+   (lambda ((cons x1 x2) x-tilde)
+    (cons (plus x1 x2) (lambda (y-grave) (x-tilde (cons y-grave y-grave))))))
+  ((equal? x write) write)
+  ;; needs work: a hack for now
+  ((equal? x conjoined-*j) conjoined-*j)
+  (else (map-closure conjoined-*j x))))

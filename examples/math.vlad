@@ -6,11 +6,19 @@
 
 (define (sqr x) (* x x))
 
-(define (derivative-using-j* f) (lambda (x) (cdr ((j* f) x 1))))
+(define (derivative-using-conjoint-j* f)
+ (lambda (x) (cdr ((conjoint-j* f) x 1))))
 
-(define (derivative-using-*j f) (lambda (x) ((cdr ((*j f) x identity)) 1)))
+(define (derivative-using-conjoint-*j f)
+ (lambda (x) ((cdr ((conjoint-*j f) x identity)) 1)))
 
-(define (derivative f) (derivative-using-*j f))
+(define (derivative-using-conjoined-j* f)
+ (lambda (x) (cdr ((conjoined-j* f) x 1))))
+
+(define (derivative-using-conjoined-*j f)
+ (lambda (x) ((cdr ((conjoined-*j f) x identity)) 1)))
+
+(define (derivative f) (derivative-using-conjoined-j* f))
 
 (define (root f x epsilon)
  (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
@@ -40,8 +48,7 @@
 (define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
 
 (define (map-n f n)
- ;; needs work: To use list.
- (if (zero? n) '() (append (map-n f (- n 1)) (cons (f (- n 1)) '()))))
+ (if (zero? n) '() (append (map-n f (- n 1)) (list (f (- n 1))))))
 
 ;;; The nxn identity matrix.
 (define (i n) (map-n (lambda (i) (e i n)) n))
@@ -62,7 +69,7 @@
 
 (define (reverse-conjoint primal adjoint)
  (if (null? primal)
-     (cons '() (lambda (y-grave) #f))
+     (cons '() zero)
      (cons (cons (first primal) (first adjoint))
 	   (reverse-conjoint (rest primal) (rest adjoint)))))
 
@@ -71,20 +78,23 @@
 
 (define (length l) (if (null? l) 0 (+ (length (rest l)) 1)))
 
-(define (gradient-using-j* f)
+(define (gradient-using-conjoint-j* f)
  (lambda (x)
   (let ((n (length x)))
-   (map-n (lambda (i) (cdr ((j* f) (forward-conjoint x (e i n))))) n))))
+   (map-n (lambda (i) (cdr ((conjoint-j* f) (forward-conjoint x (e i n)))))
+	  n))))
 
-(define (gradient-using-*j f)
+(define (gradient-using-conjoint-*j f)
  (lambda (x)
   (let ((n (length x)))
-   ((cdr ((*j f)
+   ((cdr ((conjoint-*j f)
 	  (reverse-conjoint
 	   x (map-n (lambda (i) (lambda (y-grave) (ex y-grave i n))) n))))
     1))))
 
-(define (gradient f) (gradient-using-*j f))
+;;; needs work: gradient-using-conjoined-j* and gradient-using-conjoined-*j
+
+(define (gradient f) (gradient-using-conjoint-*j f))
 
 (define (v+ u v) (map2 + u v))
 
