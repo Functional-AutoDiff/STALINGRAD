@@ -875,8 +875,7 @@
    (cdr x)))
  (define-primitive-basis-constant
   'cons-procedure
-  ;; note that we can't apply j-forward or j-reverse to the result of
-  ;; (cons-procedure e)
+  ;; note that we can't apply j* or *j to the result of (cons-procedure e)
   (lambda (x)
    (make-primitive-procedure "cons-procedure" (lambda (y) (cons x y)))))
  (define-primitive-basis-constant
