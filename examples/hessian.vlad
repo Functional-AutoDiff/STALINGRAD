@@ -58,26 +58,18 @@
 (define (hessian-quadratic-form-using-j*-*j f x u v)
  (let ((f-*j (*j f)))
   (adjoint
-   ((j* (lambda (x) (dot (ungenericize x (cdr ((cdr (f-*j x)) 1))) v)))
-    (conjoint x u)))))
+   ((j* (lambda (x) (dot (cdr ((cdr (f-*j x)) 1)) v))) (conjoint x u)))))
 
 (define (hessian-quadratic-form-using-*j-j* f x u v)
  (let ((f-j* (j* f)))
   (dot
-   u
-   (ungenericize
-    x
-    (cdr ((cdr ((*j (lambda (x) (adjoint (f-j* (conjoint x v))))) x)) 1))))))
+   u (cdr ((cdr ((*j (lambda (x) (adjoint (f-j* (conjoint x v))))) x)) 1)))))
 
 (define (hessian-quadratic-form-using-*j-*j f x u v)
  (let ((f-*j (*j f)))
   (dot u
-       (ungenericize
-	x
-	(cdr ((cdr ((*j (lambda (x)
-			 (dot (ungenericize x (cdr ((cdr (f-*j x)) 1))) v)))
-		    x))
-	      1))))))
+       (cdr ((cdr ((*j (lambda (x) (dot (cdr ((cdr (f-*j x)) 1)) v))) x))
+	     1)))))
 
 (define (hessian-quadratic-form f x v)
  (hessian-quadratic-form-using-j*-j* f x v))
@@ -87,13 +79,7 @@
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
-((hessian-using-j*-j* f) '(3 4))
-
-;((hessian-using-j*-*j f) '(3 4))
-
-;((hessian-using-*j-j* f) '(3 4))
-
-;((hessian-using-*j-*j f) '(3 4))
+((hessian f) '(3 4))
 
 (alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
 

@@ -1,21 +1,7 @@
 (include "j")
 
-(define (ungenericize x x-grave)
- (cond ((generic-zero? x-grave)
-	(cond ((null? x) '())
-	      ((boolean? x) '())
-	      ((real? x) 0)
-	      ((pair? x) (cons (ungenericize (car x) (car x-grave))
-			       (ungenericize (cdr x) (cdr x-grave))))
-	      ;; procedure: technically this is wrong because it doesn't return
-	      ;;            zeros of the free variables
-	      (else '())))
-       ((pair? x-grave) (cons (ungenericize (car x) (car x-grave))
-			      (ungenericize (cdr x) (cdr x-grave))))
-       (else x-grave)))
-
 (define (derivative-using-*j f)
- (let ((f-*j (*j f))) (lambda (x) (ungenericize x (cdr ((cdr (f-*j x)) 1))))))
+ (let ((f-*j (*j f))) (lambda (x) (cdr ((cdr (f-*j x)) 1)))))
 
 ((derivative-using-*j
   (lambda (d)

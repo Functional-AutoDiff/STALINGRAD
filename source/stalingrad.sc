@@ -2,7 +2,7 @@
 ;;; LaHaShem HaAretz U'Mloah
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004 Purdue University. All rights reserved.
+;;; Copyright 2004 and 2005 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -44,7 +44,7 @@
 (include "stalingrad.sch")
 
 (set! *program* "stalingrad")
-(set! *panic?* #t)
+(set! *panic?* #f)			;debugging
 
 ;;; Macros
 
@@ -76,6 +76,8 @@
 		 (at-most-one
 		  ("trace-recursive-closures" trace-recursive-closures?))
 		 (at-most-one ("trace-argument/result" trace-argument/result?))
+		 (at-most-one
+		  ("unabbreviate-executably" unabbreviate-executably?))
 		 (at-most-one ("unabbreviate-closures" unabbreviate-closures?))
 		 (at-most-one ("unabbreviate-recursive-closures"
 			       unabbreviate-recursive-closures?))
@@ -83,7 +85,12 @@
 		 (at-most-one
 		  ("length" length? (length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
+		 (at-most-one ("wizard" wizard?))
 		 (required (pathname "pathname" string-argument)))
+ (when (and unabbreviate-executably? unabbreviate-closures?)
+  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-closures"))
+ (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
+  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
@@ -94,9 +101,11 @@
  (set! *trace-closures?* trace-closures?)
  (set! *trace-recursive-closures?* trace-recursive-closures?)
  (set! *trace-argument/result?* trace-argument/result?)
+ (set! *unabbreviate-executably?* unabbreviate-executably?)
  (set! *unabbreviate-closures?* unabbreviate-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
+ (set! *wizard?* wizard?)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
