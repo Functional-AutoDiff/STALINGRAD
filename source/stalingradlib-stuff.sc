@@ -297,7 +297,7 @@
 		   (list x)
 		   (create-let*
 		    bs
-		    (list (second p) (third p))
+		    (rest p)
 		    (list (make-car bs (make-variable-access-expression x #f))
 			  (make-cdr bs (make-variable-access-expression x #f)))
 		    e))))
@@ -323,10 +323,54 @@
  (create-application bs (create-lambda-expression bs (list p) e2) e1))
 
 (define (create-let* bs ps es e)
- (if (null? ps)
-     e
-     (create-let
-      bs (first ps) (first es) (create-let* bs (rest ps) (rest es) e))))
+ (cond
+  ((null? ps) e)
+  ;; This is just for efficiency.
+  ((and (not (contains-letrec? e)) (not (some contains-letrec? es)))
+   (let loop ((ps ps) (es es) (xs1 '()) (es1 '()))
+    (if (null? es)
+	(make-let*-expression (reverse xs1) (reverse es1) e)
+	(let ((p (first ps)))
+	 (cond
+	  ((symbol? (first ps))
+	   (loop
+	    (rest ps) (rest es) (cons (first ps) xs1) (cons (first es) es1)))
+	  ((and (list? p) (not (null? p)))
+	   (case (first p)
+	    ((cons)
+	     (unless (= (length p) 3) (fuck-up))
+	     (let ((x (gensym)))
+	      (loop
+	       (cons x (append (rest p) (rest ps)))
+	       (cons
+		(first es)
+		(append
+		 (list (make-car bs (make-variable-access-expression x #f))
+		       (make-cdr bs (make-variable-access-expression x #f)))
+		 (rest es)))
+	       xs1
+	       es1)))
+	    ((cons*)
+	     (case (length (rest p))
+	      ((0) (loop (cons (gensym) (rest ps)) es xs1 es1))
+	      ((1) (loop (cons (second p) (rest ps)) es xs1 es1))
+	      (else (loop (cons `(cons ,(second p) (cons* ,@(rest (rest p))))
+				(rest ps))
+			  es
+			  xs1
+			  es1))))
+	    ((list)
+	     (if (null? (rest p))
+		 (loop (cons (gensym) (rest ps)) es xs1 es1)
+		 (loop
+		  (cons `(cons ,(second p) (list ,@(rest (rest p)))) (rest ps))
+		  es
+		  xs1
+		  es1)))
+	    (else (fuck-up))))
+	  (else (fuck-up)))))))
+  (else (create-let
+	 bs (first ps) (first es) (create-let* bs (rest ps) (rest es) e)))))
 
 (define (search-include-path-without-extension pathname)
  (cond ((can-open-file-for-input? pathname) pathname)
@@ -1663,12 +1707,11 @@
      ((closure? g)
       (let* ((bs (map (lambda (v) (make-value-binding (gensym) v))
 		      (cons '() (map value-binding-value *value-bindings*))))
-	     (e (reverse-transform
-		 bs
-		 (create-lambda-expression
-		  bs
-		  (list (closure-variable g))
-		  (alpha-rename (closure-body g)))))
+	     (e (reverse-transform bs
+				   (create-lambda-expression
+				    bs
+				    (list (closure-variable g))
+				    (alpha-rename (closure-body g)))))
 	     (xs (free-variables e))
 	     (x (lambda-expression-variable e))
 	     (e (lambda-expression-body e)))
