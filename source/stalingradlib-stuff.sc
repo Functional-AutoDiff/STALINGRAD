@@ -70,7 +70,7 @@
 
 (define-structure application callee argument)
 
-(define-structure lambda-expression variable free-variables body)
+(define-structure lambda-expression name variable free-variables body)
 
 (define-structure letrec-expression
  procedure-variables
@@ -84,7 +84,7 @@
 
 (define-structure value-binding variable value)
 
-(define-structure closure values variable body)
+(define-structure closure name values variable body)
 
 (define-structure recursive-closure
  values procedure-variables argument-variables bodies index)
@@ -105,7 +105,7 @@
 
 (define *value-bindings* '())
 
-(define *last* '())
+(define *stack* '())
 
 (define *trace-level* 0)
 
@@ -117,13 +117,19 @@
 
 (define *show-access-indices?* #f)
 
-(define *n-last* 10)
+(define *trace-primitive-procedures?* #f)
 
-(define *trace* #f)
+(define *trace-closures?* #f)
+
+(define *trace-recursive-closures?* #f)
 
 (define *trace-argument/result?* #f)
 
+(define *unabbreviate-closures?* #f)
+
 (define *unabbreviate-recursive-closures?* #f)
+
+(define *n* #f)
 
 ;;; Procedures
 
@@ -416,6 +422,7 @@
 			(loop (application-argument e))))
      ((lambda-expression? e)
       (make-lambda-expression
+       (lambda-expression-name e)
        (lambda-expression-variable e)
        (remove-duplicatesq-vector
 	(map-vector rename (lambda-expression-free-variables e)))
@@ -450,6 +457,7 @@
   ((lambda-expression? e)
    (let ((xs (lambda-expression-free-variables e)))
     (make-lambda-expression
+     (lambda-expression-name e)
      (lambda-expression-variable e)
      (map-vector lookup xs)
      (index (lambda-expression-variable e) xs (lambda-expression-body e)))))
@@ -472,7 +480,7 @@
 
 (define (concrete->abstract-expression e)
  (let* ((result
-	 (let loop ((e e) (bs *variable-bindings*))
+	 (let loop ((e e) (bs *variable-bindings*) (name "top level"))
 	  (cond
 	   ((boolean? e)
 	    (let ((x (gensym)))
@@ -494,14 +502,17 @@
 			     (list (make-value-binding x (second e))))))
 	     ((lambda)
 	      (case (length (second e))
-	       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs))
+	       ((0) (loop `(lambda (,(gensym)) ,(third e)) bs name))
 	       ((1)
 		(let* ((x (concrete->abstract-parameter (first (second e))))
 		       (result (loop (third e)
 				     (append
 				      (parameter-variable-bindings
-				       x (first (second e))) bs))))
+				       x (first (second e)))
+				      bs)
+				     `(inside ,name))))
 		 (list (make-lambda-expression
+			name
 			x
 			(list->vector
 			 (removeq x (free-variables-in (first result))))
@@ -511,7 +522,8 @@
 		(loop `(lambda ((cons ,(first (second e)) ,(second (second e)))
 				,@(rest (rest (second e))))
 			,(third e))
-		      bs))))
+		      bs
+		      name))))
 	     ((letrec)
 	      (let* ((bs
 		      (append
@@ -521,9 +533,9 @@
 			      (make-variable-access-expression (first b) #f)))
 			    (second e))
 		       bs))
-		     (results
-		      (map (lambda (b) (loop (second b) bs)) (second e)))
-		     (result (loop (third e) bs))
+		     (results (map (lambda (b) (loop (second b) bs (first b)))
+				   (second e)))
+		     (result (loop (third e) bs name))
 		     (xs1 (map first (second e)))
 		     (xs2 (map (lambda (result)
 				(lambda-expression-variable (first result)))
@@ -560,52 +572,60 @@
 		 (second result) (reduce append (map second results) '())))))
 	     ((let) (loop `((lambda ,(map first (second e)) ,(third e))
 			    ,@(map second (second e)))
-			  bs))
+			  bs
+			  name))
 	     ((let*) (case (length (second e))
-		      ((0) (loop (third e) bs))
-		      ((1) (loop `(let ,(second e) ,(third e))  bs))
+		      ((0) (loop (third e) bs name))
+		      ((1) (loop `(let ,(second e) ,(third e))  bs name))
 		      (else (loop `(let (,(first (second e)))
 				    (let* ,(rest (second e)) ,(third e)))
-				  bs))))
+				  bs
+				  name))))
 	     ;; needs work: to ensure that you don't shadow if-procedure
 	     ((if) (loop `((((if-procedure ,(second e)) (lambda () ,(third e)))
 			    (lambda () ,(fourth e))))
-			 bs))
+			 bs
+			 name))
 	     ;; needs work: to ensure that you don't shadow cons-procedure
-	     ((cons) (loop `((cons-procedure ,(second e)) ,(third e)) bs))
+	     ((cons) (loop `((cons-procedure ,(second e)) ,(third e)) bs name))
 	     ((list) (loop (if (null? (rest e))
 			       ''()
 			       `(cons ,(second e) (list ,@(rest (rest e)))))
-			   bs))
+			   bs
+			   name))
 	     ((cond) (loop (if (null? (rest (rest e)))
 			       (second (second e))
 			       `(if ,(first (second e))
 				    ,(second (second e))
 				    (cond ,@(rest (rest e)))))
-			   bs))
+			   bs
+			   name))
 	     ((and) (loop (case (length (rest e))
 			   ((0) #t)
 			   ((1) (second e))
 			   (else `(if ,(second e) (and ,@(rest (rest e))) #f)))
-			  bs))
+			  bs
+			  name))
 	     ((or) (loop (case (length (rest e))
 			  ((0) #f)
 			  ((1) (second e))
 			  (else (let ((x (gensym)))
 				 `(let ((,x ,(second e)))
 				   (if ,x ,x (or ,@(rest (rest e))))))))
-			 bs))
+			 bs
+			 name))
 	     (else
 	      (case (length (rest e))
-	       ((0) (loop `(,(first e) '()) bs))
-	       ((1) (let ((result1 (loop (first e) bs))
-			  (result2 (loop (second e) bs)))
+	       ((0) (loop `(,(first e) '()) bs name))
+	       ((1) (let ((result1 (loop (first e) bs name))
+			  (result2 (loop (second e) bs name)))
 		     (list (make-application (first result1) (first result2))
 			   (append (second result1) (second result2)))))
 	       (else
 		(loop `(,(first e)
 			(cons ,(second e) ,(third e)) ,@(rest (rest (rest e))))
-		      bs))))))
+		      bs
+		      name))))))
 	   (else (fuck-up)))))
 	(xs (free-variables-in (first result)))
 	(bs (remove-if-not (lambda (b) (memq (value-binding-variable b) xs))
@@ -646,7 +666,8 @@
 	(unless (generic-zero-bound? v)
 	 (set-generic-zero-binding!
 	  v
-	  (make-closure (vector (create-generic-zero))
+	  (make-closure "generic zero"
+			(vector (create-generic-zero))
 			'x
 			(make-variable-access-expression 'zero 0))))
 	(generic-zero-dereference-as-procedure (generic-zero-binding v)))
@@ -716,45 +737,57 @@
 	  (generic-zero-unbound? (car v))
 	  (generic-zero-unbound? (cdr v)))))
 
+(define (name callee)
+ (cond ((primitive-procedure? callee) (primitive-procedure-name callee))
+       ((closure? callee)
+	(if *unabbreviate-closures?*
+	    (if #f			;debugging
+		`(closure
+		  ,(map-n (lambda (i)
+			   ;; needs work: to reconstruct free variables
+			   (list i
+				 (externalize
+				  (vector-ref (closure-values callee) i))))
+			  (vector-length (closure-values callee)))
+		  (lambda (,(closure-variable callee))
+		   ,(abstract->concrete (closure-body callee))))
+		`(lambda (,(closure-variable callee))
+		  ,(abstract->concrete (closure-body callee))))
+	    (closure-name callee)))
+       ((recursive-closure? callee)	
+	(if *unabbreviate-recursive-closures?*
+	    `(recursive-closure
+	      ,(vector-ref (recursive-closure-procedure-variables callee)
+			   (recursive-closure-index callee))
+	      ,(map-n
+		(lambda (i)
+		 ;; needs work: to reconstruct free variables
+		 (list i
+		       (externalize
+			(vector-ref (recursive-closure-values callee) i))))
+		(vector-length (recursive-closure-values callee)))
+	      ,(vector->list
+		(map-vector
+		 (lambda (x1 x2 e)
+		  `(,x1 (lambda (,x2) ,(abstract->concrete e))))
+		 (recursive-closure-procedure-variables callee)
+		 (recursive-closure-argument-variables callee)
+		 (recursive-closure-bodies callee))))
+	    (vector-ref (recursive-closure-procedure-variables callee)
+			(recursive-closure-index callee))))
+       (else (fuck-up))))
+
 (define (externalize v)
- (cond
-  ((generic-zero? v)
-   (if (generic-zero-bound? v)
-       (externalize (generic-zero-binding v))
-       `(generic-zero ,(generic-zero-index v))))
-  ((null? v) '())
-  ((boolean? v) v)
-  ((real? v) v)
-  ((pair? v) (cons (externalize (car v)) (externalize (cdr v))))
-  ((primitive-procedure? v)
-   `(primitive-procedure ,(primitive-procedure-name v)))
-  ((closure? v)
-   `(closure
-     ,(map-n (lambda (i)
-	      ;; needs work: to reconstruct free variables
-	      (list i (externalize (vector-ref (closure-values v) i))))
-	     (vector-length (closure-values v)))
-     (lambda (,(closure-variable v)) ,(abstract->concrete (closure-body v)))))
-  ((recursive-closure? v)
-   (if *unabbreviate-recursive-closures?*
-       `(recursive-closure
-	 ,(vector-ref (recursive-closure-procedure-variables v)
-		      (recursive-closure-index v))
-	 ,(map-n
-	   (lambda (i)
-	    ;; needs work: to reconstruct free variables
-	    (list i (externalize (vector-ref (recursive-closure-values v) i))))
-	   (vector-length (recursive-closure-values v)))
-	 ,(vector->list
-	   (map-vector
-	    (lambda (x1 x2 e) `(,x1 (lambda (,x2) ,(abstract->concrete e))))
-	    (recursive-closure-procedure-variables v)
-	    (recursive-closure-argument-variables v)
-	    (recursive-closure-bodies v))))
-       `(recursive-closure
-	 ,(vector-ref (recursive-closure-procedure-variables v)
-		      (recursive-closure-index v)))))
-  (else (fuck-up))))
+ (cond ((generic-zero? v)
+	(if (generic-zero-bound? v)
+	    (externalize (generic-zero-binding v))
+	    `(generic-zero ,(generic-zero-index v))))
+       ((null? v) '())
+       ((boolean? v) v)
+       ((real? v) v)
+       ((pair? v) (cons (externalize (car v)) (externalize (cdr v))))
+       ((vlad-procedure? v) (name v))
+       (else (fuck-up))))
 
 (define (with-write-level n thunk)
  (let ((m (write-level)))
@@ -763,57 +796,41 @@
   (set-write-level! m)))
 
 (define (run-time-error message v)
- (format #t "Last trace~%")
- (set-write-level! 5)
- (set-write-length! 5)
- (for-each (lambda (record) (write (first record)) (newline)) *last*)
+ (format #t "Stack trace~%")
+ (set-write-level! *n*)
+ (set-write-length! *n*)
+ (for-each (lambda (record)
+	    (display "Procedure: ")
+	    (write (name (first record)))
+	    (newline)
+	    (display "Argument: ")
+	    (write (externalize (second record)))
+	    (newline)
+	    (newline))
+	   *stack*)
  (newline)
  (pp (externalize v))
  (newline)
  (panic message))
 
 (define (call callee argument)
- (let* ((callee (generic-zero-dereference-as-procedure callee))
-	(name
-	 (cond
-	  ((primitive-procedure? callee) (primitive-procedure-name callee))
-	  ((closure? callee) "closure")
-	  ((recursive-closure? callee)
-	   (vector-ref (recursive-closure-procedure-variables callee)
-		       (recursive-closure-index callee)))
-	  (else (run-time-error "Target is not a procedure" callee)))))
-  (set! *last*
-	(cons (list name callee argument)
-	      (if (>= (length *last*) *n-last*) (but-last *last*) *last*)))
-  (cond ((closure? callee)
-	 (case *trace*
-	  ((body)
-	   (format #t "~aentering " (make-string *trace-level* #\space))
-	   (with-write-level
-	    10 (lambda () (write (abstract->concrete (closure-body callee)))))
-	   (newline)
-	   (set! *trace-level* (+ *trace-level* 1)))
-	  ((argument)
-	   (if *trace-argument/result?*
-	       (format #t "~aentering ~a ~s~%"
-		       (make-string *trace-level* #\space)
-		       (closure-variable callee)
-		       (externalize argument))
-	       (format #t "~aentering ~a~%"
-		       (make-string *trace-level* #\space)
-		       (closure-variable callee)))
-	   (set! *trace-level* (+ *trace-level* 1)))))
-	((recursive-closure? callee)
-	 (when *trace*
-	  (if *trace-argument/result?*
-	      (format #t "~aentering ~a ~s~%"
-		      (make-string *trace-level* #\space)
-		      name
-		      (externalize argument))
-	      (format #t "~aentering ~a~%"
-		      (make-string *trace-level* #\space)
-		      name))
-	  (set! *trace-level* (+ *trace-level* 1)))))
+ (let ((callee (generic-zero-dereference-as-procedure callee)))
+  (unless (vlad-procedure? callee)
+   (run-time-error "Target is not a procedure" callee))
+  (set! *stack* (cons (list callee argument) *stack*))
+  (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
+	      ((closure? callee) *trace-closures?*)
+	      ((recursive-closure? callee) *trace-recursive-closures?*)
+	      (else (fuck-up)))
+   (if *trace-argument/result?*
+       (format #t "~aentering ~a ~s~%"
+	       (make-string *trace-level* #\space)
+	       (name callee)
+	       (externalize argument))
+       (format #t "~aentering ~a~%"
+	       (make-string *trace-level* #\space)
+	       (name callee)))
+   (set! *trace-level* (+ *trace-level* 1)))
   (let ((result
 	 (cond
 	  ((primitive-procedure? callee)
@@ -835,36 +852,21 @@
 			      i))
 			    (vector-length (recursive-closure-bodies callee)))
 			   (recursive-closure-values callee))))
-	  (else (run-time-error "Target is not a procedure" callee)))))
-   (cond ((closure? callee)
-	  (case *trace*
-	   ((body)
-	    (set! *trace-level* (- *trace-level* 1))
-	    (format #t "~aexiting " (make-string *trace-level* #\space))
-	    (with-write-level
-	     10 (lambda () (write (abstract->concrete (closure-body callee)))))
-	    (newline))
-	   ((argument)
-	    (set! *trace-level* (- *trace-level* 1))
-	    (if *trace-argument/result?*
-		(format #t "~aexiting ~a ~s~%"
-			(make-string *trace-level* #\space)
-			(closure-variable callee)
-			(externalize result))
-		(format #t "~aexiting ~a~%"
-			(make-string *trace-level* #\space)
-			(closure-variable callee))))))
-	 ((recursive-closure? callee)
-	  (when *trace*
-	   (set! *trace-level* (- *trace-level* 1))
-	   (if *trace-argument/result?*
-	       (format #t "~aexiting ~a ~s~%"
-		       (make-string *trace-level* #\space)
-		       name
-		       (externalize result))
-	       (format #t "~aexiting ~a~%"
-		       (make-string *trace-level* #\space)
-		       name)))))
+	  (else (fuck-up)))))
+   (set! *stack* (rest *stack*))
+   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
+	       ((closure? callee) *trace-closures?*)
+	       ((recursive-closure? callee) *trace-recursive-closures?*)
+	       (else (fuck-up)))
+    (set! *trace-level* (- *trace-level* 1))
+    (if *trace-argument/result?*
+	(format #t "~aexiting ~a ~s~%"
+		(make-string *trace-level* #\space)
+		(name callee)
+		(externalize result))
+	(format #t "~aexiting ~a~%"
+		(make-string *trace-level* #\space)
+		(name callee))))
    result)))
 
 (define (evaluate e v vs)
@@ -878,7 +880,8 @@
 	  (argument (evaluate (application-argument e) v vs)))
     (call callee argument)))
   ((lambda-expression? e)
-   (make-closure (map-vector lookup (lambda-expression-free-variables e))
+   (make-closure (lambda-expression-name e)
+		 (map-vector lookup (lambda-expression-free-variables e))
 		 (lambda-expression-variable e)
 		 (lambda-expression-body e)))
   ((letrec-expression? e)
@@ -1317,6 +1320,7 @@
 		      "plus-primitive internal 14"
 		      (lambda (x)
 		       (make-closure
+			"plus primitive"
 			(vector curried-plus v1 v2)
 			'y
 			(make-application
@@ -1374,7 +1378,8 @@
   (lambda (x) (real? (generic-zero-dereference x))))
  (define-primitive-procedure 'pair?
   (lambda (x) (pair? (generic-zero-dereference x))))
- (define-primitive-procedure 'procedure? vlad-procedure?)
+ (define-primitive-procedure 'procedure?
+  (lambda (x) (vlad-procedure? (generic-zero-dereference x))))
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
  (define-primitive-procedure 'cons-procedure
@@ -1457,6 +1462,7 @@
     (run-time-error "Invalid argument to map-closure" x))
    (cond ((closure? (cdr x))
 	  (make-closure
+	   `(map-closure ,(name (car x)) ,(closure-name (cdr x)))
 	   (map-vector (lambda (v) (call (car x) v)) (closure-values (cdr x)))
 	   (closure-variable (cdr x))
 	   (closure-body (cdr x))))
