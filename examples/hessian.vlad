@@ -85,10 +85,7 @@
 (define (alternate-hessian-quadratic-form f x u v)
  (dot u (m*v ((hessian f) x) v)))
 
-(define (f x)
- (+ (* 2 (sqr (list-ref x 0)))
-    (+ (* 3 (* (list-ref x 0) (list-ref x 1)))
-       (* 4 (sqr (list-ref x 1))))))
+(define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
 ((hessian f) '(3 4))
 

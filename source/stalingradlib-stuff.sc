@@ -1126,10 +1126,13 @@
    (make-anf (variable-access-expression-variable e) '() '() '()))
   ((lambda-expression? e)
    (let ((x (gensym)))
-    (make-anf x
-	      (list x)
-	      '()
-	      (list (make-variable-binding x (reverse-transform bs e))))))
+    (make-anf
+     x
+     (list x)
+     '()
+     ;; There is a little kludge here binding x to a list of both the
+     ;; pre-transformed and post-transformed expression.
+     (list (make-variable-binding x (list e (reverse-transform bs e)))))))
   ((application? e)
    (let* ((anf1 (anf bs (application-callee e)))
 	  (anf2 (anf bs (application-argument e)))
@@ -1151,13 +1154,12 @@
        (anf bs (let*-expression-body e))
        (let* ((anf1 (anf bs (first (let*-expression-expressions e))))
 	      (anf2 (anf bs
-			 (substitute
-			  (anf-variable anf1)
-			  (first (let*-expression-variables e))
-			  (make-let*-expression
-			   (rest (let*-expression-variables e))
-			   (rest (let*-expression-expressions e))
-			   (let*-expression-body e))))))
+			 (substitute (anf-variable anf1)
+				     (first (let*-expression-variables e))
+				     (make-let*-expression
+				      (rest (let*-expression-variables e))
+				      (rest (let*-expression-expressions e))
+				      (let*-expression-body e))))))
 	(make-anf
 	 (anf-variable anf2)
 	 (append (anf-temporaries anf1) (anf-temporaries anf2))
@@ -1165,27 +1167,36 @@
 	 (append (anf-let-bindings anf1) (anf-let-bindings anf2))))))
   ((letrec-expression? e)
    (let ((anf (anf bs (letrec-expression-body e))))
-    (make-anf (anf-variable anf)
-	      (anf-temporaries anf)
-	      (append (anf-letrec-bindings anf)
-		      (map make-variable-binding
-			   (letrec-expression-procedure-variables e)
-			   (reverse-transforms
-			    bs
-			    (letrec-expression-procedure-variables e)
-			    (map new-lambda-expression
+    (make-anf
+     (anf-variable anf)
+     (anf-temporaries anf)
+     (append (anf-letrec-bindings anf)
+	     (map make-variable-binding
+		  (letrec-expression-procedure-variables e)
+		  (let ((es (map new-lambda-expression
 				 (letrec-expression-argument-variables e)
-				 (letrec-expression-bodies e)))))
-	      (anf-let-bindings anf))))
+				 (letrec-expression-bodies e))))
+		   ;; There is a little kludge here binding x to a list of
+		   ;; both the pre-transformed and post-transformed expression.
+		   (map list
+			es
+			(reverse-transforms
+			 bs (letrec-expression-procedure-variables e) es)))))
+     (anf-let-bindings anf))))
   (else (fuck-up))))
 
 (define (anf-letrec-free-variables anf)
  (letrec-free-variables
   (map variable-binding-variable (anf-letrec-bindings anf))
   (map (lambda (b)
-	(lambda-expression-variable (variable-binding-expression b)))
+	;; There is a little kludge here binding x to a list of both the
+	;; pre-transformed and post-transformed expression.
+	(lambda-expression-variable (first (variable-binding-expression b))))
        (anf-letrec-bindings anf))
-  (map (lambda (b) (lambda-expression-body (variable-binding-expression b)))
+  (map (lambda (b)
+	;; There is a little kludge here binding x to a list of both the
+	;; pre-transformed and post-transformed expression.
+	(lambda-expression-body (first (variable-binding-expression b))))
        (anf-letrec-bindings anf))))
 
 (define (reverse-transform-internal bs x anf fs gs xs ws)
@@ -1219,8 +1230,10 @@
 		(make-variable-binding
 		 (gravify x)
 		 (make-plus bs (grave-access x) (grave-access t)))))
-	      ((lambda-expression? e)
-	       (let ((zs (free-variables e)))
+	      ((list? e)
+	       ;; There is a little kludge here binding x to a list of both the
+	       ;; pre-transformed and post-transformed expression.
+	       (let ((zs (free-variables (first e))))
 		(make-variable-binding
 		 `(cons* ,@(map gravify zs))
 		 (make-plus
@@ -1249,7 +1262,13 @@
 		      `(cons ,x ,(twiddlify x))
 		      x)))
 		(anf-let-bindings anf))
-	   (map variable-binding-expression (anf-let-bindings anf))
+	   (map (lambda (b)
+		 ;; There is a little kludge here binding x to a list of both
+		 ;; the pre-transformed and post-transformed expression.
+		 (if (list? (variable-binding-expression b))
+		     (second (variable-binding-expression b))
+		     (variable-binding-expression b)))
+		(anf-let-bindings anf))
 	   (make-cons
 	    bs
 	    (make-variable-access-expression (anf-variable anf) #f)
@@ -1267,6 +1286,7 @@
 		,@(map variable-binding-variable bs0)
 		,@(if (null? (anf-letrec-bindings anf))
 		      '()
+		      ;; debugging: this is the error
 		      (list `(cons* ,@(map gravify ws)))))
 	      `(,(make-zero bs)
 		,@(map (lambda (t) (make-zero bs)) ts)
@@ -1298,74 +1318,44 @@
 	(new-letrec-expression
 	 (map variable-binding-variable (anf-letrec-bindings anf))
 	 (map (lambda (b)
-	       (lambda-expression-variable (variable-binding-expression b)))
+	       ;; There is a little kludge here binding x to a list of both the
+	       ;; pre-transformed and post-transformed expression.
+	       (lambda-expression-variable
+		(second (variable-binding-expression b))))
 	      (anf-letrec-bindings anf))
-	 (map (lambda (b)
-	       (lambda-expression-body (variable-binding-expression b)))
-	      (anf-letrec-bindings anf))
+	 (map
+	  (lambda (b)
+	   ;; There is a little kludge here binding x to a list of both the
+	   ;; pre-transformed and post-transformed expression.
+	   (lambda-expression-body (second (variable-binding-expression b))))
+	  (anf-letrec-bindings anf))
 	 e))))))
 
-(define (added-free-variable bs v)
- (value-binding-variable
-  (find-if (lambda (b) (eq? (value-binding-value b) v)) bs)))
-
-(define (added-free-variables bs anf gs ws)
- `(,(added-free-variable bs '())
-   ,(added-free-variable bs (basis-value 'cons-procedure))
-   ,(added-free-variable bs (basis-value 'zero))
-   ,@(if (or (not (null? (anf-let-bindings anf)))
-	     (not (null? (anf-letrec-bindings anf)))
-	     (not (null? gs)))
-	 `(,(added-free-variable bs (basis-value 'plus)))
-	 '())
-   ,@(if (or
-	  (some
-	   (lambda (b)
-	    (or
-	     (and (lambda-expression? (variable-binding-expression b))
-		  (>= (length (free-variables (variable-binding-expression b)))
-		      2))
-	     (application? (variable-binding-expression b))))
-	   (anf-let-bindings anf))
-	  (and (not (null? (anf-letrec-bindings anf))) (>= (length ws) 2)))
-	 `(,(added-free-variable bs (basis-value 'car))
-	   ,(added-free-variable bs (basis-value 'cdr)))
-	 '())))
-
 (define (reverse-transform bs e)
- (let* ((x (lambda-expression-variable e))
-	(anf (anf bs (lambda-expression-body e)))
-	(fs (map variable-binding-variable (anf-letrec-bindings anf)))
-	(ws (anf-letrec-free-variables anf))
-	(xs (sort-variables
-	     (unionq (free-variables e)
-		     (added-free-variables bs anf '() ws))))
-	(e (reverse-transform-internal bs x anf fs '() xs ws))
-	(xs-prime (free-variables e)))
-  (unless (equal? xs xs-prime) (fuck-up))
-  e))
+ (let ((anf (anf bs (lambda-expression-body e))))
+  (reverse-transform-internal
+   bs
+   (lambda-expression-variable e)
+   anf
+   (map variable-binding-variable (anf-letrec-bindings anf))
+   '()
+   (free-variables e)
+   (anf-letrec-free-variables anf))))
 
 (define (reverse-transforms bs gs es)
  (let* ((xs (map lambda-expression-variable es))
-	(anfs (map (lambda (e) (anf bs (lambda-expression-body e))) es))
-	(fss (map (lambda (anf)
-		   (map variable-binding-variable (anf-letrec-bindings anf)))
-		  anfs))
-	(wss (map anf-letrec-free-variables anfs))
-	(zs (sort-variables
-	     (unionq
-	      (letrec-free-variables gs xs es)
-	      (reduce
-	       unionq
-	       (map (lambda (anf ws) (added-free-variables bs anf gs ws))
-		    anfs wss)
-	       '()))))
-	(es (map (lambda (x anf fs ws)
-		  (reverse-transform-internal bs x anf fs gs zs ws))
-		 xs anfs fss wss))
-	(zs-prime (letrec-free-variables gs xs es)))
-  (unless (equal? zs zs-prime) (fuck-up))
-  es))
+	(zs (letrec-free-variables gs xs es)))
+  (map (lambda (x e)
+	(let ((anf (anf bs (lambda-expression-body e))))
+	 (reverse-transform-internal
+	  bs
+	  x
+	  anf
+	  (map variable-binding-variable (anf-letrec-bindings anf))
+	  gs
+	  zs
+	  (anf-letrec-free-variables anf))))
+       xs es)))
 
 ;;; Evaluator
 
