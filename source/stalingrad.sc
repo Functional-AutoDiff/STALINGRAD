@@ -66,10 +66,15 @@
 			(include-path "include-directory" string-argument)))
 		      (at-most-one ("undecorated" undecorated?))
 		      (at-most-one ("evaluated" evaluated?))
+		      (at-most-one
+		       ("last"n-last? (n-last "n" integer-argument 10)))
+		      (at-most-one ("trace" trace?))
 		      (required (pathname "pathname" string-argument)))
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *n-last* n-last)
+ (set! *trace?* trace?)
  (let ((es (read-source pathname)))
   (unless (null? es)
    (let ((e (expand-definitions (but-last es) (last es))))

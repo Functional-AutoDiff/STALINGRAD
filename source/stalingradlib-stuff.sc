@@ -103,6 +103,10 @@
 
 (define *last* '())
 
+(define *n-last* 10)
+
+(define *trace?* #f)
+
 (define *trace-level* 0)
 
 ;;; Parameters
@@ -646,10 +650,9 @@
 	      (else (run-time-error "Target is not a procedure" callee)))))
   (set! *last*
 	(cons (list name callee argument)
-	      (if (>= (length *last*) 10) (but-last *last*) *last*)))
-  (when #f
-   (when (recursive-closure? callee)
-    (format #t "~aentering ~s~%" (make-string *trace-level* #\space) name))
+	      (if (>= (length *last*) *n-last*) (but-last *last*) *last*)))
+  (when (and *trace?* (recursive-closure? callee))
+   (format #t "~aentering ~s~%" (make-string *trace-level* #\space) name)
    (set! *trace-level* (+ *trace-level* 1)))
   (let ((result
 	 (cond
@@ -673,10 +676,9 @@
 			    (vector-length (recursive-closure-bodies callee)))
 			   (recursive-closure-values callee))))
 	  (else (run-time-error "Target is not a procedure" callee)))))
-   (when #f
+   (when (and *trace?* (recursive-closure? callee))
     (set! *trace-level* (- *trace-level* 1))
-    (when (recursive-closure? callee)
-     (format #t "~aexiting ~a~%" (make-string *trace-level* #\space) name)))
+    (format #t "~aexiting ~a~%" (make-string *trace-level* #\space) name))
    result)))
 
 (define (evaluate e v vs)
