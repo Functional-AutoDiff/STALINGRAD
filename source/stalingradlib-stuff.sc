@@ -244,12 +244,6 @@
       (loop (second e) xs)
       (loop (third e) xs)
       (loop (fourth e) xs))
-     ((car)
-      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-      (loop (second e) xs))
-     ((cdr)
-      (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
-      (loop (second e) xs))
      ((cons)
       (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
       (loop (second e) xs)
@@ -1083,7 +1077,7 @@
 	      (evaluate (concrete->abstract-expression reverse-value)))))
 	   *value-bindings*))
 
-(define (intialize-basis!)
+(define (initialize-basis!)
  ;; needs work: reversize
  (define-basis-constant
   '+
@@ -1103,20 +1097,20 @@
   '*
   (lambda (x) (* (car x) (cdr x)))
   '(lambda ((cons x x-forward) (cons y y-forward))
-    (cons (* x y) (+ (* x y-forward) (* y x-forward))))
+    (cons (* x y) (+ (* y-forward x) (* x-forward y))))
   'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   '/
   (lambda (x) (/ (car x) (cdr x)))
   '(lambda ((cons x x-forward) (cons y y-forward))
-    (cons (/ x y) (/ (- (* y x-forward) (* x y-forward)) (* y y))))
+    (cons (/ x y) (/ (- (* x-forward y) (* y-forward x)) (* y y))))
   'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
   'sqrt
   sqrt
-  '(lambda (x x-forward) (cons (sqrt x) (/ x (* 2 (sqrt x)))))
+  '(lambda (x x-forward) (cons (sqrt x) (/ x-forward (* 2 (sqrt x)))))
   'needs-work
   '(=> real real))
  (define-basis-constant
@@ -1148,7 +1142,7 @@
   (lambda (x) (atan (car x) (cdr x)))
   '(lambda ((cons x x-forward) (cons y y-forward))
     (cons (atan y x)
-	  (/ (- (* x y-forward) (* y x-forward)) (+ (* x x) (* y y)))))
+	  (/ (- (* y-forward x) (* x-forward y)) (+ (* x x) (* y y)))))
   'needs-work
   '(=> (cons real real) real))
  (define-basis-constant
