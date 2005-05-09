@@ -2,6 +2,8 @@
 
 ;;; General stuff
 
+(define (not x) (if x #f #t))
+
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (sqr x) (* x x))
@@ -76,40 +78,22 @@
 
 ;;; Derivatives
 
-(define (conjoint primal adjoint)
- (cond ((pair? primal)
-	(cons (conjoint (car primal) (car adjoint))
-	      (conjoint (cdr primal) (cdr adjoint))))
-       ((real? primal) (cons primal adjoint))
-       (else primal)))
-
-(define (primal conjoint)
- (if (pair? conjoint)
-     (if (real? (car conjoint))
-	 (car conjoint)
-	 (cons (primal (car conjoint)) (primal (cdr conjoint))))
-     conjoint))
-
-(define (adjoint conjoint)
- (if (pair? conjoint)
-     (if (real? (car conjoint))
-	 (cdr conjoint)
-	 (cons (adjoint (car conjoint)) (adjoint (cdr conjoint))))
-     '()))
-
 (define (derivative-using-j* f)
- (let ((f-j* (j* f))) (lambda (x) (cdr (f-j* x 1)))))
+ (let ((f-forward (j* f)))
+  (lambda (x) (forward-adjoint (f-forward (forward-conjoin x 1))))))
 
 (define (derivative-using-*j f)
- (let ((f-*j (*j f))) (lambda (x) (cdr ((cdr (f-*j x)) 1)))))
+ (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse x)) 1)))))
 
 (define (derivative f) (derivative-using-*j f))
 
 (define (gradient-using-j* f)
- (let ((f-j* (j* f)))
+ (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
-    (map-n (lambda (i) (cdr (f-j* (conjoint x (e i n))))) n)))))
+    (map-n
+     (lambda (i) (forward-adjoint (f-forward (forward-conjoin x (e i n)))))
+     n)))))
 
 (define (gradient-using-*j f) (derivative-using-*j f))
 
@@ -137,15 +121,18 @@
 (define (gradient-descent f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
-	(line-j* (j* line))
-	(line-prime (lambda (x g k)
-		     (cdr (line-j* (cons x (cons g k))
-				   (cons (zero x) (cons (zero g) 1))))))
-	(line-prime-j* (j* line-prime))
+	(line-forward (j* line))
+	(line-prime
+	 (lambda (x g k)
+	  (forward-adjoint
+	   (line-forward
+	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	(line-prime-forward (j* line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
-	  (cdr (line-prime-j* (cons x (cons g k))
-			      (cons (zero x) (cons (zero g) 1)))))))
+	  (forward-adjoint
+	   (line-prime-forward
+	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1)))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))

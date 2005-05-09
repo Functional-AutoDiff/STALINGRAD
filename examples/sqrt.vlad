@@ -3,10 +3,11 @@
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (derivative-using-j* f)
- (let ((f-j* (j* f))) (lambda (x) (cdr (f-j* x 1)))))
+ (let ((f-forward (j* f)))
+  (lambda (x) (forward-adjoint (f-forward (forward-conjoin x 1))))))
 
 (define (derivative-using-*j f)
- (let ((f-*j (*j f))) (lambda (x) (cdr ((cdr (f-*j x)) 1)))))
+ (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse x)) 1)))))
 
 (define (nr-sqrt x)
  (letrec ((loop (lambda (y)

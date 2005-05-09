@@ -1,9 +1,19 @@
 (include "j")
 
-(list (car ((*j (j* sqrt)) (cons 4 1)))
-      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 1 0)))
-      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 0 1))))
-
-(list (car ((j* (*j sqrt)) (cons 4 1)))
-      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 1 0)))
-      (cdr ((cdr ((*j (j* sqrt)) (cons 4 0))) (cons 0 1))))
+(list (car ((*j (j* sqrt)) (forward-conjoin 4 1)))
+      (cdr ((cdr ((*j (j* sqrt)) (forward-conjoin 4 1)))
+	    (forward-conjoin 1 0)))
+      (cdr ((cdr ((*j (j* sqrt)) (forward-conjoin 4 1)))
+	    (forward-conjoin 0 1))))
+(list (forward-conjoin (car (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
+		       (car (cdr ((j* (*j sqrt)) (forward-conjoin 4 1)))))
+      (forward-conjoin
+       (cdr (car ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
+		  (forward-conjoin 1 0))))
+       (cdr (car ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
+		  (forward-conjoin 0 1)))))
+      (forward-conjoin
+       (cdr (cdr ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
+		  (forward-conjoin 1 0))))
+       (cdr (cdr ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
+		  (forward-conjoin 0 1))))))

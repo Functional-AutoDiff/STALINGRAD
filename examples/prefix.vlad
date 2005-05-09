@@ -1,21 +1,24 @@
 (include "math")
 
 (define (jacobian-using-j* f)
- (let ((f-j* (j* f)))
+ (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
-    (map-n (lambda (i) (adjoint (f-j* (conjoint x (e i n))))) n)))))
+    (map-n
+     (lambda (i) (forward-adjoint (f-forward (forward-conjoin x (e i n)))))
+     n)))))
 
 (define (jacobian-using-*j f)
- (let ((f-*j (*j f)))
+ (let ((f-reverse (*j f)))
   (lambda (x)
-   (let ((n (length x)) (y-tilde (cdr (f-*j x))))
+   (let ((n (length x)) (y-tilde (cdr (f-reverse x))))
     (transpose (map-n (lambda (i) (cdr (y-tilde (e i n)))) n))))))
 
 (define (jacobian f) (jacobian-using-j* f))
 
 (define (j-transpose*v f)
- (let ((f-*j (*j f))) (lambda (x y-grave) (cdr ((cdr (f-*j x)) y-grave)))))
+ (let ((f-reverse (*j f)))
+  (lambda (x y-grave) (cdr ((cdr (f-reverse x)) y-grave)))))
 
 (define (prefix l)
  (letrec ((loop (lambda (a l)

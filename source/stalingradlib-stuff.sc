@@ -40,6 +40,14 @@
 ;;;    barak@cs.may.ie
 ;;;    http://www-bcl.cs.may.ie/~bap
 
+;;; needs work
+;;;  1. j* and *j should really be called forward-j and reverse-j respectively
+;;;  2. forward-{primal,adjoint,conjoin,j}, reverse-{primal,zero,j}, and plus
+;;;     should be lazy and maybe memoized. Memoization can be used to implement
+;;;     {forward,reverse}-original.
+;;;  3. does making plus lazy eliminate the need to special case for generic
+;;;     zeros
+
 (include "QobiScheme.sch")
 (include "stalingradlib-stuff.sch")
 
@@ -63,20 +71,6 @@
 ;;; Macros
 
 ;;; Structures
-
-;;; needs work: The dummy slot is needed because of a bug in define-structure.
-
-(define-structure null-constant-expression dummy)
-
-(define-structure car-constant-expression dummy)
-
-(define-structure cdr-constant-expression dummy)
-
-(define-structure cons-procedure-constant-expression dummy)
-
-(define-structure zero-constant-expression dummy)
-
-(define-structure plus-constant-expression dummy)
 
 (define-structure variable-access-expression variable index)
 
@@ -109,20 +103,22 @@
 (define-structure closure
  variables
  values					;vector
+ forward-original
+ reverse-original
  variable
  body)
 
 (define-structure recursive-closure
  variables
  values					;vector
+ forward-original
+ reverse-original
  procedure-variables			;vector
  argument-variables			;vector
  bodies					;vector
  index)
 
 (define-structure primitive-procedure name procedure meter)
-
-(define-structure generic-zero primal)
 
 ;;; Variables
 
@@ -182,10 +178,6 @@
 	  (variable? (second x)))
      (and (list? x)
 	  (= (length x) 2)
-	  (eq? (first x) 'y-grave)
-	  (variable? (second x)))
-     (and (list? x)
-	  (= (length x) 2)
 	  (eq? (first x) 'tilde)
 	  (variable? (second x)))
      (and (list? x)
@@ -201,9 +193,9 @@
 (define (variable<=? x1 x2)
  (if (symbol? x1)
      (if (symbol? x2)
-	 (if (same-variable? x1 'x1)
+	 (if (same-variable? x1 'x1-reverse)
 	     #t
-	     (if (same-variable? x2 'x1)
+	     (if (same-variable? x2 'x1-reverse)
 		 #f
 		 (string<=? (symbol->string x1) (symbol->string x2))))
 	 #t)
@@ -215,9 +207,10 @@
 		      (or (not (variable<=? (second x2) (second x1)))
 			  (<= (third x1) (third x2))))
 		 (variable<=? (second x1) (second x2)))
-	     (not (not (memq (first x2)
-			     (memq (first x1)
-				   '(grave y-grave tilde alpha)))))))))
+	     (not
+	      (not
+	       (memq (first x2)
+		     (memq (first x1) '(grave tilde alpha)))))))))
 
 (define (variable<? x1 x2) (and (variable<=? x1 x2) (not (variable<=? x2 x1))))
 
@@ -402,9 +395,9 @@
 (define (create-primitive-procedure name procedure)
  (make-primitive-procedure name procedure 0))
 
-(define (create-lambda-expression ps e)
+(define (create-lambda-expression bs ps e)
  (case (length ps)
-  ((0) (create-lambda-expression `((cons* ,@ps)) e))
+  ((0) (create-lambda-expression bs `((cons* ,@ps)) e))
   ((1) (let ((p (first ps)))
 	(cond ((variable? p) (new-lambda-expression p e))
 	      ((and (list? p) (not (null? p)))
@@ -416,37 +409,40 @@
 		 ;; expansion and given ANF conversion should never be free.
 		 (let ((x (gensym)))
 		  (create-lambda-expression
-		   (list x)
+		   bs
+		   `(,x)
 		   (create-let*
+		    bs
 		    (rest p)
-		    (list (make-car (make-variable-access-expression x #f))
-			  (make-cdr (make-variable-access-expression x #f)))
+		    (list (make-car bs (make-variable-access-expression x #f))
+			  (make-cdr bs (make-variable-access-expression x #f)))
 		    e))))
 		((cons*)
 		 (case (length (rest p))
 		  ;; This doesn't need to be a derived variable since it is
 		  ;; never accessed and thus will never be free.
-		  ((0) (create-lambda-expression `(,(gensym)) e))
-		  ((1) (create-lambda-expression `(,(second p)) e))
-		  (else (create-lambda-expression
-			 `((cons ,(second p) (cons* ,@(rest (rest p))))) e))))
+		  ((0) (create-lambda-expression bs `(,(gensym)) e))
+		  ((1) (create-lambda-expression bs `(,(second p)) e))
+		  (else
+		   (create-lambda-expression
+		    bs `((cons ,(second p) (cons* ,@(rest (rest p))))) e))))
 		((list)
 		 (if (null? (rest p))
 		     ;; This doesn't need to be a derived variable since it is
 		     ;; never accessed and thus will never be free.
-		     (create-lambda-expression `(,(gensym)) e)
+		     (create-lambda-expression bs `(,(gensym)) e)
 		     (create-lambda-expression
-		      `((cons ,(second p) (list ,@(rest (rest p))))) e)))
+		      bs `((cons ,(second p) (list ,@(rest (rest p))))) e)))
 		(else (fuck-up))))
 	      (else (fuck-up)))))
-  (else (create-lambda-expression `((cons* ,@ps)) e))))
+  (else (create-lambda-expression bs `((cons* ,@ps)) e))))
 
-(define (create-application e . es) (new-application e (make-cons* es)))
+(define (create-application bs e . es) (new-application e (make-cons* bs es)))
 
-(define (create-let p e1 e2)
- (create-application (create-lambda-expression (list p) e2) e1))
+(define (create-let bs p e1 e2)
+ (create-application bs (create-lambda-expression bs `(,p) e2) e1))
 
-(define (create-let* ps es e)
+(define (create-let* bs ps es e)
  (cond
   ((null? ps) e)
   ;; This is just for efficiency.
@@ -472,8 +468,8 @@
 	       (cons
 		(first es)
 		(append
-		 (list (make-car (make-variable-access-expression x #f))
-		       (make-cdr (make-variable-access-expression x #f)))
+		 (list (make-car bs (make-variable-access-expression x #f))
+		       (make-cdr bs (make-variable-access-expression x #f)))
 		 (rest es)))
 	       xs1
 	       es1)))
@@ -500,8 +496,8 @@
 		  es1)))
 	    (else (fuck-up))))
 	  (else (fuck-up)))))))
-  (else
-   (create-let (first ps) (first es) (create-let* (rest ps) (rest es) e)))))
+  (else (create-let
+	 bs (first ps) (first es) (create-let* bs (rest ps) (rest es) e)))))
 
 (define (search-include-path-without-extension pathname)
  (cond ((can-open-file-for-input? pathname) pathname)
@@ -698,15 +694,7 @@
    ((boolean? e) (loop `',e xs))
    ((real? e) (loop `',e xs))
    (((if *wizard?* variable? symbol?) e)
-    (unless (or (memp same-variable? e xs)
-		(if *wizard?*
-		    (or (same-variable? e 'null-constant)
-			(same-variable? e 'car-constant)
-			(same-variable? e 'cdr-constant)
-			(same-variable? e 'cons-procedure-constant)
-			(same-variable? e 'zero-constant)
-			(same-variable? e 'plus-constant))
-		    #f))
+    (unless (memp same-variable? e xs)
      (panic (format #f "Unbound variable: ~s" e)))
     #f)
    ((list? e)
@@ -822,12 +810,6 @@
 		     (let*-variables e)
 		     (let*-expressions e))
 	  ,(abstract->concrete (let*-body e))))
-       ((null-constant-expression? e) 'null-constant)
-       ((car-constant-expression? e) 'car-constant)
-       ((cdr-constant-expression? e) 'cdr-constant)
-       ((cons-procedure-constant-expression? e) 'cons-procedure-constant)
-       ((zero-constant-expression? e) 'zero-constant)
-       ((plus-constant-expression? e) 'plus-constant)
        ((variable-access-expression? e)
 	(let* ((x (variable-access-expression-variable e))
 	       (x (if (primitive-procedure? x)
@@ -861,31 +843,23 @@
        ((null? (rest x)) (first x))
        (else (cons (first x) (cons*ify (rest x))))))
 
-(define (dereference v)
- (if (generic-zero? v)
-     (let ((v (generic-zero-primal v)))
-      (cond
-       ((generic-zero? v) (dereference v))
-       ((null? v) '())
-       ((boolean? v) '())
-       ((real? v) 0)
-       ((pair? v)
-	(cons (make-generic-zero (car v)) (make-generic-zero (cdr v))))
-       ((primitive-procedure? v) '())
-       ((closure? v)
-	(dereference
-	 (cons*ify (map make-generic-zero (vector->list (closure-values v))))))
-       ((recursive-closure? v)
-	(dereference
-	 (cons*ify (map make-generic-zero
-			(vector->list (recursive-closure-values v))))))
-       (else (fuck-up))))
-     v))
+(define (reverse-zero x)
+ (cond
+  ((null? x) '())
+  ((boolean? x) '())
+  ((real? x) 0)
+  ((pair? x) (cons (reverse-zero (car x)) (reverse-zero (cdr x))))
+  ((primitive-procedure? x) '())
+  ((closure? x)
+   (cons*ify (map reverse-zero (vector->list (closure-values x)))))
+  ((recursive-closure? x)
+   (cons*ify (map reverse-zero (vector->list (recursive-closure-values x)))))
+  (else (fuck-up))))
+
+(define (dereference v) v)
 
 (define (same? v1 v2)
- (or (and (generic-zero? v1) (same? (dereference v1) v2))
-     (and (generic-zero? v2) (same? v1 (dereference v2)))
-     (and (null? v1) (null? v2))
+ (or (and (null? v1) (null? v2))
      (and (boolean? v1) (boolean? v2) (eq? v1 v2))
      (and (real? v1) (real? v2) (= v1 v2))
      (and (pair? v1)
@@ -925,8 +899,7 @@
     (if bs (value-binding-variable (first bs)) x)))
   (list
    (let loop ((e (first result)))
-    (cond ((constant-expression? e) e)
-	  ((variable-access-expression? e)
+    (cond ((variable-access-expression? e)
 	   (make-variable-access-expression
 	    (rename (variable-access-expression-variable e)) #f))
 	  ((lambda-expression? e)
@@ -960,8 +933,7 @@
 
 (define (free-variables e)
  (define (free-variables e)
-  (cond ((constant-expression? e) '())
-	((variable-access-expression? e)
+  (cond ((variable-access-expression? e)
 	 (list (variable-access-expression-variable e)))
 	((lambda-expression? e) (lambda-expression-free-variables e))
 	((application? e)
@@ -998,7 +970,6 @@
       (- (length xs) (positionp same-variable? x-prime (reverse xs)) 1)
       -1))
  (cond
-  ((constant-expression? e) e)
   ((variable-access-expression? e)
    (make-variable-access-expression
     (variable-access-expression-variable e)
@@ -1054,28 +1025,11 @@
 	   ((boolean? e) (loop `',e bs))
 	   ((real? e) (loop `',e bs))
 	   ((variable? e)
-	    (list
-	     (if *wizard?*
-		 (case e
-		  ((null-constant) (make-null-constant-expression '()))
-		  ((car-constant) (make-car-constant-expression '()))
-		  ((cdr-constant) (make-cdr-constant-expression '()))
-		  ((cons-procedure-constant)
-		   (make-cons-procedure-constant-expression '()))
-		  ((zero-constant) (make-zero-constant-expression '()))
-		  ((plus-constant) (make-plus-constant-expression '()))
-		  (else
-		   (variable-binding-expression
-		    (find-if
-		     (lambda (b)
-		      (same-variable? (variable-binding-variable b) e))
-		     bs))))
-		 (variable-binding-expression
-		  (find-if
-		   (lambda (b)
-		    (same-variable? (variable-binding-variable b) e))
-		   bs)))
-	     '()))
+	    (list (variable-binding-expression
+		   (find-if (lambda (b)
+			     (same-variable? (variable-binding-variable b) e))
+			    bs))
+		  '()))
 	   ((list? e)
 	    (case (first e)
 	     ((quote) (let ((x (gensym)))
@@ -1163,8 +1117,7 @@
      ,x
      ,(+ (count-if (lambda (b) (equal? (variable-binding-variable b) x)) bs)
 	 1)))
-  (cond ((constant-expression? e) e)
-	((variable-access-expression? e)
+  (cond ((variable-access-expression? e)
 	 (let ((b (find-if
 		   (lambda (b)
 		    (same-variable? (variable-binding-variable b)
@@ -1236,120 +1189,34 @@
   (find-if (lambda (b) (same-variable? (value-binding-variable b) x))
 	   *value-bindings*)))
 
-(define (make-cons* es)
- (cond ((null? es) (make-null-constant-expression #f))
+(define (make-constant bs v)
+ (make-variable-access-expression
+  (value-binding-variable
+   (find-if (lambda (b) (eq? (value-binding-value b) v)) bs))
+  #f))
+
+(define (make-cons* bs es)
+ (cond ((null? es) (make-constant bs '()))
        ((null? (rest es)) (first es))
-       (else (make-cons (first es) (make-cons* (rest es))))))
+       (else (make-cons bs (first es) (make-cons* bs (rest es))))))
 
-(define (make-car e) (create-application (make-car-constant-expression #f) e))
+(define (make-car bs e)
+ (create-application bs (make-constant bs (basis-value 'car)) e))
 
-(define (make-cdr e) (create-application (make-cdr-constant-expression #f) e))
+(define (make-cdr bs e)
+ (create-application bs (make-constant bs (basis-value 'cdr)) e))
 
-(define (make-cons e1 e2)
+(define (make-cons bs e1 e2)
  (create-application
-  (create-application (make-cons-procedure-constant-expression #f) e1) e2))
+  bs
+  (create-application bs (make-constant bs (basis-value 'cons-procedure)) e1)
+  e2))
 
-(define (make-zero e)
- (create-application (make-zero-constant-expression #f) e))
+(define (make-reverse-zero bs e)
+ (create-application bs (make-constant bs (basis-value 'reverse-zero)) e))
 
-(define (make-plus e1 e2)
- (create-application (make-plus-constant-expression #f) e1 e2))
-
-(define (constant-expression? e)
- (or (null-constant-expression? e)
-     (car-constant-expression? e)
-     (cdr-constant-expression? e)
-     (cons-procedure-constant-expression? e)
-     (zero-constant-expression? e)
-     (plus-constant-expression? e)))
-
-(define (reverse-transform-null-constant-expression)
- (make-null-constant-expression #f))
-
-(define (reverse-transform-car-constant-expression)
- (create-letrec-expression
-  (list 'self)
-  (list
-   (create-lambda-expression
-    (list 'x1 'x2)
-    (make-cons
-     (make-variable-access-expression 'x1 #f)
-     (create-lambda-expression
-      (list 'x1-grave)
-      (make-cons
-       (make-zero (make-variable-access-expression 'self #f))
-       (make-cons (make-variable-access-expression 'x1-grave #f)
-		  (make-zero (make-variable-access-expression 'x2 #f))))))))
-  (make-variable-access-expression 'self #f)))
-
-(define (reverse-transform-cdr-constant-expression)
- (create-letrec-expression
-  (list 'self)
-  (list (create-lambda-expression
-	 (list 'x1 'x2)
-	 (make-cons
-	  (make-variable-access-expression 'x2 #f)
-	  (create-lambda-expression
-	   (list 'x2-grave)
-	   (make-cons
-	    (make-zero (make-variable-access-expression 'self #f))
-	    (make-cons (make-zero (make-variable-access-expression 'x1 #f))
-		       (make-variable-access-expression 'x2-grave #f)))))))
-  (make-variable-access-expression 'self #f)))
-
-(define (reverse-transform-cons-procedure-constant-expression)
- (create-letrec-expression
-  (list 'self)
-  (list (create-lambda-expression
-	 (list 'x1)
-	 (make-cons
-	  (create-letrec-expression
-	   (list 'self)
-	   (list
-	    (create-lambda-expression
-	     (list 'x2)
-	     (make-cons
-	      (make-cons (make-variable-access-expression 'x1 #f)
-			 (make-variable-access-expression 'x2 #f))
-	      (create-lambda-expression
-	       (list 'x1-grave 'x2-grave)
-	       (make-cons (make-variable-access-expression 'x1-grave #f)
-			  (make-variable-access-expression 'x2-grave #f))))))
-	   (make-variable-access-expression 'self #f))
-	  (create-lambda-expression
-	   (list 'x1-grave)
-	   (make-cons (make-zero (make-variable-access-expression 'self #f))
-		      (make-variable-access-expression 'x1-grave #f))))))
-  (make-variable-access-expression 'self #f)))
-
-(define (reverse-transform-zero-constant-expression)
- (create-letrec-expression
-  (list 'self)
-  (list (create-lambda-expression
-	 (list 'x)
-	 (make-cons
-	  (make-zero (make-variable-access-expression 'x #f))
-	  (create-lambda-expression
-	   (list 'y-grave)
-	   (make-cons (make-zero (make-variable-access-expression 'self #f))
-		      (make-zero (make-variable-access-expression 'x #f)))))))
-  (make-variable-access-expression 'self #f)))
-
-(define (reverse-transform-plus-constant-expression)
- (create-letrec-expression
-  (list 'self)
-  (list
-   (create-lambda-expression
-    (list 'x1 'x2)
-    (make-cons
-     (make-plus (make-variable-access-expression 'x1 #f)
-		(make-variable-access-expression 'x2 #f))
-     (create-lambda-expression
-      (list 'y-grave)
-      (make-cons (make-zero (make-variable-access-expression 'self #f))
-		 (make-cons (make-variable-access-expression 'y-grave #f)
-			    (make-variable-access-expression 'y-grave #f)))))))
-  (make-variable-access-expression 'self #f)))
+(define (make-plus bs e1 e2)
+ (create-application bs (make-constant bs (basis-value 'plus)) e1 e2))
 
 (define (contains-letrec? e)
  (or (letrec-expression? e)
@@ -1358,8 +1225,7 @@
 	      (contains-letrec? (application-argument e))))))
 
 (define (substitute x1 x2 e)
- (cond ((constant-expression? e) e)
-       ((variable-access-expression? e)
+ (cond ((variable-access-expression? e)
 	(if (same-variable? (variable-access-expression-variable e) x2)
 	    (make-variable-access-expression x1 #f)
 	    e))
@@ -1405,29 +1271,20 @@
 	     (substitute x1 x2 (letrec-expression-body e)))))
        (else (fuck-up))))
 
-(define (anf e)
+(define (anf bs e)
  (cond
-  ;; needs work: The following can be made more efficient if we allow
-  ;;             anf-variable to be a constant expression.
-  ((constant-expression? e)
-   ;; needs work: To replace anonymous gensym with derived gensym.
-   (let ((x (gensym)))
-    (make-anf x (list x) '() (list (make-variable-binding x e)))))
   ((variable-access-expression? e)
    (make-anf (variable-access-expression-variable e) '() '() '()))
   ((lambda-expression? e)
    ;; needs work: To replace anonymous gensym with derived gensym.
    (let ((x (gensym)))
-    (make-anf
-     x
-     (list x)
-     '()
-     ;; There is a little kludge here binding x to a list of both the
-     ;; pre-transformed and post-transformed expression.
-     (list (make-variable-binding x (list e (reverse-transform e)))))))
+    (make-anf x
+	      (list x)
+	      '()
+	      (list (make-variable-binding x (reverse-transform bs e))))))
   ((application? e)
-   (let* ((anf1 (anf (application-callee e)))
-	  (anf2 (anf (application-argument e)))
+   (let* ((anf1 (anf bs (application-callee e)))
+	  (anf2 (anf bs (application-argument e)))
 	  ;; needs work: To replace anonymous gensym with derived gensym.
 	  (x (gensym)))
     (make-anf
@@ -1444,63 +1301,52 @@
 	      (make-variable-access-expression (anf-variable anf2) #f))))))))
   ((let*-expression? e)
    (if (null? (let*-expression-expressions e))
-       (anf (let*-expression-body e))
-       (let* ((anf1 (anf (first (let*-expression-expressions e))))
-	      (anf2 (anf (substitute (anf-variable anf1)
-				     (first (let*-expression-variables e))
-				     (make-let*-expression
-				      (rest (let*-expression-variables e))
-				      (rest (let*-expression-expressions e))
-				      (let*-expression-body e))))))
+       (anf bs (let*-expression-body e))
+       (let* ((anf1 (anf bs (first (let*-expression-expressions e))))
+	      (anf2 (anf bs (substitute (anf-variable anf1)
+					(first (let*-expression-variables e))
+					(make-let*-expression
+					 (rest (let*-expression-variables e))
+					 (rest (let*-expression-expressions e))
+					 (let*-expression-body e))))))
 	(make-anf
 	 (anf-variable anf2)
 	 (append (anf-temporaries anf1) (anf-temporaries anf2))
 	 (append (anf-letrec-bindings anf1) (anf-letrec-bindings anf2))
 	 (append (anf-let-bindings anf1) (anf-let-bindings anf2))))))
   ((letrec-expression? e)
-   (let ((anf (anf (letrec-expression-body e))))
-    (make-anf
-     (anf-variable anf)
-     (anf-temporaries anf)
-     (append (anf-letrec-bindings anf)
-	     (map make-variable-binding
-		  (letrec-expression-procedure-variables e)
-		  (let ((es (map new-lambda-expression
+   (let ((anf (anf bs (letrec-expression-body e))))
+    (make-anf (anf-variable anf)
+	      (anf-temporaries anf)
+	      (append (anf-letrec-bindings anf)
+		      (map make-variable-binding
+			   (letrec-expression-procedure-variables e)
+			   (reverse-transforms
+			    bs
+			    (letrec-expression-procedure-variables e)
+			    (map new-lambda-expression
 				 (letrec-expression-argument-variables e)
-				 (letrec-expression-bodies e))))
-		   ;; There is a little kludge here binding x to a list of
-		   ;; both the pre-transformed and post-transformed expression.
-		   (map list
-			es
-			(reverse-transforms
-			 (letrec-expression-procedure-variables e) es)))))
-     (anf-let-bindings anf))))
+				 (letrec-expression-bodies e)))))
+	      (anf-let-bindings anf))))
   (else (fuck-up))))
 
 (define (anf-letrec-free-variables anf)
  (letrec-free-variables
   (map variable-binding-variable (anf-letrec-bindings anf))
   (map (lambda (b)
-	;; There is a little kludge here binding x to a list of both the
-	;; pre-transformed and post-transformed expression.
-	(lambda-expression-variable (first (variable-binding-expression b))))
+	(lambda-expression-variable (variable-binding-expression b)))
        (anf-letrec-bindings anf))
-  (map (lambda (b)
-	;; There is a little kludge here binding x to a list of both the
-	;; pre-transformed and post-transformed expression.
-	(lambda-expression-body (first (variable-binding-expression b))))
+  (map (lambda (b) (lambda-expression-body (variable-binding-expression b)))
        (anf-letrec-bindings anf))))
 
 (define (gravify x) `(grave ,x))
-
-(define (y-gravify x) `(y-grave ,x))
 
 (define (tildify x) `(tilde ,x))
 
 (define (grave-access x) (make-variable-access-expression (gravify x) #f))
 
-(define (reverse-transform-internal x anf fs gs xs ws)
- (let* ((bs
+(define (reverse-transform-internal bs x anf fs gs xs ws)
+ (let* ((bs0
 	 (removeq
 	  #f
 	  (map
@@ -1508,23 +1354,19 @@
 	    (let ((t (variable-binding-variable b))
 		  (e (variable-binding-expression b)))
 	     (cond
-	      ;; This relies on the fact that the reverse-transformed
-	      ;; constant expressions have no free variables.
-	      ((constant-expression? e) #f)
 	      ;; This case only happens because of lightweight anf conversion
 	      ;; which now happens because of let*-expression.
 	      ((variable-access-expression? e)
 	       (let ((x (variable-access-expression-variable e)))
 		(make-variable-binding
-		 (gravify x) (make-plus (grave-access x) (grave-access t)))))
-	      ((list? e)
-	       ;; There is a little kludge here binding x to a list of both
-	       ;; the pre-transformed and post-transformed expression.
-	       (let ((zs (free-variables (first e))))
+		 (gravify x)
+		 (make-plus bs (grave-access x) (grave-access t)))))
+	      ((lambda-expression? e)
+	       (let ((zs (free-variables e)))
 		(make-variable-binding
 		 `(cons* ,@(map gravify zs))
 		 (make-plus
-		  (make-cons* (map grave-access zs)) (grave-access t)))))
+		  bs (make-cons* bs (map grave-access zs)) (grave-access t)))))
 	      ((application? e)
 	       (let ((x1 (variable-access-expression-variable
 			  (application-callee e)))
@@ -1533,127 +1375,171 @@
 		(make-variable-binding
 		 `(cons ,(gravify x1) ,(gravify x2))
 		 (make-plus
-		  (make-cons (grave-access x1) (grave-access x2))
+		  bs
+		  (make-cons bs (grave-access x1) (grave-access x2))
 		  (create-application
+		   bs
 		   (make-variable-access-expression (tildify t) #f)
 		   (grave-access t))))))
 	      (else (fuck-up)))))
 	   (reverse (anf-let-bindings anf)))))
 	(e
 	 (create-let*
+	  bs
 	  (map (lambda (b)
 		(let ((x (variable-binding-variable b)))
 		 (if (application? (variable-binding-expression b))
 		     `(cons ,x ,(tildify x))
 		     x)))
 	       (anf-let-bindings anf))
-	  (map (lambda (b)
-		;; There is a little kludge here binding x to a list of both
-		;; the pre-transformed and post-transformed expression.
-		(cond
-		 ((list? (variable-binding-expression b))
-		  (second (variable-binding-expression b)))
-		 ((null-constant-expression? (variable-binding-expression b))
-		  (reverse-transform-null-constant-expression))
-		 ((car-constant-expression? (variable-binding-expression b))
-		  (reverse-transform-car-constant-expression))
-		 ((cdr-constant-expression? (variable-binding-expression b))
-		  (reverse-transform-cdr-constant-expression))
-		 ((cons-procedure-constant-expression?
-		   (variable-binding-expression b))
-		  (reverse-transform-cons-procedure-constant-expression))
-		 ((zero-constant-expression? (variable-binding-expression b))
-		  (reverse-transform-zero-constant-expression))
-		 ((plus-constant-expression? (variable-binding-expression b))
-		  (reverse-transform-plus-constant-expression))
-		 (else (variable-binding-expression b))))
-	       (anf-let-bindings anf))
+	  (map variable-binding-expression (anf-let-bindings anf))
 	  (make-cons
+	   bs
 	   (make-variable-access-expression (anf-variable anf) #f)
 	   (create-lambda-expression
-	    (list (y-gravify x))
+	    bs
+	    `(,(gravify (anf-variable anf)))
 	    (create-let*
-	     `(,(gravify x)
-	       ,@(map gravify (anf-temporaries anf))
-	       ,@(map gravify fs)
-	       ,@(map gravify gs)
-	       ,@(map gravify xs)
-	       ,(gravify (anf-variable anf))
-	       ,@(map variable-binding-variable bs)
+	     bs
+	     `(,@(map gravify
+		      (removep same-variable? (anf-variable anf) (list x)))
+	       ,@(map gravify
+		      (removep same-variable?
+			       (anf-variable anf)
+			       (anf-temporaries anf)))
+	       ,@(map gravify (removep same-variable? (anf-variable anf) fs))
+	       ,@(map gravify (removep same-variable? (anf-variable anf) gs))
+	       ,@(map gravify (removep same-variable? (anf-variable anf) xs))
+	       ,@(map variable-binding-variable bs0)
 	       ,@(if (null? (anf-letrec-bindings anf))
 		     '()
 		     (list `(cons* ,@(map gravify ws)))))
-	     `(,(make-zero (make-variable-access-expression x #f))
+	     `(,@(map (lambda (x)
+		       (make-reverse-zero
+			bs
+			(make-variable-access-expression x #f)))
+		      (removep same-variable? (anf-variable anf) (list x)))
 	       ,@(map (lambda (t)
-		       (make-zero (make-variable-access-expression t #f)))
-		      (anf-temporaries anf))
+		       (make-reverse-zero
+			bs
+			(make-variable-access-expression t #f)))
+		      (removep same-variable?
+			       (anf-variable anf)
+			       (anf-temporaries anf)))
 	       ,@(map (lambda (f)
-		       (make-zero (make-variable-access-expression f #f)))
-		      fs)
+		       (make-reverse-zero
+			bs
+			(make-variable-access-expression f #f)))
+		      (removep same-variable? (anf-variable anf) fs))
 	       ,@(map (lambda (g)
-		       (make-zero (make-variable-access-expression g #f)))
-		      gs)
+		       (make-reverse-zero
+			bs
+			(make-variable-access-expression g #f)))
+		      (removep same-variable? (anf-variable anf) gs))
 	       ,@(map (lambda (x)
-		       (make-zero (make-variable-access-expression x #f)))
-		      xs)
-	       ,(make-variable-access-expression (y-gravify x) #f)
-	       ,@(map variable-binding-expression bs)
+		       (make-reverse-zero
+			bs
+			(make-variable-access-expression x #f)))
+		      (removep same-variable? (anf-variable anf) xs))
+	       ,@(map variable-binding-expression bs0)
 	       ,@(if (null? (anf-letrec-bindings anf))
 		     '()
 		     (list (let loop ((fs fs))
 			    (if (null? fs)
-				(make-cons* (map grave-access ws))
-				(make-plus (grave-access (first fs))
+				(make-cons* bs (map grave-access ws))
+				(make-plus bs
+					   (grave-access (first fs))
 					   (loop (rest fs))))))))
 	     (make-cons
+	      bs
 	      (let loop ((gs gs))
 	       (if (null? gs)
-		   (make-cons* (map grave-access xs))
-		   (make-plus (grave-access (first gs)) (loop (rest gs)))))
+		   (make-cons* bs (map grave-access xs))
+		   (make-plus bs (grave-access (first gs)) (loop (rest gs)))))
 	      (grave-access x))))))))
   (create-lambda-expression
-   (list x)
+   bs
+   `(,x)
    (if (null? (anf-letrec-bindings anf))
        e
        (new-letrec-expression
 	(map variable-binding-variable (anf-letrec-bindings anf))
 	(map (lambda (b)
-	      ;; There is a little kludge here binding x to a list of both the
-	      ;; pre-transformed and post-transformed expression.
-	      (lambda-expression-variable
-	       (second (variable-binding-expression b))))
+	      (lambda-expression-variable (variable-binding-expression b)))
 	     (anf-letrec-bindings anf))
 	(map
-	 (lambda (b)
-	  ;; There is a little kludge here binding x to a list of both the
-	  ;; pre-transformed and post-transformed expression.
-	  (lambda-expression-body (second (variable-binding-expression b))))
+	 (lambda (b) (lambda-expression-body (variable-binding-expression b)))
 	 (anf-letrec-bindings anf))
 	e)))))
 
-(define (reverse-transform e)
- (let ((anf (anf (lambda-expression-body e))))
-  (reverse-transform-internal
-   (lambda-expression-variable e)
-   anf
-   (map variable-binding-variable (anf-letrec-bindings anf))
-   '()
-   (free-variables e)
-   (anf-letrec-free-variables anf))))
+(define (added-free-variable bs v)
+ (value-binding-variable
+  (find-if (lambda (b) (same? (value-binding-value b) v)) bs)))
 
-(define (reverse-transforms gs es)
+(define (added-free-variables bs anf gs ws)
+ ;; needs work: We now no longer need to always add null.
+ `(,(added-free-variable bs '())
+   ,(added-free-variable bs (basis-value 'cons-procedure))
+   ,(added-free-variable bs (basis-value 'reverse-zero))
+   ,@(if (or (not (null? (anf-let-bindings anf)))
+	     (not (null? (anf-letrec-bindings anf)))
+	     (not (null? gs)))
+	 `(,(added-free-variable bs (basis-value 'plus)))
+	 '())
+   ,@(if (or
+	  (some
+	   (lambda (b)
+	    (or
+	     (and (lambda-expression? (variable-binding-expression b))
+		  (>= (length (free-variables (variable-binding-expression b)))
+		      2))
+	     (application? (variable-binding-expression b))))
+	   (anf-let-bindings anf))
+	  (and (not (null? (anf-letrec-bindings anf))) (>= (length ws) 2)))
+	 `(,(added-free-variable bs (basis-value 'car))
+	   ,(added-free-variable bs (basis-value 'cdr)))
+	 '())))
+
+(define (reverse-transform bs e)
+ (let* ((x (lambda-expression-variable e))
+	(anf (anf bs (lambda-expression-body e)))
+	(fs (map variable-binding-variable (anf-letrec-bindings anf)))
+	(ws (anf-letrec-free-variables anf))
+	(xs (sort-variables
+	     (unionp same-variable?
+		     (free-variables e)
+		     (added-free-variables bs anf '() ws))))
+	(e (reverse-transform-internal bs x anf fs '() xs ws))
+	(xs-prime (free-variables e)))
+  (unless (and (= (length xs) (length xs-prime))
+	       (every same-variable? xs xs-prime))
+   (fuck-up))
+  e))
+
+(define (reverse-transforms bs gs es)
  (let* ((xs (map lambda-expression-variable es))
-	(zs (letrec-free-variables gs xs es)))
-  (map (lambda (x e)
-	(let ((anf (anf (lambda-expression-body e))))
-	 (reverse-transform-internal
-	  x
-	  anf
-	  (map variable-binding-variable (anf-letrec-bindings anf))
-	  gs
-	  zs
-	  (anf-letrec-free-variables anf))))
-       xs es)))
+	(anfs (map (lambda (e) (anf bs (lambda-expression-body e))) es))
+	(fss (map (lambda (anf)
+		   (map variable-binding-variable (anf-letrec-bindings anf)))
+		  anfs))
+	(wss (map anf-letrec-free-variables anfs))
+	(zs (sort-variables
+	     (unionp
+	      same-variable?
+	      (letrec-free-variables gs xs es)
+	      (reduce
+	       (lambda (xs1 xs2) (unionp same-variable? xs1 xs2))
+	       (map (lambda (anf ws) (added-free-variables bs anf gs ws))
+		    anfs wss)
+	       '()))))
+	(es (map (lambda (x anf fs ws)
+		  (reverse-transform-internal bs x anf fs gs zs ws))
+		 xs anfs fss wss))
+	(zs-prime (letrec-free-variables gs xs es)))
+  (unless (and (= (length zs) (length zs-prime))
+	       (every same-variable? zs zs-prime))
+   (fuck-up))
+  es))
 
 ;;; Evaluator
 
@@ -1667,7 +1553,6 @@
 (define (externalize v)
  (let loop ((v v) (quote? #f))
   (cond
-   ((generic-zero? v) (externalize (dereference v)))
    ((null? v) (if (and *unabbreviate-executably?* (not quote?)) ''() '()))
    ((boolean? v) v)
    ((real? v) v)
@@ -1800,6 +1685,8 @@
 (define (vlad-procedure? v)
  (or (primitive-procedure? v) (closure? v) (recursive-closure? v)))
 
+;;; needs work: This evaluator is not tail recursive.
+
 (define (call callee argument)
  (let ((callee (dereference callee)))
   (unless (vlad-procedure? callee)
@@ -1833,15 +1720,21 @@
 			(recursive-closure-index callee))
 	    argument
 	    (vector-append
-	     (map-n-vector (lambda (i)
-			    (make-recursive-closure
-			     (recursive-closure-variables callee)
-			     (recursive-closure-values callee)
-			     (recursive-closure-procedure-variables callee)
-			     (recursive-closure-argument-variables callee)
-			     (recursive-closure-bodies callee)
-			     i))
-			   (vector-length (recursive-closure-bodies callee)))
+	     (map-n-vector
+	      (lambda (i)
+	       (if (= i (recursive-closure-index callee))
+		   ;; to preserve eq?ness
+		   callee
+		   (make-recursive-closure
+		    (recursive-closure-variables callee)
+		    (recursive-closure-values callee)
+		    (recursive-closure-forward-original callee)
+		    (recursive-closure-reverse-original callee)
+		    (recursive-closure-procedure-variables callee)
+		    (recursive-closure-argument-variables callee)
+		    (recursive-closure-bodies callee)
+		    i)))
+	      (vector-length (recursive-closure-bodies callee)))
 	     (recursive-closure-values callee))))
 	  (else (fuck-up)))))
    (set! *stack* (rest *stack*))
@@ -1862,18 +1755,14 @@
 
 (define (evaluate e v vs)
  (define (lookup i) (if (= i -1) v (vector-ref vs i)))
- (cond ((null-constant-expression? e) '())
-       ((car-constant-expression? e) (basis-value 'car))
-       ((cdr-constant-expression? e) (basis-value 'cdr))
-       ((cons-procedure-constant-expression? e) (basis-value 'cons-procedure))
-       ((zero-constant-expression? e) (basis-value 'zero))
-       ((plus-constant-expression? e) (basis-value 'plus))
-       ((variable-access-expression? e)
+ (cond ((variable-access-expression? e)
 	(lookup (variable-access-expression-index e)))
        ((lambda-expression? e)
 	(make-closure
 	 (free-variables e)
 	 (map-vector lookup (lambda-expression-free-variable-indices e))
+	 #f
+	 #f
 	 (lambda-expression-variable e)
 	 (lambda-expression-body e)))
        ((application? e)
@@ -1903,7 +1792,14 @@
 	   (map-n-vector
 	    (lambda (i)
 	     (make-recursive-closure
-	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
+	      (letrec-expression-bodies-free-variables e)
+	      vs
+	      #f
+	      #f
+	      xs0
+	      xs1
+	      es
+	      i))
 	    (vector-length es)))
 	  (map-vector lookup
 		      (letrec-expression-body-free-variable-indices e)))))
@@ -1952,9 +1848,7 @@
     (f x1 (car x23) (cdr x23))))))
 
 (define (conform? x1 x2)
- (or (and (generic-zero? x1) (conform? (dereference x1) x2))
-     (and (generic-zero? x2) (conform? x1 (dereference x2)))
-     (and (null? x1) (null? x2))
+ (or (and (null? x1) (null? x2))
      (and (real? x1) (real? x2))
      (and (pair? x1)
 	  (pair? x2)
@@ -1963,18 +1857,9 @@
 
 (define (plus x1 x2)
  (define (plus x1 x2)
-  (cond
-   ;; These next two cases are the whole reason for generic zeros. They allow
-   ;; a backpropagator to have the same asymptotic complexity as the
-   ;; corresponding primal. Note that dereferencing the generic zeros will
-   ;; destroy this property.
-   ((generic-zero? x1) x2)
-   ((generic-zero? x2) x1)
-   ((null? x1) '())
-   ((real? x1) (+ x1 x2))
-   (else (cons (plus (car x1) (car x2)) (plus (cdr x1) (cdr x2))))))
- ;; This conformance check will destroy the aforementioned property. Disable
- ;; it to restore the property.
+  (cond ((null? x1) '())
+	((real? x1) (+ x1 x2))
+	(else (cons (plus (car x1) (car x2)) (plus (cdr x1) (cdr x2))))))
  ;; debugging
  (when #t
   (unless (conform? x1 x2)
@@ -2027,64 +1912,133 @@
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
  (define-primitive-procedure 'cons-procedure
   ;; Note that we can't apply a j operator to the result of (cons-procedure e)
-  ;; or compare results of (cons-procedure e) with the old equal?.
+  ;; or compare results of (cons-procedure e) with same? because the
+  ;; environment is not exposed.
   (lambda (x1)
    (create-primitive-procedure "cons-procedure" (lambda (x2) (cons x1 x2)))))
  (define-primitive-procedure 'if-procedure
   (ternary (lambda (x1 x2 x3) (if (dereference x1) x2 x3)) "if-procedure"))
- (define-primitive-procedure 'equal? (binary same? "equal?"))
- (define-primitive-procedure 'zero make-generic-zero)
+ (define-primitive-procedure 'eq?
+  (binary
+   (lambda (v1 v2)
+    (or (eq? v1 v2)
+	(and (recursive-closure? v1)
+	     (recursive-closure? v2)
+	     (eq? (recursive-closure-bodies v1)
+		  (recursive-closure-bodies v2))
+	     (= (recursive-closure-index v1)
+		(recursive-closure-index v2))
+	     (eq? (recursive-closure-values v1)
+		  (recursive-closure-values v2)))))
+   "eq?"))
+ (define-primitive-procedure 'reverse-zero reverse-zero)
  (define-primitive-procedure 'plus (binary plus "plus"))
- (define-primitive-procedure 'map-closure-forward
+ (define-primitive-procedure 'forward-map-closure
   (binary
    (lambda (f g)
     (let ((f (dereference f)) (g (dereference g)))
      (unless (and (vlad-procedure? f) (or (closure? g) (recursive-closure? g)))
-      (run-time-error "Invalid argument to map-closure-forward" (cons f g)))
+      (run-time-error "Invalid argument to forward-map-closure" (cons f g)))
+     (cond ((closure? g)
+	    (make-closure
+	     (closure-variables g)
+	     (map-vector (lambda (v) (call f v)) (closure-values g))
+	     g
+	     #f
+	     (closure-variable g)
+	     (closure-body g)))
+	   ((recursive-closure? g)
+	    (make-recursive-closure
+	     (recursive-closure-variables g)
+	     (map-vector (lambda (v) (call f v)) (recursive-closure-values g))
+	     g
+	     #f
+	     (recursive-closure-procedure-variables g)
+	     (recursive-closure-argument-variables g)
+	     (recursive-closure-bodies g)
+	     (recursive-closure-index g)))
+	   (else (fuck-up)))))
+   "forward-map-closure"))
+ (define-primitive-procedure 'forward-map-closure-inverse
+  (binary
+   (lambda (f g)
+    (let ((f (dereference f)) (g (dereference g)))
+     (unless (and (vlad-procedure? f) (or (closure? g) (recursive-closure? g)))
+      (run-time-error "Invalid argument to forward-map-closure-inverse"
+		      (cons f g)))
      (cond
       ((closure? g)
-       (make-closure (closure-variables g)
-		     (map-vector (lambda (v) (call f v)) (closure-values g))
-		     (closure-variable g)
-		     (closure-body g)))
+       (unless (closure-forward-original g)
+	(run-time-error "Cannot take forward-map-closure-inverse" (cons f g)))
+       (closure-forward-original g))
       ((recursive-closure? g)
-       (make-recursive-closure
-	(recursive-closure-variables g)
-	(map-vector (lambda (v) (call f v)) (recursive-closure-values g))
-	(recursive-closure-procedure-variables g)
-	(recursive-closure-argument-variables g)
-	(recursive-closure-bodies g)
-	(recursive-closure-index g)))
+       (unless (recursive-closure-forward-original g)
+	(run-time-error "Cannot take forward-map-closure-inverse" (cons f g)))
+       (recursive-closure-forward-original g))
       (else (fuck-up)))))
-   "map-closure-forward"))
- (define-primitive-procedure 'map-closure-reverse
+   "forward-map-closure-inverse"))
+ (define-primitive-procedure 'reverse-map-closure
   (binary
    (lambda (f g)
     (let ((f (dereference f)) (g (dereference g)))
      (unless (and (vlad-procedure? f) (or (closure? g) (recursive-closure? g)))
-      (run-time-error "Invalid argument to map-closure-forward" (cons f g)))
+      (run-time-error "Invalid argument to reverse-map-closure" (cons f g)))
      (cond
       ((closure? g)
-       (let ((e (reverse-transform (create-lambda-expression
-				    (list (closure-variable g))
-				    (alpha-rename (closure-body g))))))
-	(make-closure (closure-variables g)
-		      (map-vector (lambda (v) (call f v)) (closure-values g))
-		      (lambda-expression-variable e)
-		      (index (lambda-expression-variable e)
-			     (closure-variables g)
-			     (lambda-expression-body e)))))
+       (let* ((bs (map (lambda (v) (make-value-binding (gensym) v))
+		       (cons '() (map value-binding-value *value-bindings*))))
+	      (e (reverse-transform bs
+				    (create-lambda-expression
+				     bs
+				     `(,(closure-variable g))
+				     (alpha-rename (closure-body g)))))
+	      (xs (free-variables e))
+	      (x (lambda-expression-variable e)))
+	(make-closure
+	 xs
+	 (list->vector
+	  (map (lambda (x)
+		(let ((i (positionq x (closure-variables g))))
+		 (if i
+		     (call f (vector-ref (closure-values g) i))
+		     (value-binding-value
+		      (find-if (lambda (b)
+				(same-variable? (value-binding-variable b) x))
+			       bs)))))
+	       xs))
+	 #f
+	 g
+	 x
+	 (index x xs (lambda-expression-body e)))))
       ((recursive-closure? g)
-       (let ((es (reverse-transforms
-		  (vector->list (recursive-closure-procedure-variables g))
-		  (vector->list
-		   (map-vector
-		    (lambda (x e) (new-lambda-expression x (alpha-rename e)))
-		    (recursive-closure-argument-variables g)
-		    (recursive-closure-bodies g))))))
+       (let* ((bs (map (lambda (v) (make-value-binding (gensym) v))
+		       (cons '() (map value-binding-value *value-bindings*))))
+	      (es (reverse-transforms
+		   bs
+		   (vector->list (recursive-closure-procedure-variables g))
+		   (vector->list
+		    (map-vector
+		     (lambda (x e) (new-lambda-expression x (alpha-rename e)))
+		     (recursive-closure-argument-variables g)
+		     (recursive-closure-bodies g)))))
+	      (xs (letrec-free-variables
+		   (vector->list (recursive-closure-procedure-variables g))
+		   (map lambda-expression-variable es)
+		   (map lambda-expression-body es))))
 	(make-recursive-closure
-	 (recursive-closure-variables g)
-	 (map-vector (lambda (v) (call f v)) (recursive-closure-values g))
+	 xs
+	 (list->vector
+	  (map (lambda (x)
+		(let ((i (positionq x (recursive-closure-variables g))))
+		 (if i
+		     (call f (vector-ref (recursive-closure-values g) i))
+		     (value-binding-value
+		      (find-if (lambda (b)
+				(same-variable? (value-binding-variable b) x))
+			       bs)))))
+	       xs))
+	 #f
+	 g
 	 (recursive-closure-procedure-variables g)
 	 (list->vector (map lambda-expression-variable es))
 	 (list->vector
@@ -2092,13 +2046,30 @@
 		(index
 		 (lambda-expression-variable e)
 		 (append
-		  (vector->list (recursive-closure-procedure-variables g))
-		  (recursive-closure-variables g))
+		  (vector->list (recursive-closure-procedure-variables g)) xs)
 		 (lambda-expression-body e)))
 	       es))
 	 (recursive-closure-index g))))
       (else (fuck-up)))))
-   "map-closure-reverse"))
+   "reverse-map-closure"))
+ (define-primitive-procedure 'reverse-map-closure-inverse
+  (binary
+   (lambda (f g)
+    (let ((f (dereference f)) (g (dereference g)))
+     (unless (and (vlad-procedure? f) (or (closure? g) (recursive-closure? g)))
+      (run-time-error "Invalid argument to reverse-map-closure-inverse"
+		      (cons f g)))
+     (cond
+      ((closure? g)
+       (unless (closure-reverse-original g)
+	(run-time-error "Cannot take reverse-map-closure-inverse" (cons f g)))
+       (closure-reverse-original g))
+      ((recursive-closure? g)
+       (unless (recursive-closure-reverse-original g)
+	(run-time-error "Cannot take reverse-map-closure-inverse" (cons f g)))
+       (recursive-closure-reverse-original g))
+      (else (fuck-up)))))
+   "reverse-map-closure-inverse"))
  (define-primitive-procedure 'write
   (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)))
 
