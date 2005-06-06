@@ -1,0 +1,53 @@
+(define ((derivative-using-forward-j f) x)
+ (forward-adjoint ((forward-j f) (forward-conjoin x 1))))
+
+(define ((derivative-using-reverse-j f) x)
+ (cdr ((cdr ((reverse-j f) (reverse-j x))) 1)))
+
+(define (dn-using-forward-j n f)
+ (if (zero? n) f (dn-using-forward-j (- n 1) (derivative-using-forward-j f))))
+
+(define (dn-using-reverse-j n f)
+ (if (zero? n) f (dn-using-reverse-j (- n 1) (derivative-using-reverse-j f))))
+
+((dn-using-forward-j 0 exp) 4)
+((dn-using-forward-j 1 exp) 4)
+((dn-using-forward-j 2 exp) 4)
+((dn-using-forward-j 3 exp) 4)
+((dn-using-forward-j 4 exp) 4)
+((dn-using-forward-j 5 exp) 4)
+((dn-using-forward-j 6 exp) 4)
+((dn-using-forward-j 7 exp) 4)
+
+((dn-using-forward-j 0 sin) 0)
+((dn-using-forward-j 1 sin) 0)
+((dn-using-forward-j 2 sin) 0)
+((dn-using-forward-j 3 sin) 0)
+((dn-using-forward-j 4 sin) 0)
+((dn-using-forward-j 5 sin) 0)
+((dn-using-forward-j 6 sin) 0)
+((dn-using-forward-j 7 sin) 0)
+
+((dn-using-forward-j 0 cos) 0)
+((dn-using-forward-j 1 cos) 0)
+((dn-using-forward-j 2 cos) 0)
+((dn-using-forward-j 3 cos) 0)
+((dn-using-forward-j 4 cos) 0)
+((dn-using-forward-j 5 cos) 0)
+((dn-using-forward-j 6 cos) 0)
+((dn-using-forward-j 7 cos) 0)
+
+((dn-using-reverse-j 0 exp) 4)
+((dn-using-reverse-j 1 exp) 4)
+((dn-using-reverse-j 2 exp) 4)
+((dn-using-reverse-j 3 exp) 4)
+
+((dn-using-reverse-j 0 sin) 0)
+((dn-using-reverse-j 1 sin) 0)
+((dn-using-reverse-j 2 sin) 0)
+((dn-using-reverse-j 3 sin) 0)
+
+((dn-using-reverse-j 0 cos) 0)
+((dn-using-reverse-j 1 cos) 0)
+((dn-using-reverse-j 2 cos) 0)
+((dn-using-reverse-j 3 cos) 0)
