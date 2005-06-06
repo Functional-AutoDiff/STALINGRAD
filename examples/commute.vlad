@@ -1,19 +1,20 @@
-(include "j")
-
-(list (car ((*j (j* sqrt)) (forward-conjoin 4 1)))
-      (cdr ((cdr ((*j (j* sqrt)) (forward-conjoin 4 1)))
+;;; needs work: reverse-j of arguments inter alia
+(list (car ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
+      (cdr ((cdr ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
 	    (forward-conjoin 1 0)))
-      (cdr ((cdr ((*j (j* sqrt)) (forward-conjoin 4 1)))
+      (cdr ((cdr ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
 	    (forward-conjoin 0 1))))
-(list (forward-conjoin (car (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
-		       (car (cdr ((j* (*j sqrt)) (forward-conjoin 4 1)))))
-      (forward-conjoin
-       (cdr (car ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
-		  (forward-conjoin 1 0))))
-       (cdr (car ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
-		  (forward-conjoin 0 1)))))
-      (forward-conjoin
-       (cdr (cdr ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
-		  (forward-conjoin 1 0))))
-       (cdr (cdr ((cdr (car ((j* (*j sqrt)) (forward-conjoin 4 1))))
-		  (forward-conjoin 0 1))))))
+(list
+ (forward-conjoin
+  (car (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
+  (car (cdr ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1)))))
+ (forward-conjoin
+  (cdr (car ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
+	     (forward-conjoin 1 0))))
+  (cdr (car ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
+	     (forward-conjoin 0 1)))))
+ (forward-conjoin
+  (cdr (cdr ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
+	     (forward-conjoin 1 0))))
+  (cdr (cdr ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
+	     (forward-conjoin 0 1))))))

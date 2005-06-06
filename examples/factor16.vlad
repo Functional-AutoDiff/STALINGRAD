@@ -1,7 +1,5 @@
-(include "j")
+(reverse-j (lambda (x) (car (cons x x))))
 
-(*j (lambda (x) (car (cons x x))))
+(reverse-j (reverse-j (lambda (x) (car (cons x x)))))
 
-(*j (*j (lambda (x) (car (cons x x)))))
-
-(*j (*j (*j (lambda (x) (car (cons x x))))))
+(reverse-j (reverse-j (reverse-j (lambda (x) (car (cons x x))))))

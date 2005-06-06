@@ -1,17 +1,16 @@
-(include "j")
+(define (derivative-using-reverse-j f)
+ (let ((f-reverse (reverse-j f)))
+  (lambda (x) (cdr ((cdr (f-reverse (reverse-j x))) 1)))))
 
-(define (derivative-using-*j f)
- (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse x)) 1)))))
-
-((derivative-using-*j
+((derivative-using-reverse-j
   (let ((g (lambda (b) (lambda (c) b)))) (lambda (a) ((g 1) 1))))
  4)
 
-((derivative-using-*j
+((derivative-using-reverse-j
   (let ((g (lambda (b) (lambda (c) b)))) (lambda (a) ((g a) 1))))
  4)
 
-((derivative-using-*j
+((derivative-using-reverse-j
   (let ((g (lambda (b) (lambda (c) b))))
    (let ((h (lambda (p) (+ (p 1) (p 1)))))
     (lambda (a) (h (g a))))))

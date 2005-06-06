@@ -1,21 +1,20 @@
-(include "j")
-
-(define (derivative-using-j* f)
- (let ((f-forward (j* f)))
+(define (derivative-using-forward-j f)
+ (let ((f-forward (forward-j f)))
   (lambda (x) (forward-adjoint (f-forward (forward-conjoin x 1))))))
 
-(define (derivative-using-*j f)
- (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse x)) 1)))))
+(define (derivative-using-reverse-j f)
+ (let ((f-reverse (reverse-j f)))
+  (lambda (x) (cdr ((cdr (f-reverse (reverse-j x))) 1)))))
 
 (define (bug x)
  (letrec ((g (lambda (y) x))
 	  (f (lambda (y) (g 0))))
   (f 0)))
 
-(*j bug)
+(reverse-j bug)
 
 (bug 4)
 
-((derivative-using-j* bug) 4)
+((derivative-using-forward-j bug) 4)
 
-((derivative-using-*j bug) 4)
+((derivative-using-reverse-j bug) 4)

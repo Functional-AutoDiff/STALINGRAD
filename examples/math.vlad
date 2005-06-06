@@ -1,5 +1,3 @@
-(include "j")
-
 ;;; General stuff
 
 (define (not x) (if x #f #t))
@@ -61,26 +59,27 @@
 
 ;;; Derivatives
 
-(define (derivative-using-j* f)
- (let ((f-forward (j* f)))
+(define (derivative-using-forward-j f)
+ (let ((f-forward (forward-j f)))
   (lambda (x) (forward-adjoint (f-forward (forward-conjoin x 1))))))
 
-(define (derivative-using-*j f)
- (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse x)) 1)))))
+(define (derivative-using-reverse-j f)
+ (let ((f-reverse (reverse-j f)))
+  (lambda (x) (cdr ((cdr (f-reverse (reverse-j x))) 1)))))
 
-(define (derivative f) (derivative-using-*j f))
+(define (derivative f) (derivative-using-reverse-j f))
 
-(define (gradient-using-j* f)
- (let ((f-forward (j* f)))
+(define (gradient-using-forward-j f)
+ (let ((f-forward (forward-j f)))
   (lambda (x)
    (let ((n (length x)))
     (map-n
      (lambda (i) (forward-adjoint (f-forward (forward-conjoin x (e i n)))))
      n)))))
 
-(define (gradient-using-*j f) (derivative-using-*j f))
+(define (gradient-using-reverse-j f) (derivative-using-reverse-j f))
 
-(define (gradient f) (gradient-using-*j f))
+(define (gradient f) (gradient-using-reverse-j f))
 
 ;;; Roots and Optimization
 

@@ -10,9 +10,11 @@ time stalingrad -evaluated bug2
 time stalingrad -evaluated bug3
 time stalingrad -evaluated bug4
 time stalingrad -evaluated example
+time stalingrad -evaluated example-forward
 time stalingrad -evaluated prefix
 time stalingrad -evaluated sqrt
 time stalingrad -evaluated triple
+time stalingrad -evaluated triple-forward
 #time stalingrad -evaluated commute
 time stalingrad -evaluated factor16
 time stalingrad -evaluated hessian
