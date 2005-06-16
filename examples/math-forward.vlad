@@ -95,6 +95,14 @@
 
 (define ((invert f) y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
+(define (zero x)
+ (cond ((null? x) '())
+       ((boolean? x) '())
+       ((real? x) 0)
+       ((pair? x) (cons (zero (car x)) (zero (cdr x))))
+       ;; procedure
+       (else '())))
+
 (define (gradient-descent f x epsilon)
  (let ((g ((gradient f) x)))
   (if (<= (magnitude g) epsilon)

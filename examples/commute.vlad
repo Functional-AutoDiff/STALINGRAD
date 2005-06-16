@@ -1,20 +1,27 @@
-;;; needs work: reverse-j of arguments inter alia
-(list (car ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
-      (cdr ((cdr ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
-	    (forward-conjoin 1 0)))
-      (cdr ((cdr ((reverse-j (forward-j sqrt)) (forward-conjoin 4 1)))
-	    (forward-conjoin 0 1))))
-(list
- (forward-conjoin
-  (car (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
-  (car (cdr ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1)))))
- (forward-conjoin
-  (cdr (car ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
-	     (forward-conjoin 1 0))))
-  (cdr (car ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
-	     (forward-conjoin 0 1)))))
- (forward-conjoin
-  (cdr (cdr ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
-	     (forward-conjoin 1 0))))
-  (cdr (cdr ((cdr (car ((forward-j (reverse-j sqrt)) (forward-conjoin 4 1))))
-	     (forward-conjoin 0 1))))))
+((forward-j (forward-j sqrt))
+ (forward-conjoin (forward-conjoin 4 1) (forward-conjoin 1 0)))
+
+(let ((x ((reverse-j (forward-j sqrt)) (reverse-j (forward-conjoin 4 1))))) 
+ (list (reverse-primal (car x))
+       (cdr ((cdr x) (forward-conjoin 1 0)))
+       (cdr ((cdr x) (forward-conjoin 0 1)))))
+
+(let ((x ((forward-j (reverse-j sqrt))
+	  (forward-conjoin (reverse-j 4) (reverse-j 1)))))
+ (list (reverse-primal (car (forward-adjoint x)))
+       (reverse-primal (car (forward-primal x)))
+       (cdr ((cdr (forward-primal x)) 1))
+       ((forward-j cdr) (((forward-j cdr) x) (forward-conjoin 1 0)))
+       ((forward-j cdr) (((forward-j cdr) x) (forward-conjoin 0 1)))))
+
+(let ((x ((reverse-j (reverse-j sqrt)) (reverse-j (reverse-j 4)))))
+ (list (reverse-primal (car (reverse-primal (car x))))
+       (cdr ((cdr (reverse-primal (car x))) 1))
+       (reverse-primal
+	(cdr ((cdr x) (cons (reverse-j 1) (cons 0 (reverse-j '()))))))
+       (car (car ((cdr ((car ((reverse-j cdr) (car x))) (reverse-j 1)))
+		  (cons '() 1))))
+       (cdr
+	((cdr ((car ((reverse-j cdr) (car x))) (reverse-j 1))) (cons '() 1)))
+       (cdr (reverse-primal
+	     (car ((car ((reverse-j cdr) (car x))) (reverse-j 1)))))))

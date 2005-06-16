@@ -89,9 +89,24 @@
 (define (alternate-hessian-quadratic-form f x u v)
  (dot u (m*v ((hessian f) x) v)))
 
+(define (curried-hessian-quadratic-form f)
+ (let ((f-forward-forward (forward-j (forward-j f))))
+  (lambda (x u v)
+   (forward-adjoint
+    (forward-adjoint
+     (f-forward-forward
+      (forward-conjoin (forward-conjoin x u)
+		       (forward-conjoin v (zero x)))))))))
+
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
-((hessian f) '(3 4))
+((hessian-using-forward-j-forward-j f) '(3 4))
+
+((hessian-using-forward-j-reverse-j f) '(3 4))
+
+((hessian-using-reverse-j-forward-j f) '(3 4))
+
+((hessian-using-reverse-j-reverse-j f) '(3 4))
 
 (alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
 
@@ -102,3 +117,5 @@
 (hessian-quadratic-form-using-reverse-j-forward-j f '(3 4) '(7 8) '(9 10))
 
 (hessian-quadratic-form-using-reverse-j-reverse-j f '(3 4) '(7 8) '(9 10))
+
+((curried-hessian-quadratic-form f) '(3 4) '(7 8) '(9 10))

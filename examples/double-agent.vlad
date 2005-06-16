@@ -1,4 +1,4 @@
-(include "math")
+(include "math-forward")
 
 (define (agent wb pbb rbb o)
  (argmax (lambda (a) (rbb (pbb (wb ((invert pbb) o) a)))) 5 1e-5))

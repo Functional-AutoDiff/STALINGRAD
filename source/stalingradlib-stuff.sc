@@ -201,6 +201,8 @@
 
 (define *x* #f)
 
+(define *memoized?* #f)
+
 ;;; Procedures
 
 (define (check-base x xs)
@@ -234,62 +236,67 @@
 	  (not (null? (recursive-closure-tags v)))
 	  (eq? (first (recursive-closure-tags v)) 'reverse))))
 
-(define (vlad-pair? v)
+(define (vlad-pair? v tags)
  ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
- (and (closure? v)
-      (not (vlad-forward? v))
-      (not (vlad-reverse? v))
-      (= (length (closure-variables v)) 2)
-      (let*-expression? (closure-body v))
-      (= (length (let*-expression-variables (closure-body v))) 2)
-      (application? (first (let*-expression-expressions (closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-callee
-	(first (let*-expression-expressions (closure-body v)))))
-      (variable=?
-       (variable-access-expression-variable
-	(application-callee
-	 (first (let*-expression-expressions (closure-body v)))))
-       (closure-variable v))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-argument
-	(first (let*-expression-expressions (closure-body v)))))
-      (variable=?
-       (variable-access-expression-variable
-	(application-argument
-	 (first (let*-expression-expressions (closure-body v)))))
-       (first (closure-variables v)))
-      (application? (second (let*-expression-expressions (closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-callee
-	(second (let*-expression-expressions (closure-body v)))))
-      (variable=?
-       (variable-access-expression-variable
-	(application-callee
-	 (second (let*-expression-expressions (closure-body v)))))
-       (first (let*-expression-variables (closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-argument
-	(second (let*-expression-expressions (closure-body v)))))
-      (variable=?
-       (variable-access-expression-variable
-	(application-argument
-	 (second (let*-expression-expressions (closure-body v)))))
-       (second (closure-variables v)))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression? (let*-expression-body (closure-body v)))
-      (variable=?
-       (variable-access-expression-variable
-	(let*-expression-body (closure-body v)))
-       (second (let*-expression-variables (closure-body v))))))
+ (if (null? tags)
+     (and (closure? v)
+	  (not (vlad-forward? v))
+	  (not (vlad-reverse? v))
+	  (= (length (closure-variables v)) 2)
+	  (let*-expression? (closure-body v))
+	  (= (length (let*-expression-variables (closure-body v))) 2)
+	  (application? (first (let*-expression-expressions (closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-callee
+	    (first (let*-expression-expressions (closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-callee
+	     (first (let*-expression-expressions (closure-body v)))))
+	   (closure-variable v))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-argument
+	    (first (let*-expression-expressions (closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-argument
+	     (first (let*-expression-expressions (closure-body v)))))
+	   (first (closure-variables v)))
+	  (application? (second (let*-expression-expressions (closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-callee
+	    (second (let*-expression-expressions (closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-callee
+	     (second (let*-expression-expressions (closure-body v)))))
+	   (first (let*-expression-variables (closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-argument
+	    (second (let*-expression-expressions (closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-argument
+	     (second (let*-expression-expressions (closure-body v)))))
+	   (second (closure-variables v)))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression? (let*-expression-body (closure-body v)))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (let*-expression-body (closure-body v)))
+	   (second (let*-expression-variables (closure-body v)))))
+     (case (first tags)
+      ((forward) (vlad-pair? (forward-primal v) (rest tags)))
+      ((reverse) (vlad-pair? (reverse-primal v) (rest tags)))
+      (else (fuck-up)))))
 
 (define (vlad-car v tags)
  (cond ((null? tags)
-	(unless (vlad-pair? v)
+	(unless (vlad-pair? v tags)
 	 (run-time-error "Attempt to take vlad-car of a non-pair" v))
 	(vector-ref (closure-values v) 0))
        (else
@@ -302,7 +309,7 @@
 
 (define (vlad-cdr v tags)
  (cond ((null? tags)
-	(unless (vlad-pair? v)
+	(unless (vlad-pair? v tags)
 	 (run-time-error "Attempt to take vlad-cdr of a non-pair" v))
 	(vector-ref (closure-values v) 1))
        (else
@@ -338,7 +345,7 @@
 
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v) (closure? v) (recursive-closure? v))
-      (not (vlad-pair? v))))
+      (not (vlad-pair? v '()))))
 
 (define (vlad-equal? v1 v2)
  (or (eq? v1 v2)
@@ -2055,14 +2062,15 @@
 			 (forward-cache-entry-forward forward-cache-entry)
 			 x-forward))
 		       *forward-cache*)))
-       (cond
-	(forward-cache-entry
-	 (when (forward-cache-entry-primal? forward-cache-entry) (fuck-up))
-	 (set-forward-cache-entry-primal?! forward-cache-entry #t)
-	 (set-forward-cache-entry-primal! forward-cache-entry result))
-	(else (set! *forward-cache*
-		    (cons (make-forward-cache-entry #t result #f #f x-forward)
-			  *forward-cache*))))
+       (when *memoized?*
+	(cond
+	 (forward-cache-entry
+	  (when (forward-cache-entry-primal? forward-cache-entry) (fuck-up))
+	  (set-forward-cache-entry-primal?! forward-cache-entry #t)
+	  (set-forward-cache-entry-primal! forward-cache-entry result))
+	 (else (set! *forward-cache*
+		     (cons (make-forward-cache-entry #t result #f #f x-forward)
+			   *forward-cache*)))))
        result))))
 
 (define (forward-adjoint x-forward)
@@ -2105,7 +2113,10 @@
 				      (forward-adjoint
 				       (vector-ref
 					(closure-values x-forward)
-					(positionp variable=? x1 xs))))
+					(positionp
+					 variable=?
+					 x1
+					 (closure-variables x-forward)))))
 				     xs)))
 		  (if (null? tags)
 		      (cons*ify vs)
@@ -2130,7 +2141,11 @@
 				      (forward-adjoint
 				       (vector-ref
 					(recursive-closure-values x-forward)
-					(positionp variable=? x1 xs))))
+					(positionp
+					 variable=?
+					 x1
+					 (recursive-closure-variables
+					  x-forward)))))
 				     xs)))
 		  (if (null? tags)
 		      (cons*ify vs)
@@ -2154,49 +2169,75 @@
 			 (forward-cache-entry-forward forward-cache-entry)
 			 x-forward))
 		       *forward-cache*)))
-       (cond
-	(forward-cache-entry
-	 (when (forward-cache-entry-adjoint? forward-cache-entry) (fuck-up))
-	 (set-forward-cache-entry-adjoint?! forward-cache-entry #t)
-	 (set-forward-cache-entry-adjoint! forward-cache-entry result))
-	(else (set! *forward-cache*
-		    (cons (make-forward-cache-entry #f #f #t result x-forward)
-			  *forward-cache*))))
+       (when *memoized?*
+	(cond
+	 (forward-cache-entry
+	  (when (forward-cache-entry-adjoint? forward-cache-entry) (fuck-up))
+	  (set-forward-cache-entry-adjoint?! forward-cache-entry #t)
+	  (set-forward-cache-entry-adjoint! forward-cache-entry result))
+	 (else (set! *forward-cache*
+		     (cons (make-forward-cache-entry #f #f #t result x-forward)
+			   *forward-cache*)))))
        result))))
 
 (define (forward-conjoin x x-perturbation)
- (define (forward-conform*? xs x-perturbations)
+ (define (tagged-null? tags x)
+  (if (null? tags)
+      (null? x)
+      (case (first tags)
+       ((forward) (and (forward-value? x)
+		       (tagged-null? (rest tags) (forward-value-primal x))
+		       (tagged-null? (rest tags) (forward-value-adjoint x))))
+       ((reverse) (and (reverse-value? x)
+		       (tagged-null? (rest tags) (reverse-value-primal x))))
+       (else (fuck-up)))))
+ (define (forward-conform*? xs x-perturbations tags)
   ;; XS is a list, X-PERTURBATIONS is a tuple.
-  (or (and (null? xs) (null? x-perturbations))
-      (and (not (null? xs))
-	   (null? (rest xs))
-	   (forward-conform? (first xs) x-perturbations))
-      (and (not (null? xs))
-	   (not (null? (rest xs)))
-	   (vlad-pair? x-perturbations)
-	   (forward-conform? (first xs) (vlad-car x-perturbations '()))
-	   (forward-conform*? (rest xs) (vlad-cdr x-perturbations '())))))
- (define (forward-conform? x x-perturbation)
   (or
-   (and (vlad-forward? x)
-	(vlad-forward? x-perturbation)
-	(forward-conform? (forward-primal x) (forward-primal x-perturbation))
-	(forward-conform?
-	 (forward-adjoint x) (forward-adjoint x-perturbation)))
-   (and (vlad-reverse? x)
-	(vlad-reverse? x-perturbation)
-	(forward-conform? (reverse-primal x) (reverse-primal x-perturbation)))
-   (and (null? x) (null? x-perturbation))
-   (and (boolean? x) (null? x-perturbation))
-   (and (real? x) (real? x-perturbation))
-   (and (primitive-procedure? x) (null? x-perturbation))
-   (and (closure? x)
-	(null? (closure-tags x))
-	(forward-conform*? (vector->list (closure-values x)) x-perturbation))
-   (and (recursive-closure? x)
-	(null? (recursive-closure-tags x))
-	(forward-conform*? (vector->list (recursive-closure-values x))
-			   x-perturbation))))
+   (and (null? xs) (tagged-null? tags x-perturbations))
+   (and (not (null? xs))
+	(null? (rest xs))
+	(forward-conform? (first xs) x-perturbations))
+   (and (not (null? xs))
+	(not (null? (rest xs)))
+	(vlad-pair? x-perturbations tags)
+	(forward-conform? (first xs) (vlad-car x-perturbations tags))
+	(forward-conform*? (rest xs) (vlad-cdr x-perturbations tags) tags))))
+ (define (forward-conform? x x-perturbation)
+  (or (and (null? x) (null? x-perturbation))
+      (and (boolean? x) (null? x-perturbation))
+      (and (real? x) (real? x-perturbation))
+      (and (primitive-procedure? x) (null? x-perturbation))
+      (and (closure? x)
+	   (let ((xs (closure-base-variables x)))
+	    (forward-conform*?
+	     (map (lambda (x1)
+		   (vector-ref
+		    (closure-values x)
+		    (positionp variable=? x1 (closure-variables x))))
+		  xs)
+	     x-perturbation
+	     (closure-tags x))))
+      (and (recursive-closure? x)
+	   (let ((xs (recursive-closure-base-variables x))) ;base
+	    (forward-conform*?
+	     (map (lambda (x1)
+		   (vector-ref
+		    (recursive-closure-values x)
+		    (positionp variable=? x1 (recursive-closure-variables x))))
+		  xs)
+	     x-perturbation
+	     (recursive-closure-tags x))))
+      (and (forward-value? x)
+	   (forward-value? x-perturbation)
+	   (forward-conform? (forward-value-primal x)
+			     (forward-value-primal x-perturbation))
+	   (forward-conform? (forward-value-adjoint x)
+			     (forward-value-adjoint x-perturbation)))
+      (and (reverse-value? x)
+	   (reverse-value? x-perturbation)
+	   (forward-conform? (reverse-value-primal x)
+			     (reverse-value-primal x-perturbation)))))
  (define (forward-conjoin* xs x-perturbations tags)
   ;; XS is a list, X-PERTURBATIONS is a tuple, the result is a list.
   (cond
@@ -2316,7 +2357,8 @@
 		    "The arguments to forward-conjoin are nonconformant"
 		    x x-perturbation)))
 		 (forward-conjoin x x-perturbation))))
-   (set! *forward-cache* (cons forward-cache-entry *forward-cache*)))
+   (when *memoized?*
+    (set! *forward-cache* (cons forward-cache-entry *forward-cache*))))
   (forward-cache-entry-forward forward-cache-entry)))
 
 (define (zero x)
@@ -2824,8 +2866,8 @@
 			     (reverse-primal x2-sensitivity)))
       (and (null? x1-sensitivity) (null? x2-sensitivity))
       (and (real? x1-sensitivity) (real? x2-sensitivity))
-      (and (vlad-pair? x1-sensitivity)
-	   (vlad-pair? x2-sensitivity)
+      (and (vlad-pair? x1-sensitivity '())
+	   (vlad-pair? x2-sensitivity '())
 	   (reverse-conform? (vlad-car x1-sensitivity '())
 			     (vlad-car x2-sensitivity '()))
 	   (reverse-conform? (vlad-cdr x1-sensitivity '())
@@ -2980,7 +3022,8 @@
 	   ((reverse-value? x-reverse) (reverse-value-primal x-reverse))
 	   (else (fuck-up)))
 	  x-reverse))
-   (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*)))
+   (when *memoized?*
+    (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*))))
   (reverse-cache-entry-primal reverse-cache-entry)))
 
 (define (added-bindings)
@@ -3095,7 +3138,8 @@
 	   ((forward-value? v) (make-reverse-value v))
 	   ((reverse-value? v) (make-reverse-value v))
 	   (else (fuck-up)))))
-   (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*)))
+   (when *memoized?*
+    (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*))))
   (reverse-cache-entry-reverse reverse-cache-entry)))
 
 ;;; Pretty printer
@@ -3253,7 +3297,7 @@
 	   (if (and *unabbreviate-executably?* (not quote?)) ''() '()))
 	  ((boolean? v) v)
 	  ((real? v) v)
-	  ((vlad-pair? v)
+	  ((vlad-pair? v '())
 	   (if (and *unabbreviate-executably?* (not quote?))
 	       `',(cons (loop (vlad-car v '()) #t) (loop (vlad-cdr v '()) #t))
 	       (cons (loop (vlad-car v '()) quote?)
@@ -3590,7 +3634,7 @@
 
 (define (call callee argument)
  (let ((callee (dereference callee)))
-  (unless (or (vlad-pair? callee) (vlad-procedure? callee))
+  (unless (or (vlad-pair? callee '()) (vlad-procedure? callee))
    (run-time-error "Target is not a procedure" callee))
   (when *anal?*
    (unless (tag-check?
@@ -3748,14 +3792,14 @@
 (define (binary f s)
  (lambda (x)
   (let ((x (dereference x)))
-   (unless (vlad-pair? x)
+   (unless (vlad-pair? x '())
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (f (vlad-car x '()) (vlad-cdr x '())))))
 
 (define (binary-real f s)
  (lambda (x)
   (let ((x (dereference x)))
-   (unless (vlad-pair? x)
+   (unless (vlad-pair? x '())
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (let ((x1 (dereference (vlad-car x '())))
 	 (x2 (dereference (vlad-cdr x '()))))
@@ -3766,10 +3810,10 @@
 (define (ternary f s)
  (lambda (x)
   (let ((x123 (dereference x)))
-   (unless (vlad-pair? x123)
+   (unless (vlad-pair? x123 '())
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (let ((x1 (vlad-car x123 '())) (x23 (dereference (vlad-cdr x123 '()))))
-    (unless (vlad-pair? x23)
+    (unless (vlad-pair? x23 '())
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     (f x1 (vlad-car x23 '()) (vlad-cdr x23 '()))))))
 
@@ -4101,7 +4145,7 @@
 					    (reverse-zero (reverse-j x)))))))))
     (reverse real?)))
  (define-primitive-procedure 'pair?
-  (unary vlad-pair? "pair?")
+  (unary (lambda (x) (vlad-pair? x '())) "pair?")
   '(lambda ((forward x))
     (let ((x (forward-primal (forward x)))) (forward-conjoin (pair? x) '())))
   '(letrec (((reverse pair?) (lambda ((reverse x))

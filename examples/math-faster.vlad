@@ -100,7 +100,15 @@
 
 (define ((invert f) y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
-(define (gradient-descent f x epsilon)
+(define (zero x)
+ (cond ((null? x) '())
+       ((boolean? x) '())
+       ((real? x) 0)
+       ((pair? x) (cons (zero (car x)) (zero (cdr x))))
+       ;; procedure
+       (else '())))
+
+(define (gradient-descent-using-forward-j-forward-j f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
 	(line-forward (forward-j line))
@@ -129,6 +137,97 @@
 		   x
 		   (loop (v+ x (k*v (argmin 0) g)))))))))
    (loop x))))
+
+(define (gradient-descent-using-forward-j-reverse-j f x epsilon)
+ (let* ((del-f (gradient f))
+	(line (lambda (x g k) (f (v+ x (k*v k g)))))
+	(line-forward (forward-j line))
+	(line-prime
+	 (lambda (x g k)
+	  (forward-adjoint
+	   (line-forward
+	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	(line-prime-reverse (reverse-j line-prime))
+	(line-prime-prime
+	 (lambda (x g k)
+	  (cdr
+	   (cdr
+	    (cdr ((cdr (line-prime-reverse (reverse-j (cons* x g k)))) 1)))))))
+  (letrec ((loop
+	    (lambda (x)
+	     (let ((g (del-f x)))
+	      (letrec ((argmin (lambda (k)
+				(let ((k-prime
+				       (- k (/ (line-prime x g k)
+					       (line-prime-prime x g k)))))
+				 (if (<= (abs (- k k-prime)) epsilon)
+				     k
+				     (argmin k-prime))))))
+	       (if (<= (magnitude g) epsilon)
+		   x
+		   (loop (v+ x (k*v (argmin 0) g)))))))))
+   (loop x))))
+
+(define (gradient-descent-using-reverse-j-forward-j f x epsilon)
+ (let* ((del-f (gradient f))
+	(line (lambda (x g k) (f (v+ x (k*v k g)))))
+	(line-reverse (reverse-j line))
+	(line-prime
+	 (lambda (x g k)
+	  (cdr
+	   (cdr (cdr ((cdr (line-reverse (reverse-j (cons* x g k)))) 1))))))
+	(line-prime-forward (forward-j line-prime))
+	(line-prime-prime
+	 (lambda (x g k)
+	  (forward-adjoint
+	   (line-prime-forward
+	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1)))))))
+  (letrec ((loop
+	    (lambda (x)
+	     (let ((g (del-f x)))
+	      (letrec ((argmin (lambda (k)
+				(let ((k-prime
+				       (- k (/ (line-prime x g k)
+					       (line-prime-prime x g k)))))
+				 (if (<= (abs (- k k-prime)) epsilon)
+				     k
+				     (argmin k-prime))))))
+	       (if (<= (magnitude g) epsilon)
+		   x
+		   (loop (v+ x (k*v (argmin 0) g)))))))))
+   (loop x))))
+
+(define (gradient-descent-using-reverse-j-reverse-j f x epsilon)
+ (let* ((del-f (gradient f))
+	(line (lambda (x g k) (f (v+ x (k*v k g)))))
+	(line-reverse (reverse-j line))
+	(line-prime
+	 (lambda (x g k)
+	  (cdr
+	   (cdr (cdr ((cdr (line-reverse (reverse-j (cons* x g k)))) 1))))))
+	(line-prime-reverse (reverse-j line-prime))
+	(line-prime-prime
+	 (lambda (x g k)
+	  (cdr
+	   (cdr
+	    (cdr ((cdr (line-prime-reverse (reverse-j (cons* x g k)))) 1)))))))
+  (letrec ((loop
+	    (lambda (x)
+	     (let ((g (del-f x)))
+	      (letrec ((argmin (lambda (k)
+				(let ((k-prime
+				       (- k (/ (line-prime x g k)
+					       (line-prime-prime x g k)))))
+				 (if (<= (abs (- k k-prime)) epsilon)
+				     k
+				     (argmin k-prime))))))
+	       (if (<= (magnitude g) epsilon)
+		   x
+		   (loop (v+ x (k*v (argmin 0) g)))))))))
+   (loop x))))
+
+(define (gradient-descent f x epsilon)
+ (gradient-descent-using-forward-j-forward-j f x epsilon))
 
 ;;; Matrices
 
