@@ -1,5 +1,8 @@
 ;;; -*- Scheme -*-
 
+(include "math")
+(define error (lambda (x) (/ 1 0)))
+
 ;;; Use the secant method to find the zero of a 1D monotonic
 ;;; continuous function F in the region LO to HI to tolerance EPS.
 ;;; The function F must take negative and positive values at the left
@@ -7,21 +10,21 @@
 
 (define zero-via-secant
   (lambda (f lo hi eps)
-    (define loop
-      (lambda (lo f-lo hi f-hi)
-	(let* ((lam (/ f-hi (- f-hi f-lo)))
-	       (new (+ (* lam lo) (* (- 1.0 lam) hi)))
-	       (f-new (f new)))
-	  (if (<= (abs f-new) eps)
-	      new
-	      (if (< f-new 0)
-		  (loop new f-new hi f-hi)
-		  (loop lo f-lo new f-new))))))
-    (let ((f-lo (f lo))
-	  (f-hi (f hi)))
-      (cond ((>= f-lo 0) (error "invalid region, lower boundary"))
-	    ((<= f-hi 0) (error "invalid region, upper boundary"))
-	    (else (loop lo f-lo hi f-hi))))))
+    (letrec ((loop
+	      (lambda (lo f-lo hi f-hi)
+		(let* ((lam (/ f-hi (- f-hi f-lo)))
+		       (new (+ (* lam lo) (* (- 1.0 lam) hi)))
+		       (f-new (f new)))
+		  (if (<= (abs f-new) eps)
+		      new
+		      (if (< f-new 0)
+			  (loop new f-new hi f-hi)
+			  (loop lo f-lo new f-new)))))))
+      (let ((f-lo (f lo))
+	    (f-hi (f hi)))
+	(cond ((>= f-lo 0) (error))
+	      ((<= f-hi 0) (error))
+	      (else (loop lo f-lo hi f-hi)))))))
 
 ;;; test
 
