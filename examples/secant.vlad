@@ -10,7 +10,7 @@
     (define loop
       (lambda (lo f-lo hi f-hi)
 	(let* ((lam (/ f-hi (- f-hi f-lo)))
-	       (new (+ (* lam lo) (* (- 1 lam) hi)))
+	       (new (+ (* lam lo) (* (- 1.0 lam) hi)))
 	       (f-new (f new)))
 	  (if (<= (abs f-new) eps)
 	      new
@@ -28,7 +28,7 @@
 (define sqrt-via-secant
   (lambda (x eps)
     (zero-via-secant (lambda (y) (- (* y y) x))
-		     0 (max x 1) eps)))
+		     0 (+ x 1) eps)))
 
 ;;; > (sqrt-via-secant 10.0 .00000000000001)
 ;;; 3.162277660168378
