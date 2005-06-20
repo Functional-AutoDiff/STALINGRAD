@@ -18,7 +18,6 @@ int
 main(int argc, char **argv)
 {
   int		mfd, sfd, len;
-  char		buff[BUFSIZ];
   struct termios	tbuff;
 
   if (*++argv == NULL) {
@@ -57,11 +56,17 @@ main(int argc, char **argv)
 
     default:
       close(sfd);
-      while (1) {
-	len = read(mfd, buff, BUFSIZ);
-	if (len <= 0)
-	  break;
-	write(STDOUT_FILENO, buff, len);
+      {
+	char buff[BUFSIZ];
+	while (1) {
+	  len = read(mfd, buff, BUFSIZ);
+	  if (len <= 0)
+	    break;
+	  // Note: the following should really be in a loop, in case
+	  // of partial success, due to Unix system call PC lusering
+	  // and all that.
+	  write(STDOUT_FILENO, buff, len);
+	}
       }
     }
   return (0);
