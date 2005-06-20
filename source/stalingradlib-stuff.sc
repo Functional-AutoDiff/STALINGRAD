@@ -505,7 +505,7 @@
 			 alpha
 			 anf
 			 perturbation
-			 forwad
+			 forward
 			 sensitivity
 			 backpropagator
 			 reverse))))
@@ -2363,9 +2363,8 @@
 
 (define (zero x)
  (cond
-  ;; I don't understand why this has to be forward-j instead of forward-conjoin
-  ;; but it does.
-  ((vlad-forward? x) (forward-j (zero (forward-primal x))))
+  ((vlad-forward? x)
+   (forward-conjoin (zero (forward-primal x)) (zero (forward-adjoint x))))
   ((vlad-reverse? x) (reverse-j (zero (reverse-primal x))))
   ((null? x) '())
   ((boolean? x) '())
@@ -4312,10 +4311,10 @@
  (define-primitive-procedure 'reverse-zero
   (unary reverse-zero "reverse-zero")
   '(lambda ((forward (reverse x)))
-    (let (((reverse x) (forward-primal (forward (reverse x)))))
-     ;; I don't understand why this has to be forward-j instead of
-     ;; forward-conjoin but it does.
-     (forward-j (reverse-zero (reverse x)))))
+    (let (((reverse x) (forward-primal (forward (reverse x))))
+	  ((perturbation (reverse x)) (forward-adjoint (forward (reverse x)))))
+     (forward-conjoin (reverse-zero (reverse x))
+		      (reverse-zero (perturbation (reverse x))))))
   '(letrec (((reverse reverse-zero)
 	     (lambda ((reverse (reverse x)))
 	      (let (((reverse x) (reverse-primal (reverse (reverse x)))))
