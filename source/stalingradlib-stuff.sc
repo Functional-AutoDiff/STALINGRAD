@@ -1940,7 +1940,7 @@
 	 (letrec-expression-procedure-variables e)
 	 (letrec-expression-argument-variables e)
 	 (map forward-transform-inverse (letrec-expression-bodies e))
-	 (forward-transform (letrec-expression-body e))))
+	 (forward-transform-inverse (letrec-expression-body e))))
        (else (fuck-up))))
 
 (define (forward-primal x-forward)
