@@ -67,7 +67,6 @@
 		   (include-path "include-directory" string-argument)))
 		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one ("undecorated" undecorated?))
-		 (at-most-one ("evaluated" evaluated?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
@@ -125,35 +124,34 @@
 	 (when undecorated?
 	  (pp (abstract->concrete (first result)))
 	  (newline))
-	 (when evaluated?
-	  (when metered?
-	   (for-each (lambda (b)
-		      (let ((v (value-binding-value b)))
-		       (when (primitive-procedure? v)
-			(set-primitive-procedure-meter! v 0))))
-		     *value-bindings*))
-	  (with-write-level
-	   level
-	   (lambda ()
-	    (with-write-length
-	     length
-	     (lambda ()
-	      ((if *pp?* pp write)
-	       (externalize
-		(evaluate (first result)
-			  'unspecified
-			  (list->vector (second result)))))))))
-	  (newline)
-	  (when metered?
-	   (for-each (lambda (b)
-		      (let ((v (value-binding-value b)))
-		       (when (and (primitive-procedure? v)
-				  (not (zero? (primitive-procedure-meter v))))
-			(format #t "~a ~s~%"
-				(number->string-of-length
-				 (primitive-procedure-meter v) 7)
-				(value-binding-variable b)))))
-		     (reverse *value-bindings*)))))
+	 (when metered?
+	  (for-each (lambda (b)
+		     (let ((v (value-binding-value b)))
+		      (when (primitive-procedure? v)
+		       (set-primitive-procedure-meter! v 0))))
+		    *value-bindings*))
+	 (with-write-level
+	  level
+	  (lambda ()
+	   (with-write-length
+	    length
+	    (lambda ()
+	     ((if *pp?* pp write)
+	      (externalize
+	       (evaluate (first result)
+			 'unspecified
+			 (list->vector (second result)))))))))
+	 (newline)
+	 (when metered?
+	  (for-each (lambda (b)
+		     (let ((v (value-binding-value b)))
+		      (when (and (primitive-procedure? v)
+				 (not (zero? (primitive-procedure-meter v))))
+		       (format #t "~a ~s~%"
+			       (number->string-of-length
+				(primitive-procedure-meter v) 7)
+			       (value-binding-variable b)))))
+		    (reverse *value-bindings*))))
 	(loop (rest es) ds))))))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam

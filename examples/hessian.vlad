@@ -1,121 +1,110 @@
 (include "math")
 
-(define ((partial-derivative-using-forward-j f i) x)
- (forward-adjoint ((forward-j f) (forward-conjoin x (e i (length x))))))
+(define ((partial-derivative-using-j* f i) x)
+ (tangent ((j* f) (bundle x (e i (length x))))))
 
-(define ((partial-derivative-using-reverse-j f i) x)
- (list-ref ((gradient-using-reverse-j f) x) i))
+(define ((partial-derivative-using-*j f i) x)
+ (list-ref ((gradient-using-*j f) x) i))
 
-(define (partial-derivative f i) (partial-derivative-using-forward-j f i))
+(define (partial-derivative f i) (partial-derivative-using-j* f i))
 
-(define ((hessian-using-forward-j-forward-j f) x)
+(define ((hessian-using-j*-j* f) x)
  (let ((n (length x)))
   (map-n (lambda (i)
 	  (map-n (lambda (j)
-		  ((partial-derivative-using-forward-j
-		    (partial-derivative-using-forward-j f i) j)
+		  ((partial-derivative-using-j*
+		    (partial-derivative-using-j* f i) j)
 		   x))
 		 n))
 	 n)))
 
-(define ((hessian-using-forward-j-reverse-j f) x)
+(define ((hessian-using-j*-*j f) x)
  (let ((n (length x)))
   (map-n (lambda (i)
 	  (map-n (lambda (j)
-		  ((partial-derivative-using-reverse-j
-		    (partial-derivative-using-forward-j f i) j)
+		  ((partial-derivative-using-*j
+		    (partial-derivative-using-j* f i) j)
 		   x))
 		 n))
 	 n)))
 
-(define ((hessian-using-reverse-j-forward-j f) x)
+(define ((hessian-using-*j-j* f) x)
  (let ((n (length x)))
   (map-n (lambda (i)
 	  (map-n (lambda (j)
-		  ((partial-derivative-using-forward-j
-		    (partial-derivative-using-reverse-j f i) j)
+		  ((partial-derivative-using-j*
+		    (partial-derivative-using-*j f i) j)
 		   x))
 		 n))
 	 n)))
 
-(define ((hessian-using-reverse-j-reverse-j f) x)
+(define ((hessian-using-*j-*j f) x)
  (let ((n (length x)))
   (map-n (lambda (i)
 	  (map-n (lambda (j)
-		  ((partial-derivative-using-reverse-j
-		    (partial-derivative-using-reverse-j f i) j)
+		  ((partial-derivative-using-*j
+		    (partial-derivative-using-*j f i) j)
 		   x))
 		 n))
 	 n)))
 
-(define (hessian f) (hessian-using-forward-j-forward-j f))
+(define (hessian f) (hessian-using-j*-j* f))
 
-(define (hessian-quadratic-form-using-forward-j-forward-j f x u v)
- (let ((f-forward (forward-j f)))
-  (forward-adjoint
-   ((forward-j
-     (lambda (x) (forward-adjoint (f-forward (forward-conjoin x v)))))
-    (forward-conjoin x u)))))
+(define (hessian-quadratic-form-using-j*-j* f x u v)
+ (let ((f-forward (j* f)))
+  (tangent ((j* (lambda (x) (tangent (f-forward (bundle x v)))))
+	    (bundle x u)))))
 
-(define (hessian-quadratic-form-using-forward-j-reverse-j f x u v)
- (let ((f-reverse (reverse-j f)))
-  (forward-adjoint
-   ((forward-j (lambda (x) (dot (cdr ((cdr (f-reverse (reverse-j x))) 1)) v)))
-    (forward-conjoin x u)))))
+(define (hessian-quadratic-form-using-j*-*j f x u v)
+ (let ((f-reverse (*j f)))
+  (tangent ((j* (lambda (x) (dot (cdr ((cdr (f-reverse (*j x))) 1)) v)))
+	    (bundle x u)))))
 
-(define (hessian-quadratic-form-using-reverse-j-forward-j f x u v)
- (let ((f-forward (forward-j f)))
+(define (hessian-quadratic-form-using-*j-j* f x u v)
+ (let ((f-forward (j* f)))
   (dot
    u
-   (cdr
-    ((cdr ((reverse-j
-	    (lambda (x) (forward-adjoint (f-forward (forward-conjoin x v)))))
-	   (reverse-j x)))
-     1)))))
+   (cdr ((cdr ((*j (lambda (x) (tangent (f-forward (bundle x v))))) (*j x)))
+	 1)))))
 
-(define (hessian-quadratic-form-using-reverse-j-reverse-j f x u v)
- (let ((f-reverse (reverse-j f)))
+(define (hessian-quadratic-form-using-*j-*j f x u v)
+ (let ((f-reverse (*j f)))
   (dot
    u
-   (cdr
-    ((cdr ((reverse-j
-	    (lambda (x) (dot (cdr ((cdr (f-reverse (reverse-j x))) 1)) v)))
-	   (reverse-j x)))
-     1)))))
+   (cdr ((cdr ((*j (lambda (x) (dot (cdr ((cdr (f-reverse (*j x))) 1)) v)))
+	       (*j x)))
+	 1)))))
 
 (define (hessian-quadratic-form f x v)
- (hessian-quadratic-form-using-forward-j-forward-j f x v))
+ (hessian-quadratic-form-using-j*-j* f x v))
 
 (define (alternate-hessian-quadratic-form f x u v)
  (dot u (m*v ((hessian f) x) v)))
 
 (define (curried-hessian-quadratic-form f)
- (let ((f-forward-forward (forward-j (forward-j f))))
+ (let ((f-forward-forward (j* (j* f))))
   (lambda (x u v)
-   (forward-adjoint
-    (forward-adjoint
-     (f-forward-forward
-      (forward-conjoin (forward-conjoin x u)
-		       (forward-conjoin v (zero x)))))))))
+   (tangent (tangent (f-forward-forward
+		      (bundle (bundle x u) (bundle v (zero x)))))))))
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
-((hessian-using-forward-j-forward-j f) '(3 4))
+((hessian-using-j*-j* f) '(3 4))
 
-((hessian-using-forward-j-reverse-j f) '(3 4))
+((hessian-using-j*-*j f) '(3 4))
 
-((hessian-using-reverse-j-forward-j f) '(3 4))
+((hessian-using-*j-j* f) '(3 4))
 
-((hessian-using-reverse-j-reverse-j f) '(3 4))
+((hessian-using-*j-*j f) '(3 4))
 
 (alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
 
-(hessian-quadratic-form-using-forward-j-forward-j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-j*-j* f '(3 4) '(7 8) '(9 10))
 
-(hessian-quadratic-form-using-forward-j-reverse-j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-j*-*j f '(3 4) '(7 8) '(9 10))
 
-(hessian-quadratic-form-using-reverse-j-forward-j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-*j-j* f '(3 4) '(7 8) '(9 10))
 
-(hessian-quadratic-form-using-reverse-j-reverse-j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-*j-*j f '(3 4) '(7 8) '(9 10))
 
 ((curried-hessian-quadratic-form f) '(3 4) '(7 8) '(9 10))

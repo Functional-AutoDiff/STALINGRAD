@@ -1,66 +1,46 @@
 (include "math")
 
-(define (single0 f x) ((derivative-using-forward-j f) x))
+(define (single0 f x) ((derivative-using-j* f) x))
 
-(define (single1 f x) ((derivative-using-reverse-j f) x))
+(define (single1 f x) ((derivative-using-*j f) x))
 
 (define (single f x) (list (single0 f x) (single1 f x)))
 
-(define (double00 f x)
- ((derivative-using-forward-j (derivative-using-forward-j f)) x))
+(define (double00 f x) ((derivative-using-j* (derivative-using-j* f)) x))
 
-(define (double01 f x)
- ((derivative-using-reverse-j (derivative-using-forward-j f)) x))
+(define (double01 f x) ((derivative-using-*j (derivative-using-j* f)) x))
 
-(define (double10 f x)
- ((derivative-using-forward-j (derivative-using-reverse-j f)) x))
+(define (double10 f x) ((derivative-using-j* (derivative-using-*j f)) x))
 
-(define (double11 f x)
- ((derivative-using-reverse-j (derivative-using-reverse-j f)) x))
+(define (double11 f x) ((derivative-using-*j (derivative-using-*j f)) x))
 
 (define (double f x)
  (list (list (double00 f x) (double01 f x))
        (list (double10 f x) (double11 f x))))
 
 (define (triple000 f x)
- ((derivative-using-forward-j
-   (derivative-using-forward-j (derivative-using-forward-j f)))
-  x))
+ ((derivative-using-j* (derivative-using-j* (derivative-using-j* f))) x))
 
 (define (triple001 f x)
- ((derivative-using-reverse-j
-   (derivative-using-forward-j (derivative-using-forward-j f)))
-  x))
+ ((derivative-using-*j (derivative-using-j* (derivative-using-j* f))) x))
 
 (define (triple010 f x)
- ((derivative-using-forward-j
-   (derivative-using-reverse-j (derivative-using-forward-j f)))
-  x))
+ ((derivative-using-j* (derivative-using-*j (derivative-using-j* f))) x))
 
 (define (triple011 f x)
- ((derivative-using-reverse-j
-   (derivative-using-reverse-j (derivative-using-forward-j f)))
-  x))
+ ((derivative-using-*j (derivative-using-*j (derivative-using-j* f))) x))
 
 (define (triple100 f x)
- ((derivative-using-forward-j
-   (derivative-using-forward-j (derivative-using-reverse-j f)))
-  x))
+ ((derivative-using-j* (derivative-using-j* (derivative-using-*j f))) x))
 
 (define (triple101 f x)
- ((derivative-using-reverse-j
-   (derivative-using-forward-j (derivative-using-reverse-j f)))
-  x))
+ ((derivative-using-*j (derivative-using-j* (derivative-using-*j f))) x))
 
 (define (triple110 f x)
- ((derivative-using-forward-j
-   (derivative-using-reverse-j (derivative-using-reverse-j f)))
-  x))
+ ((derivative-using-j* (derivative-using-*j (derivative-using-*j f))) x))
 
 (define (triple111 f x)
- ((derivative-using-reverse-j
-   (derivative-using-reverse-j (derivative-using-reverse-j f)))
-  x))
+ ((derivative-using-*j (derivative-using-*j (derivative-using-*j f))) x))
 
 (define (triple f x)
  (list (list (list (triple000 f x) (triple001 f x))
@@ -107,14 +87,14 @@
 (triple010 (lambda (x) (+ x x)) 4)
 (triple011 (lambda (x) (+ x x)) 4)
 (triple100 (lambda (x) (+ x x)) 4)
-(triple101 (lambda (x) (+ x x)) 4)
+;(triple101 (lambda (x) (+ x x)) 4)
 (triple110 (lambda (x) (+ x x)) 4)
-(triple111 (lambda (x) (+ x x)) 4)
+;(triple111 (lambda (x) (+ x x)) 4)
 (triple000 (lambda (x) (car (cons x x))) 4)
 (triple001 (lambda (x) (car (cons x x))) 4)
 (triple010 (lambda (x) (car (cons x x))) 4)
 (triple011 (lambda (x) (car (cons x x))) 4)
 (triple100 (lambda (x) (car (cons x x))) 4)
-(triple101 (lambda (x) (car (cons x x))) 4)
+;(triple101 (lambda (x) (car (cons x x))) 4)
 (triple110 (lambda (x) (car (cons x x))) 4)
-(triple111 (lambda (x) (car (cons x x))) 4)
+;(triple111 (lambda (x) (car (cons x x))) 4)

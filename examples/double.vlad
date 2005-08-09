@@ -1,6 +1,0 @@
-(let ((result
-       ((reverse-j (cdr ((reverse-j sqrt) (reverse-j 4)))) (reverse-j 1))))
- (list (cdr (reverse-primal (car result)))
-       (cdr ((cdr result) (cons '() 1)))))
-
-(forward-j (cdr ((reverse-j sqrt) (reverse-j 4))))

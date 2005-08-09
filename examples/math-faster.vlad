@@ -59,27 +59,23 @@
 
 ;;; Derivatives
 
-(define (derivative-using-forward-j f)
- (let ((f-forward (forward-j f)))
-  (lambda (x) (forward-adjoint (f-forward (forward-conjoin x 1))))))
+(define (derivative-using-j* f)
+ (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
 
-(define (derivative-using-reverse-j f)
- (let ((f-reverse (reverse-j f)))
-  (lambda (x) (cdr ((cdr (f-reverse (reverse-j x))) 1)))))
+(define (derivative-using-*j f)
+ (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse (*j x))) 1)))))
 
-(define (derivative f) (derivative-using-reverse-j f))
+(define (derivative f) (derivative-using-*j f))
 
-(define (gradient-using-forward-j f)
- (let ((f-forward (forward-j f)))
+(define (gradient-using-j* f)
+ (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
-    (map-n
-     (lambda (i) (forward-adjoint (f-forward (forward-conjoin x (e i n)))))
-     n)))))
+    (map-n (lambda (i) (tangent (f-forward (bundle x (e i n))))) n)))))
 
-(define (gradient-using-reverse-j f) (derivative-using-reverse-j f))
+(define (gradient-using-*j f) (derivative-using-*j f))
 
-(define (gradient f) (gradient-using-reverse-j f))
+(define (gradient f) (gradient-using-*j f))
 
 ;;; Roots and Optimization
 
@@ -100,29 +96,21 @@
 
 (define ((invert f) y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
-(define (zero x)
- (cond ((null? x) '())
-       ((boolean? x) '())
-       ((real? x) 0)
-       ((pair? x) (cons (zero (car x)) (zero (cdr x))))
-       ;; procedure
-       (else '())))
-
-(define (gradient-descent-using-forward-j-forward-j f x epsilon)
+(define (gradient-descent-using-j*-j* f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
-	(line-forward (forward-j line))
+	(line-forward (j* line))
 	(line-prime
 	 (lambda (x g k)
-	  (forward-adjoint
+	  (tangent
 	   (line-forward
-	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1))))))
-	(line-prime-forward (forward-j line-prime))
+	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	(line-prime-forward (j* line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
-	  (forward-adjoint
+	  (tangent
 	   (line-prime-forward
-	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1)))))))
+	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1)))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -138,21 +126,20 @@
 		   (loop (v+ x (k*v (argmin 0) g)))))))))
    (loop x))))
 
-(define (gradient-descent-using-forward-j-reverse-j f x epsilon)
+(define (gradient-descent-using-j*-*j f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
-	(line-forward (forward-j line))
+	(line-forward (j* line))
 	(line-prime
 	 (lambda (x g k)
-	  (forward-adjoint
+	  (tangent
 	   (line-forward
-	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1))))))
-	(line-prime-reverse (reverse-j line-prime))
+	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	(line-prime-reverse (*j line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
 	  (cdr
-	   (cdr
-	    (cdr ((cdr (line-prime-reverse (reverse-j (cons* x g k)))) 1)))))))
+	   (cdr (cdr ((cdr (line-prime-reverse (*j (cons* x g k)))) 1)))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -168,20 +155,19 @@
 		   (loop (v+ x (k*v (argmin 0) g)))))))))
    (loop x))))
 
-(define (gradient-descent-using-reverse-j-forward-j f x epsilon)
+(define (gradient-descent-using-*j-j* f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
-	(line-reverse (reverse-j line))
+	(line-reverse (*j line))
 	(line-prime
 	 (lambda (x g k)
-	  (cdr
-	   (cdr (cdr ((cdr (line-reverse (reverse-j (cons* x g k)))) 1))))))
-	(line-prime-forward (forward-j line-prime))
+	  (cdr (cdr (cdr ((cdr (line-reverse (*j (cons* x g k)))) 1))))))
+	(line-prime-forward (j* line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
-	  (forward-adjoint
+	  (tangent
 	   (line-prime-forward
-	    (forward-conjoin (cons* x g k) (cons* (zero x) (zero g) 1)))))))
+	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1)))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -197,20 +183,18 @@
 		   (loop (v+ x (k*v (argmin 0) g)))))))))
    (loop x))))
 
-(define (gradient-descent-using-reverse-j-reverse-j f x epsilon)
+(define (gradient-descent-using-*j-*j f x epsilon)
  (let* ((del-f (gradient f))
 	(line (lambda (x g k) (f (v+ x (k*v k g)))))
-	(line-reverse (reverse-j line))
+	(line-reverse (*j line))
 	(line-prime
 	 (lambda (x g k)
-	  (cdr
-	   (cdr (cdr ((cdr (line-reverse (reverse-j (cons* x g k)))) 1))))))
-	(line-prime-reverse (reverse-j line-prime))
+	  (cdr (cdr (cdr ((cdr (line-reverse (*j (cons* x g k)))) 1))))))
+	(line-prime-reverse (*j line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
 	  (cdr
-	   (cdr
-	    (cdr ((cdr (line-prime-reverse (reverse-j (cons* x g k)))) 1)))))))
+	   (cdr (cdr ((cdr (line-prime-reverse (*j (cons* x g k)))) 1)))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -227,7 +211,7 @@
    (loop x))))
 
 (define (gradient-descent f x epsilon)
- (gradient-descent-using-forward-j-forward-j f x epsilon))
+ (gradient-descent-using-j*-j* f x epsilon))
 
 ;;; Matrices
 

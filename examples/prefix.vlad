@@ -1,24 +1,22 @@
 (include "math")
 
-(define (jacobian-using-forward-j f)
- (let ((f-forward (forward-j f)))
+(define (jacobian-using-j* f)
+ (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
-    (map-n
-     (lambda (i) (forward-adjoint (f-forward (forward-conjoin x (e i n)))))
-     n)))))
+    (map-n (lambda (i) (tangent (f-forward (bundle x (e i n))))) n)))))
 
-(define (jacobian-using-reverse-j f)
- (let ((f-reverse (reverse-j f)))
+(define (jacobian-using-*j f)
+ (let ((f-reverse (*j f)))
   (lambda (x)
-   (let ((n (length x)) (y-tilde (cdr (f-reverse (reverse-j x)))))
+   (let ((n (length x)) (y-tilde (cdr (f-reverse (*j x)))))
     (transpose (map-n (lambda (i) (cdr (y-tilde (e i n)))) n))))))
 
-(define (jacobian f) (jacobian-using-forward-j f))
+(define (jacobian f) (jacobian-using-j* f))
 
 (define (j-transpose*v f)
- (let ((f-reverse (reverse-j f)))
-  (lambda (x y-grave) (cdr ((cdr (f-reverse (reverse-j x))) y-grave)))))
+ (let ((f-reverse (*j f)))
+  (lambda (x y-grave) (cdr ((cdr (f-reverse (*j x))) y-grave)))))
 
 (define (prefix l)
  (letrec ((loop (lambda (a l)
@@ -27,6 +25,6 @@
 		     (let ((a (+ a (first l)))) (cons a (loop a (rest l))))))))
   (loop 0 l)))
 
-((jacobian-using-forward-j prefix) '(0 1 2 3 4))
-((jacobian-using-reverse-j prefix) '(0 1 2 3 4))
+((jacobian-using-j* prefix) '(0 1 2 3 4))
+((jacobian-using-*j prefix) '(0 1 2 3 4))
 ((j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
