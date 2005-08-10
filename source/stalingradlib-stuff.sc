@@ -38,7 +38,7 @@
 ;;;    voice: +353 1 7086394
 ;;;    FAX: +353 1 7086269
 ;;;    barak@cs.nuim.ie
-;;;    http://www-bcl.cs.nuim.ie/~bap
+;;;    http://www-bcl.cs.nuim.ie/~barak/
 
 ;;; needs work
 ;;;  1. zero, plus, primal, tangent, bundle, *j, and *j-inverse should be
