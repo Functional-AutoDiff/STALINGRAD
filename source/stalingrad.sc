@@ -38,7 +38,7 @@
 ;;;    voice: +353 1 7086394
 ;;;    FAX: +353 1 7086269
 ;;;    barak@cs.may.ie
-;;;    http://www-bcl.cs.may.ie/~bap
+;;;    http://www-bcl.cs.may.ie/~barak
 
 (include "QobiScheme.sch")
 (include "stalingrad.sch")
