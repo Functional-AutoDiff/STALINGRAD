@@ -24,8 +24,8 @@
 ;;;    Purdue University
 ;;;    465 Northwestern Avenue
 ;;;    Lafayette IN 47907-1285 USA
-;;;    voice: +1 765/496-3197
-;;;    FAX:   +1 765/494-6440
+;;;    voice: +1 765 496-3197
+;;;    FAX:   +1 765 494-6440
 ;;;    qobi@purdue.edu
 ;;;    ftp://ftp.ecn.purdue.edu/qobi
 ;;;    http://www.ece.purdue.edu/~qobi
@@ -33,12 +33,12 @@
 ;;;    Barak A. Pearlmutter
 ;;;    Hamilton Institute
 ;;;    National University of Ireland, Maynooth
-;;;    Maynooth, Co. Kildare
+;;;    Co. Kildare
 ;;;    Ireland
-;;;    voice: +353 1 7086394
-;;;    FAX: +353 1 7086269
-;;;    barak@cs.may.ie
-;;;    http://www-bcl.cs.may.ie/~barak
+;;;    voice: +353 1 7086100
+;;;    FAX:   +353 1 7086269
+;;;    barak@cs.nuim.ie
+;;;    http://www-bcl.cs.nuim.ie/~barak/
 
 (include "QobiScheme.sch")
 (include "stalingrad.sch")
