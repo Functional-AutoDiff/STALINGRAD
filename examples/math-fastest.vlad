@@ -59,9 +59,9 @@
 
 (define (k*v k v) (map (lambda (x) (* k x)) v))
 
-(define (magnitude-squared x) ((reduce + 0) (map sqr x)))
+(define (magnitude-squared v) (dot v v))
 
-(define (magnitude x) (sqrt (magnitude-squared x)))
+(define (magnitude v) (sqrt (magnitude-squared v)))
 
 ;;; An n-dimensional vector with x in position i and zeros elsewhere.
 (define (ex x i n)

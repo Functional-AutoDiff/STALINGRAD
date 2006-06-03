@@ -5,3 +5,4 @@ map-closure -cps-converted -closure-converted even-odd
 map-closure -cps-converted -closure-converted factorial
 map-closure -cps-converted -closure-converted pair-procedure
 map-closure -cps-converted -closure-converted set-bang
+#map-closure -cps-converted -closure-converted schemer-example

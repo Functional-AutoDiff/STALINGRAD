@@ -1,8 +1,8 @@
 (MODULE MAP-CLOSURE (WITH QOBISCHEME XLIB MAP-CLOSURELIB-STUFF) (MAIN MAIN))
 ;;; LaHaShem HaAretz U'Mloah
 
-;;; Map-Closure 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004 and 2005 Purdue University. All rights reserved.
+;;; Map-Closure 0.1
+;;; Copyright 2006 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -44,7 +44,7 @@
 (include "map-closure.sch")
 
 (set! *program* "map-closure")
-(set! *panic?* #f)			;debugging
+(set! *panic?* #t)
 
 ;;; Macros
 

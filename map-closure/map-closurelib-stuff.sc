@@ -1,8 +1,8 @@
 (MODULE MAP-CLOSURELIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
 
-;;; Map-Closure 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004, 2005, and 2006 Purdue University. All rights reserved.
+;;; Map-Closure 0.1
+;;; Copyright 2006 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -78,8 +78,6 @@
 ;;; Variables
 
 (define *gensym* 0)
-
-(define *basis-constants* '())
 
 (define *value-bindings* '())
 
@@ -198,6 +196,9 @@
 			 and
 			 or
 			 set!
+			 either
+			 all-values
+			 local-set!
 			 ignore
 			 consvar
 			 alpha))))
@@ -769,9 +770,8 @@
 	 (lambda-expression-variable e)
 	 (constant-convert bs (lambda-expression-body e))))
        ((application? e)
-	(new-application
-	 (constant-convert bs (application-callee e))
-	 (constant-convert bs (application-argument e))))
+	(new-application (constant-convert bs (application-callee e))
+			 (constant-convert bs (application-argument e))))
        (else (fuck-up))))
 
 ;;; Free variables
@@ -787,23 +787,23 @@
    xs1)))
 
 (define (free-variables e)
- (define (free-variables e)
-  (cond ((constant-expression? e) '())
-	((variable-access-expression? e)
-	 (list (variable-access-expression-variable e)))
-	((name-expression? e) (list (name-expression-variable e)))
-	((lambda-expression? e)
-	 ;; This is a vestigial let*-expression.
-	 (if (eq? (lambda-expression-free-variables e) #f)
-	     (removep variable=?
-		      (lambda-expression-variable e)
-		      (free-variables (lambda-expression-body e)))
-	     (lambda-expression-free-variables e)))
-	((application? e)
-	 (union-variables (free-variables (application-callee e))
-			  (free-variables (application-argument e))))
-	(else (fuck-up))))
- (sort-variables (free-variables e)))
+ (sort-variables
+  (let loop ((e e))
+   (cond ((constant-expression? e) '())
+	 ((variable-access-expression? e)
+	  (list (variable-access-expression-variable e)))
+	 ((name-expression? e) (list (name-expression-variable e)))
+	 ((lambda-expression? e)
+	  ;; This is a vestigial let*-expression.
+	  (if (eq? (lambda-expression-free-variables e) #f)
+	      (removep variable=?
+		       (lambda-expression-variable e)
+		       (loop (lambda-expression-body e)))
+	      (lambda-expression-free-variables e)))
+	 ((application? e)
+	  (union-variables (loop (application-callee e))
+			   (loop (application-argument e))))
+	 (else (fuck-up))))))
 
 (define (vector-append . vss)
  (list->vector (reduce append (map vector->list vss) '())))
@@ -958,13 +958,23 @@
   ((set!)
    (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
    `(set (name ,(second e)) ,(third e)))
+  ((either)
+   (if (null? (rest e))
+       '(fail)
+       `(if (a-boolean) ,(second e) (either ,@(rest (rest e))))))
+  ((all-values)
+   (unless (= (length e) 2) (panic (format #f "Invalid expression: ~s" e)))
+   `(all-values-thunk (lambda () ,(second e))))
+  ((local-set!)
+   (unless (= (length e) 3) (panic (format #f "Invalid expression: ~s" e)))
+   `(local-set (name ,(second e)) ,(third e)))
   (else (case (length (rest e))
 	 ((0) `(,(first e) (cons* ,@(rest e))))
 	 ((1) e)
 	 (else `(,(first e) (cons* ,@(rest e))))))))
 
 (define (syntax-check-expression! e)
- (let loop ((e e) (xs *basis-constants*))
+ (let loop ((e e) (xs (map value-binding-variable *value-bindings*)))
   (cond
    ((null? e) (panic (format #f "Invalid expression: ~s" e)))
    ((boolean? e) (loop `',e xs))
@@ -1004,6 +1014,9 @@
      ((and) (loop (macro-expand e) xs))
      ((or) (loop (macro-expand e) xs))
      ((set!) (loop (macro-expand e) xs))
+     ((either) (loop (macro-expand e) xs))
+     ((all-values) (loop (macro-expand e) xs))
+     ((local-set!) (loop (macro-expand e) xs))
      (else (case (length (rest e))
 	    ((0) (loop (macro-expand e) xs))
 	    ((1) (loop (first e) xs)
@@ -1039,6 +1052,9 @@
     ((and) (concrete->abstract-expression (macro-expand e)))
     ((or) (concrete->abstract-expression (macro-expand e)))
     ((set!) (concrete->abstract-expression (macro-expand e)))
+    ((either) (concrete->abstract-expression (macro-expand e)))
+    ((all-values) (concrete->abstract-expression (macro-expand e)))
+    ((local-set!) (concrete->abstract-expression (macro-expand e)))
     (else (case (length (rest e))
 	   ((0) (concrete->abstract-expression (macro-expand e)))
 	   ((1) (new-application (concrete->abstract-expression (first e))
@@ -1179,12 +1195,13 @@
 		    ,(abstract->concrete (closure-body v))))))
 	  (else (fuck-up))))))
   (if *unabbreviate-executably?*
-      `(let* ,(map (lambda (x)
-		    `(,(string->symbol
-			(string-append (symbol->string x)
-				       (symbol->string '-primitive)))
-		      ,x))
-		   *basis-constants*)
+      `(let* ,(map (lambda (b)
+		    (let ((x (value-binding-variable b)))
+		     `(,(string->symbol
+			 (string-append (symbol->string x)
+					(symbol->string '-primitive)))
+		       ,x)))
+		   *value-bindings*)
 	,v)
       v)))
 
@@ -1337,7 +1354,6 @@
     (f x1 (vlad-car x23) (vlad-cdr x23))))))
 
 (define (define-primitive-procedure x procedure)
- (set! *basis-constants* (cons x *basis-constants*))
  (set! *value-bindings*
        (cons (make-value-binding x (make-primitive-procedure x procedure 0))
 	     *value-bindings*)))
@@ -1370,6 +1386,8 @@
  (define-primitive-procedure 'pair? (unary-predicate vlad-pair? "pair?"))
  (define-primitive-procedure 'procedure?
   (unary-predicate vlad-procedure? "procedure?"))
+ (define-primitive-procedure 'equal?
+  (binary (lambda (x1 x2) (if (equal? x1 x2) vlad-true vlad-false)) "equal?"))
  (define-primitive-procedure 'write
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write"))
