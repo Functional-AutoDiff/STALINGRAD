@@ -1,3 +1,4 @@
+baz
 (MODULE STALINGRADLIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
 
