@@ -5804,3 +5804,4 @@
 ;;; Commands
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
+bar
