@@ -89,7 +89,7 @@
 		 (at-most-one ("not-anal" not-anal?))
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
-		  ("length" length? (length "n" integer-argument #f)))
+		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("memoized" memoized?))
 		 (at-most-one ("church" church?))
@@ -108,12 +108,31 @@
 		 (at-most-one
 		  ("l5" l5? (l5 "nonrec-closure-nesting-depth-limit"
 				integer-argument #f)))
+		 (at-most-one
+		  ("matching-nonrecursive-closure-depth"
+		   matching-nonrecursive-closure-depth?))
 		 (at-most-one ("no-anf" no-anf?))
 		 (at-most-one ("single-real" single-real?))
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
+		 (at-most-one
+		  ("only-initialized-flows" only-initialized-flows?)
+		  ("only-updated-bindings" only-updated-bindings?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
+		 (at-most-one
+		  ("debug" debug? (debug-level "level" integer-argument 0)))
+		 (at-most-one ("no-warn" no-warn?))
+		 (at-most-one ("use-alpha-equivalence" use-alpha-equivalence?))
+		 (at-most-one
+		  ("memoize-alpha-matching" memoize-alpha-matching?))
+		 (at-most-one ("memoize-nonrecursive-alpha-matching"
+			       memoize-nonrecursive-alpha-matching?))
+		 (at-most-one
+		  ("bucket-set" bucket-set?
+				(bucket-set "number" integer-argument 0)))
+		 (at-most-one ("new-subset" new-subset?))
+		 (at-most-one ("old-find-path" old-find-path?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -127,9 +146,81 @@
  (when l3? (set! *l3* l3))
  (when l4? (set! *l4* l4))
  (when l5? (set! *l5* l5))
+ (when matching-nonrecursive-closure-depth?
+  (set! *matching-nonrecursive-closure-depth?* #t))
+ (when debug?
+  (set! *debug?* debug?)
+  (set! *debug-level* debug-level))
+ (when no-warn? (set! *warn?* #f))
+ (set! *use-alpha-equivalence?* use-alpha-equivalence?)
+ (set! *memoize-alpha-matching?* memoize-alpha-matching?)
+ (set! *memoize-nonrecursive-alpha-matching?*
+       memoize-nonrecursive-alpha-matching?)
+ (when bucket-set?
+  (set! *bucket-names*
+	(case bucket-set
+	 ((0) '(all
+		abstract-value-subset?
+		widen-abstract-value))
+	 ((1) '(all
+		abstract-value-subset?
+		subset?-matching-us
+		widen-abstract-value
+		widen-nonrecursive-closure
+		widen-recursive-closure
+		widen-limit-depth))
+	 ((2) '(all
+		abstract-value-subset?
+		subset?-matching-us
+		widen-abstract-value
+		widen-nonrecursive-closure
+		widen-recursive-closure
+		widen-limit-depth
+		nonrecursive-closure-alpha-bindings
+		recursive-closure-alpha-bindings))
+	 ((3) '(all
+		abstract-value-subset?
+		subset?-matching-us
+		widen-abstract-value
+		widen-nonrecursive-closure
+		widen-recursive-closure
+		widen-limit-depth
+		alpha-match
+		nonrecursive-closure-alpha-bindings
+		recursive-closure-alpha-bindings))
+	 ((4) '(all
+		abstract-value-subset?
+		subset?-matching-us
+		widen-abstract-value
+		widen-nonrecursive-closure
+		widen-recursive-closure
+		widen-limit-depth
+		alpha-match
+		alpha-match-lookup
+		nonrecursive-closure-alpha-bindings
+		recursive-closure-alpha-bindings))
+	 ((5) '(all
+		abstract-value-subset?
+		subset?-matching-us
+		widen-abstract-value
+		widen-nonrecursive-closure
+		widen-recursive-closure
+		widen-limit-depth
+		find-path-to-collapse
+		reduce-depth!
+		alpha-match
+		alpha-match-lookup
+		nonrecursive-closure-alpha-bindings
+		recursive-closure-alpha-bindings))
+	 (else (panic "undefined bucket set!"))))
+  (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
+ (set! *new-subset* new-subset?)
+ (when old-find-path? (set! *new-find-path?* #f))
  (when no-anf? (set! *anf-convert?* (not no-anf?)))
  (set! *allow-only-single-concrete-real?* single-real?)
  (set! *track-flow-analysis?* track-flow-analysis?)
+ (set! *only-initialized-flows?* only-initialized-flows?)
+ (set! *only-updated-bindings?* only-updated-bindings?)
  (set! *include-prior-values?* (not exclude-prior-values?))
  (initialize-basis!)
  (set! *include-path*
@@ -178,7 +269,7 @@
 	    level
 	    (lambda ()
 	     (with-write-length
-	      length
+	      write-length
 	      (lambda ()
 	       ((if *pp?* pp write)
 		(externalize
