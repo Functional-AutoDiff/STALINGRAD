@@ -1,4 +1,3 @@
-baz
 (MODULE STALINGRADLIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
 
@@ -5805,4 +5804,3 @@ baz
 ;;; Commands
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
-bar
