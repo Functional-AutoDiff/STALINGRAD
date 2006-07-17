@@ -263,7 +263,7 @@
 
 (define *l5* #f)
 
-(define *matching-nonrecursive-closure-depth?* #f)
+(define *depth-measure* #f)
 
 (define *anf-convert?* #t)
 
@@ -283,8 +283,6 @@
 (define *use-alpha-equivalence?* #f)
 (define *memoize-alpha-matching?* #f)
 (define *memoize-nonrecursive-alpha-matching?* #f)
-(define *new-subset* #f)
-(define *new-find-path?* #t)
 
 ;;; Instrumentation
 (define *num-updates* 0)
@@ -3792,15 +3790,236 @@
 ;;; v abstract value
 ;;; x variable
 
-;;; brownfis -- Should we consider introducing specific notation for
-;;;             abstract-environment and -expression bindings?
-;;; i.e.
-;;; xb eXpression binding
-;;; nb eNvironment binding
-;;; b  value binding
-
 ;;; A novel issue with flow analysis for VLAD is that the AD functions create
 ;;; new expressions.
+
+;;; Instrumentation
+
+(define (instrument-reset)
+ (set! *num-calls-abstract-value-union* 0)
+ (set! *num-paths-looked-at* 0)
+ (set! *total-size-paths-looked-at* 0)
+ (set! *num-calls-limit-depth-to* 0)
+ (set! *num-calls-reduce-depth!* 0)
+ (set! *num-calls-abstract-value-subset-loop?* 0)
+ (set! *num-calls-free-variables* 0)
+ ;; update--part 1
+ (set! *num-abstract-environment-bindings* 0)
+ (set! *num-calls-abstract-value-in-matching-abstract-environment-hit* 0)
+ (set! *num-calls-abstract-value-in-matching-abstract-environment-miss* 0)
+ (set! *num-calls-multiply-out-nonrecursive-closure* 0)
+ (set! *num-nonrecursive-closures-multiplied-out* 0)
+ (set! *num-calls-multiply-out-recursive-closure* 0)
+ (set! *num-recursive-closures-multiplied-out* 0)
+ ;; update--part 2
+ (set! *num-calls-abstract-analysis-union* 0)
+ (set! *num-abstract-expression-bindings-in-analysis-unions* 0)
+ (set! *num-calls-create-abstract-analysis* 0)
+ (set! *time-in-widen* 0)
+ (set! *time-in-l2* 0)
+ (set! *time-in-l3* 0)
+ (set! *time-in-l4* 0)
+ (set! *time-in-l5* 0)
+ (set! *time-in-generic-union* 0)
+ (set! *time-in-match-us* 0)
+ (set! *time-in-union-us* 0)
+ (set! *time-in-loop* 0))
+
+(define (instrument-report)
+ (format #t "*num-calls-abstract-value-union*=~s~%"
+	 *num-calls-abstract-value-union*)
+ (format #t "*num-paths-looked-at*=~s~%" *num-paths-looked-at*)
+ (format #t "*total-size-paths-looked-at*=~s~%" *total-size-paths-looked-at*)
+ (format #t "*num-calls-limit-depth-to*=~s~%" *num-calls-limit-depth-to*)
+ (format #t "*num-calls-reduce-depth!*=~s~%" *num-calls-reduce-depth!*)
+ (format #t "*num-calls-abstract-value-subset*=~s~%"
+	 *num-calls-abstract-value-subset*)
+ (format #t "*num-calls-abstract-value-subset-loop?*=~s~%"
+	 *num-calls-abstract-value-subset-loop?*)
+ (format #t "*num-calls-free-variables*=~s~%" *num-calls-free-variables*)
+ ;; update--part 1
+ (format #t "*num-abstract-environment-bindings*=~s~%"
+	 *num-abstract-environment-bindings*)
+ (format
+  #t
+  "*num-calls-abstract-value-in-matching-abstract-environment-hit*=~s~%"
+  *num-calls-abstract-value-in-matching-abstract-environment-hit*)
+ (format
+  #t
+  "*num-calls-abstract-value-in-matching-abstract-environment-miss*=~s~%"
+  *num-calls-abstract-value-in-matching-abstract-environment-miss*)
+ (format #t "*num-calls-multiply-out-nonrecursive-closure*=~s~%"
+	 *num-calls-multiply-out-nonrecursive-closure*)
+ (format #t "*num-nonrecursive-closures-multiplied-out*=~s~%"
+	 *num-nonrecursive-closures-multiplied-out*)
+ (format #t "*num-calls-multiply-out-recursive-closure*=~s~%"
+	 *num-calls-multiply-out-recursive-closure*)
+ (format #t "*num-recursive-closures-multiplied-out*=~s~%"
+	 *num-recursive-closures-multiplied-out*)
+ ;; update--part 2
+ (format #t "*num-calls-abstract-analysis-union*=~s~%"
+	 *num-calls-abstract-analysis-union*)
+ (format #t "*num-abstract-expression-bindings-in-analysis-unions*=~s~%"
+	 *num-abstract-expression-bindings-in-analysis-unions*)
+ (format #t "*num-calls-create-abstract-analysis*=~s~%"
+	 *num-calls-create-abstract-analysis*)
+ (if (zero? *time-in-widen*)
+     (let* ((time-in-difference (- *time-in-widen*
+				   *time-in-l2*
+				   *time-in-l3*
+				   *time-in-l4*
+				   *time-in-l5*)))
+      (format #t "time in widen: ~s~%" *time-in-widen*)
+      (format #t "  time in l2: ~s~%" *time-in-l2*)
+      (format #t "  time in l3: ~s~%" *time-in-l3*)
+      (format #t "  time in l4: ~s~%" *time-in-l4*)
+      (format #t "  time in l5: ~s~%" *time-in-l5*)
+      (format #t "  time in difference: ~s~%" time-in-difference))
+     (let* ((time-in-difference (- *time-in-widen*
+				   *time-in-l2*
+				   *time-in-l3*
+				   *time-in-l4*
+				   *time-in-l5*))
+	    (time-in-l2-norm (/ *time-in-l2* *time-in-widen*))
+	    (time-in-l3-norm (/ *time-in-l3* *time-in-widen*))
+	    (time-in-l4-norm (/ *time-in-l4* *time-in-widen*))
+	    (time-in-l5-norm (/ *time-in-l5* *time-in-widen*))
+	    (time-in-difference-norm
+	     (/ time-in-difference *time-in-widen*)))
+      (format #t "time in widen: ~s~%" *time-in-widen*)
+      (format #t "  time in l2: ~s (~s)~%" *time-in-l2* time-in-l2-norm)
+      (format #t "  time in l3: ~s (~s)~%" *time-in-l3* time-in-l3-norm)
+      (format #t "  time in l4: ~s (~s)~%" *time-in-l4* time-in-l4-norm)
+      (format #t "  time in l5: ~s (~s)~%" *time-in-l5* time-in-l5-norm)
+      (format #t "  time in difference: ~s (~s)~%"
+	      time-in-difference time-in-difference-norm)))
+ (format #t "time in generic-union: ~s~%" *time-in-generic-union*)
+ (format #t "time in subset?: ~s~%" *time-in-subset*)
+ (format #t "  time in match-us: ~s~%" *time-in-match-us*)
+ (format #t "  time in union-us: ~s~%" *time-in-union-us*)
+ (format #t "  time in loop: ~s~%" *time-in-loop*))
+
+(define (collect-time-in-buckets bucket thunk)
+ (let ((i (positionq bucket *bucket-names*)))
+  (if (eq? #f i)
+      (thunk)
+      (begin
+       (set! *bucket-stack* (cons i *bucket-stack*))
+       (let* ((start (clock-sample))
+	      (result (thunk))
+	      (end (clock-sample))
+	      (time-elapsed (- end start)))
+	(set! *bucket-stack* (rest *bucket-stack*))
+	(when (not (null? *bucket-stack*))
+	 (let ((j (first *bucket-stack*)))
+	  (vector-set!
+	   *time-buckets* j (- (vector-ref *time-buckets* j) time-elapsed))))
+	(vector-set!
+	 *time-buckets* i (+ (vector-ref *time-buckets* i) time-elapsed))
+	result)))))
+
+(define (report-bucket-times)
+ (let ((total-time
+	(reduce-vector
+	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
+  (format #t "Total time in all buckets: ~a~%"
+	  (number->string-of-length-and-precision total-time 8 2))
+  (for-each
+   (lambda (bucket-name bucket)
+    (format
+     #t "  time in ~s=~a (~a% total)~%"
+     bucket-name
+     (number->string-of-length-and-precision bucket 8 2)
+     (if (and (positive? bucket) (positive? total-time))
+	 (number->string-of-length-and-precision
+	  (* 100 (/ bucket total-time)) 6 2)
+	 #f)))
+   *bucket-names*
+   (vector->list *time-buckets*))))
+
+(define *alpha-match-cache-hits* 0)
+(define *hits-constant* 0)
+(define *hits-variable* 0)
+(define *hits-lambda* 0)
+(define *hits-application* 0)
+(define *hits-letrec* 0)
+(define *alpha-match-cache-misses* 0)
+(define *misses-constant* 0)
+(define *misses-variable* 0)
+(define *misses-lambda* 0)
+(define *misses-application* 0)
+(define *misses-letrec* 0)
+
+(define (update-hits! e)
+ (set! *alpha-match-cache-hits* (+ *alpha-match-cache-hits* 1))
+ (cond ((constant-expression? e) (set! *hits-constant* (+ *hits-constant* 1)))
+       ((variable-access-expression? e)
+	(set! *hits-variable* (+ *hits-variable* 1)))
+       ((lambda-expression? e) (set! *hits-lambda* (+ *hits-lambda* 1)))
+       ((application? e) (set! *hits-application* (+ *hits-application* 1)))
+       ((letrec-expression? e) (set! *hits-letrec* (+ *hits-letrec* 1)))
+       (else (panic "Invalid expression!"))))
+
+(define (update-misses! e)
+ (set! *alpha-match-cache-misses* (+ *alpha-match-cache-misses* 1))
+ (cond ((constant-expression? e)
+	(set! *misses-constant* (+ *misses-constant* 1)))
+       ((variable-access-expression? e)
+	(set! *misses-variable* (+ *misses-variable* 1)))
+       ((lambda-expression? e) (set! *misses-lambda* (+ *misses-lambda* 1)))
+       ((application? e)
+	(set! *misses-application* (+ *misses-application* 1)))
+       ((letrec-expression? e) (set! *misses-letrec* (+ *misses-letrec* 1)))
+       (else (panic "Invalid expression!"))))
+
+(define (reset-cache-performance)
+ (set! *alpha-match-cache-hits* 0)
+ (set! *hits-constant* 0)
+ (set! *hits-variable* 0)
+ (set! *hits-lambda* 0)
+ (set! *hits-application* 0)
+ (set! *hits-letrec* 0)
+ (set! *alpha-match-cache-misses* 0)
+ (set! *misses-constant* 0)
+ (set! *misses-variable* 0)
+ (set! *misses-lambda* 0)
+ (set! *misses-application* 0)
+ (set! *misses-letrec* 0))
+
+(define (report-cache-performance)
+ (let ((total-calls (+ *alpha-match-cache-hits* *alpha-match-cache-misses*))
+       (total-constant (+ *hits-constant* *misses-constant*))
+       (total-variable (+ *hits-variable* *misses-variable*))
+       (total-lambda (+ *hits-lambda* *misses-lambda*))
+       (total-application (+ *hits-application* *misses-application*))
+       (total-letrec (+ *hits-letrec* *misses-letrec*))
+       (div (lambda (x y) (if (zero? y) #f (/ x y)))))
+  (format #t "Total alpha-match calls: ~s~%" total-calls)
+  (format #t "Total alpha-match hit/miss     = ~s/~s (~s/~s)~%"
+	  *alpha-match-cache-hits* *alpha-match-cache-misses*
+	  (div *alpha-match-cache-hits* total-calls)
+	  (div *alpha-match-cache-misses* total-calls))
+  (format #t "  constant-expression hit/miss = ~s/~s (~s/~s)~%"
+	  *hits-constant* *misses-constant*
+	  (div *hits-constant* total-constant)
+	  (div *misses-constant* total-constant))
+  (format #t "  variable-access   hit/miss   = ~s/~s (~s/~s)~%"
+	  *hits-variable* *misses-variable*
+	  (div *hits-variable* total-variable)
+	  (div *misses-variable* total-variable))
+  (format #t "  lambda-expression hit/miss   = ~s/~s (~s/~s)~%"
+	  *hits-lambda* *misses-lambda*
+	  (div *hits-lambda* total-lambda) (div *misses-lambda* total-lambda))
+  (format #t "  application hit/miss         = ~s/~s (~s/~s)~%"
+	  *hits-application* *misses-application*
+	  (div *hits-application* total-application)
+	  (div *misses-application* total-application))
+  (format #t "  letrec-expression hit/miss   = ~s/~s (~s/~s)~%"
+	  *hits-letrec* *misses-letrec*
+	  (div *hits-letrec* total-letrec)
+	  (div *misses-letrec* total-letrec))))
+
+;;; \Instrumentation
 
 (define (recursive-closure-procedure-lambda-expressions v)
  (map-vector (lambda (x e) (new-lambda-expression x e))
@@ -3808,6 +4027,7 @@
 	     (recursive-closure-bodies v)))
 
 ;;; Expression Alpha Equivalence
+;;;
 ;;; This is only used to define value equivalence. alpha-match and
 ;;; abstract-recursive-closure-alpha-bindings are the only procedures used
 ;;; outside this section. The former is used for nonrecursive closures and the
@@ -3839,8 +4059,6 @@
  (cond ((or (eq? bs1 #f) (eq? bs2 #f)) #f)
        ((null? bs1) bs2)
        (else (merge-bindings (rest bs1) (merge-binding (first bs1) bs2)))))
-
-;;; brownfis -- added
 
 (define (expression-eqv? e1 e2)
  (or (eq? e1 e2)
@@ -3971,88 +4189,6 @@
 			(variable=? (alpha-binding-variable2 b) (first xs2))))
 		  bs))))))
   (else #f)))
-
-(define *alpha-match-cache-hits* 0)
-(define *hits-constant* 0)
-(define *hits-variable* 0)
-(define *hits-lambda* 0)
-(define *hits-application* 0)
-(define *hits-letrec* 0)
-(define *alpha-match-cache-misses* 0)
-(define *misses-constant* 0)
-(define *misses-variable* 0)
-(define *misses-lambda* 0)
-(define *misses-application* 0)
-(define *misses-letrec* 0)
-
-(define (update-hits! e)
- (set! *alpha-match-cache-hits* (+ *alpha-match-cache-hits* 1))
- (cond ((constant-expression? e) (set! *hits-constant* (+ *hits-constant* 1)))
-       ((variable-access-expression? e)
-	(set! *hits-variable* (+ *hits-variable* 1)))
-       ((lambda-expression? e) (set! *hits-lambda* (+ *hits-lambda* 1)))
-       ((application? e) (set! *hits-application* (+ *hits-application* 1)))
-       ((letrec-expression? e) (set! *hits-letrec* (+ *hits-letrec* 1)))
-       (else (panic "Invalid expression!"))))
-
-(define (update-misses! e)
- (set! *alpha-match-cache-misses* (+ *alpha-match-cache-misses* 1))
- (cond ((constant-expression? e)
-	(set! *misses-constant* (+ *misses-constant* 1)))
-       ((variable-access-expression? e)
-	(set! *misses-variable* (+ *misses-variable* 1)))
-       ((lambda-expression? e) (set! *misses-lambda* (+ *misses-lambda* 1)))
-       ((application? e)
-	(set! *misses-application* (+ *misses-application* 1)))
-       ((letrec-expression? e) (set! *misses-letrec* (+ *misses-letrec* 1)))
-       (else (panic "Invalid expression!"))))
-
-(define (reset-cache-performance)
- (set! *alpha-match-cache-hits* 0)
- (set! *hits-constant* 0)
- (set! *hits-variable* 0)
- (set! *hits-lambda* 0)
- (set! *hits-application* 0)
- (set! *hits-letrec* 0)
- (set! *alpha-match-cache-misses* 0)
- (set! *misses-constant* 0)
- (set! *misses-variable* 0)
- (set! *misses-lambda* 0)
- (set! *misses-application* 0)
- (set! *misses-letrec* 0))
-
-(define (report-cache-performance)
- (let ((total-calls (+ *alpha-match-cache-hits* *alpha-match-cache-misses*))
-       (total-constant (+ *hits-constant* *misses-constant*))
-       (total-variable (+ *hits-variable* *misses-variable*))
-       (total-lambda (+ *hits-lambda* *misses-lambda*))
-       (total-application (+ *hits-application* *misses-application*))
-       (total-letrec (+ *hits-letrec* *misses-letrec*))
-       (div (lambda (x y) (if (zero? y) #f (/ x y)))))
-  (format #t "Total alpha-match calls: ~s~%" total-calls)
-  (format #t "Total alpha-match hit/miss     = ~s/~s (~s/~s)~%"
-	  *alpha-match-cache-hits* *alpha-match-cache-misses*
-	  (div *alpha-match-cache-hits* total-calls)
-	  (div *alpha-match-cache-misses* total-calls))
-  (format #t "  constant-expression hit/miss = ~s/~s (~s/~s)~%"
-	  *hits-constant* *misses-constant*
-	  (div *hits-constant* total-constant)
-	  (div *misses-constant* total-constant))
-  (format #t "  variable-access   hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-variable* *misses-variable*
-	  (div *hits-variable* total-variable)
-	  (div *misses-variable* total-variable))
-  (format #t "  lambda-expression hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-lambda* *misses-lambda*
-	  (div *hits-lambda* total-lambda) (div *misses-lambda* total-lambda))
-  (format #t "  application hit/miss         = ~s/~s (~s/~s)~%"
-	  *hits-application* *misses-application*
-	  (div *hits-application* total-application)
-	  (div *misses-application* total-application))
-  (format #t "  letrec-expression hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-letrec* *misses-letrec*
-	  (div *hits-letrec* total-letrec)
-	  (div *misses-letrec* total-letrec))))
 
 (define alpha-match-memoized-old
  (let ((cache '()))
@@ -4187,8 +4323,6 @@
 	     (cache-result! e1 e2 result)
 	     (cache-result! e2 e1 (swap-alpha-bindings result))
 	     result)))))))
-
-;;; brownfis -- end added
 
 (define (alpha-match-not-memoized e1 e2)
  (cond
@@ -4408,6 +4542,8 @@
     (make-letrec-expression-from-recursive-closure u1)
     (make-letrec-expression-from-recursive-closure u2)))))
 
+;;; \Expression Alpha Equivalence
+
 ;;; Abstract-Analysis Access
 
 (define (expression-abstract-flow e bs)
@@ -4433,22 +4569,10 @@
        ((real? u) u)
        ((eq? u 'real) u)
        ((primitive-procedure? u) u)
-       ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 (map-vector (lambda (v) (cyclicize-abstract-value-internal v vs))
-		     (nonrecursive-closure-values u))
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
-       ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 (map-vector (lambda (v) (cyclicize-abstract-value-internal v vs))
-		     (recursive-closure-values u))
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
+       ((or (nonrecursive-closure? u) (recursive-closure? u))
+	(make-closure-with-new-values
+	 u (map-vector (lambda (v) (cyclicize-abstract-value-internal v vs))
+		       (closure-values u))))
        (else (fuck-up))))
 
 (define (cyclicize-abstract-value-internal v vs)
@@ -4477,22 +4601,10 @@
        ((real? u) u)
        ((eq? u 'real) u)
        ((primitive-procedure? u) u)
-       ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 (map-vector (lambda (v) (uncyclicize-abstract-value-internal v vs))
-		     (nonrecursive-closure-values u))
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
-       ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 (map-vector (lambda (v) (uncyclicize-abstract-value-internal v vs))
-		     (recursive-closure-values u))
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
+       ((or (nonrecursive-closure? u) (recursive-closure? u))
+	(make-closure-with-new-values
+	 u (map-vector (lambda (v) (uncyclicize-abstract-value-internal v vs))
+		       (closure-values u))))
        (else (fuck-up))))
 
 (define (uncyclicize-abstract-value-internal v vs)
@@ -4509,342 +4621,6 @@
  (uncyclicize-abstract-value-internal v '()))
 
 ;;; (Proto) Abstract-Value Subset, Equivalence, and Union
-
-(define (every-c c f . ls)
- (if (null? (first ls))
-     c
-     (let ((c (apply f c (map first ls))))
-      (if (eq? c #f) #f (apply every-c c f (map rest ls))))))
-
-(define (some-c c f . ls)
- (if (null? (first ls))
-     #f
-     (let ((c-prime (apply f c (map first ls))))
-      (if (eq? c-prime #f) (apply some-c c f (map rest ls)) c-prime))))
-
-(define (remove-if-not-c c p l)
- (if (null? l)
-     (list c '())
-     (let ((result (p c (first l))))
-      (if (eq? result #f)
-	  (remove-if-not-c c p (rest l))
-	  (let ((result (remove-if-not-c result p (rest l))))
-	   (list (first result) (cons (first l) (second result))))))))
-
-(define (abstract-value-subset?-new v1 v2)
- (set! *num-calls-abstract-value-subset*
-       (+ *num-calls-abstract-value-subset* 1))
- (when #f (format #t "(~s,~s)~%" (externalize-abstract-value v1)
-		  (externalize-abstract-value v2)))
- (collect-total-time-spent-in
-  (lambda (t) (set! *time-in-subset* (+ *time-in-subset* t)))
-  (lambda ()
-   (not
-    (eq?
-     #f
-     (let loop? ((v1 v1) (v2 v2) (cs '()))
-      (set! *num-calls-abstract-value-subset-loop?*
-	    (+ *num-calls-abstract-value-subset-loop?* 1))
-      (when (and *debug?* (> *debug-level* 4))
-       (format #t "(subset?~%")
-       (pp (externalize-abstract-value v1)) (newline)
-       (pp (externalize-abstract-value v2))
-       (format #t ")~%"))
-      (cond
-       ((null? v1) cs)
-       ((null? v2) #f)
-       ((some (lambda (c)
-	       (and (set-equalp? eq? v1 (car c)) (set-equalp? eq? v2 (cdr c))))
-	      cs)
-	cs)
-       (else
-	(let ((cs (cons (cons v1 v2) cs)))
-	 (every-c
-	  cs
-	  (lambda (cs u1)
-	   (cond ((null? u1)
-		  (some-c cs (lambda (cs u2) (if (null? u2) cs #f)) v2))
-		 ((eq? u1 #t)
-		  (some-c cs (lambda (cs u2) (if (eq? u2 #t) cs #f)) v2))
-		 ((eq? u1 #f)
-		  (some-c cs (lambda (cs u2) (if (eq? u2 #f) cs #f)) v2))
-		 ((real? u1)
-		  (some-c
-		   cs
-		   (lambda (cs u2)
-		    (if (or (and (real? u2) (= u1 u2)) (eq? u2 'real)) cs #f))
-		   v2))
-		 ((eq? u1 'real)
-		  (some-c cs (lambda (cs u2) (if (eq? u2 'real) cs #f)) v2))
-		 ((primitive-procedure? u1)
-		  (some-c
-		   cs
-		   (lambda (cs u2)
-		    (if (and (primitive-procedure? u2) (eq? u1 u2)) cs #f))
-		   v2))
-		 ((nonrecursive-closure? u1)
-		  (let ((vs1 (nonrecursive-closure-values u1)))
-		   (if
-		    (= (vector-length vs1) 0)
-		    (some-c
-		     cs
-		     (lambda (cs u2)
-		      (if (and (nonrecursive-closure? u2)
-			       (= (vector-length
-				   (nonrecursive-closure-values u2))
-				  0)
-			       (nonrecursive-closure-match? u1 u2))
-			  cs
-			  #f))
-		     v2)
-		    (some-c
-		     cs
-		     (lambda (cs i)
-		      (let* ((cs-and-us
-			      (remove-if-not-c
-			       cs
-			       (lambda (cs u2)
-				(if (and (nonrecursive-closure? u2)
-					 (nonrecursive-closure-match? u1 u2))
-				    (let
-				      ((vs2-matching
-					(nonrecursive-closure-values-matching
-					 u1 u2)))
-				     (every-c
-				      cs
-				      (lambda (cs j)
-				       (if (= i j)
-					   cs
-					   (loop? (vector-ref vs1 j)
-						  (vector-ref vs2-matching j)
-						  cs)))
-				      (enumerate (vector-length vs1))))
-				    #f))
-			       v2))
-			     (cs (first cs-and-us))
-			     (us-matching-all-but-u1_i (second cs-and-us))
-			     (v1-new (vector-ref vs1 i))
-			     (v2-new
-			      (reduce
-			       abstract-value-union
-			       (map
-				(lambda (u)
-				 (vector-ref
-				  (nonrecursive-closure-values-matching u1 u)
-				  i))
-				us-matching-all-but-u1_i)
-			       (empty-abstract-value))))
-		       (loop? v1-new v2-new cs)))
-		     (enumerate (vector-length vs1))))))
-		 ;; needs work: update this with stuff from
-		 ;;             nonrecursive-closure
-		 ((recursive-closure? u1)
-		  (let ((vs1 (recursive-closure-values u1)))
-		   (if
-		    (= (vector-length vs1) 0)
-		    (some-c
-		     cs
-		     (lambda (cs u2)
-		      (if (and (recursive-closure? u2)
-			       (= (vector-length (recursive-closure-values u2))
-				  0)
-			       (recursive-closure-match? u1 u2))
-			  cs
-			  #f))
-		     v2)
-		    (some-c
-		     cs
-		     (lambda (cs i)
-		      (let* ((cs-and-us
-			      (remove-if-not-c
-			       cs
-			       (lambda (cs u2)
-				(if (and (recursive-closure? u2)
-					 (recursive-closure-match? u1 u2))
-				    (let ((vs2-matching
-					   (recursive-closure-values-matching
-					    u1 u2)))
-				     (every-c
-				      cs
-				      (lambda (cs j)
-				       (if (= i j)
-					   cs
-					   (loop? (vector-ref vs1 j)
-						  (vector-ref vs2-matching j)
-						  cs)))
-				      (enumerate (vector-length vs1))))
-				    #f))
-			       v2))
-			     (cs (first cs-and-us))
-			     (us-matching-all-but-u1_i (second cs-and-us)))
-		       (loop? (vector-ref vs1 i)
-			      (reduce
-			       abstract-value-union
-			       (map
-				(lambda (u)
-				 (vector-ref
-				  (recursive-closure-values-matching u1 u)
-				  i))
-				us-matching-all-but-u1_i)
-			       (empty-abstract-value))
-			      cs)))
-		     (enumerate (vector-length vs1))))))
-		 ((bundle? u1)
-		  (panic (string-append "abstract-value-subset? not defined "
-					" (yet) for bundles!")))
-		 ((reverse-tagged-value? u1)
-		  (panic (string-append "abstract-value-subset? not defined "
-					" (yet) for reverse-tagged-values!")))
-		 (else #f)))
-	  v1))))))))))
-
-(define (abstract-value-subset?-old v1 v2)
- (set! *num-calls-abstract-value-subset*
-       (+ *num-calls-abstract-value-subset* 1))
- (when (and *debug?* (> *debug-level* 4))
-  (format #t "subset-top!~%"))
- (collect-time-in-buckets
-  'abstract-value-subset?
-  (lambda ()
-   (let loop? ((v1 v1) (v2 v2) (cs '()))
-    (set! *num-calls-abstract-value-subset-loop?*
-	  (+ *num-calls-abstract-value-subset-loop?* 1))
-    (when (and *debug?* (> *debug-level* 4))
-     (format #t "(subset?~%")
-     (pp (externalize-abstract-value v1)) (newline)
-     (pp (externalize-abstract-value v2))
-     (format #t ")~%"))
-    (cond
-     ((null? v1) #t)
-     ((null? v2) #f)
-     ((some (lambda (c)
-	     (and (set-equalp? eq? v1 (car c)) (set-equalp? eq? v2 (cdr c))))
-	    cs)
-      #t)
-     (else
-      (let ((cs (cons (cons v1 v2) cs)))
-       (every
-	(lambda (u1)
-	 (cond ((null? u1) (some null? v2))
-	       ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
-	       ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
-	       ((real? u1)
-		(some (lambda (u2)
-		       (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
-		      v2))
-	       ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
-	       ((primitive-procedure? u1)
-		(some (lambda (u2) (and (primitive-procedure? u2) (eq? u1 u2)))
-		      v2))
-	       ((nonrecursive-closure? u1)
-		(let ((vs1 (nonrecursive-closure-values u1)))
-		 (if
-		  (= (vector-length vs1) 0)
-		  (some
-		   (lambda (u2)
-		    (and (nonrecursive-closure? u2)
-			 (= (vector-length (nonrecursive-closure-values u2)) 0)
-			 (nonrecursive-closure-match? u1 u2)))
-		   v2)
-		  (some-n
-		   (lambda (i)
-		    (let* ((us-matching-all-but-u1_i
-			    ;; to-do: instrument
-			    (collect-time-in-buckets
-			     'subset?-matching-us
-			     (lambda ()
-			      (remove-if-not
-			       (lambda (u2)
-				(if (and (nonrecursive-closure? u2)
-					 (nonrecursive-closure-match? u1 u2))
-				    (let
-				      ((vs2-matching
-					(nonrecursive-closure-values-matching
-					 u1 u2)))
-				     (every-n
-				      (lambda (j)
-				       (if (= i j)
-					   #t
-					   (loop?
-					    (vector-ref vs1 j)
-					    (vector-ref vs2-matching j)
-					    cs)))
-				      (vector-length vs1)))
-				    #f))
-			       v2))))
-			   (v1-new (vector-ref vs1 i))
-			   (v2-new
-			    (reduce
-			     abstract-value-union
-			     (map
-			      (lambda (u)
-			       (vector-ref
-				(nonrecursive-closure-values-matching u1 u)
-				i))
-			      us-matching-all-but-u1_i)
-			     (empty-abstract-value))))
-		     (loop? v1-new v2-new cs)))
-		   (vector-length vs1)))))
-	       ;; needs work: update this with stuff from nonrecursive-closure
-	       ((recursive-closure? u1)
-		(let ((vs1 (recursive-closure-values u1)))
-		 (if
-		  (= (vector-length vs1) 0)
-		  (some
-		   (lambda (u2)
-		    (and (recursive-closure? u2)
-			 (= (vector-length (recursive-closure-values u2)) 0)
-			 (recursive-closure-match? u1 u2)))
-
-		   v2)
-		  (some-n
-		   (lambda (i)
-		    (let ((us-matching-all-but-u1_i
-			   (remove-if-not
-			    (lambda (u2)
-			     (if (and (recursive-closure? u2)
-				      (recursive-closure-match? u1 u2))
-				 (let ((vs2-matching
-					(recursive-closure-values-matching
-					 u1 u2)))
-				  (every-n
-				   (lambda (j)
-				    (if (= i j)
-					#t
-					(loop?
-					 (vector-ref vs1 j)
-					 (vector-ref vs2-matching j)
-					 cs)))
-				   (vector-length vs1)))
-				 #f))
-			    v2)))
-		     (loop? (vector-ref vs1 i)
-			    (reduce
-			     abstract-value-union
-			     (map
-			      (lambda (u)
-			       (vector-ref
-				(recursive-closure-values-matching u1 u)
-				i))
-			      us-matching-all-but-u1_i)
-			     (empty-abstract-value))
-			    cs)))
-		   (vector-length vs1)))))
-	       ((bundle? u1)
-		(panic (string-append "abstract-value-subset? not defined "
-				      " (yet) for bundles!")))
-	       ((reverse-tagged-value? u1)
-		(panic (string-append "abstract-value-subset? not defined "
-				      " (yet) for reverse-tagged-values!")))
-	       (else #f)))
-	v1))))))))
-
-(define (abstract-value-subset? v1 v2)
- (if *new-subset*
-     (abstract-value-subset?-new v1 v2)
-     (let ((result (abstract-value-subset?-old v1 v2)))
-      (when *debug?* (format #t ")~%"))
-      result)))
 
 (define (proto-abstract-value-subset? u1 u2)
  (abstract-value-subset? (list u1) (list u2)))
@@ -4869,6 +4645,129 @@
 
 ;;; Abstract Value Union
 
+;;; Variables
+
+;;; \Variables
+
+;;; General
+
+(define (duplicatesp? p xs)
+ (and (not (null? xs))
+      (or (memp p (first xs) (rest xs)) (duplicatesp? p (rest xs)))))
+
+(define (replaceq x x-prime l) (list-replace l (positionq x l) x-prime))
+
+(define (minimal-elements <? s)
+ ;; belongs in QobiScheme
+ (remove-if (lambda (e) (some (lambda (e-prime) (<? e-prime e)) s)) s))
+
+(define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
+
+(define (cross-product . &vs)
+ (if (null? &vs)
+     '()
+     ;; (LIST (LIST* (LIST* u))) x (LIST* u) -> (LIST (LIST* (LIST* u)))
+     (reduce (lambda (vss v)
+	      (reduce append
+		      (map (lambda (vs)
+			    (map (lambda (u) (append vs `((,u))))
+				 v))
+			   vss)
+		      '()))
+	     (cons (map (compose list list) (first &vs)) (rest &vs))
+	     '())))
+
+(define (abstract-value-size v)
+ (let outer ((v v) (vs-above '()))
+  (if (memq v vs-above)
+      (list 0 0)
+      (let inner
+	((vs-to-explore
+	  (reduce
+	   append
+	   (map
+	    (lambda (u)
+	     (cond ((nonrecursive-closure? u)
+		    (vector->list (nonrecursive-closure-values u)))
+		   ((recursive-closure? u)
+		    (vector->list (recursive-closure-values u)))
+		   (else '())))
+	    v)
+	   '()))
+	 (num-vs 1)
+	 (num-us (length v)))
+       (if (null? vs-to-explore)
+	   (list num-vs num-us)
+	   (let ((result (outer (first vs-to-explore) (cons v vs-above))))
+	    (inner (rest vs-to-explore)
+		   (+ num-vs (first result))
+		   (+ num-us (second result)))))))))
+
+(define (abstract-environment-binding-values b)
+ (cons (abstract-environment-binding-abstract-value b)
+       (vector->list (abstract-environment-binding-abstract-values b))))
+
+(define (abstract-flow-values bs)
+ (reduce append (map abstract-environment-binding-values bs) '()))
+
+(define (abstract-expression-binding-values b)
+ (abstract-flow-values (abstract-expression-binding-abstract-flow b)))
+
+(define (abstract-analysis-values bs)
+ (reduce append (map abstract-expression-binding-values bs) '()))
+
+(define (process-nodes-in-abstract-value-tree f v v-context)
+ (if (up? v)
+     v
+     (let ((v-new (f v v-context)))
+      (let loop ((us v-new) (us-new '()))
+       (if (null? us)
+	   (reverse us-new)
+	   (let ((u (first us)))
+	    (cond ((or (null? u)
+		       (boolean? u)
+		       (abstract-real? u)
+		       (primitive-procedure? u))
+		   (loop (rest us) (cons u us-new)))
+		  ((or (nonrecursive-closure? u) (recursive-closure? u))
+		   (let ((u-context (cons v v-context)))
+		    (loop (rest us)
+			  (cons
+			   (make-closure-with-new-values
+			    u
+			    (map-vector
+			     (lambda (v) (process-nodes-in-abstract-value-tree
+					  f v u-context))
+			     (closure-values u)))
+			   us-new))))
+		  (else (panic "Not a proto-abstract-value")))))))))
+
+;;; \General
+
+;;; Closure Procedures
+
+(define (closure-values u)
+ (cond ((nonrecursive-closure? u) (nonrecursive-closure-values u))
+       ((recursive-closure? u) (recursive-closure-values u))
+       (else (panic "Not a closure!"))))
+
+(define (make-closure-with-new-values u vs)
+ (cond ((nonrecursive-closure? u)
+	(make-nonrecursive-closure
+	 (nonrecursive-closure-variables u)
+	 vs
+	 (nonrecursive-closure-variable u)
+	 (nonrecursive-closure-body u)))
+       ((recursive-closure? u)
+	(make-recursive-closure
+	 (recursive-closure-variables u)
+	 vs
+	 (recursive-closure-procedure-variables u)
+	 (recursive-closure-argument-variables u)
+	 (recursive-closure-bodies u)
+	 (recursive-closure-index u)))
+       (else (panic "Not a closure!"))))
+
 (define (reorder-environment-to-match bs xs1 xs2 vs2)
  (list->vector
   (map (lambda (x1)
@@ -4884,8 +4783,6 @@
      (not (eq? (nonrecursive-closure-alpha-bindings u1 u2) #f))
      (and (variable=? (nonrecursive-closure-variable u1)
 		      (nonrecursive-closure-variable u2))
-	  ; 	  (eq? (nonrecursive-closure-body u1)
-	  ; 	       (nonrecursive-closure-body u2)))))
 	  (expression-eqv? (nonrecursive-closure-body u1)
 			   (nonrecursive-closure-body u2)))))
 
@@ -4908,9 +4805,6 @@
 	  (every-vector eq?
 			(recursive-closure-procedure-variables u1)
 			(recursive-closure-procedure-variables u2))
-	  ; 	  (every-vector eq?
-	  ; 			(recursive-closure-bodies u1)
-	  ; 			(recursive-closure-bodies u2)))))
 	  (every-vector expression-eqv?
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
@@ -4923,766 +4817,273 @@
 				   (recursive-closure-values u2))
      (recursive-closure-values u2)))
 
-;; needs work: to support both alpha/eq? equivalence--now supports alpha only
-(define (naive-nonrecursive-closure-coalescing-strategy us)
- (let ((u1 (first us))
-       (u2 (second us)))
-  (cons (make-nonrecursive-closure
-	 (nonrecursive-closure-variables u1)
-	 (abstract-environment-union
-	  (nonrecursive-closure-values u1)
-	  (nonrecursive-closure-values-matching u1 u2))
-	 (nonrecursive-closure-variable u1)
-	 (nonrecursive-closure-body u1))
-	(rest (rest us)))))
+;;; \Closure Procedures
 
-;; needs work: to support both alpha/eq? equivalence--now supports alpha only
-(define (naive-recursive-closure-coalescing-strategy us)
- (let ((u1 (first us))
-       (u2 (second us)))
-  (cons (make-recursive-closure
-	 (recursive-closure-variables u1)
-	 (abstract-environment-union
-	  (recursive-closure-values u1)
-	  (recursive-closure-values-matching u1 u2))
-	 (recursive-closure-procedure-variables u1)
-	 (recursive-closure-argument-variables u1)
-	 (recursive-closure-bodies u1)
-	 (recursive-closure-index u1))
-	(rest (rest us)))))
+;;; Widen
 
-;;; k:  maximum number of matching proto-abstract values we wish to have in us.
-;;; us: a list of matching proto-abstract values
-;;; coalesce-once: a procedure taking a list of proto-abstract values and
-;;;                returning a list with strictly less proto-abstract values
-;;;                and a potentially wider extension.
-;;;
-;;; Note that the concept of "matching" proto-abstract values depends on what
-;;; sort of values are being considered:
-;;;  - all real values match
-;;;  - nonrecursive closures match when nonrecursive-closure-match? is true
-;;;  - recursive closures match when recursive-closure-match? is true
-;;; Matching isn't enforced in this procedure; rather, it is expected that the
-;;; caller provide a list (us) of matching proto-abstract values and that the
-;;; caller also provide a function (coalesce-once) which returns only lists
-;;; of matching proto-abstract values.
-(define (limit-to-k-matching-proto-abstract-values k us coalesce-once)
- (if (<= (length us) k)
-     us
-     (limit-to-k-matching-proto-abstract-values
-      k (coalesce-once us) coalesce-once)))
+;;; Widen->General
 
-;;; Depth limits
+;;; to-do: Consider ditching (LIST addition) for a list of lists.
+(define-structure addition index values)
 
-(define (all-paths-from-abstract-value-internal v vs)
- (if (memq v vs)
-     '()
-     (reduce append
-	     (all-values
-	      (map
-	       (lambda (l) (cons v l))
-	       (all-paths-from-proto-abstract-value-internal
-		(a-member-of v) (cons v vs))))
-	     '())))
+(define (create-addition-to v v-add)
+ ;; v is expected to be an up
+ ;; v-add may either be and up or a value
+ (when (< (up-index v) 0)
+  (format #t "create~%")
+  (pp (externalize-addition (make-addition (up-index v) (list v-add))))
+  (newline)
+  (panic "We should never have negative ups!"))
+ (make-addition (up-index v) (list v-add)))
 
-(define (all-paths-from-abstract-value v)
- (all-paths-from-abstract-value-internal v '()))
+(define (merge-additions as1 as2)
+ (cond ((null? as1) as2)
+       ((null? as2) as1)
+       (else (let* ((a1 (first as1))
+		    (a2 (find-if (lambda (a2)
+				  (= (addition-index a1) (addition-index a2)))
+				 as2)))
+	      (if (not (eq? #f a2))
+		  (merge-additions
+		   (rest as1)
+		   (cons
+		    (make-addition
+		     (addition-index a1)
+		     (append (addition-values a1) (addition-values a2)))
+		    (removeq a2 as2)))
+		  (merge-additions (rest as1) (cons a1 as2)))))))
 
-(define (all-paths-from-proto-abstract-value-internal u vs)
- ;; {non,}recursive-closures are the only branching nonterminal
- ;; proto-abstract values.
- (cond ((nonrecursive-closure? u)
-	(if (= (vector-length (nonrecursive-closure-values u)) 0)
-	    (list (list u))
-	    (reduce
-	     append
-	     (all-values
-	      (map
-	       (lambda (l) (cons u l))
-	       (all-paths-from-abstract-value-internal
-		(a-member-of (vector->list (nonrecursive-closure-values u)))
-		vs)))
-	     '())))
-       ((recursive-closure? u)
-	(if (= (vector-length (recursive-closure-values u)) 0)
-	    (list (list u))
-	    (reduce
-	     append
-	     (all-values
-	      (map
-	       (lambda (l) (cons u l))
-	       (all-paths-from-abstract-value-internal
-		(a-member-of (vector->list (recursive-closure-values u)))
-		vs)))
-	     '())))
-       (else (list (list u)))))
-
-(define (all-paths-from-proto-abstract-value u)
- (all-paths-from-proto-abstract-value-internal u '()))
-
-(define (abstract-value-depth path)
- (cond ((null? path) 0)
-       ((and (list? (first path))
-	     ;; () makes list? true, so guard against it
-	     (not (null? (first path))))
-	(+ 1 (abstract-value-depth (rest path))))
-       (else (abstract-value-depth (rest path)))))
-
-(define (matching-nonrecursive-closure-depth path)
- ;; it is assumed that path starts with an abstract value
- (cond ((null? path) 0)
-       ((null? (rest path)) 0)
-       ((nonrecursive-closure? (second path))
-	(count-if (lambda (u-or-v)
-		   (and (nonrecursive-closure? u-or-v)
-			(nonrecursive-closure-match? u-or-v (second path))))
-		  (rest path)))
-       (else 0)))
-
-(define (path-of-depth-greater-than-k k depth u-or-v)
- (let loop ((u-or-v u-or-v) (path '()))
-  (let ((add-to-path (lambda (u-or-v) (append path (list u-or-v)))))
-   ;; if u-or-v is an abstract value...
-   (if (and (list? u-or-v) (not (null? u-or-v)))
-       ;; if u-or-v is already on path...
-       (if (memq u-or-v path)
-	   (if (> (depth path) k) path #f)
-	   (let inner ((us u-or-v))
-	    (if (null? us)
-		(if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f)
-		(let ((result (loop (first us) (add-to-path u-or-v))))
-		 (if (eq? #f result)
-		     (inner (rest us))
-		     result)))))
-       (cond ((or (null? u-or-v)
-		  (boolean? u-or-v)
-		  (abstract-real? u-or-v)
-		  (primitive-procedure? u-or-v))
-	      (if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f))
-	     ((nonrecursive-closure? u-or-v)
-	      (let inner ((vs (vector->list
-			       (nonrecursive-closure-values u-or-v))))
-	       (if (null? vs)
-		   (if (> (depth (add-to-path u-or-v)) k)
-		       (add-to-path u-or-v)
-		       #f)
-		   (let ((result (loop (first vs) (add-to-path u-or-v))))
-		    (if (eq? #f result)
-			(inner (rest vs))
-			result)))))
-	     ((recursive-closure? u-or-v)
-	      (let inner ((vs (vector->list
-			       (recursive-closure-values u-or-v))))
-	       (if (null? vs)
-		   (if (> (depth (add-to-path u-or-v)) k)
-		       (add-to-path u-or-v)
-		       #f)
-		   (let ((result (loop (first vs) (add-to-path u-or-v))))
-		    (if (eq? #f result)
-			(inner (rest vs))
-			result)))))
-	     (else (panic "This part not (yet) implemented!")))))))
-
-(define (path-of-greatest-depth depth u-or-v)
- (let ((paths (all-paths-from-abstract-value u-or-v)))
-  (set! *num-paths-looked-at* (+ *num-paths-looked-at* (length paths)))
-  (set! *total-size-paths-looked-at*
-	(+ *total-size-paths-looked-at* (reduce + (map length paths) 0)))
-;;; (let ((paths (if (and (list? u-or-v) (not (null? u-or-v)))
-;;;		  (all-paths-from-abstract-value u-or-v)
-;;;		  (all-paths-from-proto-abstract-value u-or-v))))
-  (if (not (null? paths))
-      (let loop ((paths (rest paths))
-		 (max-path (first paths))
-		 (max-depth (depth (first paths))))
-       (if (null? paths)
-	   max-path
-	   (let ((path-depth (depth (first paths))))
-	    (if (> path-depth max-depth)
-		(loop (rest paths) (first paths) path-depth)
-		(loop (rest paths) max-path max-depth)))))
-      '())))
-
-(define (find-path-to-collapse k depth u-or-v)
- (if *new-find-path?*
-     (path-of-depth-greater-than-k k depth u-or-v)
-     (let ((result (path-of-greatest-depth depth u-or-v)))
-      (if (> (depth result) k) result #f))))
-
-(define (limit-depth-to k depth u-or-v reduce-depth!)
- (set! *num-calls-limit-depth-to* (+ *num-calls-limit-depth-to* 1))
- (let ((path (collect-time-in-buckets
-	      'find-path-to-collapse
-	      (lambda () (find-path-to-collapse k depth u-or-v)))))
-  (if (eq? #f path)
-      u-or-v
-      (limit-depth-to k
-		      depth
-		      (collect-time-in-buckets
-		       'reduce-depth!
-		       (lambda () (reduce-depth! k path)))
-		      reduce-depth!))))
-
-(define (reduce-abstract-value-depth! k path)
- ;; case: first in path is u
- ;;       first in path is v
- ;;
- ;; ... v1 u1 v2 u2 -> ... v1 u1 v1 (ensuring that v1 has all in v2)
- ;; case: - nothing in path prior to v1--return v1-new
- ;;       - u0 in path prior to v1--set u0 to point to v1-new and return first
- ;;         element in path
- (let ((l (length path)))
-  (if (< l 4)
-      (panic "This really shouldn't happen!")
-      (let ((v1 (list-ref path (- l 4)))
-	    (u1 (list-ref path (- l 3)))
-	    (v2 (list-ref path (- l 2))))
-       (if (nonrecursive-closure? u1)
-	   (vector-set! (nonrecursive-closure-values u1)
-			(positionq
-			 v2 (vector->list (nonrecursive-closure-values u1)))
-			v1)
-	   (vector-set! (recursive-closure-values u1)
-			(positionq
-			 v2 (vector->list (recursive-closure-values u1)))
-			v1))
-       (let ((v1-new (abstract-value-union v1 v2)))
-	(set-car! v1 (car v1-new))
-	(set-cdr! v1 (cdr v1-new)))))))
-
-(define (decrement-free-ups v)
- (define (decrement-free-ups v k)
-  (define (proto-decrement-free-ups u)
-   (cond ((null? u) u)
-	 ((boolean? u) u)
-	 ((abstract-real? u) u)
-	 ((primitive-procedure? u) u)
-	 ((nonrecursive-closure? u)
-	  (make-nonrecursive-closure
-	   (nonrecursive-closure-variables u)
-	   (map-vector (lambda (v) (decrement-free-ups v (+ k 1)))
-		       (nonrecursive-closure-values u))
-	   (nonrecursive-closure-variable u)
-	   (nonrecursive-closure-body u)))
-	 ((recursive-closure? u)
-	  (make-recursive-closure
-	   (recursive-closure-variables u)
-	   (map-vector (lambda (v) (decrement-free-ups v (+ k 1)))
-		       (recursive-closure-values u))
-	   (recursive-closure-procedure-variables u)
-	   (recursive-closure-argument-variables u)
-	   (recursive-closure-bodies u)
-	   (recursive-closure-index u)))
-	 (else (fuck-up))))
-  (if (up? v)
-      (if (> (up-index v) k) (make-up (- (up-index v) 1)) (up-index v))
-      (map proto-decrement-free-ups v)))
- (decrement-free-ups v 0))
-
-; (define (reduce-abstract-value-depth-functionally k path)
-;  (define (proto-restrict-depth-of-tree-to k u)
-;   ...)
-;  (define (restrict-depth-of-tree-to k v)
-;   ;; what if v is up?
-;   (if (= k 1)
-;       (let* ((nonrecursive-us (remove-if-not nonrecursive-closure? v))
-; 	     (recursive-us (remove-if-not recursive-closure? v))
-; 	     (vs (remove-if
-; 		  up?
-; 		  (reduce
-; 		   append
-; 		   (append
-; 		    (map (lambda (u)
-; 			  (vector->list (nonrecursive-closure-values u)))
-; 			 nonrecursive-us)
-; 		    (map (lambda (u)
-; 			  (vector->list (recursive-closure-values u)))
-; 			 recursive-us))
-; 		   '())))
-; 	     (vs-prime (decrement-free-ups (reduce append vs '())))
-; 	     (...)))))
-;  (let ((v (first path))
-;        (v-uncyc (uncyclicize-abstract-value v))
-;        (...))
-;   ...))
-
-;;; We will reduce the depth of only the path provided, and we'll reduce that
-;;; by only 1.
-;;; - The path must start with an abstract value v0.
-;;; - The path must end with the sequence v_j-1 u_j-1 v_j u_j. (j>=1)
-;;;   This will be transformed to v_j-1' u_j-1' v_j-1', where v_j-1'
-;;;   = (non-depth-limited-abstract-value-union v_j-1 v_j)
-;;; - Each abstract value and proto-abstract value on the path must be
-;;;   replaced with a new one (one that's not eq?).
-;;; - Each reference to an abstract value on the path must be replaced
-;;;   with a reference to the new abstract value.
-;;; Needed:
-;;; - non-depth-limited-abstract-value-union v1 v2 -- abstract-value-union
-;;;   w/no depth limit
-;;; -
-;;; - replace-abstract-value v-old v-new -- all references to v-old replaced
-;;;   with references to v-new
-
-(define (reduce-abstract-value-depth!-2 k path)
- ;; path starts with a value when:
- ;; (and (> (length path) 0) (list? (first path)) (not (null? first path)))
- (when (or (= (length path) 0) (not (list? (first path))) (null? (first path)))
-  (panic "reduce-abstract-value-depth!-2 error!"))
- ;; v0 ... v1 u1 v2 u2 -> v0' ... v1' u1 v1' (ensuring that v1' has all in v2)
- ;; case: - nothing in path prior to v1--return v1-new
- ;;       - u0 in path prior to v1--set u0 to point to v1-new and return first
- ;;         element in path
- (when (< (length path) 4)
-  (panic "This really shouldn't happen!"))
- (let* ((l (length path))
-	(uj (list-ref path (- l 1)))
-	(vj (list-ref path (- l 2)))
-	(uj-1 (list-ref path (- l 3)))
-	(vj-1 (list-ref path (- l 4)))
-	(vj-1-new (cons #f #f))
-	(uj-1-new (replaceq-in-u vj vj-1-new uj-1))
-	(vj-1-tmp (replaceq-in-v-internal
-		   vj-1
-		   vj-1-new
-		   (list-replace vj-1 (positionq uj-1 vj-1) uj-1-new)
-		   (list vj-1-new))))
-  (set-car! vj-1-new (car vj-1-tmp))
-  (set-cdr! vj-1-new (cdr vj-1-tmp))
-  ;; this non-depth-limited-abstract-value-union could mess with backlinks
-  (let ((vj-1-tmp (non-depth-limited-abstract-value-union vj-1-new vj)))
-   (set-car! vj-1-new (car vj-1-tmp))
-   (set-cdr! vj-1-new (cdr vj-1-tmp))
-   ;; c = child, p = parent
-   (let loop ((vc-new vj-1-new)
-	      (vc-old vj-1)
-	      (path (rest (rest (rest (rest (reverse path)))))))
-    (cond ((null? path) vc-new)
-	  ((null? (rest path)) (panic "Path should be of even length!"))
-	  (else
-	   (let* ((up (first path))
-		  (vp (second path))
-		  (up-new (replaceq-in-u vc-old vc-new up))
-		  (vp-new (cons #f #f))
-		  (vp-tmp (replaceq-in-v
-			   vp
-			   vp-new
-			   (list-replace vp (positionq up vp) up-new))))
-	    (set-car! vp-new (car vp-tmp))
-	    (set-cdr! vp-new (cdr vp-tmp))
-	    (loop vp-new vp (rest (rest path))))))))))
-
-(define (replaceq-in-u-internal v-old v-new u vs)
- (cond ((null? u) u)
-       ((boolean? u) u)
-       ((abstract-real? u) u)
-       ((primitive-procedure? u) u)
+(define (some-proto-abstract-value?-internal p u u-context)
+ (cond ((or (null? u)
+	    (boolean? u)
+	    (abstract-real? u)
+	    (primitive-procedure? u))
+	#f)
        ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 (map-vector
-	  (lambda (v)
-	   (if (eq? v v-old) v-new (replaceq-in-v-internal v-old v-new v vs)))
-	  (nonrecursive-closure-values u))
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
+	(some-vector (lambda (v) (some-abstract-value?-internal p v u-context))
+		     (nonrecursive-closure-values u)))
        ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 (map-vector
-	  (lambda (v)
-	   (if (eq? v v-old) v-new (replaceq-in-v-internal v-old v-new v vs)))
-	  (recursive-closure-values u))
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
+	(some-vector (lambda (v) (some-abstract-value?-internal p v u-context))
+		     (recursive-closure-values u)))
+       (else (panic (format #f "Not a handled proto-abstract-value: ~s"
+			    (externalize-proto-abstract-value u))))))
+
+(define (some-abstract-value?-internal p v v-context)
+ (cond ((p v v-context) #t)
+       ((up? v) #f)
+       (else (some (lambda (u) (some-proto-abstract-value?-internal
+				p u (cons v v-context)))
+		   v))))
+
+(define (some-proto-abstract-value? p u)
+ (some-proto-abstract-value?-internal p u '()))
+
+(define (some-abstract-value? p v)
+ (some-abstract-value?-internal p v '()))
+
+(define (proto-process-free-ups-internal f u u-context)
+ (cond ((or (null? u)
+	    (boolean? u)
+	    (abstract-real? u)
+	    (primitive-procedure? u))
+	u)
+       ((or (nonrecursive-closure? u) (recursive-closure? u))
+	(make-closure-with-new-values
+	 u (map-vector
+	    (lambda (v) (process-free-ups-internal f v u-context))
+	    (closure-values u))))
        (else (fuck-up))))
 
-(define (replaceq-in-v-internal v-old v-new v vs)
- (cond ((memq v vs) v)
-       ((eq? v v-old) v-new)
-       (else
-	(map (lambda (u) (replaceq-in-u-internal v-old v-new u (cons v vs)))
-	     v))))
+(define (process-free-ups-internal f v v-context)
+ (cond ((free-up? v v-context) (f v v-context))
+       ((up? v) v)
+       (else (map (lambda (u)
+		   (proto-process-free-ups-internal f u (cons v v-context)))
+		  v))))
 
-(define (replaceq-in-u v-old v-new u)
- (replaceq-in-u-internal v-old v-new u '()))
+(define (proto-process-free-ups f u)
+ (proto-process-free-ups-internal f u '()))
 
-(define (replaceq-in-v v-old v-new v)
- (replaceq-in-v-internal v-old v-new v '()))
+(define (process-free-ups f v) (process-free-ups-internal f v '()))
 
-(define (reduce-abstract-value-depth!-3 k path)
- ;; path starts with a value when:
- ;; (and (> (length path) 0) (list? (first path)) (not (null? first path)))
- (when (or (= (length path) 0) (not (list? (first path))) (null? (first path)))
-  (panic "reduce-abstract-value-depth!-2 error!"))
- ;; v0 ... v1 u1 v2 u2 -> v0' ... v1' u1 v1' (ensuring that v1' has all in v2)
- ;; case: - nothing in path prior to v1--return v1-new
- ;;       - u0 in path prior to v1--set u0 to point to v1-new and return first
- ;;         element in path
- (when (< (length path) 4)
-  (panic "This really shouldn't happen!"))
- (let* ((l (length path))
-	(vs-above (but-last (but-last (every-other path))))
-	(vs-above-bindings (map (lambda (v) (cons v v)) vs-above))
-	(uj (list-ref path (- l 1)))
-	(vj (list-ref path (- l 2)))
-	(uj-1 (list-ref path (- l 3)))
-	(vj-1 (list-ref path (- l 4)))
-	(vj-1-new (cons #f #f))
-	(vj-1-tmp (replaceq-in-v-no-destroy-backlinks
-		   vj-1 (cons (cons vj vj-1-new) vs-above-bindings))))
-  (set-car! vj-1-new (car vj-1-tmp))
-  (set-cdr! vj-1-new (cdr vj-1-tmp))
-  ;; this non-depth-limited-abstract-value-union could mess with backlinks
-  (let ((vj-1-tmp (non-depth-limited-abstract-value-union vj-1-new vj)))
-   (set-car! vj-1-new (car vj-1-tmp))
-   (set-cdr! vj-1-new (cdr vj-1-tmp))
-   ;; c = child, p = parent
-   (let loop ((vc-new vj-1-new)
-	      (vc-old vj-1)
-	      (path (rest (rest (rest (rest (reverse path))))))
-	      (vs-bindings vs-above-bindings))
-    ;; As we step up the path, we keep all those abstract-values which appear
-    ;; above vp in the tree rooted at (first path) constant when they happen to
-    ;; appear in the tree rooted at vp.  We do this so as not to clobber
-    ;; backlinks.  We can't simply do
-    ;;                               (replaceq-in-v-no-destroy-backlinks
-    ;;                                (first path) (list (cons vj-1 vj-1-new)))
-    ;; because there might be backlinks in vj-1-new to values appearing in
-    ;; path above vj-1.
-    (cond ((null? path) vc-new)
-	  ((null? (rest path)) (panic "Path should be of even length!"))
-	  (else
-	   (let* ((vp (second path))
-		  (vp-new
-		   (replaceq-in-v-no-destroy-backlinks
-		    vp (cons (cons vc-old vc-new) (but-last vs-bindings)))))
-	    (loop vp-new vp (rest (rest path)) (but-last vs-bindings)))))))))
+(define (decrement-free-ups-by k v)
+ (process-free-ups (lambda (up up-context) (make-up (- (up-index up) k))) v))
 
-(define (replaceq-in-u-no-destroy-backlinks u v-bindings)
- (cond ((null? u) u)
-       ((boolean? u) u)
-       ((abstract-real? u) u)
-       ((primitive-procedure? u) u)
-       ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 (map-vector
-	  (lambda (v) (replaceq-in-v-no-destroy-backlinks v v-bindings))
-	  (nonrecursive-closure-values u))
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
-       ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 (map-vector
-	  (lambda (v) (replaceq-in-v-no-destroy-backlinks v v-bindings))
-	  (recursive-closure-values u))
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
-       (else (fuck-up))))
+(define (decrement-free-ups v) (decrement-free-ups-by 1 v))
 
-(define (replaceq-in-v-no-destroy-backlinks v v-bindings)
- (let ((lookup (assq v v-bindings)))
-  (if (not (eq? #f lookup))
-      (cdr lookup)
-      (let* ((v-prime (cons #f #f))
-	     (v-tmp (map (lambda (u)
-			  (replaceq-in-u-no-destroy-backlinks
-			   u (cons (cons v v-prime) v-bindings)))
-			 v)))
-       (set-car! v-prime (car v-tmp))
-       (set-cdr! v-prime (cdr v-tmp))
-       v-prime))))
+(define (proto-decrement-free-ups-by k u)
+ (proto-process-free-ups
+  (lambda (up up-context) (make-up (- (up-index up) k))) u))
 
-(define (reduce-abstract-value-depth!-4 k path)
- ;; path starts with a value when:
- ;; (and (> (length path) 0) (list? (first path)) (not (null? first path)))
- (when (or (= (length path) 0) (not (list? (first path))) (null? (first path)))
-  (panic "reduce-abstract-value-depth!-2 error!"))
- ;; v0 ... v1 u1 v2 u2 -> v0' ... v1' u1 v1' (ensuring that v1' has all in v2)
- ;; case: - nothing in path prior to v1--return v1-new
- ;;       - u0 in path prior to v1--set u0 to point to v1-new and return first
- ;;         element in path
- (when (< (length path) 4)
-  (panic "This really shouldn't happen!"))
- (let* ((l (length path))
-	(vs-above (but-last (but-last (every-other path))))
-	(vs-above-bindings (map (lambda (v) (cons v v)) vs-above))
-	(uj (list-ref path (- l 1)))
-	(vj (list-ref path (- l 2)))
-	(uj-1 (list-ref path (- l 3)))
-	(vj-1 (list-ref path (- l 4)))
-	(vj-1-new (cons #f #f))
-	(vj-1-tmp
-	 (replaceq-in-v-no-destroy-backlinks-2
-	  vj vj-1-new vj-1 (cons (cons vj-1-new vj-1-new) vs-above-bindings))))
-  (set-car! vj-1-new (car vj-1-tmp))
-  (set-cdr! vj-1-new (cdr vj-1-tmp))
-  ;; this non-depth-limited-abstract-value-union could mess with backlinks
-  (let ((vj-1-tmp (non-depth-limited-abstract-value-union vj-1-new vj)))
-   (set-car! vj-1-new (car vj-1-tmp))
-   (set-cdr! vj-1-new (cdr vj-1-tmp))
-   (replaceq-in-v-no-destroy-backlinks-2 vj-1 vj-1-new (first path) '()))))
+(define (proto-decrement-free-ups u) (proto-decrement-free-ups-by 1 u))
 
-(define (reduce-abstract-value-depth!-5 k path)
- (set! *num-calls-reduce-depth!* (+ *num-calls-reduce-depth!* 1))
- ;; path starts with a value when:
- ;; (and (> (length path) 0) (list? (first path)) (not (null? first path)))
- (when (or (= (length path) 0) (not (list? (first path))) (null? (first path)))
-  (panic "reduce-abstract-value-depth!-2 error!"))
- ;; v0 ... v1 u1 v2 u2 -> v0' ... v1' u1 v1' (ensuring that v1' has all in v2)
- ;; case: - nothing in path prior to v1--return v1-new
- ;;       - u0 in path prior to v1--set u0 to point to v1-new and return first
- ;;         element in path
- (when (< (length path) 4)
-  (panic "This really shouldn't happen!"))
- (let* ((l (length path))
-	(vs-above (but-last (but-last (every-other path))))
-	(vs-above-bindings (map (lambda (v) (cons v v)) vs-above))
-	(uj (list-ref path (- l 1)))
-	(vj (list-ref path (- l 2)))
-	(uj-1 (list-ref path (- l 3)))
-	(vj-1 (list-ref path (- l 4)))
-	(vj-1-new (replaceq-in-v-no-destroy-backlinks-2
-		   vj vj-1 vj-1 vs-above-bindings)))
-  (let ((vj-1-new (union-to-potentially-circular-abstract-value vj-1-new vj)))
-   (replaceq-in-v-no-destroy-backlinks-2 vj-1 vj-1-new (first path) '()))))
+(define (increment-free-ups-by k v)
+ (process-free-ups (lambda (up up-context) (make-up (+ (up-index up) k))) v))
 
-(define (replaceq-in-u-no-destroy-backlinks-2 v-old v-new u v-bindings)
- (cond ((null? u) u)
-       ((boolean? u) u)
-       ((abstract-real? u) u)
-       ((primitive-procedure? u) u)
-       ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 (map-vector
-	  (lambda (v)
-	   (replaceq-in-v-no-destroy-backlinks-2 v-old v-new v v-bindings))
-	  (nonrecursive-closure-values u))
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
-       ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 (map-vector
-	  (lambda (v)
-	   (replaceq-in-v-no-destroy-backlinks-2 v-old v-new v v-bindings))
-	  (recursive-closure-values u))
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
-       (else (fuck-up))))
+(define (increment-free-ups v) (increment-free-ups-by 1 v))
 
-(define (replaceq-in-v-no-destroy-backlinks-2 v-old v-new v v-bindings)
- ;; (format #t "replaceq-in-v(~s,~s,~s)~%" (externalize-abstract-value v-old)
- ;;	 (externalize-abstract-value v-new) (externalize-abstract-value v))
- (let ((lookup (assq v v-bindings)))
-  (cond
-   ((null? v) v)
-   ((not (eq? #f lookup)) (cdr lookup))
-   ((eq? v v-old)
-    (replaceq-in-v-no-destroy-backlinks-2 v-old v-new v-new v-bindings))
-   (else
-    (let* ((v-prime (cons #f #f))
-	   (v-tmp (map (lambda (u)
-			(replaceq-in-u-no-destroy-backlinks-2
-			 v-old v-new u (cons (cons v v-prime) v-bindings)))
-		       v)))
-     (set-car! v-prime (car v-tmp))
-     (set-cdr! v-prime (cdr v-tmp))
-     v-prime)))))
+(define (free-up? v v-context)
+ (and (up? v) (>= (up-index v) (length v-context))))
 
-;;; End Depth limits
+(define (free-up-reference-level up up-context)
+ (let ((l (- (up-index up) (length up-context))))
+  (if (negative? l) #f l)))
 
-(define (widen-abstract-value v)
- ;; *l4* *l5*
- ;; to-do: instrument
- (collect-time-in-buckets
-  'widen-abstract-value
-  (lambda ()
-   (let* ((null-us (remove-if-not null? v))
-	  (boolean-us (remove-if-not boolean? v))
-	  (real-us (remove-if-not abstract-real? v))
-	  (real-us
-	   (if (not *l2*)
-	       real-us
-	       (limit-to-k-matching-proto-abstract-values
-		*l2* real-us (lambda (us) '(real)))))
-	  (primitive-procedure-us (remove-if-not primitive-procedure? v))
-	  (nonrecursive-closure-us (remove-if-not nonrecursive-closure? v))
-	  (nonrecursive-closure-us
-	   (if (not *l3*)
-	       nonrecursive-closure-us
-	       (collect-time-in-buckets
-		'widen-nonrecursive-closure
-		(lambda ()
-		 (let ((nonrecursive-closure-uss
-			(transitive-equivalence-classesp
-			 nonrecursive-closure-match? nonrecursive-closure-us)))
-		  (reduce
-		   append
-		   (map (lambda (us)
-			 ;; needs work: factor out choice of coalescing
-			 ;;             strategy
-			 (limit-to-k-matching-proto-abstract-values
-			  *l3*
-			  us
-			  naive-nonrecursive-closure-coalescing-strategy))
-			nonrecursive-closure-uss)
-		   '()))))))
-	  (recursive-closure-us (remove-if-not recursive-closure? v))
-	  (recursive-closure-us
-	   (if (not *l4*)
-	       recursive-closure-us
-	       (collect-time-in-buckets
-		'widen-recursive-closure
-		(lambda ()
-		 (let ((recursive-closure-uss
-			(transitive-equivalence-classesp
-			 recursive-closure-match? recursive-closure-us)))
-		  (reduce
-		   append
-		   (map (lambda (us)
-			 ;; needs work: factor out choice of coalescing
-			 ;;             strategy
-			 (limit-to-k-matching-proto-abstract-values
-			  *l4* us naive-recursive-closure-coalescing-strategy))
-			recursive-closure-uss)
-		   '()))))))
-	  (result
-	   (append null-us
-		   boolean-us
-		   real-us
-		   primitive-procedure-us
-		   nonrecursive-closure-us
-		   recursive-closure-us))
-	  (result
-	   (if #t
-	       (replaceq-in-v-no-destroy-backlinks-2 v result result '())
-	       result)))
-    (if (not *l5*)
-	result
-	(collect-time-in-buckets
-	 'widen-limit-depth
-	 (lambda ()
-	  (limit-depth-to
-	   *l5*
-	   (if *matching-nonrecursive-closure-depth?*
-	       matching-nonrecursive-closure-depth
-	       abstract-value-depth)
-	   result
-	   reduce-abstract-value-depth!-5))))))))
+(define (make-free-up-referencing index up-context)
+ (make-up (+ index (length up-context))))
 
-(define (generic-abstract-value-union v1 v2)
- (cond
-  ((null? v1) v2)
-  ((null? v2) v1)
-  ((proto-abstract-value-in-abstract-value? (first v1) v2)
-   (generic-abstract-value-union (rest v1) v2))
-  (else (cons (first v1)
-	      (generic-abstract-value-union
-	       (rest v1)
-	       (removep proto-abstract-value-superset? (first v1) v2))))))
+(define (process-additions-for-shifting-past-value as v-new)
+ ;; returns: (LIST addition)
+ (if #f
+     ;; old, possibly increasing-depth way
+     (map
+      (lambda (a)
+       (make-addition
+	(- (addition-index a) 1)
+	(map (lambda (v)
+	      (decrement-free-ups
+	       (process-free-ups
+		v
+		(lambda (up up-depth)
+		 (= (free-up-reference-level up up-depth) 0))
+		(lambda (up up-depth)
+		 (increment-free-ups-by v-new (+ up-depth 1))))))
+	     (addition-values a))))
+      as)
+     ;; new way:
+     ;;  a. all top-level additions referencing v-new (which would all be
+     ;;     (up 0)'s) are replaced with v-new
+     ;;  b. all additions (i (v-i1 ...)) which have references to v-new in one
+     ;;     of the trees v-i1, ... (but not at the root of any of the trees)
+     ;;     should have these references to v-new replaced with a reference
+     ;;     (up i), and v-new should be added to the addition to i:
+     ;;       (i (v-i1[v-new \ (up i)] ...[v-new \ (up i)] v-new))
+     ;;  - this is conservative; sometimes references to v-new might be able to
+     ;;    be safely expanded, but you never know...
+     (map
+      ;; decrement ups in all additions
+      (lambda (a)
+       (make-addition
+	(- (addition-index a) 1)
+	(map (lambda (v) (decrement-free-ups v)) (addition-values a))))
+      (merge-additions
+       (map
+	(lambda (a)
+	 (make-addition
+	  (addition-index a)
+	  (map (lambda (v)
+		(process-free-ups
+		 (lambda (up up-context)
+		  (cond ((and (= (free-up-reference-level up up-context) 0)
+			      (= (length up-context) 0))
+			 v-new)
+			((= (free-up-reference-level up up-context) 0)
+			 (make-free-up-referencing (addition-index a)
+						   up-context))
+			(else up)))
+		 v))
+	       (addition-values a))))
+	as)
+       (reduce
+	merge-additions
+	(map
+	 (lambda (a)
+	  (if (some (lambda (v)
+		     (some-abstract-value?
+		      (lambda (v v-context)
+		       (and (free-up? v v-context)
+			    (= (free-up-reference-level v v-context) 0)))
+		      v))
+		    (addition-values a))
+	      (list (make-addition (addition-index a) (list v-new)))
+	      '()))
+	 as)
+	'())))))
 
-(define (generic-abstract-value-union-qobi v1 v2)
- (let loop ((us (append v1 v2)) (v (append v1 v2)))
-  (cond ((null? us) v)
-	((abstract-value-subset? (list (first us)) (removeq (first us) v))
-	 (loop (rest us) (removeq (first us) v)))
-	(else (loop (rest us) v)))))
+(define (shift-additions-up-in-context as v-context)
+ ;; returns: (LIST addition)
+ ;; 1. all additions with top-level (UP 0) need to have the
+ ;;    proto-abstract-values from (first v-context) added to them.
+ ;; 2. all additions referencing (first v-context) need to have (a) the
+ ;;    proto-abstract-values from (first v-context) added to them, as well as
+ ;;    (b) changing the reference to point to the value the addition is going.
+ ;; 3. every addition needs its index, as well as each free-up, decremented.
+ ;; This breaks testing on v3.  This is b/c (first v-context) has a free (UP 0)
+ ;; and it's added in b/c an addition is referencing it.  Well, the (UP 0) is
+ ;; decremented, and that's a problem...
+ (map
+  ;;3
+  (lambda (a)
+   (make-addition
+    (- (addition-index a) 1)
+    (map (lambda (u-or-up)
+	  (cond ((and (up? u-or-up) (= (up-index u-or-up) 0))
+		 (panic "This should already have been replaced!"))
+		((up? u-or-up) (make-up (- (up-index u-or-up) 1)))
+		(else (proto-decrement-free-ups u-or-up))))
+	 (addition-values a))))
+  (merge-additions
+   (map
+    (lambda (a)
+     (make-addition
+      (addition-index a)
+      ;;2b
+      (reduce
+       append
+       (map (lambda (u-or-up)
+	     (cond ((and (up? u-or-up) (= (up-index u-or-up) 0)) ;1
+		    (first v-context))
+		   ((up? u-or-up) (list u-or-up))
+		   (else
+		    (list
+		     (proto-process-free-ups
+		      (lambda (up up-context)
+		       (if (= (free-up-reference-level up up-context) 0)
+			   (make-free-up-referencing (addition-index a)
+						     up-context)
+			   up))
+		      u-or-up)))))
+	    (addition-values a))
+       '())))
+    as)
+   ;;2a
+   (reduce
+    merge-additions
+    (map
+     (lambda (a)
+      (if (some (lambda (u-or-up)
+		 (and (not (up? u-or-up))
+		      (some-proto-abstract-value?
+		       (lambda (v v-context)
+			(and (free-up? v v-context)
+			     (= (free-up-reference-level v v-context) 0)))
+		       u-or-up)))
+		(addition-values a))
+	  (list (make-addition
+		 (addition-index a)
+		 (map
+		  (lambda (u)
+		   (proto-process-free-ups
+		    (lambda (up up-context)
+		     (if (= (free-up-reference-level up up-context) 0)
+			 (make-free-up-referencing (addition-index a)
+						   up-context)
+			 up))
+		    u))
+		  (first v-context))))
+	  '()))
+     as)
+    '()))))
 
-(define (abstract-value-union v1 v2)
- (set! *num-calls-abstract-value-union* (+ *num-calls-abstract-value-union* 1))
- (let ((result-1 (generic-abstract-value-union v1 v2))
-       (result-2 (generic-abstract-value-union-qobi v1 v2)))
-  ;; debugging
-  (when (and #t (some (lambda (u1) (not (memq u1 result-2))) result-1))
-   (format #t
-	   (string-append "*** generic-abstract-value-union{,-qobi} give "
-			  "different results:~%"
-			  "    generic-abstract-value-union: ~%"))
-   (pp (externalize-abstract-value result-1)) (newline)
-   (format #t "    generic-abstract-value-union-qobi: ~%")
-   (pp (externalize-abstract-value result-2)) (newline)
-   ;; debugging
-   (when (and *debug?* (> *debug-level* 3))
-    (fuck-up)))
-  (widen-abstract-value result-1)))
+(define (widen-over-abstract-value-tree widen-node v v-context)
+ ;; needs work:
+ ;; Can we write a general function to walk the tree for reals, closures, and
+ ;; depth?
+ v)
 
-(define (union-to-potentially-circular-abstract-value v-circ v)
- (let* ((result (generic-abstract-value-union v-circ v))
-	(result (replaceq-in-v-no-destroy-backlinks-2
-		 v-circ result result '())))
-  (let ((l5 *l5*))
-   (set! *l5* #f)
-   (let ((result (widen-abstract-value result)))
-    (set! *l5* l5)
-    result))))
+;;; \Widen->General
 
-(define (non-depth-limited-abstract-value-union v1 v2)
- (let ((result-1 (generic-abstract-value-union v1 v2))
-       (result-2 (generic-abstract-value-union-qobi v1 v2)))
-  ;; debugging
-  (when (and #t (some (lambda (u1) (not (memq u1 result-2))) result-1))
-   (format #t
-	   (string-append "*** generic-abstract-value-union{,-qobi} give "
-			  "different results:~%"
-			  "    generic-abstract-value-union: ~%"))
-   (pp (externalize-abstract-value result-1)) (newline)
-   (format #t "    generic-abstract-value-union-qobi: ~%")
-   (pp (externalize-abstract-value result-2)) (newline)
-   ;; debugging
-   (when (and *debug?* (> *debug-level* 3))
-    (fuck-up)))
-  (let ((l5 *l5*))
-   (set! *l5* #f)
-   (let ((result (widen-abstract-value result-1)))
-    (set! *l5* l5)
-    result))))
-
-;;; Abstract-Environment Subset, Equivalence, and Union
-
-(define (abstract-environment-subset? vs1 vs2)
- (every-vector abstract-value-subset? vs1 vs2))
-
-(define (abstract-environment=? vs1 vs2)
- (and (abstract-environment-subset? vs1 vs2)
-      (abstract-environment-subset? vs2 vs1)))
-
-(define (abstract-environment-proper-subset? vs1 vs2)
- (and (abstract-environment-subset? vs1 vs2)
-      (not (abstract-environment-subset? vs2 vs1))))
-
-(define (abstract-environment-union vs1 vs2)
- (map-vector abstract-value-union vs1 vs2))
-
-;;; Abstract-Flow Equivalence and Union
-
-(define (abstract-flow=? bs1 bs2)
- ;; Only used for fixpoint convergence check.
- ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp?
-  (lambda (b1 b2)
-   (and (abstract-environment=?
-	 (abstract-environment-binding-abstract-values b1)
-	 (abstract-environment-binding-abstract-values b2))
-	(abstract-value=? (abstract-environment-binding-abstract-value b1)
-			  (abstract-environment-binding-abstract-value b2))))
-  bs1
-  bs2))
-
-(define (empty-abstract-flow) '())
-
-;;; brownfis -- added
-(define (duplicatesp? p xs)
- (and (not (null? xs))
-      (or (memp p (first xs) (rest xs)) (duplicatesp? p (rest xs)))))
+;;; Widen->Flows
 
 (define (restrict-number-of-abstract-flow-elements-to k bs)
  ;; This function introduces the imprecision in abstract-flow-union.
@@ -5703,10 +5104,924 @@
 	      (abstract-environment-binding-abstract-value (second bs))))
 	    (rest (rest bs))))))
 
-;;; needs work: Can this result in a flow having abstract-environment-bindings
-;;;             with abstract environments e1, e2 such that
-;;;             (abstract-environment-subset? e1 e2) => #t?
-;;;     answer: Yes, and why exactly shouldn't this happen?
+;;; \Widen->Flows
+
+;;; Widen->Reals
+
+(define (widen-abstract-value-by-coalescing-reals v)
+ (if (eq? *l2* #f)
+     v
+     (process-nodes-in-abstract-value-tree
+      (lambda (v v-context) (if (> (count-if abstract-real? v) *l2*)
+				(cons 'real (remove-if abstract-real? v))
+				v))
+      v
+      '())))
+
+;;; \Widen->Reals
+
+;;; Widen->Closures
+;;; to-do: deal with recursive closures, too
+
+(define (pick-nonrecursive-closures-to-coalesce us)
+ (sublist us 0 2))
+
+(define (pick-recursive-closures-to-coalesce us)
+ (sublist us 0 2))
+
+;;; needs work: this only deals with the most trivial of duplicate
+;;;             proto-abstract values
+(define (union-for-widening v1 v2)
+ ;; assumed: v1 and v2 share the same context.  In other words, all
+ ;;          free-up-reference-levels which are the same refer to the same
+ ;;          values.
+ (cond ((and (up? v1) (up? v2))
+	(cond ((> (up-index v1) (up-index v2))
+	       (cons v1 (list (create-addition-to v1 v2))))
+	      ((< (up-index v1) (up-index v2))
+	       (cons v2 (list (create-addition-to v2 v1))))
+	      (else ; (= (up-index v1) (up-index v2))
+	       (cons v1 '()))))
+       ((up? v1) (cons v1 (list (create-addition-to v1 v2))))
+       ((up? v2) (cons v2 (list (create-addition-to v2 v1))))
+       ;; needs work: there can still be duplicate proto-abstract values here;
+       ;;             to really remove all (or more) duplicates is much more
+       ;;             work, though.
+       (else (cons (remove-duplicatesq (append v1 v2)) '()))))
+
+(define (widen-single-abstract-value v)
+ ;; assumes: *l3* is active
+ ;; returns: value x (LIST additions-to-value)
+ (let outer ((closure-uss (transitive-equivalence-classesp
+			   nonrecursive-closure-match?
+			   (remove-if-not nonrecursive-closure? v)))
+	     (us (remove-if nonrecursive-closure? v))
+	     (changed? #f))
+  (cond ((null? closure-uss) (if changed? (cons us '()) (cons v '())))
+	((<= (length (first closure-uss)) *l3*)
+	 (outer (rest closure-uss) (append us (first closure-uss)) changed?))
+	(else				; *l3* violated
+	 (let* ((u1-u2 (pick-nonrecursive-closures-to-coalesce
+			(first closure-uss)))
+		(u1 (first u1-u2))
+		(u2 (second u1-u2)))
+	  (let inner ((vs1 (vector->list (nonrecursive-closure-values u1)))
+		      (vs2 (vector->list
+			    (nonrecursive-closure-values-matching u1 u2)))
+		      (vs '())
+		      (additions '()))
+	   (if (null? vs1)
+	       (let* ((u-new (make-closure-with-new-values
+			      u1 (list->vector (reverse vs))))
+		      (closure-uss-new
+		       (cons (cons u-new (removeq
+					  u2 (removeq u1 (first closure-uss))))
+			     (rest closure-uss))))
+		(if (null? additions)
+		    (outer closure-uss-new us #t)
+		    (cons (append us (reduce append closure-uss-new '()))
+			  additions)))
+	       (let ((v-additions
+		      (union-for-widening (first vs1) (first vs2))))
+		(inner (rest vs1)
+		       (rest vs2)
+		       (cons (car v-additions) vs)
+		       (merge-additions (cdr v-additions) additions))))))))))
+
+(define (apply-additions-to v additions)
+ ;; returns: value x (LIST additions-to-value)
+ (when (up? v) (panic "How can v be an up???"))
+ (let* ((additions-to-v (find-if (lambda (a) (= (addition-index a) 0))
+				 additions))
+	(additions-rest (removeq additions-to-v additions)))
+  (if (or (eq? #f additions-to-v)
+	  ;; needs work: is this needed???
+	  (null? (addition-values additions-to-v)))
+      ;; nothing here...move along
+      (cons v (process-additions-for-shifting-past-value additions v))
+      (let* ((v-additions-new
+	      (let loop
+		((v-new v)
+		 ;; note that we sort vs-to-add to favor links referencing
+		 ;; values further up the tree
+		 (vs-to-add (sort (map decrement-free-ups
+				       (addition-values additions-to-v))
+				  (lambda (v1 v2)
+				   (cond ((and (up? v1) (up? v2))
+					  (> (up-index v1) (up-index v2)))
+					 ((up? v1) #t)
+					 ((up? v2) #f)
+					 (else #t)))
+				  identity)))
+	       (if (null? vs-to-add)
+		   (cons v-new '())
+		   (let* ((v-add (first vs-to-add))
+			  (v-additions-new (union-for-widening v-new v-add))
+			  (v-new (car v-additions-new))
+			  (additions-new (cdr v-additions-new)))
+		    (if (null? additions-new)
+			(loop v-new (rest vs-to-add))
+			;; v-add is a link
+			(cons
+			 v-new
+			 ;; to-do: is this wrong?
+			 (merge-additions
+			  (map
+			   (lambda (v) (create-addition-to v-new v))
+			   (rest vs-to-add))
+			  additions-new)))))))
+	     (v-new (car v-additions-new))
+	     (additions-new
+	      (process-additions-for-shifting-past-value
+	       (merge-additions additions-rest (cdr v-additions-new))
+	       v-new)))
+       ;; if after applying the addition to v there are no additions left,
+       ;; perform another widen-abstract-value-tree-internal on v-new
+       (if (null? additions-new)
+	   (widen-abstract-value-tree-internal v-new)
+	   (cons v-new additions-new))))))
+
+(define (widen-abstract-value-tree-internal v)
+ ;; returns: value x (LIST additions-to-value)
+ (if (up? v)
+     (cons v '())
+     (let* ((v-additions (widen-single-abstract-value v))
+	    (v-new (car v-additions))
+	    (additions (cdr v-additions))
+	    (changed? (not (eq? v-new v))))
+      (cond ((and (null? additions) (up? v-new))
+	     (cons v-new '()))
+	    ((null? additions)
+	     ;; recursively widen each abstract value below v-new
+	     (let outer ((us v-new) (us-new '()) (changed? changed?))
+	      (if (null? us)
+		  (if changed? (cons us-new '()) (cons v '()))
+		  (let ((u (first us)))
+		   (cond
+		    ((or (null? u)
+			 (boolean? u)
+			 (abstract-real? u)
+			 (primitive-procedure? u))
+		     (outer (rest us) (cons u us-new) changed?))
+		    ((or (nonrecursive-closure? u) (recursive-closure? u))
+		     (let ((vs (vector->list (closure-values u))))
+		      (define (continue-with-outer vs-new)
+		       (if (every eq? vs vs-new)
+			   (outer (rest us) (cons u us-new) changed?)
+			   (outer (rest us)
+				  (cons (make-closure-with-new-values
+					 u (list->vector vs-new))
+					us-new)
+				  #t)))
+		      (define (exit-outer vs additions)
+		       (let ((v (append
+				 (rest us)
+				 (cons (make-closure-with-new-values
+					u (list->vector vs))
+				       us-new))))
+			(apply-additions-to v additions)))
+		      (let inner ((vs vs) (vs-new '()))
+		       (if (null? vs)
+			   (continue-with-outer (reverse vs-new))
+			   (let* ((v-additions
+				   (widen-abstract-value-tree-internal
+				    (first vs)))
+				  (v-new (car v-additions))
+				  (additions (cdr v-additions)))
+			    (if (null? additions)
+				(inner (rest vs) (cons v-new vs-new))
+				(exit-outer
+				 (append (reverse (cons v-new vs-new))
+					 (rest vs))
+				 additions)))))))
+		    (else (panic "Not (yet) implemented!")))))))
+	    (else (apply-additions-to v-new additions))))))
+
+(define (widen-abstract-value-by-coalescing-matching-closures v)
+ (if (eq? *l3* #f)
+     v
+     (let ((result (widen-abstract-value-tree-internal v)))
+      (when (not (null? (cdr result))) (panic "additions not made!"))
+      (car result))))
+
+;;; \Widen->Closures
+
+;;; Widen->Depth
+
+(define (abstract-value-depth path)
+ (cond ((null? path) 0)
+       ((and (list? (first path))
+	     ;; () makes list? true, so guard against it
+	     (not (null? (first path))))
+	(+ 1 (abstract-value-depth (rest path))))
+       (else (abstract-value-depth (rest path)))))
+
+;;; needs work: This isn't exactly the depth measure I described in writeup.
+(define (matching-nonrecursive-closure-depth path)
+ ;; it is assumed that path starts with an abstract value
+ (cond ((null? path) 0)
+       ((null? (rest path)) 0)
+       ((nonrecursive-closure? (second path))
+	(count-if (lambda (u-or-v)
+		   (and (nonrecursive-closure? u-or-v)
+			(nonrecursive-closure-match? u-or-v (second path))))
+		  (rest path)))
+       (else 0)))
+
+(define (path-of-depth-greater-than-k k depth u-or-v)
+ (let loop ((u-or-v u-or-v) (path '()))
+  (let ((add-to-path (lambda (u-or-v) (append path (list u-or-v)))))
+   (cond ((up? u-or-v) (if (> (depth path) k) path #f))
+	 ;; if u-or-v is an abstract value...
+	 ((and (list? u-or-v) (not (null? u-or-v)))
+	  (let inner ((us u-or-v))
+	    (if (null? us)
+		(if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f)
+		(let ((result (loop (first us) (add-to-path u-or-v))))
+		 (if (eq? #f result)
+		     (inner (rest us))
+		     result)))))
+	 (else ; u-or-v is a proto-abstract value...
+	  (cond ((or (null? u-or-v)
+		     (boolean? u-or-v)
+		     (abstract-real? u-or-v)
+		     (primitive-procedure? u-or-v))
+		 (if (> (depth (add-to-path u-or-v)) k)
+		     (add-to-path u-or-v)
+		     #f))
+		((nonrecursive-closure? u-or-v)
+		 (let inner ((vs (vector->list
+				  (nonrecursive-closure-values u-or-v))))
+		  (if (null? vs)
+		      (if (> (depth (add-to-path u-or-v)) k)
+			  (add-to-path u-or-v)
+			  #f)
+		      (let ((result (loop (first vs) (add-to-path u-or-v))))
+		       (if (eq? #f result)
+			   (inner (rest vs))
+			   result)))))
+		((recursive-closure? u-or-v)
+		 (let inner ((vs (vector->list
+				  (recursive-closure-values u-or-v))))
+		  (if (null? vs)
+		      (if (> (depth (add-to-path u-or-v)) k)
+			  (add-to-path u-or-v)
+			  #f)
+		      (let ((result (loop (first vs) (add-to-path u-or-v))))
+		       (if (eq? #f result)
+			   (inner (rest vs))
+			   result)))))
+		(else (panic "This part not (yet) implemented!"))))))))
+
+;;; to-do: See if this and widen-abstract-value-tree-internal can be made
+;;;        special cases of a generalized procedure somehow.
+(define (reduce-depth path v-to-add-to v-add)
+ ;; path is a list alternating between abstract and proto-abstract values.
+ ;; It is assumed to begin with an abstract value at each call of reduce-depth.
+ ;; loop returns (LIST v additions)
+ (let
+   ((result
+     (let loop ((path path) (v-context '()))
+      (when (null? path) (panic "This should never happen!"))
+      (let ((v (first path)))
+       (if (eq? v v-add)
+	   (let* ((index (positionq v-to-add-to v-context))
+		  (addition (make-addition (+ index 1) v-add)))
+	    ;; to-do: Does this need process-additions-for-shifting-past-value?
+	    (list (make-up index)
+		  (shift-additions-up-in-context (list addition)
+						 (cons v v-context))))
+	   (let* ((v-and-additions
+		   (loop (rest (rest path)) (cons v v-context)))
+		  (v-new (first v-and-additions))
+		  (additions (second v-and-additions))
+		  (u (second path))
+		  (v-down (third path))
+		  (u-new
+		   (if (or (nonrecursive-closure? u) (recursive-closure? u))
+		       (make-closure-with-new-values
+			u (map-vector (lambda (v) (if (eq? v v-down) v-new v))
+				      (closure-values u)))
+		       (panic "This shouldn't happen!")))
+		  (addition (find-if (lambda (a) (= (addition-index a) 0))
+				     additions))
+		  (additions-rest (removeq addition additions)))
+	    (if (eq? v v-to-add-to)
+		(let ((v-new (append (replaceq u u-new v)
+				     (addition-values addition))))
+		 (when (some up? (addition-values addition))
+		  (panic "This shouldn't have any ups!"))
+		 (list v-new (shift-additions-up-in-context
+			      additions-rest (cons v-new v-context))))
+		(let ((v-new (replaceq u u-new v)))
+		 (list v-new
+		       (shift-additions-up-in-context
+			additions (cons v-new v-context)))))))))))
+  (when (not (null? (second result)))
+   (panic "Addition not made!"))
+  (first result)))
+
+(define (get-values-to-merge k depth path)
+ ;; not quite general: expects v u v u ... order
+ (let loop ((i 0) (last-depth -1) (va #f) (vb #f))
+  (cond
+   ((not (or (eq? va #f) (eq? vb #f))) (list va vb))
+   ((> (* 2 i) (length path)) (fuck-up))
+   (else
+    (let ((d (depth (sublist path 0 (* 2 i)))))
+     (cond ((and (= d k) (> d last-depth))
+	    (loop (+ i 1) d (list-ref path (* 2 (- i 1))) vb))
+	   ((and (= d (+ k 1)) (= last-depth k))
+	    (loop (+ i 1) d va (list-ref path (* 2 (- i 1)))))
+	   (else (loop (+ i 1) d va vb))))))))
+
+(define (widen-abstract-value-by-limiting-depth v)
+ (if (eq? *l5* #f)
+     v
+     (let loop ((path (path-of-depth-greater-than-k *l5* *depth-measure* v))
+		(v v))
+      (if (eq? path #f)
+	  v
+	  (let* ((va-vb (get-values-to-merge *l5* *depth-measure* path))
+		 (v-new (reduce-depth path (first va-vb) (second va-vb))))
+	   (loop (path-of-depth-greater-than-k *l5* *depth-measure* v-new)
+		 v-new))))))
+
+;;; \Widen->Depth
+
+;;; Widen->all
+
+(define (widen-abstract-value v)
+ (let* ((v1 (remove-duplicate-proto-abstract-values v))
+	(v2 (widen-abstract-value-by-limiting-depth v1))
+	(v3 (widen-abstract-value-by-coalescing-matching-closures v2))
+	(v4 (remove-duplicate-proto-abstract-values v3))
+	(v5 (widen-abstract-value-by-coalescing-reals v4))
+	(v6 (remove-duplicate-proto-abstract-values v5)))
+  v6))
+
+;;; \Widen->all
+
+;;; \Widen
+
+;;; Duplicate removal
+
+(define-structure down v)
+
+(define (roll-up-tree v v-context)
+ (let* ((u-down
+	 (find-if
+	  (lambda (u)
+	   (or (and (nonrecursive-closure? u)
+		    (some-vector down? (nonrecursive-closure-values u)))
+	       (and (recursive-closure? u)
+		    (some-vector down? (recursive-closure-values u)))))
+	  (first v-context)))
+	(v-down (if (not (eq? u-down #f))
+		    (find-if down? (vector->list
+				    (if (nonrecursive-closure? u-down)
+					(nonrecursive-closure-values u-down)
+					(recursive-closure-values u-down))))
+		    #f)))
+  (cond ((eq? v-down #f) (first v-context))
+	((or (nonrecursive-closure? u-down) (recursive-closure? u-down))
+	 (replaceq
+	  u-down
+	  (make-closure-with-new-values
+	   u-down
+	   (map-vector
+	    (lambda (v1)
+	     (if (eq? v1 v-down)
+		 (if (and (list? v) (set-equalp? eq? v (down-v v-down)))
+		     (down-v v-down)
+		     v)
+		 v1))
+	    (closure-values u-down)))
+	  (first v-context)))
+	(else (fuck-up)))))
+
+(define (go-up-in-context i v v-context)
+ (if (= -1 i)
+     v
+     (go-up-in-context (- i 1) (roll-up-tree v v-context) (rest v-context))))
+
+(define (go-down v-parent v-child)
+ (map (lambda (u) (cond ((or (null? u)
+			     (boolean? u)
+			     (abstract-real? u)
+			     (primitive-procedure? u))
+			 u)
+			((and
+			  (or (nonrecursive-closure? u) (recursive-closure? u))
+			  (some-vector (lambda (v) (eq? v v-child))
+				       (closure-values u)))
+			 (make-closure-with-new-values
+			  u
+			  (map-vector (lambda (v)
+				       (if (eq? v v-child) (make-down v) v))
+				      (closure-values u))))
+			(else u)))
+      v-parent))
+
+;;; needs work: This procedure seems to break on test case v3 by nontermination
+;;;             of the subset? test when using the noncyclical subset and union
+(define (remove-duplicate-proto-abstract-values-in-context v v-context)
+ (let loop ((i 0) (v v))
+  (pp (externalize-abstract-value v)) (newline)
+  (if (or (null? v) (= i (length v)))
+      v
+      (let ((v-new (list-remove v i)))
+       (if (abstract-value-subset?-with-context v v-new v-context v-context)
+	   (loop i v-new)
+	   (loop (+ i 1) v))))))
+
+(define (remove-duplicate-proto-abstract-values-from-tree-internal v v-context)
+ (if (up? v)
+     v
+     (let ((v-new (remove-duplicate-proto-abstract-values-in-context
+		   v v-context)))
+      (let outer ((us v-new) (us-new '()))
+       (if (null? us)
+	   (reverse us-new)
+	   (let ((u (first us)))
+	    (cond 
+	     ((or (null? u)
+		  (boolean? u)
+		  (abstract-real? u)
+		  (primitive-procedure? u)
+		  (and (nonrecursive-closure? u)
+		       (= 0 (vector-length (nonrecursive-closure-values u))))
+		  (and (recursive-closure? u)
+		       (= 0 (vector-length (recursive-closure-values u)))))
+	      (outer (rest us) (cons u us-new)))
+	     ((or (nonrecursive-closure? u) (recursive-closure? u))
+	      (let ((v-new (append (reverse us-new) us))
+		    (vs (vector->list (closure-values u))))
+	       (let inner ((vs vs) (vs-new '()))
+		(if
+		 (null? vs)
+		 (outer (rest us)
+			(cons (make-closure-with-new-values u (reverse vs-new))
+			      us-new))
+		 (let* ((u-new (make-closure-with-new-values
+				u (list->vector (append (reverse vs-new) vs))))
+			(v-new (replaceq u u-new v-new)))
+		  (inner
+		   (rest vs)
+		   (cons
+		    (remove-duplicate-proto-abstract-values-from-tree-internal
+		     (first vs)
+		     (cons (go-down v-new (first vs))
+			   v-context))
+		    vs-new)))))))
+	     (else (panic "Not (yet) handled!")))))))))
+
+(define (remove-duplicate-proto-abstract-values-from-tree v)
+ (remove-duplicate-proto-abstract-values-from-tree-internal v '()))
+
+(define (remove-duplicate-proto-abstract-values v)
+ (if #f
+     (remove-duplicate-proto-abstract-values-from-tree v)
+     (process-nodes-in-abstract-value-tree
+      (lambda (v v-context) (remove-duplicatesq v)) v '())))
+
+;;; \Duplicate removal
+
+;;; Subset?
+
+(define (abstract-value-subset?-with-context v1 v2 v1-context v2-context)
+ (let loop? ((v1 v1)
+	     (v2 v2)
+	     (v1-context v1-context)
+	     (v2-context v2-context)
+	     (cs '()))
+  (cond
+   ((null? v1) #t)
+   ((null? v2) #f)
+   ((up? v1) (loop? (go-up-in-context (up-index v1) v1 v1-context)
+		    ;; above replaces:
+		    ;; (list-ref v1-context (up-index v1))
+		    v2
+		    (rest* v1-context (+ (up-index v1) 1))
+		    v2-context
+		    cs))
+   ((up? v2) (loop? v1
+		    (go-up-in-context (up-index v2) v2 v2-context)
+		    ;; above replaces:
+		    ;; (list-ref v2-context (up-index v2))
+		    v1-context
+		    (rest* v2-context (+ (up-index v2) 1))
+		    cs))
+;;;   ((some (lambda (c)
+;;;	   (and (set-equalp? eq? v1 (car c)) (set-equalp? eq? v2 (cdr c))))
+;;;	  cs)
+;;;    #t)
+   ;; this is a generalization of the above condition
+   ((some (lambda (c) (and (subsetq? v1 (car c)) (subsetq? (cdr c) v2))) cs)
+    #t)
+   (else
+    (let ((u1-context (cons v1 v1-context))
+	  (u2-context (cons v2 v2-context))
+	  (cs (cons (cons v1 v2) cs)))
+     (every
+      (lambda (u1)
+       (cond ((null? u1) (some null? v2))
+	     ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
+	     ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
+	     ((real? u1)
+	      (some (lambda (u2)
+		     (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
+		    v2))
+	     ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
+	     ((primitive-procedure? u1)
+	      (some (lambda (u2) (and (primitive-procedure? u2) (eq? u1 u2)))
+		    v2))
+	     ((nonrecursive-closure? u1)
+	      (let ((vs1 (nonrecursive-closure-values u1)))
+	       (if
+		(= (vector-length vs1) 0)
+		(some
+		 (lambda (u2)
+		  (and (nonrecursive-closure? u2)
+		       (= (vector-length (nonrecursive-closure-values u2)) 0)
+		       (nonrecursive-closure-match? u1 u2)))
+		 v2)
+		(some-n
+		 (lambda (i)
+		  (let* ((us-matching-all-but-u1_i
+			  ;; to-do: instrument
+			  (collect-time-in-buckets
+			   'subset?-matching-us
+			   (lambda ()
+			    (remove-if-not
+			     (lambda (u2)
+			      (if (and (nonrecursive-closure? u2)
+				       (nonrecursive-closure-match? u1 u2))
+				  (let
+				    ((vs2-matching
+				      (nonrecursive-closure-values-matching
+				       u1 u2)))
+				   (every-n
+				    (lambda (j)
+				     (if (= i j)
+					 #t
+					 (loop?
+					  (vector-ref vs1 j)
+					  (vector-ref vs2-matching j)
+					  u1-context
+					  u2-context
+					  cs)))
+				    (vector-length vs1)))
+				  #f))
+			     v2))))
+			 (v1-new (vector-ref vs1 i))
+			 ;; needs work!!!
+			 (v2-new
+			  (reduce
+			   (lambda (v2a v2b)
+			    ;; Should we remove duplicate values here to
+			    ;; speed things up?
+			    (generic-abstract-value-union-noncyclic
+			     v2a v2b u2-context u2-context))
+			   (map
+			    (lambda (u)
+			     (vector-ref
+			      (nonrecursive-closure-values-matching u1 u)
+			      i))
+			    us-matching-all-but-u1_i)
+			   (empty-abstract-value))))
+		   (loop? v1-new v2-new u1-context u2-context cs)))
+		 (vector-length vs1)))))
+	     ;; needs work: update this with stuff from nonrecursive-closure
+	     ((recursive-closure? u1)
+	      (let ((vs1 (recursive-closure-values u1)))
+	       (if
+		(= (vector-length vs1) 0)
+		(some
+		 (lambda (u2)
+		  (and (recursive-closure? u2)
+		       (= (vector-length (recursive-closure-values u2)) 0)
+		       (recursive-closure-match? u1 u2)))
+
+		 v2)
+		(some-n
+		 (lambda (i)
+		  (let ((us-matching-all-but-u1_i
+			 (remove-if-not
+			  (lambda (u2)
+			   (if (and (recursive-closure? u2)
+				    (recursive-closure-match? u1 u2))
+			       (let ((vs2-matching
+				      (recursive-closure-values-matching
+				       u1 u2)))
+				(every-n
+				 (lambda (j)
+				  (if (= i j)
+				      #t
+				      (loop?
+				       (vector-ref vs1 j)
+				       (vector-ref vs2-matching j)
+				       u1-context
+				       u2-context
+				       cs)))
+				 (vector-length vs1)))
+			       #f))
+			  v2)))
+		   (loop? (vector-ref vs1 i)
+			  ;; needs work!!!
+			  (reduce
+			   (lambda (v2a v2b)
+			    ;; Should we remove duplicate proto-values here?
+			    (generic-abstract-value-union-noncyclic
+			     v2a v2b u2-context u2-context))
+			   (map
+			    (lambda (u)
+			     (vector-ref
+			      (recursive-closure-values-matching u1 u)
+			      i))
+			    us-matching-all-but-u1_i)
+			   (empty-abstract-value))
+			  u1-context
+			  u2-context
+			  cs)))
+		 (vector-length vs1)))))
+	     ((bundle? u1)
+	      (panic (string-append "abstract-value-subset? not defined "
+				    " (yet) for bundles!")))
+	     ((reverse-tagged-value? u1)
+	      (panic (string-append "abstract-value-subset? not defined "
+				    " (yet) for reverse-tagged-values!")))
+	     (else #f)))
+      v1))))))
+
+(define (abstract-value-subset?-noncyclic v1 v2)
+ (abstract-value-subset?-with-context v1 v2 '() '()))
+
+(define (abstract-value-subset?-cyclic v1 v2)
+; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
+; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
+ (let loop? ((v1 (cyclicize-abstract-value v1))
+	     (v2 (cyclicize-abstract-value v2))
+	     (cs '()))
+  (cond
+   ((null? v1) #t)
+   ((null? v2) #f)
+   ((some (lambda (c)
+	   (and (set-equalp? eq? v1 (car c)) (set-equalp? eq? v2 (cdr c))))
+	  cs)
+    #t)
+   (else
+    (let ((cs (cons (cons v1 v2) cs)))
+     (every
+      (lambda (u1)
+       (cond ((null? u1) (some null? v2))
+	     ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
+	     ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
+	     ((real? u1)
+	      (some (lambda (u2)
+		     (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
+		    v2))
+	     ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
+	     ((primitive-procedure? u1)
+	      (some (lambda (u2) (and (primitive-procedure? u2) (eq? u1 u2)))
+		    v2))
+	     ((nonrecursive-closure? u1)
+	      (let ((vs1 (nonrecursive-closure-values u1)))
+	       (if
+		(= (vector-length vs1) 0)
+		(some
+		 (lambda (u2)
+		  (and (nonrecursive-closure? u2)
+		       (= (vector-length (nonrecursive-closure-values u2)) 0)
+		       (nonrecursive-closure-match? u1 u2)))
+		 v2)
+		(some-n
+		 (lambda (i)
+		  (let ((us-matching-all-but-u1_i
+			 (remove-if-not
+			  (lambda (u2)
+			   (if (and (nonrecursive-closure? u2)
+				    (nonrecursive-closure-match? u1 u2))
+			       (let ((vs2-matching
+				      (nonrecursive-closure-values-matching
+				       u1 u2)))
+				(every-n
+				 (lambda (j)
+				  (if (= i j)
+				      #t
+				      (loop?
+				       (vector-ref vs1 j)
+				       (vector-ref vs2-matching j)
+				       cs)))
+				 (vector-length vs1)))
+			       #f))
+			  v2)))
+		   (loop? (vector-ref vs1 i)
+			  (reduce
+			   abstract-value-union-cyclic
+			   (map
+			    (lambda (u)
+			     (vector-ref
+			      (nonrecursive-closure-values-matching u1 u)
+			      i))
+			    us-matching-all-but-u1_i)
+			   (empty-abstract-value))
+			  cs)))
+		 (vector-length vs1)))))
+	     ((recursive-closure? u1)
+	      (let ((vs1 (recursive-closure-values u1)))
+	       (if
+		(= (vector-length vs1) 0)
+		(some
+		 (lambda (u2)
+		  (and (recursive-closure? u2)
+		       (= (vector-length (recursive-closure-values u2)) 0)
+		       (recursive-closure-match? u1 u2)))
+		 v2)
+		(some-n
+		 (lambda (i)
+		  (let ((us-matching-all-but-u1_i
+			 (remove-if-not
+			  (lambda (u2)
+			   (if (and (recursive-closure? u2)
+				    (recursive-closure-match? u1 u2))
+			       (let ((vs2-matching
+				      (recursive-closure-values-matching
+				       u1 u2)))
+				(every-n
+				 (lambda (j)
+				  (if (= i j)
+				      #t
+				      (loop?
+				       (vector-ref vs1 j)
+				       (vector-ref vs2-matching j)
+				       cs)))
+				 (vector-length vs1)))
+			       #f))
+			  v2)))
+		   (loop? (vector-ref vs1 i)
+			  (reduce
+			   abstract-value-union-cyclic
+			   (map
+			    (lambda (u)
+			     (vector-ref
+			      (recursive-closure-values-matching u1 u)
+			      i))
+			    us-matching-all-but-u1_i)
+			   (empty-abstract-value))
+			  cs)))
+		 (vector-length vs1)))))
+	     ((bundle? u1)
+	      (panic (string-append "abstract-value-subset? not defined "
+				    " (yet) for bundles!")))
+	     ((reverse-tagged-value? u1)
+	      (panic (string-append "abstract-value-subset? not defined "
+				    " (yet) for reverse-tagged-values!")))
+	     (else #f)))
+      v1))))))
+
+(define abstract-value-subset? abstract-value-subset?-cyclic)
+
+;;; \Subset?
+
+;;; Union
+
+(define (proto-unroll-once u vs-above)
+ (cond ((or (null? u)
+	    (boolean? u)
+	    (abstract-real? u)
+	    (primitive-procedure? u))
+	u)
+       ((or (nonrecursive-closure? u) (recursive-closure? u))
+	(make-closure-with-new-values
+	 u (map-vector (lambda (v) (unroll-once v vs-above))
+		       (nonrecursive-closure-values u))))
+       (else (panic "Not (yet) implemented!"))))
+
+;;; question: Should this procedure preserve eq?ness if the top-level v has no
+;;;           links pointing to it?
+(define (unroll-once v vs-above)
+ (cond ((and (up? v) (= (up-index v) (- (length vs-above) 1)))
+	(let ((vs-above (cons v vs-above)))
+	 (map (lambda (u)
+	       (cond ((or (null? u)
+			  (boolean? u)
+			  (abstract-real? u)
+			  (primitive-procedure? u))
+		      u)
+		     ((or (nonrecursive-closure? u) (recursive-closure? u))
+		      (make-closure-with-new-values
+		       u (map-vector (lambda (v)
+				      (if (memq v vs-above)
+					  (make-up (positionq v vs-above))
+					  v))
+				     (nonrecursive-closure-values u))))
+		     (else (panic "Not (yet) implemented!"))))
+	      (last vs-above))))
+       ((up? v) v)
+       (else
+	(let* ((vs-above (cons v vs-above))
+	       (result
+		(map
+		 (lambda (u)
+		  (cond ((or (null? u)
+			     (boolean? u)
+			     (abstract-real? u)
+			     (primitive-procedure? u))
+			 u)
+			((or (nonrecursive-closure? u) (recursive-closure? u))
+			 (let* ((vs (closure-values u))
+				(vs-new (map-vector
+					 (lambda (v) (unroll-once v vs-above))
+					 vs)))
+			  (if (every-vector eq? vs vs-new)
+			      u
+			      (make-closure-with-new-values u vs-new))))
+			(else (panic "Not (yet) implemented!"))))
+		     v)))
+	 (if (set-equalq? v result) v result)))))
+
+(define (closed-proto-abstract-values v)
+ (unroll-once v '()))
+
+;;; to-do: The way this works sometimes doesn't mesh properly with
+;;;          abstract-value-subset?-with-context, i.e. it leads to
+;;;          nonterminating subset queries.  I believe that the problem lies
+;;;          somewhere in the unrolling process--generating new proto-abstract
+;;;          values, but this is *NEEDED* to keep from "capture".
+;;;        In addition, how do we really deal with the fact we have two
+;;;          (potentially) different contexts?
+(define (generic-abstract-value-union-noncyclic v1 v2 v1-context v2-context)
+ (cond
+  ((null? v1) v2)
+  ((null? v2) v1)
+  ((up? v1) (generic-abstract-value-union-noncyclic
+	     (list-ref v1-context (up-index v1))
+	     v2
+	     (rest* v1-context (+ (up-index v1) 1))
+	     v2-context))
+  ((up? v2) (generic-abstract-value-union-noncyclic
+	     v1
+	     (list-ref v2-context (up-index v2))
+	     v1-context
+	     (rest* v2-context (+ (up-index v2) 1))))
+  (else (append (unroll-once v1 v1-context) (unroll-once v2 v2-context)))))
+
+(define (abstract-value-union v1 v2)
+ (remove-duplicatesq (generic-abstract-value-union-noncyclic v1 v2 '() '())))
+
+;;; to-do: What if either v1 or v2 is (UP k)?
+(define (abstract-value-union-without-unroll v1 v2)
+ (remove-duplicatesq (append v1 v2)))
+
+(define (remove-duplicate-proto-abstract-values-cyclic v)
+ (let loop ((i 0) (v v))
+  (if (or (null? v) (= i (length v)))
+      v
+      (let ((v-new (list-remove v i)))
+       (if (abstract-value-subset? v v-new)
+	   (loop i v-new)
+	   (loop (+ i 1) v))))))
+
+(define (abstract-value-union-cyclic v1 v2)
+ (remove-duplicate-proto-abstract-values-cyclic
+  (remove-duplicatesq (append v1 v2))))
+
+;;; \Union
+
+;;; Abstract-Environment Subset, Equivalence, and Union
+
+(define (abstract-environment-subset? vs1 vs2)
+ (every-vector abstract-value-subset? vs1 vs2))
+
+(define (abstract-environment=? vs1 vs2)
+ (and (abstract-environment-subset? vs1 vs2)
+      (abstract-environment-subset? vs2 vs1)))
+
+(define (abstract-environment-proper-subset? vs1 vs2)
+ (and (abstract-environment-subset? vs1 vs2)
+      (not (abstract-environment-subset? vs2 vs1))))
+
+(define (abstract-environment-union vs1 vs2)
+ (map-vector abstract-value-union vs1 vs2))
+
+;;; Abstract-Flow Equivalence and Union
+
+(define (empty-abstract-flow) '())
+
+(define (abstract-flow=? bs1 bs2)
+ ;; Only used for fixpoint convergence check.
+ ;; needs work: Can make O(n) instead of O(n^2).
+ (set-equalp?
+  (lambda (b1 b2)
+   (and (abstract-environment=?
+	 (abstract-environment-binding-abstract-values b1)
+	 (abstract-environment-binding-abstract-values b2))
+	(abstract-value=? (abstract-environment-binding-abstract-value b1)
+			  (abstract-environment-binding-abstract-value b2))))
+  bs1
+  bs2))
+
 (define (abstract-flow-union bs1 bs2)
  ;; This is one place where imprecision can be introduced.
  (let ((bs
@@ -5736,6 +6051,8 @@
 
 ;;; Abstract-Analysis Equivalence and Union
 
+(define (empty-abstract-analysis) '())
+
 (define (abstract-analysis=? bs1 bs2)
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
@@ -5749,8 +6066,6 @@
 		     (abstract-expression-binding-abstract-flow b2))))
   bs1
   bs2))
-
-(define (empty-abstract-analysis) '())
 
 (define (abstract-analysis-union bs1 bs2)
  (set! *num-calls-abstract-analysis-union*
@@ -5790,10 +6105,6 @@
   (letrec-expression-argument-variables e)
   (letrec-expression-bodies e)))
 
-(define (minimal-elements <? s)
- ;; belongs in QobiScheme
- (remove-if (lambda (e) (some (lambda (e-prime) (<? e-prime e)) s)) s))
-
 (define (create-abstract-analysis e vs)
  (set! *num-calls-create-abstract-analysis*
        (+ *num-calls-create-abstract-analysis* 1))
@@ -5811,22 +6122,9 @@
        ((boolean? v) (list v))
        ((abstract-real? v) (list v))
        ((primitive-procedure? v) (list v))
-       ((nonrecursive-closure? v)
-	(list (make-nonrecursive-closure
-	       (nonrecursive-closure-variables v)
-	       (map-vector vlad-value->abstract-value
-			   (nonrecursive-closure-values v))
-	       (nonrecursive-closure-variable v)
-	       (nonrecursive-closure-body v))))
-       ((recursive-closure? v)
-	(list (make-recursive-closure
-	       (recursive-closure-variables v)
-	       (map-vector vlad-value->abstract-value
-			   (recursive-closure-values v))
-	       (recursive-closure-procedure-variables v)
-	       (recursive-closure-argument-variables v)
-	       (recursive-closure-bodies v)
-	       (recursive-closure-index v))))
+       ((or (nonrecursive-closure? v) (recursive-closure? v))
+	(list (make-closure-with-new-values
+	       v (map-vector vlad-value->abstract-value (closure-values v)))))
        (else (panic "Not a vlad value!"))))
 
 ;;; brownfis: The set of expressions that the initial abstract analysis needs
@@ -5974,50 +6272,31 @@
 	   1))
        (abstract-environment-binding-abstract-value (first bs))))))
 
-(define (map-vector-nondeterministic f v . &rest)
- (list->vector (apply map f (vector->list v) (map vector->list &rest))))
-
-;;; here I am new
 (define (multiply-out-nonrecursive-closure vs e)
  (set! *num-calls-multiply-out-nonrecursive-closure*
        (+ *num-calls-multiply-out-nonrecursive-closure* 1))
- (if #t					;debugging
-     (let ((result
-	    (all-values (make-nonrecursive-closure
-			 (free-variables e)
-			 (map-vector-nondeterministic
-			  (lambda (v) (list (a-member-of v)))
-			  vs)
-			 (lambda-expression-variable e)
-			 (lambda-expression-body e)))))
-      (set! *num-nonrecursive-closures-multiplied-out*
-	    (+ *num-nonrecursive-closures-multiplied-out* (length result)))
-      result)
-     (list (make-nonrecursive-closure
-	    (free-variables e)
-	    vs
-	    (lambda-expression-variable e)
-	    (lambda-expression-body e)))))
+ (let ((xs (free-variables e))
+       (x (lambda-expression-variable e))
+       (e (lambda-expression-body e)))
+  (if (= 0 (vector-length vs))
+      (list (make-nonrecursive-closure xs vs x e))
+      (let ((vss (apply cross-product (vector->list vs))))
+       (set! *num-nonrecursive-closures-multiplied-out*
+	     (+ *num-nonrecursive-closures-multiplied-out* (length vss)))
+       (map (lambda (vs) (make-nonrecursive-closure xs (list->vector vs) x e))
+	    vss)))))
 
 (define (multiply-out-recursive-closure xs vs xs-procedures xs-arguments es i)
  (set! *num-calls-multiply-out-recursive-closure*
        (+ *num-calls-multiply-out-recursive-closure* 1))
- (if #t					;debugging
-     (let ((result
-	    (all-values (make-recursive-closure
-			 xs
-			 (map-vector-nondeterministic
-			  (lambda (v) (list (a-member-of v)))
-			  vs)
-			 xs-procedures
-			 xs-arguments
-			 es
-			 i))))
-      (set! *num-recursive-closures-multiplied-out*
-	    (+ *num-recursive-closures-multiplied-out* (length result)))
-      result)
-     (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))))
+ (let ((vss (apply cross-product (vector->list vs))))
+  (set! *num-recursive-closures-multiplied-out*
+	(+ *num-recursive-closures-multiplied-out* (length vss)))
+  (map (lambda (vs) (make-recursive-closure
+		     xs (list->vector vs) xs-procedures xs-arguments es i))
+       vss)))
 
+;;; needs work: what's going on here?
 (define (abstract-apply-nonrecursive-closure p u1 u2)
  (let ((xs (nonrecursive-closure-variables u1)))
   (p (nonrecursive-closure-body u1)
@@ -6041,15 +6320,7 @@
 	(vector->list (recursive-closure-procedure-variables u1)))
        (x-argument (vector-ref (recursive-closure-argument-variables u1)
 			       (recursive-closure-index u1)))
-       (xs (if #t
-	       (recursive-closure-variables u1)
-	       ;; old code
-	       (letrec-recursive-closure-variables
-		(abstract-recursive-closure-variables u1)
-		(map lambda-expression-variable
-		     (abstract-recursive-closure-expressions u1))
-		(map lambda-expression-body
-		     (abstract-recursive-closure-expressions u1))))))
+       (xs (recursive-closure-variables u1)))
   (p (lambda-expression-body e)
      (list->vector
       (map (lambda (x)
@@ -6094,9 +6365,9 @@
 		 ;;             return concrete bottom in this case.
 		 ;;             This calls for a compile-time-warning!
 		 (else (empty-abstract-value))))
-	  v2)
+	  (closed-proto-abstract-values v2))
      (empty-abstract-value)))
-   v1)
+   (closed-proto-abstract-values v1))
   (empty-abstract-value)))
 
 (define (abstract-apply-prime v1 v2)
@@ -6114,10 +6385,25 @@
 			 (abstract-apply-recursive-closure
 			  create-abstract-analysis u1 u2))
 			(else (empty-abstract-analysis))))
-		 v2)
+		 (closed-proto-abstract-values v2))
 	    (empty-abstract-analysis)))
-   v1)
+   (closed-proto-abstract-values v1))
   (empty-abstract-analysis)))
+
+(define (map-all-abstract-values-in-analysis f bs)
+ ;; f: abstract-value -> abstract-value
+ ;; bs is an abstract analysis
+ (map
+  (lambda (b)
+   (make-abstract-expression-binding
+    (abstract-expression-binding-expression b)
+    (map (lambda (b1)
+	  (make-abstract-environment-binding
+	   (map-vector (lambda (v) (f v))
+		       (abstract-environment-binding-abstract-values b1))
+	   (f (abstract-environment-binding-abstract-value b1))))
+	 (abstract-expression-binding-abstract-flow b))))
+  bs))
 
 (define (update-abstract-analysis bs)
  ;; The abstract evaluator induces an abstract analysis. This updates the
@@ -6126,71 +6412,158 @@
  ;; value is calculated by abstract evaluation in the abstract environment of
  ;; the abstract-environment binding. Recursive calls to the abstract evaluator
  ;; are replaced with abstract-value-in-matching-abstract-environment.
- (abstract-analysis-union
-  (time
-   "update-part-1: ~a~%"
-   (lambda ()
-    (map
-     (lambda (b1)
-      (make-abstract-expression-binding
-       (abstract-expression-binding-expression b1)
-       (map
-	(lambda (b2)
-	 (set! *num-abstract-environment-bindings*
-	       (+ *num-abstract-environment-bindings* 1))
-	 (let* ((e (abstract-expression-binding-expression b1))
-		(xs (free-variables e))
-		(vs (abstract-environment-binding-abstract-values b2)))
-	  (when *debug?*
-	   (format #t "update1: e=~s~%" (abstract->concrete e))
-	   (format #t "environment: ~s~%"
-		   (externalize-abstract-environment xs vs))
-	   (when (and (lambda-expression? e)
-		      (let*? (lambda-expression-body e)))
-	    (let ((vs (map-vector uncyclicize-abstract-value vs))
-		  (v (uncyclicize-abstract-value
-		      (abstract-environment-binding-abstract-value b2))))
-	     (write-object-to-file vs "saddle-environment.vlad")
-	     (write-object-to-file v "saddle-value.vlad")
-	     (write-object-to-file e "saddle-expression.vlad")
-	     (format #t "expression=~s~%" e)
-	     (format #t "environment=~%~s~%" vs)
-	     (format #t "value=~%~s~%" v))))
-	  (when (not (= (vector-length vs) (length (free-variables e))))
-	   (format #t "xs=~s~%" xs)
-	   (format #t "vs=~s~%" (map-vector externalize-abstract-value vs))
-	   (panic (string-append "update-abstract-analysis: xs and vs should "
-				 "be of same length!"))))
-	 (let*
-	   ((e (abstract-expression-binding-expression b1))
-	    (vs (abstract-environment-binding-abstract-values b2))
-	    (v (abstract-environment-binding-abstract-value b2))
-	    (v-new
+ (map-all-abstract-values-in-analysis
+  (lambda (v)
+   (widen-abstract-value (remove-duplicate-proto-abstract-values v)))
+  (abstract-analysis-union
+   (time
+    "update-part-1: ~a~%"
+    (lambda ()
+     (map
+      (lambda (b1)
+       (make-abstract-expression-binding
+	(abstract-expression-binding-expression b1)
+	(map
+	 (lambda (b2)
+	  (set! *num-abstract-environment-bindings*
+		(+ *num-abstract-environment-bindings* 1))
+	  (let* ((e (abstract-expression-binding-expression b1))
+		 (xs (free-variables e))
+		 (vs (abstract-environment-binding-abstract-values b2)))
+	   (when (not (= (vector-length vs) (length (free-variables e))))
+	    (format #t "xs=~s~%" xs)
+	    (format #t "vs=~s~%" (map-vector externalize-abstract-value vs))
+	    (panic (string-append "update-abstract-analysis: xs and vs should "
+				  "be of same length!"))))
+	  (let*
+	    ((e (abstract-expression-binding-expression b1))
+	     (vs (abstract-environment-binding-abstract-values b2))
+	     (v (abstract-environment-binding-abstract-value b2))
+	     (v-new
+	      (cond
+	       ((variable-access-expression? e) (vector-ref vs 0))
+	       ((lambda-expression? e)
+		(multiply-out-nonrecursive-closure vs e))
+	       ((application? e)
+		(let ((xs (free-variables e)))
+		 (abstract-apply
+		  ;; tag 2
+		  (abstract-value-in-matching-abstract-environment
+		   (application-callee e)
+		   ;; tag 2a
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-callee e))))
+		   bs)
+		  ;; tag 3
+		  (abstract-value-in-matching-abstract-environment
+		   (application-argument e)
+		   ;; tag 3a
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-argument e))))
+		   bs)
+		  bs)))
+	       ((letrec-expression? e)
+		(abstract-value-in-matching-abstract-environment
+		 (letrec-expression-body e)
+		 ;; tag 1
+		 (let ((xs (free-variables e)))
+		  (list->vector
+		   (map
+		    (lambda (x)
+		     (if (memp variable=?
+			       x
+			       (letrec-expression-procedure-variables e))
+			 (multiply-out-recursive-closure
+			  (letrec-expression-recursive-closure-variables e)
+			  (list->vector
+			   (map
+			    (lambda (x) (vector-ref vs (positionq x xs)))
+			    (letrec-expression-recursive-closure-variables e)))
+			  (list->vector
+			   (letrec-expression-procedure-variables e))
+			  (list->vector
+			   (letrec-expression-argument-variables e))
+			  (list->vector (letrec-expression-bodies e))
+			  (positionp
+			   variable=?
+			   x
+			   (letrec-expression-procedure-variables e)))
+			 (vector-ref vs (positionq x xs))))
+		    (free-variables (letrec-expression-body e)))))
+		 bs))
+	       (else (fuck-up)))))
+	   (if *include-prior-values?*
+	       (if (abstract-value-subset? v-new v)
+		   b2
+		   (make-abstract-environment-binding
+		    vs (abstract-value-union v v-new)))
+	       (make-abstract-environment-binding vs v-new))))
+	 (abstract-expression-binding-abstract-flow b1))))
+      bs)))
+   (time
+    "update-part-2: ~a~%"
+    (lambda ()
+     (reduce
+      abstract-analysis-union
+      (map
+       (lambda (b)
+	(let ((e (abstract-expression-binding-expression b)))
+	 (when (and *debug?* (> *debug-level* 0))
+	  (format #t "update2: e=~s~%" (abstract->concrete e))
+	  (when (and (lambda-expression? e)
+		     (let*? (lambda-expression-body e))
+		     (variable=? '(anf 298) (lambda-expression-variable e)))
+	  
+	   (let ((bs (abstract-expression-binding-abstract-flow b))
+		 (xs (free-variables e)))
+	    (format #t "expression=~s~%" (abstract->concrete e))
+	    (format #t "flow=~%~s~%" (externalize-abstract-flow xs bs))
+	    (write-object-to-file e "saddle-expression.vlad")
+	    (write-object-to-file (externalize-abstract-flow xs bs)
+				  "saddle-flow.vlad"))))
+	 (reduce
+	  abstract-analysis-union
+	  (map
+	   (lambda (b)
+	    (let ((vs (abstract-environment-binding-abstract-values b)))
 	     (cond
-	      ((variable-access-expression? e) (vector-ref vs 0))
-	      ((lambda-expression? e) (multiply-out-nonrecursive-closure vs e))
+	      ((variable-access-expression? e) (empty-abstract-analysis))
+	      ((lambda-expression? e) (empty-abstract-analysis))
 	      ((application? e)
 	       (let ((xs (free-variables e)))
-		(abstract-apply
-		 ;; tag 2
-		 (abstract-value-in-matching-abstract-environment
-		  (application-callee e)
-		  ;; tag 2a
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-callee e))))
-		  bs)
-		 ;; tag 3
-		 (abstract-value-in-matching-abstract-environment
-		  (application-argument e)
-		  ;; tag 3a
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-argument e))))
-		  bs)
-		 bs)))
+		(abstract-analysis-union
+		 (abstract-analysis-union
+		  (create-abstract-analysis
+		   (application-callee e)
+		   ;; tag 2a
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-callee e)))))
+		  (create-abstract-analysis
+		   (application-argument e)
+		   ;; tag 3a
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-argument e))))))
+		 (abstract-apply-prime
+		  ;; tag 2
+		  (abstract-value-in-matching-abstract-environment
+		   (application-callee e)
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-callee e))))
+		   bs)
+		  ;; tag 3
+		  (abstract-value-in-matching-abstract-environment
+		   (application-argument e)
+		   (list->vector
+		    (map (lambda (x) (vector-ref vs (positionq x xs)))
+			 (free-variables (application-argument e))))
+		   bs)))))
 	      ((letrec-expression? e)
-	       (abstract-value-in-matching-abstract-environment
+	       (create-abstract-analysis
 		(letrec-expression-body e)
 		;; tag 1
 		(let ((xs (free-variables e)))
@@ -6216,296 +6589,16 @@
 			  x
 			  (letrec-expression-procedure-variables e)))
 			(vector-ref vs (positionq x xs))))
-		   (free-variables (letrec-expression-body e)))))
-		bs))
+		   (free-variables (letrec-expression-body e)))))))
 	      (else (fuck-up)))))
-	  (if *include-prior-values?*
-	      (if (abstract-value-subset? v-new v)
-		  b2
-		  (make-abstract-environment-binding
-		   vs (abstract-value-union v v-new)))
-	      (make-abstract-environment-binding vs v-new))))
-	(abstract-expression-binding-abstract-flow b1))))
-     bs)))
-  (time
-   "update-part-2: ~a~%"
-   (lambda ()
-    (reduce
-     abstract-analysis-union
-     (map
-      (lambda (b)
-       (let ((e (abstract-expression-binding-expression b)))
-	(reduce
-	 abstract-analysis-union
-	 (map
-	  (lambda (b)
-	   (let ((vs (abstract-environment-binding-abstract-values b)))
-	    (cond
-	     ((variable-access-expression? e) (empty-abstract-analysis))
-	     ((lambda-expression? e) (empty-abstract-analysis))
-	     ((application? e)
-	      (let ((xs (free-variables e)))
-	       (abstract-analysis-union
-		(abstract-analysis-union
-		 (create-abstract-analysis
-		  (application-callee e)
-		  ;; tag 2a
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-callee e)))))
-		 (create-abstract-analysis
-		  (application-argument e)
-		  ;; tag 3a
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-argument e))))))
-		(abstract-apply-prime
-		 ;; tag 2
-		 (abstract-value-in-matching-abstract-environment
-		  (application-callee e)
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-callee e))))
-		  bs)
-		 ;; tag 3
-		 (abstract-value-in-matching-abstract-environment
-		  (application-argument e)
-		  (list->vector
-		   (map (lambda (x) (vector-ref vs (positionq x xs)))
-			(free-variables (application-argument e))))
-		  bs)))))
-	     ((letrec-expression? e)
-	      (create-abstract-analysis
-	       (letrec-expression-body e)
-	       ;; tag 1
-	       (let ((xs (free-variables e)))
-		(list->vector
-		 (map
-		  (lambda (x)
-		   (if (memp variable=?
-			     x
-			     (letrec-expression-procedure-variables e))
-		       (multiply-out-recursive-closure
-			(letrec-expression-recursive-closure-variables e)
-			(list->vector
-			 (map
-			  (lambda (x) (vector-ref vs (positionq x xs)))
-			  (letrec-expression-recursive-closure-variables e)))
-			(list->vector
-			 (letrec-expression-procedure-variables e))
-			(list->vector (letrec-expression-argument-variables e))
-			(list->vector (letrec-expression-bodies e))
-			(positionp
-			 variable=?
-			 x
-			 (letrec-expression-procedure-variables e)))
-		       (vector-ref vs (positionq x xs))))
-		  (free-variables (letrec-expression-body e)))))))
-	     (else (fuck-up)))))
-	  (abstract-expression-binding-abstract-flow b))
-	 (empty-abstract-analysis))))
-      bs)
-     (empty-abstract-analysis))))))
-
-;;; brownfis -- Instrumentation
-
-(define (instrument-reset)
- (set! *num-calls-abstract-value-union* 0)
- (set! *num-paths-looked-at* 0)
- (set! *total-size-paths-looked-at* 0)
- (set! *num-calls-limit-depth-to* 0)
- (set! *num-calls-reduce-depth!* 0)
- ; (set! *num-calls-abstract-value-subset* 0)
- (set! *num-calls-abstract-value-subset-loop?* 0)
- (set! *num-calls-free-variables* 0)
- ;; update--part 1
- (set! *num-abstract-environment-bindings* 0)
- (set! *num-calls-abstract-value-in-matching-abstract-environment-hit* 0)
- (set! *num-calls-abstract-value-in-matching-abstract-environment-miss* 0)
- (set! *num-calls-multiply-out-nonrecursive-closure* 0)
- (set! *num-nonrecursive-closures-multiplied-out* 0)
- (set! *num-calls-multiply-out-recursive-closure* 0)
- (set! *num-recursive-closures-multiplied-out* 0)
- ;; update--part 2
- (set! *num-calls-abstract-analysis-union* 0)
- (set! *num-abstract-expression-bindings-in-analysis-unions* 0)
- (set! *num-calls-create-abstract-analysis* 0)
- (set! *time-in-widen* 0)
- (set! *time-in-l2* 0)
- (set! *time-in-l3* 0)
- (set! *time-in-l4* 0)
- (set! *time-in-l5* 0)
- ; (set! *time-in-subset* 0)
- (set! *time-in-generic-union* 0)
- (set! *time-in-match-us* 0)
- (set! *time-in-union-us* 0)
- (set! *time-in-loop* 0))
-
-(define (instrument-report)
- (format #t "*num-calls-abstract-value-union*=~s~%"
-	 *num-calls-abstract-value-union*)
- (format #t "*num-paths-looked-at*=~s~%" *num-paths-looked-at*)
- (format #t "*total-size-paths-looked-at*=~s~%" *total-size-paths-looked-at*)
- (format #t "*num-calls-limit-depth-to*=~s~%" *num-calls-limit-depth-to*)
- (format #t "*num-calls-reduce-depth!*=~s~%" *num-calls-reduce-depth!*)
- (format #t "*num-calls-abstract-value-subset*=~s~%"
-	 *num-calls-abstract-value-subset*)
- (format #t "*num-calls-abstract-value-subset-loop?*=~s~%"
-	 *num-calls-abstract-value-subset-loop?*)
- (format #t "*num-calls-free-variables*=~s~%" *num-calls-free-variables*)
- ;; update--part 1
- (format #t "*num-abstract-environment-bindings*=~s~%"
-	 *num-abstract-environment-bindings*)
- (format
-  #t
-  "*num-calls-abstract-value-in-matching-abstract-environment-hit*=~s~%"
-  *num-calls-abstract-value-in-matching-abstract-environment-hit*)
- (format
-  #t
-  "*num-calls-abstract-value-in-matching-abstract-environment-miss*=~s~%"
-  *num-calls-abstract-value-in-matching-abstract-environment-miss*)
- (format #t "*num-calls-multiply-out-nonrecursive-closure*=~s~%"
-	 *num-calls-multiply-out-nonrecursive-closure*)
- (format #t "*num-nonrecursive-closures-multiplied-out*=~s~%"
-	 *num-nonrecursive-closures-multiplied-out*)
- (format #t "*num-calls-multiply-out-recursive-closure*=~s~%"
-	 *num-calls-multiply-out-recursive-closure*)
- (format #t "*num-recursive-closures-multiplied-out*=~s~%"
-	 *num-recursive-closures-multiplied-out*)
- ;; update--part 2
- (format #t "*num-calls-abstract-analysis-union*=~s~%"
-	 *num-calls-abstract-analysis-union*)
- (format #t "*num-abstract-expression-bindings-in-analysis-unions*=~s~%"
-	 *num-abstract-expression-bindings-in-analysis-unions*)
- (format #t "*num-calls-create-abstract-analysis*=~s~%"
-	 *num-calls-create-abstract-analysis*)
- (if (zero? *time-in-widen*)
-     (let* ((time-in-difference (- *time-in-widen*
-				   *time-in-l2*
-				   *time-in-l3*
-				   *time-in-l4*
-				   *time-in-l5*)))
-      (format #t "time in widen: ~s~%" *time-in-widen*)
-      (format #t "  time in l2: ~s~%" *time-in-l2*)
-      (format #t "  time in l3: ~s~%" *time-in-l3*)
-      (format #t "  time in l4: ~s~%" *time-in-l4*)
-      (format #t "  time in l5: ~s~%" *time-in-l5*)
-      (format #t "  time in difference: ~s~%" time-in-difference))
-     (let* ((time-in-difference (- *time-in-widen*
-				   *time-in-l2*
-				   *time-in-l3*
-				   *time-in-l4*
-				   *time-in-l5*))
-	    (time-in-l2-norm (/ *time-in-l2* *time-in-widen*))
-	    (time-in-l3-norm (/ *time-in-l3* *time-in-widen*))
-	    (time-in-l4-norm (/ *time-in-l4* *time-in-widen*))
-	    (time-in-l5-norm (/ *time-in-l5* *time-in-widen*))
-	    (time-in-difference-norm
-	     (/ time-in-difference *time-in-widen*)))
-      (format #t "time in widen: ~s~%" *time-in-widen*)
-      (format #t "  time in l2: ~s (~s)~%" *time-in-l2* time-in-l2-norm)
-      (format #t "  time in l3: ~s (~s)~%" *time-in-l3* time-in-l3-norm)
-      (format #t "  time in l4: ~s (~s)~%" *time-in-l4* time-in-l4-norm)
-      (format #t "  time in l5: ~s (~s)~%" *time-in-l5* time-in-l5-norm)
-      (format #t "  time in difference: ~s (~s)~%"
-	      time-in-difference time-in-difference-norm)))
- (format #t "time in generic-union: ~s~%" *time-in-generic-union*)
- (format #t "time in subset?: ~s~%" *time-in-subset*)
- (format #t "  time in match-us: ~s~%" *time-in-match-us*)
- (format #t "  time in union-us: ~s~%" *time-in-union-us*)
- (format #t "  time in loop: ~s~%" *time-in-loop*))
-
-(define (abstract-value-size v)
- (let outer ((v v) (vs-above '()))
-  (if (memq v vs-above)
-      (list 0 0)
-      (let inner
-	((vs-to-explore
-	  (reduce
-	   append
-	   (map
-	    (lambda (u)
-	     (cond ((nonrecursive-closure? u)
-		    (vector->list (nonrecursive-closure-values u)))
-		   ((recursive-closure? u)
-		    (vector->list (recursive-closure-values u)))
-		   (else '())))
-	    v)
-	   '()))
-	 (num-vs 1)
-	 (num-us (length v)))
-       (if (null? vs-to-explore)
-	   (list num-vs num-us)
-	   (let ((result (outer (first vs-to-explore) (cons v vs-above))))
-	    (inner (rest vs-to-explore)
-		   (+ num-vs (first result))
-		   (+ num-us (second result)))))))))
-
-(define (abstract-environment-binding-values b)
- (cons (abstract-environment-binding-abstract-value b)
-       (vector->list (abstract-environment-binding-abstract-values b))))
-
-(define (abstract-flow-values bs)
- (reduce append (map abstract-environment-binding-values bs) '()))
-
-(define (abstract-expression-binding-values b)
- (abstract-flow-values (abstract-expression-binding-abstract-flow b)))
-
-(define (abstract-analysis-values bs)
- (reduce append (map abstract-expression-binding-values bs) '()))
-
-(define (collect-total-time-spent-in add-to-collection-variable! thunk)
- (let* ((start (clock-sample))
-	(result (thunk))
-	(end (clock-sample)))
-  (add-to-collection-variable! (- end start))
-  result))
-
-(define (collect-time-in-buckets bucket thunk)
- (let ((i (positionq bucket *bucket-names*)))
-  (if (eq? #f i)
-      (thunk)
-      (begin
-       (set! *bucket-stack* (cons i *bucket-stack*))
-       (let* ((start (clock-sample))
-	      (result (thunk))
-	      (end (clock-sample))
-	      (time-elapsed (- end start)))
-	(set! *bucket-stack* (rest *bucket-stack*))
-	(when (not (null? *bucket-stack*))
-	 (let ((j (first *bucket-stack*)))
-	  (vector-set!
-	   *time-buckets* j (- (vector-ref *time-buckets* j) time-elapsed))))
-	(vector-set!
-	 *time-buckets* i (+ (vector-ref *time-buckets* i) time-elapsed))
-	result)))))
-
-(define (report-bucket-times)
- (let ((total-time
-	(reduce-vector
-	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
-  (format #t "Total time in all buckets: ~a~%"
-	  (number->string-of-length-and-precision total-time 8 2))
-  (for-each
-   (lambda (bucket-name bucket)
-    (format
-     #t "  time in ~s=~a (~a% total)~%"
-     bucket-name
-     (number->string-of-length-and-precision bucket 8 2)
-     (if (and (positive? bucket) (positive? total-time))
-	 (number->string-of-length-and-precision
-	  (* 100 (/ bucket total-time)) 6 2)
-	 #f)))
-   *bucket-names*
-   (vector->list *time-buckets*))))
-
-(define (shared-structures-in-v? v)
- (panic "Not (yet) implemented!"))
-
-;;; brownfis -- end of Instrumentation
+	   (abstract-expression-binding-abstract-flow b))
+	  (empty-abstract-analysis))))
+       bs)
+      (empty-abstract-analysis)))))))
 
 (define (flow-analysis e bs0)
  (set! *num-updates* 0)
+ (pp (abstract->concrete e)) (newline)
  (time
   "Total flow analysis time: ~a~%"
   (lambda ()
@@ -6558,33 +6651,37 @@
 	  (instrument-reset)
 	  (reset-cache-performance)
 	  (format #t "(Iteration ~s:~%" *num-updates*)
-	  ;; debugging
-	  (when (= *num-updates* 86)
-	   ;; turn everything on...
-	   (set! *track-flow-analysis?* #t)
-	   (set! *only-updated-bindings?* #t)
-	   (set! *debug?* #t)
-	   (set! *debug-level* 5))
 	  (let* ((bs-prime (time "time-elapsed=~a~%"
 				 (lambda () (update-abstract-analysis bs))))
 		 (vs (abstract-analysis-values bs-prime))
-		 (vs-sizes
-		  (map (lambda (v) (first (abstract-value-size v))) vs))
-		 (vs-max-size (reduce max vs-sizes 0))
-		 (vs-total-size (reduce + vs-sizes 0)))
+		 (vs-uv-sizes (map (lambda (v) (abstract-value-size v)) vs))
+		 (vs-v-sizes (map first vs-uv-sizes))
+		 (vs-u-sizes (map second vs-uv-sizes))
+		 (vs-max-v-size (reduce max vs-v-sizes 0))
+		 (vs-max-u-size (reduce max vs-u-sizes 0))
+		 (vs-total-v-size (reduce + vs-v-sizes 0))
+		 (vs-total-u-size (reduce + vs-u-sizes 0)))
 	   (instrument-report)
 	   (report-bucket-times)
 	   (report-cache-performance)
 	   (if *debug?*
 	       (begin
-		(format #t "max abstract value size: ~s~%" vs-max-size)
-		(format #t "total abstract value size: ~s~%" vs-total-size)
-		(format #t "largest abstract-value: ~s)~%"
+		(format #t "max abstract value v-size: ~s~%" vs-max-v-size)
+		(format #t "total abstract value v-size: ~s~%" vs-total-v-size)
+		(format #t "max abstract value u-size: ~s~%" vs-max-u-size)
+		(format #t "total abstract value u-size: ~s~%" vs-total-u-size)
+		(format #t "largest abstract-value (by v): ~s)~%"
 			(externalize-abstract-value
-			 (list-ref vs (positionq vs-max-size vs-sizes)))))
+			 (list-ref vs (positionq vs-max-v-size vs-v-sizes))))
+		(format #t "largest abstract-value (by u): ~s)~%"
+			(externalize-abstract-value
+			 (list-ref vs (positionq vs-max-u-size vs-u-sizes)))))
 	       (begin
-		(format #t "max abstract value size: ~s~%" vs-max-size)
-		(format #t "total abstract value size: ~s)~%" vs-total-size)))
+		(format #t "max abstract value v-size: ~s~%" vs-max-v-size)
+		(format #t "total abstract value v-size: ~s~%" vs-total-v-size)
+		(format #t "max abstract value u-size: ~s~%" vs-max-u-size)
+		(format #t "total abstract value u-size: ~s)~%"
+			vs-total-u-size)))
 	   (when *track-flow-analysis?*
 	    (pp (externalize-abstract-analysis
 		 (cond
@@ -6603,19 +6700,20 @@
 		    bs-prime))
 		  (else bs-prime))))
 	    (newline))
-	   (if (abstract-analysis=? bs bs-prime)
-	       (begin
-		(format #t "Analysis reached after ~s updates.~%"
-			*num-updates*)
-		(instrument-report)
-		bs)
-	       (loop bs-prime))))))))
+	   (format #t "Checking convergence...")
+	   (let ((done? (abstract-analysis=? bs bs-prime)))
+	    (format #t "~s~%" done?)
+	    (if done?
+		(begin
+		 (format #t "Analysis reached after ~s updates.~%"
+			 *num-updates*)
+		 (instrument-report)
+		 bs)
+		(loop bs-prime)))))))))
     (report-bucket-times)
     result))))
 
-;;; brownfis added:
-
-;;; needs work: this is just a temporary fix
+;;; needs work: do we need to do more than just this?
 (define (compile-time-warning message . us)
  (when *warn?*
   ((if *pp?* pp write) message) (newline)
@@ -6711,7 +6809,8 @@
  (lambda (u)
   (cond
    ((vlad-pair? u '())
-    (let ((v1 (abstract-vlad-car u '())) (v2 (abstract-vlad-cdr u '())))
+    (let ((v1 (closed-proto-abstract-values (abstract-vlad-car u '())))
+	  (v2 (closed-proto-abstract-values (abstract-vlad-cdr u '()))))
      (reduce abstract-value-union
 	     (map (lambda (u1)
 		   (reduce abstract-value-union
@@ -6726,7 +6825,8 @@
  (lambda (u)
   (cond
    ((vlad-pair? u '())
-    (let ((v1 (abstract-vlad-car u '())) (v2 (abstract-vlad-cdr u '())))
+    (let ((v1 (closed-proto-abstract-values (abstract-vlad-car u '())))
+	  (v2 (closed-proto-abstract-values (abstract-vlad-cdr u '()))))
      (reduce
       abstract-value-union
       (map
@@ -6751,7 +6851,8 @@
  (lambda (u)
   (cond
    ((vlad-pair? u '())
-    (let ((v1 (abstract-vlad-car u '())) (v2 (abstract-vlad-cdr u '())))
+    (let ((v1 (closed-proto-abstract-values (abstract-vlad-car u '())))
+	  (v2 (closed-proto-abstract-values (abstract-vlad-cdr u '()))))
      (reduce
       abstract-value-union
       (map
@@ -6777,8 +6878,9 @@
 (define (abstract-ternary f s)
  (lambda (u123)
   (cond ((vlad-pair? u123 '())
-	 (let ((v1 (abstract-vlad-car u123 '()))
-	       (v23 (abstract-vlad-cdr u123 '())))
+	 (let ((v1 (closed-proto-abstract-values (abstract-vlad-car u123 '())))
+	       (v23 (closed-proto-abstract-values
+		     (abstract-vlad-cdr u123 '()))))
 	  (reduce
 	   abstract-value-union
 	   (map
@@ -6788,8 +6890,10 @@
 	      (map
 	       (lambda (u23)
 		(cond ((vlad-pair? u23 '())
-		       (let ((v2 (abstract-vlad-car u23 '()))
-			     (v3 (abstract-vlad-cdr u23 '())))
+		       (let ((v2 (closed-proto-abstract-values
+				  (abstract-vlad-car u23 '())))
+			     (v3 (closed-proto-abstract-values
+				  (abstract-vlad-cdr u23 '()))))
 			(reduce
 			 abstract-value-union
 			 (map
@@ -6854,14 +6958,12 @@
        (else (externalize u))))
 
 (define (externalize-abstract-value v)
- (let ((v (uncyclicize-abstract-value v)))
-  (cond ((integer? v) `((up ,v)))
-	((up? v) v)
-	((list? v)
-	 (cond ((null? v) (list->vector v))
-	       ((= (length v) 1) (externalize-proto-abstract-value (first v)))
-	       (else (make-union (map externalize-proto-abstract-value v)))))
-	(else (panic (format #f "Not an abstract value: ~s" v))))))
+ (cond ((up? v) v)
+       ((list? v)
+	(cond ((null? v) (list->vector v))
+	      ((= (length v) 1) (externalize-proto-abstract-value (first v)))
+	      (else (make-union (map externalize-proto-abstract-value v)))))
+       (else (panic (format #f "Not an abstract value: ~s" v)))))
 
 (define (externalize-abstract-environment xs vs)
  ;; debugging
@@ -6889,6 +6991,14 @@
 
 (define (externalize-abstract-analysis bs)
  (map externalize-abstract-expression-binding bs))
+
+(define (externalize-addition a)
+ (make-addition (addition-index a)
+		(map externalize-abstract-value (addition-values a))))
+
+(define (externalize-addition-u a)
+ (make-addition (addition-index a)
+		(map externalize-proto-abstract-value (addition-values a))))
 
 ;;; end stuff that belongs to brownfis
 
