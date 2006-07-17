@@ -109,6 +109,7 @@
 		  ("l5" l5? (l5 "nonrec-closure-nesting-depth-limit"
 				integer-argument #f)))
 		 (at-most-one
+		  ("abstract-value-depth" abstract-value-depth?)
 		  ("matching-nonrecursive-closure-depth"
 		   matching-nonrecursive-closure-depth?))
 		 (at-most-one ("no-anf" no-anf?))
@@ -131,8 +132,6 @@
 		 (at-most-one
 		  ("bucket-set" bucket-set?
 				(bucket-set "number" integer-argument 0)))
-		 (at-most-one ("new-subset" new-subset?))
-		 (at-most-one ("old-find-path" old-find-path?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -145,9 +144,14 @@
  (when l2? (set! *l2* l2))
  (when l3? (set! *l3* l3))
  (when l4? (set! *l4* l4))
- (when l5? (set! *l5* l5))
+ (when l5?
+  (when (not (or abstract-value-depth? matching-nonrecursive-closure-depth?))
+   (panic "Must define a depth measure when specifying l5!"))
+  (set! *l5* l5))
+ (when abstract-value-depth?
+  (set! *depth-measure* abstract-value-depth))
  (when matching-nonrecursive-closure-depth?
-  (set! *matching-nonrecursive-closure-depth?* #t))
+  (set! *depth-measure* matching-nonrecursive-closure-depth))
  (when debug?
   (set! *debug?* debug?)
   (set! *debug-level* debug-level))
@@ -214,8 +218,6 @@
 		recursive-closure-alpha-bindings))
 	 (else (panic "undefined bucket set!"))))
   (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
- (set! *new-subset* new-subset?)
- (when old-find-path? (set! *new-find-path?* #f))
  (when no-anf? (set! *anf-convert?* (not no-anf?)))
  (set! *allow-only-single-concrete-real?* single-real?)
  (set! *track-flow-analysis?* track-flow-analysis?)
