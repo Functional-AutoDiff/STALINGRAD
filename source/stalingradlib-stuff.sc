@@ -4651,10 +4651,6 @@
 
 ;;; General
 
-(define (duplicatesp? p xs)
- (and (not (null? xs))
-      (or (memp p (first xs) (rest xs)) (duplicatesp? p (rest xs)))))
-
 (define (replaceq x x-prime l) (list-replace l (positionq x l) x-prime))
 
 (define (minimal-elements <? s)
@@ -4677,31 +4673,73 @@
 	     (cons (map (compose list list) (first &vs)) (rest &vs))
 	     '())))
 
+(define (is-cyclic? v)
+ (let loop? ((v v) (v-context '()))
+  (or (not (eq? (memq v v-context) #f))
+      (and (not (up? v))
+	   (let ((u-context (cons v v-context)))
+	    (some (lambda (u)
+		   (and (or (nonrecursive-closure? u) (recursive-closure? u))
+			(some-vector (lambda (v) (loop? v u-context))
+				     (closure-values u))))
+		  v))))))
+
+(define (equalq? x y)
+ (cond ((eq? x y) #t)
+       ((pair? x)
+	(and (pair? y) (equalq? (car x) (car y)) (equalq? (cdr x) (cdr y))))
+       ((vector? x)
+	(let ((lx (vector-length x)))
+	 (and (vector? y)
+	      (= (vector-length y) lx)
+	      (let test ((i (- lx 1)))
+	       (or (= i -1)
+		   (and (equalq? (vector-ref x i) (vector-ref y i))
+			(test (- i 1))))))))
+       ((string? x)
+	(and (string? y) (string=? x y)))
+       ((%record? x)
+	((%record-lookup-method x '%to-equal?) x y))
+       (else (eqv? x y))))
+
+(define (remove-duplicates-circular-safe l)
+ (when (is-cyclic? l)
+  (format #t "v=") (pp (externalize-abstract-value l)) (newline)
+  (panic "v is cyclic!!!"))
+ (let* ((r1 (let loop ((l (remove-if primitive-procedure? l)) (c '()))
+	     (cond ((null? l) (reverse c))
+		   ((memp equalq? (first l) c) (loop (rest l) c))
+		   (else (loop (rest l) (cons (first l) c))))))
+	(r2 (let loop ((l l) (c '()))
+	     (cond ((null? l) (reverse c))
+		   ((memp equalq? (first l) c) (loop (rest l) c))
+		   (else (loop (rest l) (cons (first l) c)))))))
+  r2))
+
 (define (abstract-value-size v)
- (let outer ((v v) (vs-above '()))
-  (if (memq v vs-above)
-      (list 0 0)
-      (let inner
-	((vs-to-explore
-	  (reduce
-	   append
-	   (map
-	    (lambda (u)
-	     (cond ((nonrecursive-closure? u)
-		    (vector->list (nonrecursive-closure-values u)))
-		   ((recursive-closure? u)
-		    (vector->list (recursive-closure-values u)))
-		   (else '())))
-	    v)
-	   '()))
-	 (num-vs 1)
-	 (num-us (length v)))
-       (if (null? vs-to-explore)
-	   (list num-vs num-us)
-	   (let ((result (outer (first vs-to-explore) (cons v vs-above))))
-	    (inner (rest vs-to-explore)
-		   (+ num-vs (first result))
-		   (+ num-us (second result)))))))))
+ (if (up? v)
+     (list 0 0)
+     (let inner
+       ((vs-to-explore
+	 (reduce
+	  append
+	  (map
+	   (lambda (u)
+	    (cond ((nonrecursive-closure? u)
+		   (vector->list (nonrecursive-closure-values u)))
+		  ((recursive-closure? u)
+		   (vector->list (recursive-closure-values u)))
+		  (else '())))
+	   v)
+	  '()))
+	(num-vs 1)
+	(num-us (length v)))
+      (if (null? vs-to-explore)
+	  (list num-vs num-us)
+	  (let ((result (abstract-value-size (first vs-to-explore))))
+	   (inner (rest vs-to-explore)
+		  (+ num-vs (first result))
+		  (+ num-us (second result))))))))
 
 (define (abstract-environment-binding-values b)
  (cons (abstract-environment-binding-abstract-value b)
@@ -5147,7 +5185,7 @@
        ;; needs work: there can still be duplicate proto-abstract values here;
        ;;             to really remove all (or more) duplicates is much more
        ;;             work, though.
-       (else (cons (remove-duplicatesq (append v1 v2)) '()))))
+       (else (cons (remove-duplicates-circular-safe (append v1 v2)) '()))))
 
 (define (widen-single-abstract-value v)
  ;; assumes: *l3* is active
@@ -5583,7 +5621,8 @@
  (if #f
      (remove-duplicate-proto-abstract-values-from-tree v)
      (process-nodes-in-abstract-value-tree
-      (lambda (v v-context) (remove-duplicatesq v)) v '())))
+      (lambda (v v-context) (remove-duplicates-circular-safe v))
+      v '())))
 
 ;;; \Duplicate removal
 
@@ -5968,11 +6007,12 @@
   (else (append (unroll-once v1 v1-context) (unroll-once v2 v2-context)))))
 
 (define (abstract-value-union v1 v2)
- (remove-duplicatesq (generic-abstract-value-union-noncyclic v1 v2 '() '())))
+ (remove-duplicates-circular-safe
+  (generic-abstract-value-union-noncyclic v1 v2 '() '())))
 
 ;;; to-do: What if either v1 or v2 is (UP k)?
 (define (abstract-value-union-without-unroll v1 v2)
- (remove-duplicatesq (append v1 v2)))
+ (remove-duplicates-circular-safe (append v1 v2)))
 
 (define (remove-duplicate-proto-abstract-values-cyclic v)
  (let loop ((i 0) (v v))
@@ -6413,8 +6453,7 @@
  ;; the abstract-environment binding. Recursive calls to the abstract evaluator
  ;; are replaced with abstract-value-in-matching-abstract-environment.
  (map-all-abstract-values-in-analysis
-  (lambda (v)
-   (widen-abstract-value (remove-duplicate-proto-abstract-values v)))
+  (lambda (v) (widen-abstract-value v))
   (abstract-analysis-union
    (time
     "update-part-1: ~a~%"
