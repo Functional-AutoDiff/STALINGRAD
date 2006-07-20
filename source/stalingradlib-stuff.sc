@@ -4590,7 +4590,8 @@
 (define (cyclicize-proto-abstract-value u)
  (cyclicize-proto-abstract-value-internal u '()))
 
-(define (cyclicize-abstract-value v) (cyclicize-abstract-value-internal v '()))
+(define (cyclicize-abstract-value v)
+ (cyclicize-abstract-value-internal v '()))
 
 ;;; Uncyclicization of (Proto) Abstact Values
 
@@ -5799,9 +5800,7 @@
 (define (abstract-value-subset?-cyclic v1 v2)
 ; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
 ; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
- (let loop? ((v1 (cyclicize-abstract-value v1))
-	     (v2 (cyclicize-abstract-value v2))
-	     (cs '()))
+ (let loop? ((v1 v1) (v2 v2) (cs '()))
   (cond
    ((null? v1) #t)
    ((null? v2) #f)
@@ -5919,7 +5918,12 @@
 	     (else #f)))
       v1))))))
 
-(define abstract-value-subset? abstract-value-subset?-cyclic)
+(define (abstract-value-subset? v1 v2)
+ (when (or (is-cyclic? v1) (is-cyclic? v2))
+  (panic "v1 or v2 is already cyclic!"))
+ (let ((v1 (cyclicize-abstract-value v1))
+       (v2 (cyclicize-abstract-value v2)))
+  (abstract-value-subset?-cyclic v1 v2)))
 
 ;;; \Subset?
 
@@ -6014,18 +6018,8 @@
 (define (abstract-value-union-without-unroll v1 v2)
  (remove-duplicates-circular-safe (append v1 v2)))
 
-(define (remove-duplicate-proto-abstract-values-cyclic v)
- (let loop ((i 0) (v v))
-  (if (or (null? v) (= i (length v)))
-      v
-      (let ((v-new (list-remove v i)))
-       (if (abstract-value-subset? v v-new)
-	   (loop i v-new)
-	   (loop (+ i 1) v))))))
-
 (define (abstract-value-union-cyclic v1 v2)
- (remove-duplicate-proto-abstract-values-cyclic
-  (remove-duplicatesq (append v1 v2))))
+ (remove-duplicatesq (append v1 v2)))
 
 ;;; \Union
 
@@ -6549,7 +6543,7 @@
       (map
        (lambda (b)
 	(let ((e (abstract-expression-binding-expression b)))
-	 (when (and *debug?* (> *debug-level* 0))
+	 (when (and *debug?* (> *debug-level* 5))
 	  (format #t "update2: e=~s~%" (abstract->concrete e))
 	  (when (and (lambda-expression? e)
 		     (let*? (lambda-expression-body e))
@@ -6690,6 +6684,8 @@
 	  (instrument-reset)
 	  (reset-cache-performance)
 	  (format #t "(Iteration ~s:~%" *num-updates*)
+	  (when (and *debug?* (= *num-updates* 195))
+	   (set! *debug-level* 1))
 	  (let* ((bs-prime (time "time-elapsed=~a~%"
 				 (lambda () (update-abstract-analysis bs))))
 		 (vs (abstract-analysis-values bs-prime))
@@ -6703,7 +6699,7 @@
 	   (instrument-report)
 	   (report-bucket-times)
 	   (report-cache-performance)
-	   (if *debug?*
+	   (if (and *debug?* (> *debug-level* 0))
 	       (begin
 		(format #t "max abstract value v-size: ~s~%" vs-max-v-size)
 		(format #t "total abstract value v-size: ~s~%" vs-total-v-size)
@@ -6997,12 +6993,13 @@
        (else (externalize u))))
 
 (define (externalize-abstract-value v)
- (cond ((up? v) v)
-       ((list? v)
-	(cond ((null? v) (list->vector v))
-	      ((= (length v) 1) (externalize-proto-abstract-value (first v)))
-	      (else (make-union (map externalize-proto-abstract-value v)))))
-       (else (panic (format #f "Not an abstract value: ~s" v)))))
+ (let ((v (if (is-cyclic? v) (uncyclicize-abstract-value v) v)))
+  (cond ((up? v) v)
+	((list? v)
+	 (cond ((null? v) (list->vector v))
+	       ((= (length v) 1) (externalize-proto-abstract-value (first v)))
+	       (else (make-union (map externalize-proto-abstract-value v)))))
+	(else (panic (format #f "Not an abstract value: ~s" v))))))
 
 (define (externalize-abstract-environment xs vs)
  ;; debugging
