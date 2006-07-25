@@ -119,6 +119,7 @@
 		  ("only-initialized-flows" only-initialized-flows?)
 		  ("only-updated-bindings" only-updated-bindings?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
+		 (at-most-one ("exclude-prelude" exclude-prelude?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one
@@ -132,6 +133,7 @@
 		 (at-most-one
 		  ("bucket-set" bucket-set?
 				(bucket-set "number" integer-argument 0)))
+		 (at-most-one ("no-report" no-report?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -167,63 +169,22 @@
 		abstract-value-subset?
 		widen-abstract-value))
 	 ((1) '(all
-		abstract-value-subset?
-		subset?-matching-us
-		widen-abstract-value
-		widen-nonrecursive-closure
-		widen-recursive-closure
-		widen-limit-depth))
-	 ((2) '(all
-		abstract-value-subset?
-		subset?-matching-us
-		widen-abstract-value
-		widen-nonrecursive-closure
-		widen-recursive-closure
-		widen-limit-depth
-		nonrecursive-closure-alpha-bindings
-		recursive-closure-alpha-bindings))
-	 ((3) '(all
-		abstract-value-subset?
-		subset?-matching-us
-		widen-abstract-value
-		widen-nonrecursive-closure
-		widen-recursive-closure
-		widen-limit-depth
-		alpha-match
-		nonrecursive-closure-alpha-bindings
-		recursive-closure-alpha-bindings))
-	 ((4) '(all
-		abstract-value-subset?
-		subset?-matching-us
-		widen-abstract-value
-		widen-nonrecursive-closure
-		widen-recursive-closure
-		widen-limit-depth
-		alpha-match
-		alpha-match-lookup
-		nonrecursive-closure-alpha-bindings
-		recursive-closure-alpha-bindings))
-	 ((5) '(all
-		abstract-value-subset?
-		subset?-matching-us
-		widen-abstract-value
-		widen-nonrecursive-closure
-		widen-recursive-closure
-		widen-limit-depth
-		find-path-to-collapse
-		reduce-depth!
-		alpha-match
-		alpha-match-lookup
-		nonrecursive-closure-alpha-bindings
-		recursive-closure-alpha-bindings))
+		subset?
+		unroll
+		remove-duplicates-circular-safe
+		reals
+		closures
+		depth))
 	 (else (panic "undefined bucket set!"))))
   (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
+ (set! *no-report?* no-report?)
  (when no-anf? (set! *anf-convert?* (not no-anf?)))
  (set! *allow-only-single-concrete-real?* single-real?)
  (set! *track-flow-analysis?* track-flow-analysis?)
  (set! *only-initialized-flows?* only-initialized-flows?)
  (set! *only-updated-bindings?* only-updated-bindings?)
  (set! *include-prior-values?* (not exclude-prior-values?))
+ (set! *exclude-prelude?* exclude-prelude?)
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
