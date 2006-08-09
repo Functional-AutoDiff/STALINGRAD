@@ -1,0 +1,77 @@
+;;; (include "math")
+;;; selections from math.vlad:
+
+;;; General stuff
+
+(define (sqr x) (* x x))
+
+;;; Lists
+
+(define (first x) (car x))
+
+(define (rest x) (cdr x))
+
+;;; Mapping and reduction
+
+(define (map f l) (if (null? l) '() (cons (f (first l)) (map f (rest l)))))
+
+;;; needs work: To merge with map.
+(define (map2 f l1 l2)
+ (if (null? l1)
+     '()
+     (cons (f (first l1) (first l2)) (map2 f (rest l1) (rest l2)))))
+
+(define ((reduce f i) l)
+ (if (null? l) i (f (first l) ((reduce f i) (rest l)))))
+
+;;; Vectors
+
+(define (v- u v) (map2 - u v))
+
+(define (k*v k v) (map (lambda (x) (* k x)) v))
+
+(define (magnitude-squared x) ((reduce + 0) (map sqr x)))
+
+(define (magnitude x) (sqrt (magnitude-squared x)))
+
+;;; saddle.vlad:
+
+(define (distance-squared u v) (magnitude-squared (v- v u)))
+
+(define (distance u v) (sqrt (distance-squared u v)))
+
+(define (multivariate-argmin f x)
+ (let ((g
+	;;(gradient f)
+	(lambda (x) x)))
+  (letrec ((loop
+	    (lambda (x fx gx eta i)
+	     (cond ((<= (magnitude gx) 1.0e-2) x)
+		   ((= i 10) (loop x fx gx (* 2.0 eta) 0))
+		   (else
+		    (let ((x-prime (v- x (k*v eta gx))))
+		     (if (<= (distance x x-prime) 1.0e-5)
+			 x
+			 (let ((fx-prime (f x-prime)))
+			  (if (< fx-prime fx)
+			      (loop x-prime fx-prime (g x-prime) eta (+ i 1))
+			      (loop x fx gx (/ eta 2.0) 0))))))))))
+   (loop x (f x) (g x) 1.0e-4 0))))
+
+(define (multivariate-argmax f x)
+ (multivariate-argmin (lambda (x) (- 0.0 (f x))) x))
+
+(define (multivariate-min f x) (f (multivariate-argmin f x)))
+
+(define (multivariate-max f x) (f (multivariate-argmax f x)))
+
+(let ((start (list 1.0 1.0))
+      (f (lambda (x1 y1 x2 y2)
+	  (- (+ (sqr x1) (sqr y1)) (+ (sqr x2) (sqr y2))))))
+ (let (((list x1 y1)
+	(multivariate-argmin
+	 (lambda ((list x1 y1))
+	  (multivariate-max (lambda ((list x2 y2)) (f x1 y1 x2 y2)) start))
+	 start)))
+  (list (list x1 y1)
+	(multivariate-argmax (lambda ((list x2 y2)) (f x1 y1 x2 y2)) start))))
