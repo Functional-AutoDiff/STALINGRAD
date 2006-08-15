@@ -4685,15 +4685,10 @@
    (when (is-cyclic? l)
     (format #t "v=") (pp (externalize-abstract-value l)) (newline)
     (panic "v is cyclic!!!"))
-   (let* ((r1 (let loop ((l (remove-if primitive-procedure? l)) (c '()))
-	       (cond ((null? l) (reverse c))
-		     ((memp equalq? (first l) c) (loop (rest l) c))
-		     (else (loop (rest l) (cons (first l) c))))))
-	  (r2 (let loop ((l l) (c '()))
-	       (cond ((null? l) (reverse c))
-		     ((memp equalq? (first l) c) (loop (rest l) c))
-		     (else (loop (rest l) (cons (first l) c)))))))
-    r2))))
+   (let loop ((l l) (c '()))
+    (cond ((null? l) (reverse c))
+	  ((memp equalq? (first l) c) (loop (rest l) c))
+	  (else (loop (rest l) (cons (first l) c))))))))
 
 (define (abstract-value-size v)
  (if (up? v)
@@ -5943,7 +5938,7 @@
  (collect-time-in-buckets
   'subset?
   (lambda ()
-   (when (or (is-cyclic? v1) (is-cyclic? v2))
+   (when (and *debug?* (or (is-cyclic? v1) (is-cyclic? v2)))
     (panic "v1 or v2 is already cyclic!"))
    (let ((v1 (cyclicize-abstract-value v1))
 	 (v2 (cyclicize-abstract-value v2)))
@@ -7110,6 +7105,213 @@
  (make-addition (addition-index a)
 		(map externalize-proto-abstract-value (addition-values a))))
 
+;;; to-do: Put the following code in the appropriate places.
+
+;;; If we don't recurse on nonrecursive closures, each and every value
+;;; resulting from the same lambda expression will return #t.  This is a
+;;; definite issue.
+;;;
+;;; To remedy this, we'll take this conservative tact--
+;;;   - if either v1 or v2 is up, return #t -- this is conservative and will
+;;;     alleviate the need to loop in the trees
+;;;   - otherwise, do the standard thing, but recurse into closures as needed
+(define (nonempty-abstract-value-intersection? v1 v2)
+ ;; note: this is a conservative approximation.  When this returns #f, it is
+ ;;       guaranteed to be #f.  However, this will sometimes return #t when the
+ ;;       result is indeed #f.
+ (or
+  (up? v1)
+  (up? v2)
+  (some
+   (lambda (u1)
+    (cond ((null? u1) (some null? v2))
+	  ((or (eq? u1 #t) (eq? u1 #f)) (some (lambda (u2) (eq? u2 u1)) v2))
+	  ((real? u1) (some (lambda (u2) (or (eq? u2 u1) (eq? u2 'real))) v2))
+	  ((eq? u1 'real)
+	   (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
+	  ((primitive-procedure? u1) (some (lambda (u2) (eq? u2 u1)) v2))
+	  ((nonrecursive-closure? u1)
+	   (some (lambda (u2)
+		  (and (nonrecursive-closure? u2)
+		       (nonrecursive-closure-match? u1 u2)
+		       (nonempty-abstract-environment-intersection?
+			(nonrecursive-closure-values u1)
+			(nonrecursive-closure-values-matching u1 u2))))
+		  v2))
+	  ((recursive-closure? u1)
+	   (some (lambda (u2)
+		  (and (recursive-closure? u2)
+		       (recursive-closure-match? u1 u2)
+		       (nonempty-abstract-environment-intersection?
+			(recursive-closure-values u1)
+			(recursive-closure-values-matching u1 u2))))
+		 v2))
+	  (else (panic "Not a proto-abstract value!"))))
+   v1)))
+
+(define (nonempty-abstract-environment-intersection? vs1 vs2)
+ (every-vector nonempty-abstract-value-intersection? vs1 vs2))
+
+;;; An abstract mapping x->y in an abstract function f is redundant if there
+;;; exists a different abstract mapping x'->y' in f such that:
+;;;   - x is a subset of x' and
+;;;   - y' is a subset of y
+(define (remove-redundant-abstract-mappings bs)
+ (let loop ((i 0) (bs bs))
+  (cond ((= i (length bs)) bs)
+	((some-n
+	  (lambda (j)
+	   (and (not (= i j))
+		(let ((bi (list-ref bs i))
+		      (bj (list-ref bs j)))
+		 (and (abstract-environment-subset?
+		       (abstract-environment-binding-abstract-values bi)
+		       (abstract-environment-binding-abstract-values bj))
+		      (abstract-value-subset?
+		       (abstract-environment-binding-abstract-value bj)
+		       (abstract-environment-binding-abstract-value bi))))))
+	  (length bs))
+	 (loop i (list-remove bs i)))
+	(else (loop (+ i 1) bs)))))
+
+(define (make-abstract-mapping-safe-to-add b bs)
+ ;; b = x |-> y
+ ;; must hold: (forall i:xi intersects x) (subset? yi y)
+ (let*
+   ((flag? #f)
+    (result
+     (let ((x-bar (abstract-environment-binding-abstract-values b))
+	   (y-bar (abstract-environment-binding-abstract-value b)))
+      (let loop ((y-bar y-bar) (bs bs))
+       (cond ((null? bs) (make-abstract-environment-binding x-bar y-bar))
+	     ((nonempty-abstract-environment-intersection?
+	       x-bar (abstract-environment-binding-abstract-values (first bs)))
+	      (set! flag? #t)
+	      (let ((yi-bar (abstract-environment-binding-abstract-value
+			     (first bs))))
+	       (if (abstract-value-subset? yi-bar y-bar)
+		   (loop y-bar (rest bs))
+		   (loop (abstract-value-union y-bar yi-bar) (rest bs)))))
+	     (else (loop y-bar (rest bs))))))))
+  (when (and *debug?* flag?)
+   (let ((externalize-mapping
+	  (lambda (b)
+	   (list (map-vector externalize-abstract-value
+			     (abstract-environment-binding-abstract-values b))
+		 (externalize-abstract-value
+		  (abstract-environment-binding-abstract-value b))))))
+    (format #t "(old-mapping:~%")
+    (pp (externalize-mapping b)) (format #t ")~%")
+    (format #t "(new-mapping:~%")
+    (pp (externalize-mapping result)) (format #t ")~%")
+    (format #t "(bs:~%")
+    (pp (map externalize-mapping bs)) (format #t ")~%")))
+  result))
+
+(define (add-new-abstract-environments-to-abstract-flow bs bs-new)
+ ;; rename?: add-new-abstract-domains-to-abstract-function
+ (cond ((null? bs-new) bs)
+       ((some (lambda (b1)
+	       (abstract-environment-subset?
+		(abstract-environment-binding-abstract-values (first bs-new))
+		(abstract-environment-binding-abstract-values b1)))
+	      bs)
+	(add-new-abstract-environments-to-abstract-flow bs (rest bs-new)))
+       (else
+	(add-new-abstract-environments-to-abstract-flow
+	 (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
+	 (rest bs-new)))))
+
+(define (introduce-imprecision-to-abstract-mapping-in-flow b bs)
+ (let* ((vs (abstract-environment-binding-abstract-values b))
+	(vs-new (map-vector widen-abstract-value vs))
+	(v (abstract-environment-binding-abstract-value
+	    (if (abstract-environment-proper-subset? vs vs-new)
+		(make-abstract-mapping-safe-to-add
+		 (make-abstract-environment-binding
+		  vs-new (abstract-environment-binding-abstract-value b))
+		 bs)
+		b)))
+	(v-new (widen-abstract-value v)))
+  (list-replace bs
+		(positionq b bs)
+		(make-abstract-environment-binding vs-new v-new))))
+
+;;; How should we deal with the widening by restricting # of flow elements?
+;;;
+;;; One solution would be to do things in the old fashion, just with our new
+;;; safeguards.  This is kinda random and unprincipled, but it is simple.
+;;;
+;;; Another solution would be to do some sort of ordering on the environments
+;;; (think grouping them into a tree/forest with ordering being based off of
+;;;  the subset relation).  One could then decide to favor special cases, the
+;;;  most general case, etc with regards to which to widen/preserve.
+;;;
+;;; Yet another (more far-out) idea occurs.  Suppose that the compiler had an
+;;; interest in a particular case (environment or set thereof).  We could look
+;;; to preserve such cases during the analysis in order to satisfy the
+;;; compiler.  In fact, one could imagine that for each expression, the
+;;; compiler might be interested in some (potentially-empty) set of cases and
+;;; specify this to the flow analysis.
+;;;
+;;; Again another approach--perhaps it's best to try to group mappings with
+;;; "similar" ranges, while keeping mappings with "different" ranges separate.
+;;;
+;;; This list could really go on, and I'm not sure what the best way is right
+;;; now.  In fact, these latter two, while appealing, are pretty vague and
+;;; would require a bit of thought into what would be useful.  They might best
+;;; be considered as future improvements.  The sorting idea could lead to some
+;;; perahps more directed methods of restricting # of flow elements.  However,
+;;; it's unclear at this stage what sort of heuristics might be most beneficial
+;;; to the compiler.  So, I'm reluctantly implementing the first (and simplest)
+;;; approach.  It'd be a good idea to revisit this discussion at a later time.
+
+(define (introduce-imprecision-by-restricting-abstract-function-size k bs)
+ ;;    a. *somehow* pick 2 flow elements m1 and m2 to replace with a new one
+ ;;    b. these two can be replaced with an abstract mapping which maps the
+ ;;       Dom(m1)uDom(m2) to a range AT LEAST as wide as Range(m1)uRange(m2).
+ ;;    c. after this is done, we should widen domain/range and remove redundant
+ ;;       mappings. (is this check needed? Yes!)
+ ;;    d. if still over the # of flow elements, goto a
+ (if (<= (length bs) k)
+     bs
+     (let* ((b1 (first bs))
+	    (b2 (second bs))
+	    (vs1 (abstract-environment-binding-abstract-values b1))
+	    (v1 (abstract-environment-binding-abstract-value b1))
+	    (vs2 (abstract-environment-binding-abstract-values b2))
+	    (v2 (abstract-environment-binding-abstract-value b2))
+	    (b-new
+	     (make-abstract-mapping-safe-to-add
+	      (make-abstract-environment-binding
+	       (map-vector
+		widen-abstract-value (abstract-environment-union vs1 vs2))
+	       (abstract-value-union v1 v2))
+	      (rest (rest bs))))
+	    (b-new (make-abstract-environment-binding
+		    (abstract-environment-binding-abstract-values b-new)
+		    (widen-abstract-value
+		     (abstract-environment-binding-abstract-value b-new)))))
+      (introduce-imprecision-by-restricting-abstract-function-size
+       k (remove-redundant-abstract-mappings (cons b-new (rest (rest bs))))))))
+
+(define (introduce-imprecision-to-abstract-flow bs)
+ ;; 0. remove redundant flow elements (will this do anything here??)
+ ;; 1. widen flow domains
+ ;; 2. widen flow ranges
+ ;; 3. remove redundant flow elements
+ (let ((bs-new (remove-redundant-abstract-mappings
+		(let loop ((i 0) (bs (remove-redundant-abstract-mappings bs)))
+		 (if (= i (length bs))
+		     bs
+		     (loop (+ i 1)
+			   (introduce-imprecision-to-abstract-mapping-in-flow
+			    (list-ref bs i) bs)))))))
+  ;; 4. restrict # of flow elements
+  (if (not (eq? #f *l1*))
+      (introduce-imprecision-by-restricting-abstract-function-size *l1* bs-new)
+      bs-new)))
+
 ;;; end stuff that belongs to brownfis
 
 ;;; Primitives
@@ -7682,209 +7884,3 @@
 (define (increment x) (+ x 1))
 (define (decrement x) (- x 1))
 
-;;; From intersect.sc:
-
-;;; If we don't recurse on nonrecursive closures, each and every value
-;;; resulting from the same lambda expression will return #t.  This is a
-;;; definite issue.
-;;;
-;;; To remedy this, we'll take this conservative tact--
-;;;   - if either v1 or v2 is up, return #t -- this is conservative and will
-;;;     alleviate the need to loop in the trees
-;;;   - otherwise, do the standard thing, but recurse into closures as needed
-(define (nonempty-abstract-value-intersection? v1 v2)
- ;; note: this is a conservative approximation.  When this returns #f, it is
- ;;       guaranteed to be #f.  However, this will sometimes return #t when the
- ;;       result is indeed #f.
- (or
-  (up? v1)
-  (up? v2)
-  (some
-   (lambda (u1)
-    (cond ((null? u1) (some null? v2))
-	  ((or (eq? u1 #t) (eq? u1 #f)) (some (lambda (u2) (eq? u2 u1)) v2))
-	  ((real? u1) (some (lambda (u2) (or (eq? u2 u1) (eq? u2 'real))) v2))
-	  ((eq? u1 'real)
-	   (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
-	  ((primitive-procedure? u1) (some (lambda (u2) (eq? u2 u1)) v2))
-	  ((nonrecursive-closure? u1)
-	   (some (lambda (u2)
-		  (and (nonrecursive-closure? u2)
-		       (nonrecursive-closure-match? u1 u2)
-		       (nonempty-abstract-environment-intersection?
-			(nonrecursive-closure-values u1)
-			(nonrecursive-closure-values-matching u1 u2))))
-		  v2))
-	  ((recursive-closure? u1)
-	   (some (lambda (u2)
-		  (and (recursive-closure? u2)
-		       (recursive-closure-match? u1 u2)
-		       (nonempty-abstract-environment-intersection?
-			(recursive-closure-values u1)
-			(recursive-closure-values-matching u1 u2))))
-		 v2))
-	  (else (panic "Not a proto-abstract value!"))))
-   v1)))
-
-(define (nonempty-abstract-environment-intersection? vs1 vs2)
- (every-vector nonempty-abstract-value-intersection? vs1 vs2))
-
-;;; An abstract mapping x->y in an abstract function f is redundant if there
-;;; exists a different abstract mapping x'->y' in f such that:
-;;;   - x is a subset of x' and
-;;;   - y' is a subset of y
-(define (remove-redundant-abstract-mappings bs)
- (let loop ((i 0) (bs bs))
-  (cond ((= i (length bs)) bs)
-	((some-n
-	  (lambda (j)
-	   (and (not (= i j))
-		(let ((bi (list-ref bs i))
-		      (bj (list-ref bs j)))
-		 (and (abstract-environment-subset?
-		       (abstract-environment-binding-abstract-values bi)
-		       (abstract-environment-binding-abstract-values bj))
-		      (abstract-value-subset?
-		       (abstract-environment-binding-abstract-value bj)
-		       (abstract-environment-binding-abstract-value bi))))))
-	  (length bs))
-	 (loop i (list-remove bs i)))
-	(else (loop (+ i 1) bs)))))
-
-(define (make-abstract-mapping-safe-to-add b bs)
- ;; b = x |-> y
- ;; must hold: (forall i:xi intersects x) (subset? yi y)
- (let*
-   ((flag? #f)
-    (result
-     (let ((x-bar (abstract-environment-binding-abstract-values b))
-	   (y-bar (abstract-environment-binding-abstract-value b)))
-      (let loop ((y-bar y-bar) (bs bs))
-       (cond ((null? bs) (make-abstract-environment-binding x-bar y-bar))
-	     ((nonempty-abstract-environment-intersection?
-	       x-bar (abstract-environment-binding-abstract-values (first bs)))
-	      (set! flag? #t)
-	      (let ((yi-bar (abstract-environment-binding-abstract-value
-			     (first bs))))
-	       (if (abstract-value-subset? yi-bar y-bar)
-		   (loop y-bar (rest bs))
-		   (loop (abstract-value-union y-bar yi-bar) (rest bs)))))
-	     (else (loop y-bar (rest bs))))))))
-  (when (and *debug?* flag?)
-   (let ((externalize-mapping
-	  (lambda (b)
-	   (list (map-vector externalize-abstract-value
-			     (abstract-environment-binding-abstract-values b))
-		 (externalize-abstract-value
-		  (abstract-environment-binding-abstract-value b))))))
-    (format #t "(old-mapping:~%")
-    (pp (externalize-mapping b)) (format #t ")~%")
-    (format #t "(new-mapping:~%")
-    (pp (externalize-mapping result)) (format #t ")~%")
-    (format #t "(bs:~%")
-    (pp (map externalize-mapping bs)) (format #t ")~%")))
-  result))
-
-(define (add-new-abstract-environments-to-abstract-flow bs bs-new)
- ;; rename?: add-new-abstract-domains-to-abstract-function
- (cond ((null? bs-new) bs)
-       ((some (lambda (b1)
-	       (abstract-environment-subset?
-		(abstract-environment-binding-abstract-values (first bs-new))
-		(abstract-environment-binding-abstract-values b1)))
-	      bs)
-	(add-new-abstract-environments-to-abstract-flow bs (rest bs-new)))
-       (else
-	(add-new-abstract-environments-to-abstract-flow
-	 (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
-	 (rest bs-new)))))
-
-(define (introduce-imprecision-to-abstract-mapping-in-flow b bs)
- (let* ((vs (abstract-environment-binding-abstract-values b))
-	(vs-new (map-vector widen-abstract-value vs))
-	(v (abstract-environment-binding-abstract-value
-	    (if (abstract-environment-proper-subset? vs vs-new)
-		(make-abstract-mapping-safe-to-add
-		 (make-abstract-environment-binding
-		  vs-new (abstract-environment-binding-abstract-value b))
-		 bs)
-		b)))
-	(v-new (widen-abstract-value v)))
-  (list-replace bs
-		(positionq b bs)
-		(make-abstract-environment-binding vs-new v-new))))
-
-;;; How should we deal with the widening by restricting # of flow elements?
-;;;
-;;; One solution would be to do things in the old fashion, just with our new
-;;; safeguards.  This is kinda random and unprincipled, but it is simple.
-;;;
-;;; Another solution would be to do some sort of ordering on the environments
-;;; (think grouping them into a tree/forest with ordering being based off of
-;;;  the subset relation).  One could then decide to favor special cases, the
-;;;  most general case, etc with regards to which to widen/preserve.
-;;;
-;;; Yet another (more far-out) idea occurs.  Suppose that the compiler had an
-;;; interest in a particular case (environment or set thereof).  We could look
-;;; to preserve such cases during the analysis in order to satisfy the
-;;; compiler.  In fact, one could imagine that for each expression, the
-;;; compiler might be interested in some (potentially-empty) set of cases and
-;;; specify this to the flow analysis.
-;;;
-;;; Again another approach--perhaps it's best to try to group mappings with
-;;; "similar" ranges, while keeping mappings with "different" ranges separate.
-;;;
-;;; This list could really go on, and I'm not sure what the best way is right
-;;; now.  In fact, these latter two, while appealing, are pretty vague and
-;;; would require a bit of thought into what would be useful.  They might best
-;;; be considered as future improvements.  The sorting idea could lead to some
-;;; perahps more directed methods of restricting # of flow elements.  However,
-;;; it's unclear at this stage what sort of heuristics might be most beneficial
-;;; to the compiler.  So, I'm reluctantly implementing the first (and simplest)
-;;; approach.  It'd be a good idea to revisit this discussion at a later time.
-
-(define (introduce-imprecision-by-restricting-abstract-function-size k bs)
- ;;    a. *somehow* pick 2 flow elements m1 and m2 to replace with a new one
- ;;    b. these two can be replaced with an abstract mapping which maps the
- ;;       Dom(m1)uDom(m2) to a range AT LEAST as wide as Range(m1)uRange(m2).
- ;;    c. after this is done, we should widen domain/range and remove redundant
- ;;       mappings. (is this check needed? Yes!)
- ;;    d. if still over the # of flow elements, goto a
- (if (<= (length bs) k)
-     bs
-     (let* ((b1 (first bs))
-	    (b2 (second bs))
-	    (vs1 (abstract-environment-binding-abstract-values b1))
-	    (v1 (abstract-environment-binding-abstract-value b1))
-	    (vs2 (abstract-environment-binding-abstract-values b2))
-	    (v2 (abstract-environment-binding-abstract-value b2))
-	    (b-new
-	     (make-abstract-mapping-safe-to-add
-	      (make-abstract-environment-binding
-	       (map-vector
-		widen-abstract-value (abstract-environment-union vs1 vs2))
-	       (abstract-value-union v1 v2))
-	      (rest (rest bs))))
-	    (b-new (make-abstract-environment-binding
-		    (abstract-environment-binding-abstract-values b-new)
-		    (widen-abstract-value
-		     (abstract-environment-binding-abstract-value b-new)))))
-      (introduce-imprecision-by-restricting-abstract-function-size
-       k (remove-redundant-abstract-mappings (cons b-new (rest (rest bs))))))))
-
-(define (introduce-imprecision-to-abstract-flow bs)
- ;; 0. remove redundant flow elements (will this do anything here??)
- ;; 1. widen flow domains
- ;; 2. widen flow ranges
- ;; 3. remove redundant flow elements
- (let ((bs-new (remove-redundant-abstract-mappings
-		(let loop ((i 0) (bs (remove-redundant-abstract-mappings bs)))
-		 (if (= i (length bs))
-		     bs
-		     (loop (+ i 1)
-			   (introduce-imprecision-to-abstract-mapping-in-flow
-			    (list-ref bs i) bs)))))))
-  ;; 4. restrict # of flow elements
-  (if (not (eq? #f *l1*))
-      (introduce-imprecision-by-restricting-abstract-function-size *l1* bs-new)
-      bs-new)))
