@@ -112,6 +112,7 @@
 		  ("abstract-value-depth" abstract-value-depth?)
 		  ("matching-nonrecursive-closure-depth"
 		   matching-nonrecursive-closure-depth?))
+		 (at-most-one ("no-multiply-out" no-multiply-out?))
 		 (at-most-one ("no-anf" no-anf?))
 		 (at-most-one ("single-real" single-real?))
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
@@ -124,6 +125,9 @@
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one
 		  ("debug" debug? (debug-level "level" integer-argument 0)))
+		 (at-most-one ("debug-new"
+			       debug-new?
+			       (debug-level-new "level" integer-argument 0)))
 		 (at-most-one ("no-warn" no-warn?))
 		 (at-most-one ("use-alpha-equivalence" use-alpha-equivalence?))
 		 (at-most-one
@@ -133,6 +137,9 @@
 		 (at-most-one
 		  ("bucket-set" bucket-set?
 				(bucket-set "number" integer-argument 0)))
+		 (at-most-one ("test" test?))
+		 (at-most-one ("test-finish" test-finish?))
+		 (at-most-one ("fast-finish" fast-finish?))
 		 (at-most-one ("no-report" no-report?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -157,6 +164,9 @@
  (when debug?
   (set! *debug?* debug?)
   (set! *debug-level* debug-level))
+ (when debug-new?
+  (set! *debug-new?* debug-new?)
+  (set! *debug-level-new* debug-level-new))
  (when no-warn? (set! *warn?* #f))
  (set! *use-alpha-equivalence?* use-alpha-equivalence?)
  (set! *memoize-alpha-matching?* memoize-alpha-matching?)
@@ -172,13 +182,90 @@
 		subset?
 		unroll
 		remove-duplicates-circular-safe
+		duplicates
+		reals
+		closures
+		depth))
+	 ((2) '(all
+		unroll
+		remove-duplicates-circular-safe
+		duplicates
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
+		reals
+		closures
+		depth))
+	 ((3) '(all
+		subset?
+		unroll
+		remove-duplicates-circular-safe
+		duplicates
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
+		reals
+		closures
+		depth))
+	 ((4) '(all
+		unroll
+		multiply-out-nonrecursive-closure
+		multiply-out-recursive-closure
+		abstract-value-in-matching...
+		remove-duplicates-circular-safe
+		duplicates
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
+		reals
+		closures
+		depth))
+	 ((5) '(all
+		rest
+		var
+		lambda
+		application
+		letrec
+		finish
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
+		reals
+		closures
+		depth))
+	 ((6) '(all
+		rest
+		var
+		lambda
+		application
+		letrec
+		finish
+		finish1
+		finish2
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
 		reals
 		closures
 		depth))
 	 (else (panic "undefined bucket set!"))))
   (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
+ (set! *test?* test?)
+ (set! *test-finish?* test-finish?)
+ (set! *fast-finish?* fast-finish?)
  (set! *no-report?* no-report?)
  (when no-anf? (set! *anf-convert?* (not no-anf?)))
+ (set! *multiply-out-closures?* (not no-multiply-out?))
  (set! *allow-only-single-concrete-real?* single-real?)
  (set! *track-flow-analysis?* track-flow-analysis?)
  (set! *only-initialized-flows?* only-initialized-flows?)
