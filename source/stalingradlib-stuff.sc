@@ -267,6 +267,8 @@
 
 (define *anf-convert?* #t)
 
+(define *multiply-out-closures?* #t)
+
 (define *allow-only-single-concrete-real?* #f)
 
 (define *track-flow-analysis?* #f)
@@ -280,6 +282,8 @@
 
 (define *debug?* #f)
 (define *debug-level* 0)
+(define *debug-new?* #f)
+(define *debug-level-new* 0)
 
 (define *warn?* #t)
 (define *use-alpha-equivalence?* #f)
@@ -288,6 +292,7 @@
 
 ;;; Instrumentation
 (define *num-updates* 0)
+(define *start-time* #f)
 
 (define *num-calls-abstract-value-union* 0)
 (define *num-paths-looked-at* 0)
@@ -327,6 +332,9 @@
 (define *time-buckets* (make-vector (length *bucket-names*) 0))
 (define *bucket-stack* '())
 
+(define *test?* #f)
+(define *test-finish?* #f)
+(define *fast-finish?* #f)
 (define *no-report?* #f)
 
 ;;; Procedures
@@ -3894,23 +3902,31 @@
 	result)))))
 
 (define (report-bucket-times)
- (let ((total-time
+ ;; ASSUMPTION - first bucket is always ALL
+ (let ((total-time (- (clock-sample) *start-time*))
+       (bucket-time
 	(reduce-vector
 	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
+  (format #t "Total time since start: ~a~%"
+	  (number->string-of-length-and-precision total-time 16 2))
   (format #t "Total time in all buckets: ~a~%"
-	  (number->string-of-length-and-precision total-time 8 2))
+	  (number->string-of-length-and-precision bucket-time 16 2))
   (for-each
    (lambda (bucket-name bucket)
     (format
      #t "  time in ~s=~a (~a% total)~%"
      bucket-name
-     (number->string-of-length-and-precision bucket 8 2)
+     (number->string-of-length-and-precision bucket 16 2)
      (if (and (positive? bucket) (positive? total-time))
 	 (number->string-of-length-and-precision
 	  (* 100 (/ bucket total-time)) 6 2)
 	 #f)))
    *bucket-names*
-   (vector->list *time-buckets*))))
+   (let ((time-buckets (vector->list *time-buckets*)))
+    (if (negative? (first time-buckets))
+	(cons (+ (first time-buckets) total-time)
+	      (rest time-buckets))
+	time-buckets)))))
 
 (define *alpha-match-cache-hits* 0)
 (define *hits-constant* 0)
@@ -5635,11 +5651,14 @@
  (remove-duplicate-proto-abstract-values-from-tree-internal v '()))
 
 (define (remove-duplicate-proto-abstract-values v)
- (if #f
-     (remove-duplicate-proto-abstract-values-from-tree v)
-     (process-nodes-in-abstract-value-tree
-      (lambda (v v-context) (remove-duplicates-circular-safe v))
-      v '())))
+ (collect-time-in-buckets
+  'duplicates
+  (lambda ()
+   (if #f
+       (remove-duplicate-proto-abstract-values-from-tree v)
+       (process-nodes-in-abstract-value-tree
+	(lambda (v v-context) (remove-duplicates-circular-safe v))
+	v '())))))
 
 ;;; \Duplicate removal
 
@@ -5813,6 +5832,51 @@
 (define (abstract-value-subset?-noncyclic v1 v2)
  (abstract-value-subset?-with-context v1 v2 '() '()))
 
+(define (atomic-proto-abstract-value? u)
+ (or (null? u)
+     (eq? #t u)
+     (eq? #f u)
+     (abstract-real? u)
+     (primitive-procedure? u)
+     (and (closure? u) (zero? (vector-length (closure-values u))))))
+
+(define (atomic-proto-abstract-value-subset? u1 u2)
+ (or (eq? u1 u2)
+     (and (real? u1) (eq? 'real u2))
+     (and (nonrecursive-closure? u1)
+	  (nonrecursive-closure? u2)
+	  (nonrecursive-closure-match? u1 u2))
+     (and (recursive-closure? u1)
+	  (recursive-closure? u2)
+	  (recursive-closure-match? u1 u2))))
+
+(define (possible-abstract-value-subset? v1 v2)
+ (every
+  (lambda (u1)
+   (cond ((null? u1) (some null? v2))
+	 ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
+	 ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
+	 ((real? u1)
+	  (some (lambda (u2)
+		 (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
+		v2))
+	 ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
+	 ((primitive-procedure? u1)
+	  (some (lambda (u2)
+		 (and (primitive-procedure? u2) (eq? u1 u2)))
+		v2))
+	 ((nonrecursive-closure? u1)
+	  (some (lambda (u2)
+		 (and (nonrecursive-closure? u2)
+		      (nonrecursive-closure-match? u1 u2)))
+		v2))
+	 ((recursive-closure? u1)
+	  (some (lambda (u2)
+		 (and (recursive-closure? u2)
+		      (recursive-closure-match? u1 u2)))
+		v2))))
+  v1))
+
 (define (abstract-value-subset?-cyclic v1 v2)
 ; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
 ; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
@@ -5825,114 +5889,126 @@
 	  cs)
     #t)
    (else
-    (let ((cs (cons (cons v1 v2) cs)))
-     (every
-      (lambda (u1)
-       (cond ((null? u1) (some null? v2))
-	     ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
-	     ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
-	     ((real? u1)
-	      (some (lambda (u2)
-		     (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
-		    v2))
-	     ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
-	     ((primitive-procedure? u1)
-	      (some (lambda (u2) (and (primitive-procedure? u2) (eq? u1 u2)))
-		    v2))
-	     ((nonrecursive-closure? u1)
-	      (let ((vs1 (nonrecursive-closure-values u1)))
-	       (if
-		(= (vector-length vs1) 0)
-		(some
-		 (lambda (u2)
-		  (and (nonrecursive-closure? u2)
-		       (= (vector-length (nonrecursive-closure-values u2)) 0)
-		       (nonrecursive-closure-match? u1 u2)))
-		 v2)
-		(some-n
-		 (lambda (i)
-		  (let ((us-matching-all-but-u1_i
-			 (remove-if-not
-			  (lambda (u2)
-			   (if (and (nonrecursive-closure? u2)
-				    (nonrecursive-closure-match? u1 u2))
-			       (let ((vs2-matching
-				      (nonrecursive-closure-values-matching
-				       u1 u2)))
-				(every-n
-				 (lambda (j)
-				  (if (= i j)
-				      #t
-				      (loop?
-				       (vector-ref vs1 j)
-				       (vector-ref vs2-matching j)
-				       cs)))
-				 (vector-length vs1)))
-			       #f))
-			  v2)))
-		   (loop? (vector-ref vs1 i)
-			  (reduce
-			   abstract-value-union-cyclic
-			   (map
-			    (lambda (u)
-			     (vector-ref
-			      (nonrecursive-closure-values-matching u1 u)
-			      i))
-			    us-matching-all-but-u1_i)
-			   (empty-abstract-value))
-			  cs)))
-		 (vector-length vs1)))))
-	     ((recursive-closure? u1)
-	      (let ((vs1 (recursive-closure-values u1)))
-	       (if
-		(= (vector-length vs1) 0)
-		(some
-		 (lambda (u2)
-		  (and (recursive-closure? u2)
-		       (= (vector-length (recursive-closure-values u2)) 0)
-		       (recursive-closure-match? u1 u2)))
-		 v2)
-		(some-n
-		 (lambda (i)
-		  (let ((us-matching-all-but-u1_i
-			 (remove-if-not
-			  (lambda (u2)
-			   (if (and (recursive-closure? u2)
-				    (recursive-closure-match? u1 u2))
-			       (let ((vs2-matching
-				      (recursive-closure-values-matching
-				       u1 u2)))
-				(every-n
-				 (lambda (j)
-				  (if (= i j)
-				      #t
-				      (loop?
-				       (vector-ref vs1 j)
-				       (vector-ref vs2-matching j)
-				       cs)))
-				 (vector-length vs1)))
-			       #f))
-			  v2)))
-		   (loop? (vector-ref vs1 i)
-			  (reduce
-			   abstract-value-union-cyclic
-			   (map
-			    (lambda (u)
-			     (vector-ref
-			      (recursive-closure-values-matching u1 u)
-			      i))
-			    us-matching-all-but-u1_i)
-			   (empty-abstract-value))
-			  cs)))
-		 (vector-length vs1)))))
-	     ((bundle? u1)
-	      (panic (string-append "abstract-value-subset? not defined "
-				    " (yet) for bundles!")))
-	     ((reverse-tagged-value? u1)
-	      (panic (string-append "abstract-value-subset? not defined "
-				    " (yet) for reverse-tagged-values!")))
-	     (else #f)))
-      v1))))))
+    (let ((cs (cons (cons v1 v2) cs))
+;	  (us1-atomic (remove-if-not atomic-proto-abstract-value? v1))
+;	  (us1-branching (remove-if atomic-proto-abstract-value? v1))
+;	  (us2-atomic (remove-if-not atomic-proto-abstract-value? v2)))
+	  (us1-branching (remove-if atomic-proto-abstract-value? v1)))
+     (and
+      (possible-abstract-value-subset? v1 v2)
+;      (every (lambda (u1)
+;	      (some (lambda (u2) (atomic-proto-abstract-value-subset? u1 u2))
+;		    us2-atomic))
+;	     us1-atomic)
+      (every
+       (lambda (u1)
+	(cond
+	 ;;	 ((null? u1) (some null? v2))
+	 ;;	 ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
+	 ;;	 ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
+	 ;;	 ((real? u1)
+	 ;;	  (some (lambda (u2)
+	 ;;		 (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
+	 ;;		v2))
+	 ;;	 ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
+	 ;;	 ((primitive-procedure? u1)
+	 ;; 	  (some (lambda (u2)
+	 ;; 		 (and (primitive-procedure? u2) (eq? u1 u2)))
+	 ;; 	        v2))
+	 ((nonrecursive-closure? u1)
+	  (let ((vs1 (nonrecursive-closure-values u1)))
+	   (if
+	    (= (vector-length vs1) 0)
+	    (some
+	     (lambda (u2)
+	      (and (nonrecursive-closure? u2)
+		   (= (vector-length (nonrecursive-closure-values u2)) 0)
+		   (nonrecursive-closure-match? u1 u2)))
+	     v2)
+	    (some-n
+	     (lambda (i)
+	      (let ((us-matching-all-but-u1_i
+		     (remove-if-not
+		      (lambda (u2)
+		       (if (and (nonrecursive-closure? u2)
+				(nonrecursive-closure-match? u1 u2))
+			   (let ((vs2-matching
+				  (nonrecursive-closure-values-matching
+				   u1 u2)))
+			    (every-n
+			     (lambda (j)
+			      (if (= i j)
+				  #t
+				  (loop?
+				   (vector-ref vs1 j)
+				   (vector-ref vs2-matching j)
+				   cs)))
+			     (vector-length vs1)))
+			   #f))
+		      v2)))
+	       (loop? (vector-ref vs1 i)
+		      (reduce
+		       abstract-value-union-cyclic
+		       (map
+			(lambda (u)
+			 (vector-ref
+			  (nonrecursive-closure-values-matching u1 u)
+			  i))
+			us-matching-all-but-u1_i)
+		       (empty-abstract-value))
+		      cs)))
+	     (vector-length vs1)))))
+	 ((recursive-closure? u1)
+	  (let ((vs1 (recursive-closure-values u1)))
+	   (if
+	    (= (vector-length vs1) 0)
+	    (some
+	     (lambda (u2)
+	      (and (recursive-closure? u2)
+		   (= (vector-length (recursive-closure-values u2)) 0)
+		   (recursive-closure-match? u1 u2)))
+	     v2)
+	    (some-n
+	     (lambda (i)
+	      (let ((us-matching-all-but-u1_i
+		     (remove-if-not
+		      (lambda (u2)
+		       (if (and (recursive-closure? u2)
+				(recursive-closure-match? u1 u2))
+			   (let ((vs2-matching
+				  (recursive-closure-values-matching
+				   u1 u2)))
+			    (every-n
+			     (lambda (j)
+			      (if (= i j)
+				  #t
+				  (loop?
+				   (vector-ref vs1 j)
+				   (vector-ref vs2-matching j)
+				   cs)))
+			     (vector-length vs1)))
+			   #f))
+		      v2)))
+	       (loop? (vector-ref vs1 i)
+		      (reduce
+		       abstract-value-union-cyclic
+		       (map
+			(lambda (u)
+			 (vector-ref
+			  (recursive-closure-values-matching u1 u)
+			  i))
+			us-matching-all-but-u1_i)
+		       (empty-abstract-value))
+		      cs)))
+	     (vector-length vs1)))))
+	 ((bundle? u1)
+	  (panic (string-append "abstract-value-subset? not defined "
+				" (yet) for bundles!")))
+	 ((reverse-tagged-value? u1)
+	  (panic (string-append "abstract-value-subset? not defined "
+				" (yet) for reverse-tagged-values!")))
+	 (else #f)))
+       us1-branching)))))))
 
 (define (abstract-value-subset? v1 v2)
  (collect-time-in-buckets
@@ -5974,13 +6050,15 @@
 			    (abstract-real? u)
 			    (primitive-procedure? u))
 			u)
-		       ((or (nonrecursive-closure? u) (recursive-closure? u))
+		       ((closure? u)
+			;(or (nonrecursive-closure? u) (recursive-closure? u))
 			(make-closure-with-new-values
 			 u (map-vector (lambda (v)
 					(if (memq v vs-above)
 					    (make-up (positionq v vs-above))
 					    v))
-				       (nonrecursive-closure-values u))))
+				       (closure-values u))))
+				       ;(nonrecursive-closure-values u))))
 		       (else (panic "Not (yet) implemented!"))))
 		(last vs-above))))
 	 ((up? v) v)
@@ -6103,20 +6181,7 @@
 		     (abstract-environment-binding-abstract-value b2)))
 		   (removeq b2 bs2)))
 	    (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
- (let ((xs (free-variables e))
-       (bs (abstract-flow-union bs1 bs2)))
-  (if (and *l1* (> (length bs) *l1*))
-      (let ((result (restrict-number-of-abstract-flow-elements-to *l1* xs bs)))
-       (when (and *debug?* (> *debug-level* 0))
-	(format #t "(restricting flow:~%")
-	(format #t "  e: ") (pp (abstract->concrete e))
-	(newline)
-	(format #t "  old: ") (pp (externalize-abstract-flow xs bs))
-	(newline)
-	(format #t "  new: ") (pp (externalize-abstract-flow xs result))
-	(format #t ")~%"))
-       result)
-      bs)))
+ (abstract-flow-union bs1 bs2))
 
 ;;; Abstract-Analysis Equivalence and Union
 
@@ -6315,57 +6380,70 @@
  ;; abstract values. This will always choose an abstract-environment binding
  ;; with an equivalent abstract environment, if there is one, since it will be
  ;; the narrowest among the wider ones.
- (let* ((bs (minimal-elements
-	     (lambda (b1 b2)
-	      (abstract-environment-proper-subset?
-	       (abstract-environment-binding-abstract-values b1)
-	       (abstract-environment-binding-abstract-values b2)))
-	     (remove-if-not
-	      (lambda (b)
-	       (when (not (vector? vs)) (panic "vs not a vector!"))
-	       (when (not (vector?
-			   (abstract-environment-binding-abstract-values b)))
-		(panic "aeb-abstract-values not a vector!"))
-	       (abstract-environment-subset?
-		vs (abstract-environment-binding-abstract-values b)))
-	      (expression-abstract-flow e bs)))))
-  (if (null? bs)
-      (begin
-       (set!
-	*num-calls-abstract-value-in-matching-abstract-environment-miss*
-	(+ *num-calls-abstract-value-in-matching-abstract-environment-miss*
-	   1))
-       (empty-abstract-value))
-      (begin
-       (set!
-	*num-calls-abstract-value-in-matching-abstract-environment-hit*
-	(+ *num-calls-abstract-value-in-matching-abstract-environment-hit*
-	   1))
-       (abstract-environment-binding-abstract-value (first bs))))))
+ (collect-time-in-buckets
+  'abstract-value-in-matching...
+  (lambda ()
+   (let* ((bs (minimal-elements
+	       (lambda (b1 b2)
+		(abstract-environment-proper-subset?
+		 (abstract-environment-binding-abstract-values b1)
+		 (abstract-environment-binding-abstract-values b2)))
+	       (remove-if-not
+		(lambda (b)
+		 (when (not (vector? vs)) (panic "vs not a vector!"))
+		 (when (not (vector?
+			     (abstract-environment-binding-abstract-values b)))
+		  (panic "aeb-abstract-values not a vector!"))
+		 (abstract-environment-subset?
+		  vs (abstract-environment-binding-abstract-values b)))
+		(expression-abstract-flow e bs)))))
+    (if (null? bs)
+	(begin
+	 (set!
+	  *num-calls-abstract-value-in-matching-abstract-environment-miss*
+	  (+ *num-calls-abstract-value-in-matching-abstract-environment-miss*
+	     1))
+	 (empty-abstract-value))
+	(begin
+	 (set!
+	  *num-calls-abstract-value-in-matching-abstract-environment-hit*
+	  (+ *num-calls-abstract-value-in-matching-abstract-environment-hit*
+	     1))
+	 (abstract-environment-binding-abstract-value (first bs))))))))
 
 (define (multiply-out-nonrecursive-closure vs e)
- (set! *num-calls-multiply-out-nonrecursive-closure*
-       (+ *num-calls-multiply-out-nonrecursive-closure* 1))
- (let ((xs (free-variables e))
-       (x (lambda-expression-variable e))
-       (e (lambda-expression-body e)))
-  (if (= 0 (vector-length vs))
-      (list (make-nonrecursive-closure xs vs x e))
-      (let ((vss (apply cross-product (vector->list vs))))
-       (set! *num-nonrecursive-closures-multiplied-out*
-	     (+ *num-nonrecursive-closures-multiplied-out* (length vss)))
-       (map (lambda (vs) (make-nonrecursive-closure xs (list->vector vs) x e))
-	    vss)))))
+ (collect-time-in-buckets
+  'multiply-out-nonrecursive-closure
+  (lambda ()
+   (set! *num-calls-multiply-out-nonrecursive-closure*
+	 (+ *num-calls-multiply-out-nonrecursive-closure* 1))
+   (let ((xs (free-variables e))
+	 (x (lambda-expression-variable e))
+	 (e (lambda-expression-body e)))
+    (if (or (not *multiply-out-closures?*) (= 0 (vector-length vs)))
+	(list (make-nonrecursive-closure xs vs x e))
+	(let ((vss (apply cross-product (vector->list vs))))
+	 (set! *num-nonrecursive-closures-multiplied-out*
+	       (+ *num-nonrecursive-closures-multiplied-out* (length vss)))
+	 (map
+	  (lambda (vs) (make-nonrecursive-closure xs (list->vector vs) x e))
+	  vss)))))))
 
 (define (multiply-out-recursive-closure xs vs xs-procedures xs-arguments es i)
- (set! *num-calls-multiply-out-recursive-closure*
-       (+ *num-calls-multiply-out-recursive-closure* 1))
- (let ((vss (apply cross-product (vector->list vs))))
-  (set! *num-recursive-closures-multiplied-out*
-	(+ *num-recursive-closures-multiplied-out* (length vss)))
-  (map (lambda (vs) (make-recursive-closure
-		     xs (list->vector vs) xs-procedures xs-arguments es i))
-       vss)))
+ (collect-time-in-buckets
+  'multiply-out-recursive-closure
+  (lambda ()
+   (set! *num-calls-multiply-out-recursive-closure*
+	 (+ *num-calls-multiply-out-recursive-closure* 1))
+   (if (or (not *multiply-out-closures?*) (= 0 (vector-length vs)))
+       (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))
+       (let ((vss (apply cross-product (vector->list vs))))
+	(set! *num-recursive-closures-multiplied-out*
+	      (+ *num-recursive-closures-multiplied-out* (length vss)))
+	(map
+	 (lambda (vs) (make-recursive-closure
+		       xs (list->vector vs) xs-procedures xs-arguments es i))
+	 vss))))))
 
 ;;; needs work: what's going on here?
 (define (abstract-apply-nonrecursive-closure p u1 u2)
@@ -6491,89 +6569,127 @@
  (time
   "update-part-1: ~a~%"
   (lambda ()
-   (map
-    (lambda (b1)
-     (make-abstract-expression-binding
-      (abstract-expression-binding-expression b1)
-      (map
-       (lambda (b2)
-	(set! *num-abstract-environment-bindings*
-	      (+ *num-abstract-environment-bindings* 1))
-	(let* ((e (abstract-expression-binding-expression b1))
-	       (xs (free-variables e))
-	       (vs (abstract-environment-binding-abstract-values b2)))
-	 (when (not (= (vector-length vs) (length (free-variables e))))
-	  (format #t "xs=~s~%" xs)
-	  (format #t "vs=~s~%" (map-vector externalize-abstract-value vs))
-	  (panic (string-append "update-abstract-analysis: xs and vs should "
-				"be of same length!"))))
-	(let*
-	  ((e (abstract-expression-binding-expression b1))
-	   (vs (abstract-environment-binding-abstract-values b2))
-	   (v (abstract-environment-binding-abstract-value b2))
-	   (v-new
-	    (cond
-	     ((variable-access-expression? e) (vector-ref vs 0))
-	     ((lambda-expression? e)
-	      (multiply-out-nonrecursive-closure vs e))
-	     ((application? e)
-	      (let ((xs (free-variables e)))
-	       (abstract-apply
-		;; tag 2
-		(abstract-value-in-matching-abstract-environment
-		 (application-callee e)
-		 ;; tag 2a
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-callee e))))
-		 bs)
-		;; tag 3
-		(abstract-value-in-matching-abstract-environment
-		 (application-argument e)
-		 ;; tag 3a
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-argument e))))
-		 bs)
-		bs)))
-	     ((letrec-expression? e)
-	      (abstract-value-in-matching-abstract-environment
-	       (letrec-expression-body e)
-	       ;; tag 1
-	       (let ((xs (free-variables e)))
-		(list->vector
-		 (map
-		  (lambda (x)
-		   (if (memp variable=?
-			     x
+   (collect-time-in-buckets
+    'rest
+    (lambda ()
+     (map
+      (lambda (b1)
+       (make-abstract-expression-binding
+	(abstract-expression-binding-expression b1)
+	(map
+	 (lambda (b2)
+	  (set! *num-abstract-environment-bindings*
+		(+ *num-abstract-environment-bindings* 1))
+	  (let* ((e (abstract-expression-binding-expression b1))
+		 (xs (free-variables e))
+		 (vs (abstract-environment-binding-abstract-values b2)))
+	   (when (not (= (vector-length vs) (length (free-variables e))))
+	    (format #t "xs=~s~%" xs)
+	    (format #t "vs=~s~%" (map-vector externalize-abstract-value vs))
+	    (panic (string-append "update-abstract-analysis: xs and vs should "
+				  "be of same length!"))))
+	  (let*
+	    ((e (abstract-expression-binding-expression b1))
+	     (vs (abstract-environment-binding-abstract-values b2))
+	     (v (abstract-environment-binding-abstract-value b2))
+	     (v-new
+	      (cond
+	       ((variable-access-expression? e)
+		(collect-time-in-buckets
+		 'var (lambda () (vector-ref vs 0))))
+	       ((lambda-expression? e)
+		(collect-time-in-buckets
+		 'lambda (lambda () (multiply-out-nonrecursive-closure vs e))))
+	       ((application? e)
+		(collect-time-in-buckets
+		 'application
+		 (lambda ()
+		  (let ((xs (free-variables e)))
+		   (abstract-apply
+		    ;; tag 2
+		    (abstract-value-in-matching-abstract-environment
+		     (application-callee e)
+		     ;; tag 2a
+		     (list->vector
+		      (map (lambda (x) (vector-ref vs (positionq x xs)))
+			   (free-variables (application-callee e))))
+		     bs)
+		    ;; tag 3
+		    (abstract-value-in-matching-abstract-environment
+		     (application-argument e)
+		     ;; tag 3a
+		     (list->vector
+		      (map (lambda (x) (vector-ref vs (positionq x xs)))
+			   (free-variables (application-argument e))))
+		     bs)
+		    bs)))))
+	       ((letrec-expression? e)
+		(collect-time-in-buckets
+		 'letrec
+		 (lambda ()
+		  (abstract-value-in-matching-abstract-environment
+		   (letrec-expression-body e)
+		   ;; tag 1
+		   (let ((xs (free-variables e)))
+		    (list->vector
+		     (map
+		      (lambda (x)
+		       (if (memp variable=?
+				 x
+				 (letrec-expression-procedure-variables e))
+			   (multiply-out-recursive-closure
+			    (letrec-expression-recursive-closure-variables e)
+			    (list->vector
+			     (map
+			      (lambda (x) (vector-ref vs (positionq x xs)))
+			      (letrec-expression-recursive-closure-variables
+			       e)))
+			    (list->vector
 			     (letrec-expression-procedure-variables e))
-		       (multiply-out-recursive-closure
-			(letrec-expression-recursive-closure-variables e)
-			(list->vector
-			 (map
-			  (lambda (x) (vector-ref vs (positionq x xs)))
-			  (letrec-expression-recursive-closure-variables e)))
-			(list->vector
-			 (letrec-expression-procedure-variables e))
-			(list->vector
-			 (letrec-expression-argument-variables e))
-			(list->vector (letrec-expression-bodies e))
-			(positionp
-			 variable=?
-			 x
-			 (letrec-expression-procedure-variables e)))
-		       (vector-ref vs (positionq x xs))))
-		  (free-variables (letrec-expression-body e)))))
-	       bs))
-	     (else (fuck-up)))))
-	 (if *include-prior-values?*
-	     (if (abstract-value-subset? v-new v)
-		 b2
-		 (make-abstract-environment-binding
-		  vs (abstract-value-union v v-new)))
-	     (make-abstract-environment-binding vs v-new))))
-       (abstract-expression-binding-abstract-flow b1))))
-    bs))))
+			    (list->vector
+			     (letrec-expression-argument-variables e))
+			    (list->vector (letrec-expression-bodies e))
+			    (positionp
+			     variable=?
+			     x
+			     (letrec-expression-procedure-variables e)))
+			   (vector-ref vs (positionq x xs))))
+		      (free-variables (letrec-expression-body e)))))
+		   bs))))
+	       (else (fuck-up)))))
+	   (collect-time-in-buckets
+	    'finish
+	    (lambda ()
+	     (if *include-prior-values?*
+		 (if *test-finish?*
+		     (let ((subset-v-v-new? (abstract-value-subset? v v-new))
+			   (subset-v-new-v? (abstract-value-subset? v-new v)))
+		      (when (not subset-v-v-new?)
+		       (format #t "(update1: new value not wider than old!~%")
+		       (format #t "(subset? v v-new) => ~s~%" subset-v-v-new?)
+		       (format #t "(subset? v-new v) => ~s~%" subset-v-new-v?)
+		       (format #t "v=")
+		       (pp (externalize-abstract-value v)) (newline)
+		       (format #t "v-new=")
+		       (pp (externalize-abstract-value v-new))
+		       (format #t ")~%"))
+		      (cond (subset-v-v-new?
+			     (make-abstract-environment-binding vs v-new))
+			    (subset-v-new-v? b2)
+			    (else (make-abstract-environment-binding
+				   vs (abstract-value-union v v-new)))))
+		     (if (and (not *fast-finish?*)
+			      (collect-time-in-buckets
+			       'finish1
+			       (lambda () (abstract-value-subset? v-new v))))
+			 b2
+			 (collect-time-in-buckets
+			  'finish2
+			  (lambda () (make-abstract-environment-binding
+				      vs (abstract-value-union v v-new))))))
+		 (make-abstract-environment-binding vs v-new))))))
+	 (abstract-expression-binding-abstract-flow b1))))
+      bs))))))
 
 (define (update-abstract-analysis-domains bs)
  (time
@@ -6680,7 +6796,25 @@
  (let* ((bs1 (update-abstract-analysis-ranges bs))
 	(bs2 (update-abstract-analysis-domains bs)))
   (map (lambda (b1)
-	(let* ((e (abstract-expression-binding-expression b1))
+	(let* ((timing? (or
+			 ;; foo1
+			 (and *debug-new?* 
+			      (= *debug-level-new* 1)
+			      (= *num-updates* 459))
+			 ;; foo0
+			 (and *debug-new?*
+			      (= *debug-level-new* 2)
+			      (= *num-updates* 458))
+			 ;; foo00
+			 (and *debug-new?*
+			      (= *debug-level-new* 3)
+			      (= *num-updates* 443))))
+	       (side-effect
+		(when timing?
+		 (format #t "(b1-updated:~%")
+		 (pp (externalize-abstract-expression-binding b1))))
+	       (t-start (when timing? (clock-sample)))
+	       (e (abstract-expression-binding-expression b1))
 	       (bs1 (abstract-expression-binding-abstract-flow b1))
 	       (b2 (find-if
 		    (lambda (b2)
@@ -6688,14 +6822,21 @@
 		    bs2))
 	       (bs2 (if (eq? b2 #f)
 			'()
-			(abstract-expression-binding-abstract-flow b2))))
-	 (make-abstract-expression-binding
-	  e (introduce-imprecision-to-abstract-flow
-	     (add-new-abstract-environments-to-abstract-flow bs1 bs2)))))
+			(abstract-expression-binding-abstract-flow b2)))
+	       (result
+		(make-abstract-expression-binding
+		 e (introduce-imprecision-to-abstract-flow
+		    (add-new-abstract-environments-to-abstract-flow
+		     bs1 bs2))))
+	       (t-end (when timing? (clock-sample))))
+	 (when timing?
+	  (format #t "~%update-time=~s)~%" (- t-end t-start)))
+	 result))
        bs1)))
 
 (define (flow-analysis e bs0)
  (set! *num-updates* 0)
+ (set! *start-time* (clock-sample))
  (pp (abstract->concrete e)) (newline)
  (time
   "Total flow analysis time: ~a~%"
@@ -6761,8 +6902,6 @@
 		 (vs-total-v-size (reduce + vs-v-sizes 0))
 		 (vs-total-u-size (reduce + vs-u-sizes 0)))
 	   (when (not *no-report?*)
-	    (instrument-report)
-	    (report-bucket-times)
 	    (when *debug?*
 	     (format #t "v-sizes:~%") (pp v-sizes) (newline))
 					;(report-cache-performance)
@@ -6805,8 +6944,12 @@
 		    bs-prime))
 		  (else bs-prime))))
 	    (newline))
-	   (let ((done? (time "convergence-check-time:~a)~%"
+	   (let ((done? (time "convergence-check-time:~a~%"
 			      (lambda () (abstract-analysis=? bs bs-prime)))))
+	    (when (not *no-report?*)
+	     (instrument-report)
+	     (report-bucket-times))
+	    (format #t "done?: ~s)~%" done?)
 	    (if done?
 		(begin
 		 (format #t "Analysis reached after ~s updates.~%"
@@ -7157,22 +7300,67 @@
 ;;;   - x is a subset of x' and
 ;;;   - y' is a subset of y
 (define (remove-redundant-abstract-mappings bs)
- (let loop ((i 0) (bs bs))
-  (cond ((= i (length bs)) bs)
-	((some-n
-	  (lambda (j)
-	   (and (not (= i j))
-		(let ((bi (list-ref bs i))
-		      (bj (list-ref bs j)))
-		 (and (abstract-environment-subset?
-		       (abstract-environment-binding-abstract-values bi)
-		       (abstract-environment-binding-abstract-values bj))
-		      (abstract-value-subset?
-		       (abstract-environment-binding-abstract-value bj)
-		       (abstract-environment-binding-abstract-value bi))))))
-	  (length bs))
-	 (loop i (list-remove bs i)))
-	(else (loop (+ i 1) bs)))))
+ (collect-time-in-buckets
+  'remove-redundant-mappings
+  (lambda ()
+   (let loop ((i 0) (bs bs))
+    (cond ((= i (length bs)) bs)
+	  ((some-n
+	    (lambda (j)
+	     (and (not (= i j))
+		  (let ((bi (list-ref bs i))
+			(bj (list-ref bs j)))
+		   (and (abstract-environment-subset?
+			 (abstract-environment-binding-abstract-values bi)
+			 (abstract-environment-binding-abstract-values bj))
+			(abstract-value-subset?
+			 (abstract-environment-binding-abstract-value bj)
+			 (abstract-environment-binding-abstract-value bi))))))
+	    (length bs))
+	   (loop i (list-remove bs i)))
+	  (else (loop (+ i 1) bs)))))))
+
+(define (remove-redundant-abstract-mappings1 bs)
+ (collect-time-in-buckets
+  'remove-redundant-mappings1
+  (lambda ()
+   (let loop ((i 0) (bs bs))
+    (cond ((= i (length bs)) bs)
+	  ((some-n
+	    (lambda (j)
+	     (and (not (= i j))
+		  (let ((bi (list-ref bs i))
+			(bj (list-ref bs j)))
+		   (and (abstract-environment-subset?
+			 (abstract-environment-binding-abstract-values bi)
+			 (abstract-environment-binding-abstract-values bj))
+			(abstract-value-subset?
+			 (abstract-environment-binding-abstract-value bj)
+			 (abstract-environment-binding-abstract-value bi))))))
+	    (length bs))
+	   (loop i (list-remove bs i)))
+	  (else (loop (+ i 1) bs)))))))
+
+(define (remove-redundant-abstract-mappings2 bs)
+ (collect-time-in-buckets
+  'remove-redundant-mappings2
+  (lambda ()
+   (let loop ((i 0) (bs bs))
+    (cond ((= i (length bs)) bs)
+	  ((some-n
+	    (lambda (j)
+	     (and (not (= i j))
+		  (let ((bi (list-ref bs i))
+			(bj (list-ref bs j)))
+		   (and (abstract-environment-subset?
+			 (abstract-environment-binding-abstract-values bi)
+			 (abstract-environment-binding-abstract-values bj))
+			(abstract-value-subset?
+			 (abstract-environment-binding-abstract-value bj)
+			 (abstract-environment-binding-abstract-value bi))))))
+	    (length bs))
+	   (loop i (list-remove bs i)))
+	  (else (loop (+ i 1) bs)))))))
 
 (define (make-abstract-mapping-safe-to-add b bs)
  ;; b = x |-> y
@@ -7209,18 +7397,22 @@
   result))
 
 (define (add-new-abstract-environments-to-abstract-flow bs bs-new)
- ;; rename?: add-new-abstract-domains-to-abstract-function
- (cond ((null? bs-new) bs)
-       ((some (lambda (b1)
-	       (abstract-environment-subset?
-		(abstract-environment-binding-abstract-values (first bs-new))
-		(abstract-environment-binding-abstract-values b1)))
-	      bs)
-	(add-new-abstract-environments-to-abstract-flow bs (rest bs-new)))
-       (else
-	(add-new-abstract-environments-to-abstract-flow
-	 (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
-	 (rest bs-new)))))
+ (define (add-new-abstract-environments-to-abstract-flow bs bs-new)
+  ;; rename?: add-new-abstract-domains-to-abstract-function
+  (cond ((null? bs-new) bs)
+	((some (lambda (b1)
+		(abstract-environment-subset?
+		 (abstract-environment-binding-abstract-values (first bs-new))
+		 (abstract-environment-binding-abstract-values b1)))
+	       bs)
+	 (add-new-abstract-environments-to-abstract-flow bs (rest bs-new)))
+	(else
+	 (add-new-abstract-environments-to-abstract-flow
+	  (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
+	  (rest bs-new)))))
+ (collect-time-in-buckets
+  'add-new-environments
+  (lambda () (add-new-abstract-environments-to-abstract-flow bs bs-new))))
 
 (define (introduce-imprecision-to-abstract-mapping-in-flow b bs)
  (let* ((vs (abstract-environment-binding-abstract-values b))
@@ -7300,16 +7492,23 @@
  ;; 1. widen flow domains
  ;; 2. widen flow ranges
  ;; 3. remove redundant flow elements
- (let ((bs-new (remove-redundant-abstract-mappings
-		(let loop ((i 0) (bs (remove-redundant-abstract-mappings bs)))
-		 (if (= i (length bs))
-		     bs
-		     (loop (+ i 1)
-			   (introduce-imprecision-to-abstract-mapping-in-flow
-			    (list-ref bs i) bs)))))))
+ (let ((bs-new
+	(collect-time-in-buckets
+	 'introduce-imprecision-to-flow1
+	 (lambda ()
+	  (remove-redundant-abstract-mappings2
+	   (let loop ((i 0) (bs (if *test?*
+				    bs
+				    (remove-redundant-abstract-mappings1 bs))))
+	    (if (= i (length bs))
+		bs
+		(loop (+ i 1)
+		      (introduce-imprecision-to-abstract-mapping-in-flow
+		       (list-ref bs i) bs)))))))))
   ;; 4. restrict # of flow elements
   (if (not (eq? #f *l1*))
-      (introduce-imprecision-by-restricting-abstract-function-size *l1* bs-new)
+      (introduce-imprecision-by-restricting-abstract-function-size
+       *l1* bs-new)
       bs-new)))
 
 ;;; end stuff that belongs to brownfis
