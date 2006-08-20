@@ -1,20 +1,20 @@
 #!/bin/tcsh -f
-time stalingrad factorial
-time stalingrad even-odd
-time stalingrad bug-a
-time stalingrad bug-b
-time stalingrad bug-c
-time stalingrad bug0
-time stalingrad bug1
-time stalingrad bug2
-time stalingrad bug3
-time stalingrad bug4
-time stalingrad example
-time stalingrad example-forward
-time stalingrad prefix
-time stalingrad sqrt
-time stalingrad triple
-#time stalingrad commute
-time stalingrad factor16
-time stalingrad hessian
-#time stalingrad double-agent
+time stalingrad $1 factorial
+time stalingrad $1 even-odd
+time stalingrad $1 bug-a
+time stalingrad $1 bug-b
+time stalingrad $1 bug-c
+time stalingrad $1 bug0
+time stalingrad $1 bug1
+time stalingrad $1 bug2
+time stalingrad $1 bug3
+time stalingrad $1 bug4
+time stalingrad $1 example
+time stalingrad $1 example-forward
+time stalingrad $1 prefix
+time stalingrad $1 sqrt
+time stalingrad $1 triple
+#time stalingrad $1 commute
+time stalingrad $1 factor16
+time stalingrad $1 hessian
+#time stalingrad $1 double-agent

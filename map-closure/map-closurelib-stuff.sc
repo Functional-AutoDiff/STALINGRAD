@@ -101,15 +101,9 @@
 
 (define *unabbreviate-executably?* #f)
 
-(define *unabbreviate-nicely?* #f)
-
-(define *unabbreviate-transformed?* #t)
-
 (define *unabbreviate-closures?* #f)
 
 (define *pp?* #f)
-
-(define *x* #f)
 
 (define *cps-converted?* #f)
 
@@ -368,13 +362,12 @@
  `(let* ((ys (let* ((y (lambda (f)
 			((lambda (g) (lambda (x) ((f (g g)) x)))
 			 (lambda (g) (lambda (x) ((f (g g)) x))))))
-		    (map
-		     (lambda (f)
-		      (y (lambda (map)
-			  (lambda (l)
-			   (if (null? l)
-			       '()
-			       (cons (f (car l)) (map (cdr l))))))))))
+		    (map (lambda (f)
+			  (y (lambda (map)
+			      (lambda (l)
+			       (if (null? l)
+				   '()
+				   (cons (f (car l)) (map (cdr l))))))))))
 	      (y (lambda (ys)
 		  (lambda (fs)
 		   ((map (lambda (f) (lambda (x) ((f (ys fs)) x))))
@@ -1345,13 +1338,12 @@
 
 (define (ternary f s)
  (lambda (x)
-  (let ((x123 x))
-   (unless (vlad-pair? x123)
+  (unless (vlad-pair? x)
+   (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (let ((x1 (vlad-car x)) (x23 (vlad-cdr x)))
+   (unless (vlad-pair? x23)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (vlad-car x123)) (x23 (vlad-cdr x123)))
-    (unless (vlad-pair? x23)
-     (run-time-error (format #f "Invalid argument to ~a" s) x))
-    (f x1 (vlad-car x23) (vlad-cdr x23))))))
+   (f x1 (vlad-car x23) (vlad-cdr x23)))))
 
 (define (define-primitive-procedure x procedure)
  (set! *value-bindings*
