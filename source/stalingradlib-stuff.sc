@@ -1,4 +1,4 @@
- (MODULE STALINGRADLIB-STUFF)
+(MODULE STALINGRADLIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
@@ -51,7 +51,7 @@
 ;;;     (consvar x1 x2). Someday we need to put it back in.
 ;;;  5. For now, we don't optimize away null tangents.
 
-;;; Church Numerals
+;;; Church Pairs
 ;;;  1. pair? will return #t and procedure? will return #f on some procedures
 ;;;     that are compatible with pairs.
 ;;;  2. You can take the car and cdr of some procedures that are compatible
@@ -61,10 +61,6 @@
 ;;;  4. Procedures that are compatible with pairs will print as pairs rather
 ;;;     than as procedures.
 ;;;  5. You can call a pair.
-
-;;; Experimental threads
-;;;  1. (lambda (x) (bundle (f (primal x)) (f (tangent x)))) ->
-;;;     (lambda (x) (f x))
 
 (include "QobiScheme.sch")
 (include "stalingradlib-stuff.sch")
@@ -112,6 +108,8 @@
  bodies
  body)
 
+(define-structure cons-expression tags car cdr)
+
 (define-structure variable-binding variable expression)
 
 (define-structure value-binding variable value)
@@ -138,6 +136,8 @@
 (define-structure bundle primal tangent)
 
 (define-structure reverse-tagged-value primal)
+
+(define-structure tagged-pair tags car cdr)
 
 (define-structure forward-cache-entry primal? primal tangent? tangent forward)
 
@@ -245,7 +245,9 @@
 
 (define *memoized?* #f)
 
-(define *church?* #f)
+(define *church-booleans?* #f)
+
+(define *church-pairs?* #f)
 
 (define *cfa0?* #f)
 
@@ -346,7 +348,7 @@
 (define vlad-false #f)
 
 (define (vlad-true? v)
- (if *church?*
+ (if *church-booleans?*
      ;; (lambda (p)
      ;;  (let* ((x1 (lambda (a) (let* ((x3 (lambda (d) a))) x3))) (x2 (p x1)))
      ;;   x2))
@@ -421,7 +423,7 @@
      (eq? v #t)))
 
 (define (vlad-false? v)
- (if *church?*
+ (if *church-booleans?*
      ;; (lambda (p)
      ;;  (let* ((x1 (lambda (a) (let* ((x3 (lambda (d) d))) x3))) (x2 (p x1)))
      ;;   x2))
@@ -499,131 +501,161 @@
 (define (vlad-boolean? v) (or (vlad-true? v) (vlad-false? v)))
 
 (define (vlad-forward? v)
- ;; needs work: church
- (or (bundle? v)
-     (and (nonrecursive-closure? v)
+ (or (and (nonrecursive-closure? v)
 	  (not (null? (nonrecursive-closure-tags v)))
 	  (eq? (first (nonrecursive-closure-tags v)) 'forward))
      (and (recursive-closure? v)
 	  (not (null? (recursive-closure-tags v)))
-	  (eq? (first (recursive-closure-tags v)) 'forward))))
+	  (eq? (first (recursive-closure-tags v)) 'forward))
+     (bundle? v)
+     (and (not *church-pairs?*)
+	  (tagged-pair? v)
+	  (not (null? (tagged-pair-tags v)))
+	  (eq? (first (tagged-pair-tags v)) 'forward))))
 
 (define (vlad-reverse? v)
- ;; needs work: church
- (or (reverse-tagged-value? v)
-     (and (nonrecursive-closure? v)
+ (or (and (nonrecursive-closure? v)
 	  (not (null? (nonrecursive-closure-tags v)))
 	  (eq? (first (nonrecursive-closure-tags v)) 'reverse))
      (and (recursive-closure? v)
 	  (not (null? (recursive-closure-tags v)))
-	  (eq? (first (recursive-closure-tags v)) 'reverse))))
+	  (eq? (first (recursive-closure-tags v)) 'reverse))
+     (reverse-tagged-value? v)
+     (and (not *church-pairs?*)
+	  (tagged-pair? v)
+	  (not (null? (tagged-pair-tags v)))
+	  (eq? (first (tagged-pair-tags v)) 'reverse))))
 
 (define (vlad-pair? v tags)
- ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
- ;; needs work: church
- (if (null? tags)
-     (and
-      (nonrecursive-closure? v)
-      (not (vlad-forward? v))
-      (not (vlad-reverse? v))
-      (= (length (nonrecursive-closure-variables v)) 2)
-      (let*? (nonrecursive-closure-body v))
-      (= (length (let*-variables (nonrecursive-closure-body v))) 2)
-      (application? (first (let*-expressions (nonrecursive-closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-callee
-	(first (let*-expressions (nonrecursive-closure-body v)))))
-      (variable=? (variable-access-expression-variable
-		   (application-callee
-		    (first (let*-expressions (nonrecursive-closure-body v)))))
-		  (nonrecursive-closure-variable v))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-argument
-	(first (let*-expressions (nonrecursive-closure-body v)))))
-      (variable=? (variable-access-expression-variable
-		   (application-argument
-		    (first (let*-expressions (nonrecursive-closure-body v)))))
-		  (first (nonrecursive-closure-variables v)))
-      (application? (second (let*-expressions (nonrecursive-closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-callee
-	(second (let*-expressions (nonrecursive-closure-body v)))))
-      (variable=? (variable-access-expression-variable
-		   (application-callee
-		    (second (let*-expressions (nonrecursive-closure-body v)))))
-		  (first (let*-variables (nonrecursive-closure-body v))))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression?
-       (application-argument
-	(second (let*-expressions (nonrecursive-closure-body v)))))
-      (variable=? (variable-access-expression-variable
-		   (application-argument
-		    (second (let*-expressions (nonrecursive-closure-body v)))))
-		  (second (nonrecursive-closure-variables v)))
-      ;; Technically not needed since in ANF.
-      (variable-access-expression? (let*-body (nonrecursive-closure-body v)))
-      (variable=? (variable-access-expression-variable
-		   (let*-body (nonrecursive-closure-body v)))
-		  (second (let*-variables (nonrecursive-closure-body v)))))
-     (case (first tags)
-      ((forward) (vlad-pair? (primal v) (rest tags)))
-      ((reverse) (vlad-pair? (*j-inverse v) (rest tags)))
-      (else (fuck-up)))))
+ (if *church-pairs?*
+     (if (null? tags)
+	 ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
+	 (and
+	  (nonrecursive-closure? v)
+	  (not (vlad-forward? v))
+	  (not (vlad-reverse? v))
+	  (= (length (nonrecursive-closure-variables v)) 2)
+	  (let*? (nonrecursive-closure-body v))
+	  (= (length (let*-variables (nonrecursive-closure-body v))) 2)
+	  (application?
+	   (first (let*-expressions (nonrecursive-closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-callee
+	    (first (let*-expressions (nonrecursive-closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-callee
+	     (first (let*-expressions (nonrecursive-closure-body v)))))
+	   (nonrecursive-closure-variable v))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-argument
+	    (first (let*-expressions (nonrecursive-closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-argument
+	     (first (let*-expressions (nonrecursive-closure-body v)))))
+	   (first (nonrecursive-closure-variables v)))
+	  (application?
+	   (second (let*-expressions (nonrecursive-closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-callee
+	    (second (let*-expressions (nonrecursive-closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-callee
+	     (second (let*-expressions (nonrecursive-closure-body v)))))
+	   (first (let*-variables (nonrecursive-closure-body v))))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (application-argument
+	    (second (let*-expressions (nonrecursive-closure-body v)))))
+	  (variable=?
+	   (variable-access-expression-variable
+	    (application-argument
+	     (second (let*-expressions (nonrecursive-closure-body v)))))
+	   (second (nonrecursive-closure-variables v)))
+	  ;; Technically not needed since in ANF.
+	  (variable-access-expression?
+	   (let*-body (nonrecursive-closure-body v)))
+	  (variable=? (variable-access-expression-variable
+		       (let*-body (nonrecursive-closure-body v)))
+		      (second (let*-variables (nonrecursive-closure-body v)))))
+	 (case (first tags)
+	  ((forward) (vlad-pair? (primal v) (rest tags)))
+	  ((reverse) (vlad-pair? (*j-inverse v) (rest tags)))
+	  (else (fuck-up))))
+     (and (tagged-pair? v) (equal? (tagged-pair-tags v) tags))))
 
 (define (vlad-car v tags)
- ;; needs work: church
- (cond ((null? tags)
-	(unless (vlad-pair? v tags)
-	 (run-time-error "Attempt to take vlad-car of a non-pair" v))
-	(vector-ref (nonrecursive-closure-values v) 0))
-       (else (case (first tags)
-	      ((forward) (bundle (vlad-car (primal v) (rest tags))
-				 (vlad-car (tangent v) (rest tags))))
-	      ((reverse) (*j (vlad-car (*j-inverse v) (rest tags))))
-	      (else (fuck-up))))))
+ (unless (vlad-pair? v tags)
+  (run-time-error "Attempt to take vlad-car of a non-pair" v))
+ (if *church-pairs?*
+     (cond ((null? tags) (vector-ref (nonrecursive-closure-values v) 0))
+	   (else (case (first tags)
+		  ((forward) (bundle (vlad-car (primal v) (rest tags))
+				     (vlad-car (tangent v) (rest tags))))
+		  ((reverse) (*j (vlad-car (*j-inverse v) (rest tags))))
+		  (else (fuck-up)))))
+     (tagged-pair-car v)))
 
 (define (vlad-cdr v tags)
- ;; needs work: church
- (cond ((null? tags)
-	(unless (vlad-pair? v tags)
-	 (run-time-error "Attempt to take vlad-cdr of a non-pair" v))
-	(vector-ref (nonrecursive-closure-values v) 1))
-       (else (case (first tags)
-	      ((forward) (bundle (vlad-cdr (primal v) (rest tags))
-				 (vlad-cdr (tangent v) (rest tags))))
-	      ((reverse) (*j (vlad-cdr (*j-inverse v) (rest tags))))
-	      (else (fuck-up))))))
+ (unless (vlad-pair? v tags)
+  (run-time-error "Attempt to take vlad-cdr of a non-pair" v))
+ (if *church-pairs?*
+     (cond ((null? tags) (vector-ref (nonrecursive-closure-values v) 1))
+	   (else (case (first tags)
+		  ((forward) (bundle (vlad-cdr (primal v) (rest tags))
+				     (vlad-cdr (tangent v) (rest tags))))
+		  ((reverse) (*j (vlad-cdr (*j-inverse v) (rest tags))))
+		  (else (fuck-up)))))
+     (tagged-pair-cdr v)))
 
 (define (vlad-cons v1 v2)
- ;; needs work: church
  ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
- (make-nonrecursive-closure
-  '(a d)
-  (vector v1 v2)
-  'm
-  (index 'm
-	 '(a d)
-	 (new-let* '(x1 x2)
-		   (list (new-application (new-variable-access-expression 'm)
-					  (new-variable-access-expression 'a))
-			 (new-application (new-variable-access-expression 'x1)
-					  (new-variable-access-expression 'd)))
-		   (new-variable-access-expression 'x2)))))
+ (if *church-pairs?*
+     (make-nonrecursive-closure
+      '(a d)
+      (vector v1 v2)
+      'm
+      (index
+       'm
+       '(a d)
+       (new-let* '(x1 x2)
+		 (list (new-application (new-variable-access-expression 'm)
+					(new-variable-access-expression 'a))
+		       (new-application (new-variable-access-expression 'x1)
+					(new-variable-access-expression 'd)))
+		 (new-variable-access-expression 'x2))))
+     (make-tagged-pair '() v1 v2)))
 
 (define (cons*ify xs tags)
- (if (null? tags)
-     (let loop ((xs xs))
-      (cond ((null? xs) '())
-	    ((null? (rest xs)) (first xs))
-	    (else (vlad-cons (first xs) (loop (rest xs))))))
-     (case (first tags)
-      ((forward) (bundle (cons*ify (map primal xs) (rest tags))
-			 (cons*ify (map tangent xs) (rest tags))))
-      ((reverse) (*j (cons*ify (map *j-inverse xs) (rest tags))))
-      (else (fuck-up)))))
+ (if *church-pairs?*
+     (if (null? tags)
+	 (let loop ((xs xs))
+	  (cond ((null? xs) '())
+		((null? (rest xs)) (first xs))
+		(else (vlad-cons (first xs) (loop (rest xs))))))
+	 (case (first tags)
+	  ((forward) (bundle (cons*ify (map primal xs) (rest tags))
+			     (cons*ify (map tangent xs) (rest tags))))
+	  ((reverse) (*j (cons*ify (map *j-inverse xs) (rest tags))))
+	  (else (fuck-up))))
+     (if (null? xs)
+	 (let loop ((tags tags))
+	  (if (null? tags)
+	      '()
+	      ((case (first tags)
+		((forward) j*)
+		((reverse) *j)
+		(else (fuck-up)))
+	       (loop (rest tags)))))
+	 (let loop ((xs xs))
+	  (if (null? (rest xs))
+	      (first xs)
+	      (make-tagged-pair tags (first xs) (loop (rest xs))))))))
 
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v)
@@ -634,10 +666,9 @@
       (not (vlad-false? v))))
 
 (define (vlad-equal? v1 v2)
- ;; needs work: church
  (or (eq? v1 v2)
      (and (null? v1) (null? v2))
-     (and (not *church?*)
+     (and (not *church-booleans?*)
 	  (or (and (vlad-true? v1) (vlad-true? v2))
 	      (and (vlad-false? v1) (vlad-false? v2))))
      (and (real? v1) (real? v2) (= v1 v2))
@@ -648,13 +679,12 @@
 	  (nonrecursive-closure? v2)
 	  (= (vector-length (nonrecursive-closure-values v1))
 	     (vector-length (nonrecursive-closure-values v2)))
-	  (alpha-equivalent?
-	   (nonrecursive-closure-body v1)
-	   (nonrecursive-closure-body v2)
-	   (cons (nonrecursive-closure-variable v1)
-		 (nonrecursive-closure-variables v1))
-	   (cons (nonrecursive-closure-variable v2)
-		 (nonrecursive-closure-variables v2)))
+	  (alpha-equivalent? (nonrecursive-closure-body v1)
+			     (nonrecursive-closure-body v2)
+			     (cons (nonrecursive-closure-variable v1)
+				   (nonrecursive-closure-variables v1))
+			     (cons (nonrecursive-closure-variable v2)
+				   (nonrecursive-closure-variables v2)))
 	  (every-vector vlad-equal?
 			(nonrecursive-closure-values v1)
 			(nonrecursive-closure-values v2)))
@@ -692,9 +722,13 @@
      (and (reverse-tagged-value? v1)
 	  (reverse-tagged-value? v2)
 	  (vlad-equal? (reverse-tagged-value-primal v1)
-		       (reverse-tagged-value-primal v2)))))
-
-(define (dereference v) v)
+		       (reverse-tagged-value-primal v2)))
+     (and (not *church-pairs?*)
+	  (tagged-pair? v1)
+	  (tagged-pair? v2)
+	  (equal? (tagged-pair-tags v1) (tagged-pair-tags v2))
+	  (vlad-equal? (tagged-pair-car v1) (tagged-pair-car v2))
+	  (vlad-equal? (tagged-pair-cdr v1) (tagged-pair-cdr v2)))))
 
 ;;; Variables
 
@@ -1043,8 +1077,9 @@
 
 (define (new-application e1 e2)
  (make-application
-  e1 e2 (sort-variables
-	 (union-variables (free-variables e1) (free-variables e2)))))
+  e1
+  e2
+  (sort-variables (union-variables (free-variables e1) (free-variables e2)))))
 
 (define (create-application bs tags e . es)
  (new-application e (make-cons* bs tags es)))
@@ -1188,16 +1223,22 @@
 	      (list-ref xs2 (positionp variable=? x xs1))
 	      (list-ref es (positionp variable=? x xs1))))))))))
 
+(define (new-cons-expression e1 e2) (make-cons-expression '() e1 e2))
+
 ;;; LET*
 
 (define (contains-letrec? e)
  (or (letrec-expression? e)
      (and (application? e)
 	  (or (contains-letrec? (application-callee e))
-	      (contains-letrec? (application-argument e))))))
+	      (contains-letrec? (application-argument e))))
+     (and (cons-expression? e)
+	  (or (contains-letrec? (cons-expression-car e))
+	      (contains-letrec? (cons-expression-cdr e))))))
 
 ;;; needs work: The counterparts of these used to be constant-time but are no
-;;; longer so. This has implications for vestigial let*-expressions.
+;;;             longer so. This has implications for vestigial
+;;;             let*-expressions.
 
 (define (let*? e)
  ;; This is a stronger check than:
@@ -1262,9 +1303,12 @@
 ;;; Standard prelude
 
 (define (standard-prelude e)
- `(let* ((car (lambda (p) (p (lambda (a) (lambda (d) a)))))
-	 (cdr (lambda (p) (p (lambda (a) (lambda (d) d)))))
-	 (cons-procedure (lambda (a) (lambda (d) (lambda (m) ((m a) d)))))
+ `(let* (,@(if *church-pairs?*
+	       '((car (lambda (p) (p (lambda (a) (lambda (d) a)))))
+		 (cdr (lambda (p) (p (lambda (a) (lambda (d) d)))))
+		 (cons-procedure
+		  (lambda (a) (lambda (d) (lambda (m) ((m a) d))))))
+	       '())
 	 ,@(if *letrec-as-y?*
 	       '((ys (let* ((y (lambda (f)
 				((lambda (g) (lambda (x) ((f (g g)) x)))
@@ -1395,6 +1439,12 @@
 			(first result))))))
 	  (let ((x (alphaify (first xs1) xs)))
 	   (loop (rest xs1) (cons x xs3) (cons x xs))))))
+    ((cons-expression? e)
+     (let* ((result1 (outer (cons-expression-car e) xs bs))
+	    (result2 (outer (cons-expression-cdr e) (first result1) bs)))
+      (list (first result2)
+	    (make-cons-expression
+	     (cons-expression-tags e) (second result1) (second result2)))))
     (else (fuck-up))))))
 
 (define (alpha-equivalent? e1 e2 xs1 xs2)
@@ -1435,7 +1485,13 @@
 	(letrec-expression-body e1)
 	(letrec-expression-body e2)
 	(append (letrec-expression-procedure-variables e1) xs1)
-	(append (letrec-expression-procedure-variables e2) xs2)))))
+	(append (letrec-expression-procedure-variables e2) xs2)))
+  (and (cons-expression? e1)
+       (cons-expression? e2)
+       (alpha-equivalent?
+	(cons-expression-car e1) (cons-expression-car e2) xs1 xs2)
+       (alpha-equivalent?
+	(cons-expression-cdr e1) (cons-expression-cdr e2) xs1 xs2))))
 
 ;;; Free variables
 
@@ -1467,6 +1523,9 @@
 	  (union-variables (loop (application-callee e))
 			   (loop (application-argument e))))
 	 ((letrec-expression? e) (letrec-expression-body-free-variables e))
+	 ((cons-expression? e)
+	  (union-variables (loop (cons-expression-car e))
+			   (loop (cons-expression-cdr e))))
 	 (else (fuck-up))))))
 
 (define (free-variables e)
@@ -1482,6 +1541,7 @@
 	    (free-variables-old e)
 	    (application-free-variables e)))
        ((letrec-expression? e) (letrec-expression-body-free-variables e))
+       ((cons-expression? e) (free-variables-old e))
        (else (fuck-up))))
 
 (define (vector-append . vss)
@@ -1547,6 +1607,10 @@
 	   (append (letrec-expression-procedure-variables e)
 		   (letrec-expression-body-free-variables e))
 	   (letrec-expression-body e))))
+  ((cons-expression? e)
+   (make-cons-expression (cons-expression-tags e)
+			 (index x xs (cons-expression-car e))
+			 (index x xs (cons-expression-cdr e))))
   (else (fuck-up))))
 
 ;;; ANF conversion
@@ -1590,6 +1654,8 @@
      max (map variable-anf-max (letrec-expression-argument-variables e)) 0)
     (reduce max (map anf-max (letrec-expression-bodies e)) 0)
     (anf-max (letrec-expression-body e))))
+  ((cons-expression? e)
+   (max (anf-max (cons-expression-car e)) (anf-max (cons-expression-cdr e))))
   (else (fuck-up))))
 
 (define (anf-convert e)
@@ -1673,6 +1739,25 @@
 			 (new-lambda-expression
 			  (first xs2) (anf-result result)))
 			bs2))))))
+    ((cons-expression? e)
+     (let* ((result1 (outer i (cons-expression-car e) bs1 bs2))
+	    (result2 (outer (first result1)
+			    (cons-expression-cdr e)
+			    (third result1)
+			    (fourth result1)))
+	    (i (+ (first result2) 1))
+	    (x `(anf ,i)))
+      ;; result
+      (list i
+	    x
+	    (cons (make-variable-binding
+		   x
+		   (make-cons-expression
+		    (cons-expression-tags e)
+		    (new-variable-access-expression (second result1))
+		    (new-variable-access-expression (second result2))))
+		  (third result2))
+	    (fourth result2))))
     (else (fuck-up))))))
 
 (define (anf-letrec-bodies-free-variables e)
@@ -1725,6 +1810,10 @@
 			 (substitute x1 x2 (application-argument e))))
        ;; ANF should never have letrec.
        ((letrec-expression? e) (fuck-up))
+       ((cons-expression? e)
+	(make-cons-expression (cons-expression-tags e)
+			      (substitute x1 x2 (cons-expression-car e))
+			      (substitute x1 x2 (cons-expression-cdr e))))
        (else (fuck-up))))
 
 (define (copy-propagate e)
@@ -1826,6 +1915,8 @@
 			es2)))
 	  ((application? e1)
 	   (inner (rest xs1) (rest es1) x (cons x1 xs2) (cons e1 es2)))
+	  ((cons-expression? e1)
+	   (inner (rest xs1) (rest es1) x (cons x1 xs2) (cons e1 es2)))
 	  (else (fuck-up)))))))))
 
 ;;; Constant Conversion
@@ -1844,6 +1935,10 @@
 			(map constants-in (letrec-expression-bodies e))
 			'())
 		(constants-in (letrec-expression-body e))))
+       ((cons-expression? e)
+	(unionp vlad-equal?
+		(constants-in (cons-expression-car e))
+		(constants-in (cons-expression-cdr e))))
        (else (fuck-up))))
 
 (define (constant-convert bs e)
@@ -1869,6 +1964,10 @@
 	 (map (lambda (e) (constant-convert bs e))
 	      (letrec-expression-bodies e))
 	 (constant-convert bs (letrec-expression-body e))))
+       ((cons-expression? e)
+	(make-cons-expression (cons-expression-tags e)
+			      (constant-convert bs (cons-expression-car e))
+			      (constant-convert bs (cons-expression-cdr e))))
        (else (fuck-up))))
 
 ;;; Concrete->Abstract
@@ -1954,7 +2053,7 @@
     (else `(let (,(first (second e))) (let* ,(rest (second e)) ,(third e))))))
   ((if)
    (unless (= (length e) 4) (panic (format #f "Invalid expression: ~s" e)))
-   (if *church?*
+   (if *church-booleans?*
        `((,(second e) (cons (lambda () ,(third e)) (lambda () ,(fourth e)))))
        ;; needs work: to ensure that you don't shadow if-procedure
        `((if-procedure
@@ -2044,7 +2143,11 @@
      ((let) (loop (macro-expand e) xs))
      ((let*) (loop (macro-expand e) xs))
      ((if) (loop (macro-expand e) xs))
-     ((cons) (loop (macro-expand e) xs))
+     ((cons) (cond (*church-pairs?* (loop (macro-expand e) xs))
+		   (else (unless (= (length e) 3)
+			  (panic (format #f "Invalid expression: ~s" e)))
+			 (loop (second e) xs)
+			 (loop (third e) xs))))
      ((cons*) (loop (macro-expand e) xs))
      ((list) (loop (macro-expand e) xs))
      ((cond) (loop (macro-expand e) xs))
@@ -2088,7 +2191,11 @@
     ((let) (concrete->abstract-expression (macro-expand e)))
     ((let*) (concrete->abstract-expression (macro-expand e)))
     ((if) (concrete->abstract-expression (macro-expand e)))
-    ((cons) (concrete->abstract-expression (macro-expand e)))
+    ((cons)
+     (if *church-pairs?*
+	 (concrete->abstract-expression (macro-expand e))
+	 (new-cons-expression (concrete->abstract-expression (second e))
+			      (concrete->abstract-expression (third e)))))
     ((cons*) (concrete->abstract-expression (macro-expand e)))
     ((list) (concrete->abstract-expression (macro-expand e)))
     ((cond) (concrete->abstract-expression (macro-expand e)))
@@ -2118,9 +2225,8 @@
 ;;; AD
 
 (define (zero x)
- ;; needs work: church
  (cond ((null? x) '())
-       ((and (not *church?*) (vlad-boolean? x)) '())
+       ((and (not *church-booleans?*) (vlad-boolean? x)) '())
        ((real? x) 0)
        ((primitive-procedure? x) '())
        ((nonrecursive-closure? x)
@@ -2131,6 +2237,10 @@
 	(make-bundle (zero (bundle-primal x)) (zero (bundle-tangent x))))
        ((reverse-tagged-value? x)
 	(make-reverse-tagged-value (zero (reverse-tagged-value-primal x))))
+       ((and (not *church-pairs?*) (tagged-pair? x))
+	(make-tagged-pair (tagged-pair-tags x)
+			  (zero (vlad-car x (tagged-pair-tags x)))
+			  (zero (vlad-cdr x (tagged-pair-tags x)))))
        (else (fuck-up))))
 
 (define (plus x1 x2)
@@ -2296,25 +2406,37 @@
 	 (map forwardify (letrec-expression-argument-variables e))
 	 (map forward-transform (letrec-expression-bodies e))
 	 (forward-transform (letrec-expression-body e))))
+       ((cons-expression? e)
+	(make-cons-expression (cons 'forward (cons-expression-tags e))
+			      (forward-transform (cons-expression-car e))
+			      (forward-transform (cons-expression-cdr e))))
        (else (fuck-up))))
 
 (define (forward-transform-inverse e)
- (cond ((variable-access-expression? e) (unforwardify-access e))
-       ((lambda-expression? e)
-	(new-lambda-expression
-	 (unforwardify (lambda-expression-variable e))
-	 (forward-transform-inverse (lambda-expression-body e))))
-       ((application? e)
-	(new-application
-	 (forward-transform-inverse (application-callee e))
-	 (forward-transform-inverse (application-argument e))))
-       ((letrec-expression? e)
-	(new-letrec-expression
-	 (map unforwardify (letrec-expression-procedure-variables e))
-	 (map unforwardify (letrec-expression-argument-variables e))
-	 (map forward-transform-inverse (letrec-expression-bodies e))
-	 (forward-transform-inverse (letrec-expression-body e))))
-       (else (fuck-up))))
+ (cond
+  ((variable-access-expression? e) (unforwardify-access e))
+  ((lambda-expression? e)
+   (new-lambda-expression
+    (unforwardify (lambda-expression-variable e))
+    (forward-transform-inverse (lambda-expression-body e))))
+  ((application? e)
+   (new-application
+    (forward-transform-inverse (application-callee e))
+    (forward-transform-inverse (application-argument e))))
+  ((letrec-expression? e)
+   (new-letrec-expression
+    (map unforwardify (letrec-expression-procedure-variables e))
+    (map unforwardify (letrec-expression-argument-variables e))
+    (map forward-transform-inverse (letrec-expression-bodies e))
+    (forward-transform-inverse (letrec-expression-body e))))
+  ((cons-expression? e)
+   (unless (and (not (null? (cons-expression-tags e)))
+		(eq? (first (cons-expression-tags e)) 'forward))
+    (fuck-up))
+   (make-cons-expression (rest (cons-expression-tags e))
+			 (forward-transform-inverse (cons-expression-car e))
+			 (forward-transform-inverse (cons-expression-cdr e))))
+  (else (fuck-up))))
 
 (define (primal x-forward)
  (let ((forward-cache-entry
@@ -2327,12 +2449,11 @@
 	   (forward-cache-entry-primal? forward-cache-entry))
       (forward-cache-entry-primal forward-cache-entry)
       (let* ((result
-	      ;; needs work: church
 	      (cond
 	       ((null? x-forward)
 		(run-time-error
 		 "Attempt to take primal of a non-forward value" x-forward))
-	       ((and (not *church?*) (vlad-boolean? x-forward))
+	       ((and (not *church-booleans?*) (vlad-boolean? x-forward))
 		(run-time-error
 		 "Attempt to take primal of a non-forward value" x-forward))
 	       ((real? x-forward)
@@ -2415,6 +2536,15 @@
 	       ((reverse-tagged-value? x-forward)
 		(run-time-error
 		 "Attempt to take primal of a non-forward value" x-forward))
+	       ((and (not *church-pairs?*) (tagged-pair? x-forward))
+		(unless (and
+			 (not (null? (tagged-pair-tags x-forward)))
+			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
+		 (run-time-error
+		  "Attempt to take primal of a non-forward value" x-forward))
+		(make-tagged-pair (rest (tagged-pair-tags x-forward))
+				  (primal (tagged-pair-car x-forward))
+				  (primal (tagged-pair-cdr x-forward))))
 	       (else (fuck-up))))
 	     (forward-cache-entry
 	      (find-if (lambda (forward-cache-entry)
@@ -2444,12 +2574,11 @@
 	   (forward-cache-entry-tangent? forward-cache-entry))
       (forward-cache-entry-tangent forward-cache-entry)
       (let* ((result
-	      ;; needs work: church
 	      (cond
 	       ((null? x-forward)
 		(run-time-error
 		 "Attempt to take tangent of a non-forward value" x-forward))
-	       ((and (not *church?*) (vlad-boolean? x-forward))
+	       ((and (not *church-booleans?*) (vlad-boolean? x-forward))
 		(run-time-error
 		 "Attempt to take tangent of a non-forward value" x-forward))
 	       ((real? x-forward)
@@ -2491,6 +2620,15 @@
 	       ((reverse-tagged-value? x-forward)
 		(run-time-error
 		 "Attempt to take tangent of a non-forward value" x-forward))
+	       ((and (not *church-pairs?*) (tagged-pair? x-forward))
+		(unless (and
+			 (not (null? (tagged-pair-tags x-forward)))
+			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
+		 (run-time-error
+		  "Attempt to take primal of a non-forward value" x-forward))
+		(make-tagged-pair (rest (tagged-pair-tags x-forward))
+				  (tangent (tagged-pair-car x-forward))
+				  (tangent (tagged-pair-cdr x-forward))))
 	       (else (fuck-up))))
 	     (forward-cache-entry
 	      (find-if (lambda (forward-cache-entry)
@@ -2533,9 +2671,8 @@
 	   (legitimate? (first xs) (vlad-car x-perturbations tags))
 	   (legitimate*? (rest xs) (vlad-cdr x-perturbations tags) tags))))
  (define (legitimate? x x-perturbation)
-  ;; needs work: church
   (or (and (null? x) (null? x-perturbation))
-      (and (not *church?*) (vlad-boolean? x) (null? x-perturbation))
+      (and (not *church-booleans?*) (vlad-boolean? x) (null? x-perturbation))
       (and (real? x) (real? x-perturbation))
       (and (primitive-procedure? x) (null? x-perturbation))
       (and (nonrecursive-closure? x)
@@ -2553,7 +2690,14 @@
       (and (reverse-tagged-value? x)
 	   (reverse-tagged-value? x-perturbation)
 	   (legitimate? (reverse-tagged-value-primal x)
-			(reverse-tagged-value-primal x-perturbation)))))
+			(reverse-tagged-value-primal x-perturbation)))
+      (and (not *church-pairs?*)
+	   (tagged-pair? x)
+	   (tagged-pair? x-perturbation)
+	   (equal? (tagged-pair-tags x) (tagged-pair-tags x-perturbation))
+	   (legitimate? (tagged-pair-car x) (tagged-pair-car x-perturbation))
+	   (legitimate? (tagged-pair-cdr x)
+			(tagged-pair-cdr x-perturbation)))))
  (define (bundle* xs x-perturbations tags)
   ;; XS is a list, X-PERTURBATIONS is a tuple, the result is a list.
   (cond
@@ -2562,10 +2706,10 @@
    (else (cons (bundle (first xs) (vlad-car x-perturbations tags))
 	       (bundle* (rest xs) (vlad-cdr x-perturbations tags) tags)))))
  (define (bundle x x-perturbation)
-  ;; needs work: church
   (cond
    ((null? x) (make-bundle x x-perturbation))
-   ((and (not *church?*) (vlad-boolean? x)) (make-bundle x x-perturbation))
+   ((and (not *church-booleans?*) (vlad-boolean? x))
+    (make-bundle x x-perturbation))
    ((real? x) (make-bundle x x-perturbation))
    ((primitive-procedure? x)
     (unless (null? x-perturbation) (fuck-up))
@@ -2625,6 +2769,11 @@
       (recursive-closure-index x))))
    ((bundle? x) (make-bundle x x-perturbation))
    ((reverse-tagged-value? x) (make-bundle x x-perturbation))
+   ((and (not *church-pairs?*) (tagged-pair? x))
+    (make-tagged-pair
+     (cons 'forward (tagged-pair-tags x))
+     (bundle (tagged-pair-car x) (tagged-pair-car x-perturbation))
+     (bundle (tagged-pair-cdr x) (tagged-pair-cdr x-perturbation))))
    (else (fuck-up))))
  ;; needs work: to memoize inside recursion rather than outside
  (let ((forward-cache-entry
@@ -2679,6 +2828,7 @@
  (new-application (added-variable bs '*j-inverse) e))
 
 (define (tagify bs tags e)
+ ;; needs work: direct tags
  (let loop ((tags tags))
   (if (null? tags)
       e
@@ -2690,6 +2840,7 @@
        (loop (rest tags))))))
 
 (define (make-car bs tags e)
+ ;; needs work: direct tags
  ;; We no longer do car-of-cons conversion.
  (if (null? tags)
      (new-application (added-variable bs 'car) e)
@@ -2702,6 +2853,7 @@
       (else (fuck-up)))))
 
 (define (make-cdr bs tags e)
+ ;; needs work: direct tags
  ;; We no longer do cdr-of-cons conversion.
  (if (null? tags)
      (new-application (added-variable bs 'cdr) e)
@@ -2714,26 +2866,27 @@
       (else (fuck-up)))))
 
 (define (make-cons bs tags e1 e2)
- (if (null? tags)
-     (new-application
-      (new-application (added-variable bs 'cons-procedure) e1) e2)
-     (case (first tags)
-      ((forward)
-       (make-bundle-invocation bs
-			       (make-cons bs
-					  (rest tags)
-					  (make-primal bs e1)
-					  (make-primal bs e2))
-			       (make-cons bs
-					  (rest tags)
-					  (make-tangent bs e1)
-					  (make-tangent bs e2))))
-      ((reverse) (make-*j bs
-			  (make-cons bs
-				     (rest tags)
-				     (make-*j-inverse bs e1)
-				     (make-*j-inverse bs e2))))
-      (else (fuck-up)))))
+ (if *church-pairs?*
+     (if (null? tags)
+	 (new-application
+	  (new-application (added-variable bs 'cons-procedure) e1) e2)
+	 (case (first tags)
+	  ((forward) (make-bundle-invocation bs
+					     (make-cons bs
+							(rest tags)
+							(make-primal bs e1)
+							(make-primal bs e2))
+					     (make-cons bs
+							(rest tags)
+							(make-tangent bs e1)
+							(make-tangent bs e2))))
+	  ((reverse) (make-*j bs
+			      (make-cons bs
+					 (rest tags)
+					 (make-*j-inverse bs e1)
+					 (make-*j-inverse bs e2))))
+	  (else (fuck-up))))
+     (make-cons-expression tags e1 e2)))
 
 (define (make-cons* bs tags es)
  (cond ((null? es) (tagify bs tags (added-variable bs 'null)))
@@ -2899,6 +3052,33 @@
 						   ,(sensitivityify x2)))))))
 		     '()))
 		'())))
+	     ((cons-expression? e)
+	      (let ((x1 (variable-access-expression-variable
+			 (cons-expression-car e)))
+		    (x2 (variable-access-expression-variable
+			 (cons-expression-cdr e))))
+	       (reduce
+		append
+		(list
+		 (if (needed? x1)
+		     (list (make-variable-binding
+			    (sensitivityify x1)
+			    (make-plus bs
+				       (sensitivity-access x1)
+				       (make-car bs
+						 (cons-expression-tags e)
+						 (sensitivity-access t)))))
+		     '())
+		 (if (needed? x2)
+		     (list (make-variable-binding
+			    (sensitivityify x2)
+			    (make-plus bs
+				       (sensitivity-access x2)
+				       (make-cdr bs
+						 (cons-expression-tags e)
+						 (sensitivity-access t)))))
+		     '()))
+		'())))
 	     (else (fuck-up))))
 	   (reverse (anf-let*-variables e1))
 	   (reverse (anf-let*-expressions e1)))
@@ -2930,6 +3110,13 @@
 		(new-application
 		 (reverseify-access (application-callee e))
 		 (reverseify-access (application-argument e)))))
+	      ((cons-expression? e)
+	       (list (make-variable-binding
+		      (reverseify x)
+		      (make-cons-expression
+		       (cons 'reverse (cons-expression-tags e))
+		       (reverseify-access (cons-expression-car e))
+		       (reverseify-access (cons-expression-cdr e))))))
 	      (else (fuck-up))))
 	    (anf-let*-variables e1)
 	    (anf-let*-expressions e1))
@@ -3023,6 +3210,28 @@
       (variable-access-expression? e)
       (variable=? (variable-access-expression-variable e) x3)))
 
+(define (result-cons-expression? x1 x2 e1 e2 e)
+ ;; x1=(lambda ...)
+ ;; x2=cons xa x1
+ ;; in x2 end
+ ;; ----------------------------------------------------------------
+ ;; in xa end
+ (and
+  ;; We don't check that this lambda expression is the proper backpropagator
+  ;; for the primal.
+  (lambda-expression? e1)
+  (cons-expression? e2)
+  (null? (cons-expression-tags e2))
+  ;; Technically not needed since in ANF.
+  (variable-access-expression? (cons-expression-car e2))
+  ;; Technically not needed since in ANF.
+  (variable-access-expression? (cons-expression-cdr e2))
+  (variable=?
+   (variable-access-expression-variable (cons-expression-cdr e2)) x1)
+  ;; Technically not needed since in ANF.
+  (variable-access-expression? e)
+  (variable=? (variable-access-expression-variable e) x2)))
+
 (define (cons-split? x1 x2 x3 e1 e2 e3)
  ;; x1=xa xb
  ;; x2=car x1
@@ -3050,58 +3259,60 @@
        (variable-access-expression-variable (application-argument e3)) x1)))
 
 (define (reverse-transform-inverse-internal e)
- (if (let*? e)
-     (let loop ((xs (let*-variables e))
-		(es (let*-expressions e))
-		(xs0 '())
-		(es0 '()))
-      (cond
-       ((null? xs) (fuck-up))
-       ((and (= (length xs) 3)
-	     (result-cons? (first xs) (second xs) (third xs)
-			   (first es) (second es) (third es)
-			   (let*-body e)))
-	(if (null? xs0)
-	    (unreverseify-access (partial-cons-argument (first es)))
-	    (new-let*
-	     (reverse xs0)
-	     (reverse es0)
-	     (unreverseify-access (partial-cons-argument (first es))))))
-       ((and (>= (length xs) 3)
-	     (cons-split? (first xs) (second xs) (third xs)
-			  (first es) (second es) (third es)))
-	(loop (rest (rest (rest xs)))
-	      (rest (rest (rest es)))
-	      (cons (unreverseify (second xs)) xs0)
-	      (cons (let ((e (first es)))
-		     (cond ((variable-access-expression? e)
-			    (unreverseify-access e))
-			   ((application? e)
-			    (new-application
-			     (unreverseify-access (application-callee e))
-			     (unreverseify-access (application-argument e))))
-			   (else (fuck-up))))
-		    es0)))
-       ((variable-access-expression? (first es))
-	(loop (rest xs)
-	      (rest es)
-	      (cons (unreverseify (first xs)) xs0)
-	      (cons (unreverseify-access (first es)) es0)))
-       ((lambda-expression? (first es))
-	(loop (rest xs)
-	      (rest es)
-	      (cons (unreverseify (first xs)) xs0)
-	      (cons (reverse-transform-inverse (first es)) es0)))
-       ((application? (first es))
-	(loop (rest xs)
-	      (rest es)
-	      (cons (unreverseify (first xs)) xs0)
-	      (cons (new-application
-		     (unreverseify-access (application-callee (first es)))
-		     (unreverseify-access (application-argument (first es))))
-		    es0)))
-       (else (fuck-up))))
-     (fuck-up)))
+ (unless (let*? e) (fuck-up))
+ (let loop ((xs (let*-variables e))
+	    (es (let*-expressions e))
+	    (xs0 '())
+	    (es0 '()))
+  (cond
+   ((null? xs) (fuck-up))
+   ((and (= (length xs) 3)
+	 (result-cons? (first xs) (second xs) (third xs)
+		       (first es) (second es) (third es)
+		       (let*-body e)))
+    (if (null? xs0)
+	(unreverseify-access (partial-cons-argument (first es)))
+	(new-let* (reverse xs0)
+		  (reverse es0)
+		  (unreverseify-access (partial-cons-argument (first es))))))
+   ((and (= (length xs) 2)
+	 (result-cons-expression?
+	  (first xs) (second xs) (first es) (second es) (let*-body e)))
+    (if (null? xs0)
+	(unreverseify-access (cons-expression-car (second es)))
+	(new-let* (reverse xs0)
+		  (reverse es0)
+		  (unreverseify-access (cons-expression-car (second es))))))
+   ((and (>= (length xs) 3)
+	 (cons-split? (first xs) (second xs) (third xs)
+		      (first es) (second es) (third es)))
+    (loop (rest (rest (rest xs)))
+	  (rest (rest (rest es)))
+	  (cons (unreverseify (second xs)) xs0)
+	  (cons (new-application
+		 (unreverseify-access (application-callee (first es)))
+		 (unreverseify-access (application-argument (first es))))
+		es0)))
+   ((variable-access-expression? (first es))
+    (loop (rest xs)
+	  (rest es)
+	  (cons (unreverseify (first xs)) xs0)
+	  (cons (unreverseify-access (first es)) es0)))
+   ((lambda-expression? (first es))
+    (loop (rest xs)
+	  (rest es)
+	  (cons (unreverseify (first xs)) xs0)
+	  (cons (reverse-transform-inverse (first es)) es0)))
+   ((cons-expression? (first es))
+    (loop (rest xs)
+	  (rest es)
+	  (cons (unreverseify (first xs)) xs0)
+	  (cons (make-cons-expression
+		 (rest (cons-expression-tags (first es)))
+		 (unreverseify-access (cons-expression-car (first es)))
+		 (unreverseify-access (cons-expression-cdr (first es))))
+		es0)))
+   (else (fuck-up)))))
 
 (define (reverse-transform-inverse e)
  (new-lambda-expression
@@ -3116,15 +3327,22 @@
        (reverse-transform-inverse-internal e)))))
 
 (define (added-value x)
- (case x
-  ;; These are magic names.
-  ((null) '())
-  ((car) (evaluate-in-top-level-environment 'car))
-  ((cdr) (evaluate-in-top-level-environment 'cdr))
-  ((cons-procedure) (evaluate-in-top-level-environment 'cons-procedure))
-  (else (value-binding-value
-	 (find-if (lambda (b) (variable=? (value-binding-variable b) x))
-		  *value-bindings*)))))
+ (if *church-pairs?*
+     (case x
+      ;; These are magic names.
+      ((null) '())
+      ((car) (evaluate-in-top-level-environment 'car))
+      ((cdr) (evaluate-in-top-level-environment 'cdr))
+      ((cons-procedure) (evaluate-in-top-level-environment 'cons-procedure))
+      (else (value-binding-value
+	     (find-if (lambda (b) (variable=? (value-binding-variable b) x))
+		      *value-bindings*))))
+     (case x
+      ;; This is a magic name.
+      ((null) '())
+      (else (value-binding-value
+	     (find-if (lambda (b) (variable=? (value-binding-variable b) x))
+		      *value-bindings*))))))
 
 (define (add/remove-slots f xs0 xs1 vs0 bs)
  (list->vector
@@ -3141,10 +3359,11 @@
 (define (added-bindings)
  ;; needs work: To replace anonymous gensym with derived gensym.
  (map (lambda (x) (make-alpha-binding x (hensym)))
-      (append
-       ;; These are magic names.
-       (list 'null 'car 'cdr 'cons-procedure)
-       (map value-binding-variable *value-bindings*))))
+      ;; These are magic names.
+      (append (if *church-pairs?*
+		  (list 'null 'car 'cdr 'cons-procedure)
+		  (list 'null))
+	      (map value-binding-variable *value-bindings*))))
 
 (define (*j v)
  (let ((reverse-cache-entry
@@ -3156,10 +3375,9 @@
    (set! reverse-cache-entry
 	 (make-reverse-cache-entry
 	  v
-	  ;; needs work: church
 	  (cond
 	   ((null? v) (make-reverse-tagged-value v))
-	   ((and (not *church?*) (vlad-boolean? v))
+	   ((and (not *church-booleans?*) (vlad-boolean? v))
 	    (make-reverse-tagged-value v))
 	   ((real? v) (make-reverse-tagged-value v))
 	   ((primitive-procedure? v) (primitive-procedure-reverse v))
@@ -3237,6 +3455,10 @@
 	      (recursive-closure-index v))))
 	   ((bundle? v) (make-reverse-tagged-value v))
 	   ((reverse-tagged-value? v) (make-reverse-tagged-value v))
+	   ((and (not *church-pairs?*) (tagged-pair? v))
+	    (make-tagged-pair (cons 'reverse (tagged-pair-tags v))
+			      (*j (tagged-pair-car v))
+			      (*j (tagged-pair-cdr v))))
 	   (else (fuck-up)))))
    (when *memoized?*
     (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*))))
@@ -3252,12 +3474,11 @@
   (unless reverse-cache-entry
    (set! reverse-cache-entry
 	 (make-reverse-cache-entry
-	  ;; needs work: church
 	  (cond
 	   ((null? x-reverse)
 	    (run-time-error
 	     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-	   ((and (not *church?*) (vlad-boolean? x-reverse))
+	   ((and (not *church-booleans?*) (vlad-boolean? x-reverse))
 	    (run-time-error
 	     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
 	   ((real? x-reverse)
@@ -3350,6 +3571,14 @@
 	     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
 	   ((reverse-tagged-value? x-reverse)
 	    (reverse-tagged-value-primal x-reverse))
+	   ((and (not *church-pairs?*) (tagged-pair? x-reverse))
+	    (unless (and (not (null? (tagged-pair-tags x-reverse)))
+			 (eq? (first (tagged-pair-tags x-reverse)) 'reverse))
+	     (run-time-error
+	      "Attempt to take primal of a non-reverse value" x-reverse))
+	    (make-tagged-pair (rest (tagged-pair-tags x-reverse))
+			      (*j-inverse (tagged-pair-car x-reverse))
+			      (*j-inverse (tagged-pair-cdr x-reverse))))
 	   (else (fuck-up)))
 	  x-reverse))
    (when *memoized?*
@@ -3387,6 +3616,19 @@
        (else `(let* ,(reverse bs)
 	       (cons ,(abstract->concrete (partial-cons-argument (first es)))
 		     ,(abstract->concrete (second es)))))))
+     ((and *unabbreviate-nicely?*
+	   (= (length xs) 2)
+	   (result-cons-expression?
+	    (first xs) (second xs) (first es) (second es) (let*-body e)))
+      (case (length bs)
+       ((0) `(cons ,(abstract->concrete (cons-expression-car (second es)))
+		   ,(abstract->concrete (first es))))
+       ((1) `(let ,bs
+	      (cons ,(abstract->concrete (cons-expression-car (second es)))
+		    ,(abstract->concrete (first es)))))
+       (else `(let* ,(reverse bs)
+	       (cons ,(abstract->concrete (cons-expression-car (second es)))
+		     ,(abstract->concrete (first es)))))))
      ((and *unabbreviate-nicely?* (partial-cons? (first es)))
       (loop (rest xs)
 	    (rest es)
@@ -3429,6 +3671,13 @@
 		  (letrec-expression-argument-variables e)
 		  (letrec-expression-bodies e))
      ,(abstract->concrete (letrec-expression-body e))))
+  ((cons-expression? e)
+   (if (null? (cons-expression-tags e))
+       `(cons ,(abstract->concrete (cons-expression-car e))
+	      ,(abstract->concrete (cons-expression-cdr e)))
+       `(cons ,(cons-expression-tags e)
+	      ,(abstract->concrete (cons-expression-car e))
+	      ,(abstract->concrete (cons-expression-cdr e)))))
   (else (fuck-up))))
 
 (define (quotable? v)
@@ -3665,84 +3914,83 @@
 ;;; needs work: This evaluator is not tail recursive.
 
 (define (call callee argument)
- (let ((callee (dereference callee)))
-  (unless (or (and *church?*
-		   (or (vlad-pair? callee '())
-		       (vlad-true? callee)
-		       (vlad-false? callee)))
-	      (vlad-pair? callee '())	;needs work: church
-	      (vlad-procedure? callee))
-   (run-time-error "Target is not a procedure" callee))
-  (when *anal?*
-   (unless (tag-check?
-	    (cond ((primitive-procedure? callee) '())
-		  ((nonrecursive-closure? callee)
-		   (nonrecursive-closure-tags callee))
-		  ((recursive-closure? callee) (recursive-closure-tags callee))
-		  (else (fuck-up)))
-	    argument)
-    (run-time-error "Argument has wrong type for target" callee argument)))
-  (set! *stack* (cons (list callee argument) *stack*))
+ (unless (or (and *church-booleans?*
+		  (or (vlad-pair? callee '())
+		      (vlad-true? callee)
+		      (vlad-false? callee)))
+	     (and *church-pairs?* (vlad-pair? callee '()))
+	     (vlad-procedure? callee))
+  (run-time-error "Target is not a procedure" callee))
+ (when *anal?*
+  (unless (tag-check?
+	   (cond ((primitive-procedure? callee) '())
+		 ((nonrecursive-closure? callee)
+		  (nonrecursive-closure-tags callee))
+		 ((recursive-closure? callee) (recursive-closure-tags callee))
+		 (else (fuck-up)))
+	   argument)
+   (run-time-error "Argument has wrong type for target" callee argument)))
+ (set! *stack* (cons (list callee argument) *stack*))
+ (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
+	     ((nonrecursive-closure? callee) *trace-nonrecursive-closures?*)
+	     ((recursive-closure? callee) *trace-recursive-closures?*)
+	     (else (fuck-up)))
+  (if *trace-argument/result?*
+      (format #t "~aentering ~s ~s~%"
+	      (make-string *trace-level* #\space)
+	      (externalize callee)
+	      (externalize argument))
+      (format #t "~aentering ~s~%"
+	      (make-string *trace-level* #\space)
+	      (externalize callee)))
+  (set! *trace-level* (+ *trace-level* 1)))
+ (when (and *metered?* (primitive-procedure? callee))
+  (set-primitive-procedure-meter!
+   callee (+ (primitive-procedure-meter callee) 1)))
+ (let ((result
+	(cond
+	 ((primitive-procedure? callee)
+	  ((primitive-procedure-procedure callee) argument))
+	 ((nonrecursive-closure? callee)
+	  (evaluate (nonrecursive-closure-body callee)
+		    argument
+		    (nonrecursive-closure-values callee)))
+	 ((recursive-closure? callee)
+	  (evaluate
+	   (vector-ref (recursive-closure-bodies callee)
+		       (recursive-closure-index callee))
+	   argument
+	   (vector-append
+	    (map-n-vector
+	     (lambda (i)
+	      (if (= i (recursive-closure-index callee))
+		  ;; to preserve eq?ness
+		  callee
+		  (make-recursive-closure
+		   (recursive-closure-variables callee)
+		   (recursive-closure-values callee)
+		   (recursive-closure-procedure-variables callee)
+		   (recursive-closure-argument-variables callee)
+		   (recursive-closure-bodies callee)
+		   i)))
+	     (vector-length (recursive-closure-bodies callee)))
+	    (recursive-closure-values callee))))
+	 (else (fuck-up)))))
+  (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
 	      ((nonrecursive-closure? callee) *trace-nonrecursive-closures?*)
 	      ((recursive-closure? callee) *trace-recursive-closures?*)
 	      (else (fuck-up)))
+   (set! *trace-level* (- *trace-level* 1))
    (if *trace-argument/result?*
-       (format #t "~aentering ~s ~s~%"
+       (format #t "~aexiting ~s ~s~%"
 	       (make-string *trace-level* #\space)
 	       (externalize callee)
-	       (externalize argument))
-       (format #t "~aentering ~s~%"
+	       (externalize result))
+       (format #t "~aexiting ~s~%"
 	       (make-string *trace-level* #\space)
-	       (externalize callee)))
-   (set! *trace-level* (+ *trace-level* 1)))
-  (when (and *metered?* (primitive-procedure? callee))
-   (set-primitive-procedure-meter!
-    callee (+ (primitive-procedure-meter callee) 1)))
-  (let ((result
-	 (cond
-	  ((primitive-procedure? callee)
-	   ((primitive-procedure-procedure callee) argument))
-	  ((nonrecursive-closure? callee)
-	   (evaluate (nonrecursive-closure-body callee)
-		     argument
-		     (nonrecursive-closure-values callee)))
-	  ((recursive-closure? callee)
-	   (evaluate
-	    (vector-ref (recursive-closure-bodies callee)
-			(recursive-closure-index callee))
-	    argument
-	    (vector-append
-	     (map-n-vector
-	      (lambda (i)
-	       (if (= i (recursive-closure-index callee))
-		   ;; to preserve eq?ness
-		   callee
-		   (make-recursive-closure
-		    (recursive-closure-variables callee)
-		    (recursive-closure-values callee)
-		    (recursive-closure-procedure-variables callee)
-		    (recursive-closure-argument-variables callee)
-		    (recursive-closure-bodies callee)
-		    i)))
-	      (vector-length (recursive-closure-bodies callee)))
-	     (recursive-closure-values callee))))
-	  (else (fuck-up)))))
-   (set! *stack* (rest *stack*))
-   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
-	       ((nonrecursive-closure? callee) *trace-nonrecursive-closures?*)
-	       ((recursive-closure? callee) *trace-recursive-closures?*)
-	       (else (fuck-up)))
-    (set! *trace-level* (- *trace-level* 1))
-    (if *trace-argument/result?*
-	(format #t "~aexiting ~s ~s~%"
-		(make-string *trace-level* #\space)
-		(externalize callee)
-		(externalize result))
-	(format #t "~aexiting ~s~%"
-		(make-string *trace-level* #\space)
-		(externalize callee))))
-   result)))
+	       (externalize callee))))
+  result))
 
 (define (evaluate e v vs)
  (define (lookup i) (if (= i -1) v (vector-ref vs i)))
@@ -3795,6 +4043,11 @@
 	    (vector-length es)))
 	  (map-vector lookup
 		      (letrec-expression-body-free-variable-indices e)))))
+       ((cons-expression? e)
+	;; This LET* is to specify the evaluation order.
+	(let* ((car (evaluate (cons-expression-car e) v vs))
+	       (cdr (evaluate (cons-expression-cdr e) v vs)))
+	 (make-tagged-pair (cons-expression-tags e) car cdr)))
        (else (fuck-up))))
 
 ;;; begin stuff that belongs to brownfis
@@ -5154,8 +5407,8 @@
 	    (vs2 (abstract-environment-binding-abstract-values b2))
 	    (v2 (abstract-environment-binding-abstract-value b2))
 	    (b-new (make-abstract-environment-binding
-		       (abstract-environment-union vs1 vs2)
-		       (abstract-value-union v1 v2))))
+		    (abstract-environment-union vs1 vs2)
+		    (abstract-value-union v1 v2))))
       (when (and *debug?* (> *debug-level* 1))
        (format #t "(restricting-flows:~%")
        (format #t "  b1=")
@@ -5403,12 +5656,12 @@
 	 ;; if u-or-v is an abstract value...
 	 ((and (list? u-or-v) (not (null? u-or-v)))
 	  (let inner ((us u-or-v))
-	    (if (null? us)
-		(if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f)
-		(let ((result (loop (first us) (add-to-path u-or-v))))
-		 (if (eq? #f result)
-		     (inner (rest us))
-		     result)))))
+	   (if (null? us)
+	       (if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f)
+	       (let ((result (loop (first us) (add-to-path u-or-v))))
+		(if (eq? #f result)
+		    (inner (rest us))
+		    result)))))
 	 (else ; u-or-v is a proto-abstract value...
 	  (cond ((or (null? u-or-v)
 		     (boolean? u-or-v)
@@ -5615,7 +5868,7 @@
        (if (null? us)
 	   (reverse us-new)
 	   (let ((u (first us)))
-	    (cond 
+	    (cond
 	     ((or (null? u)
 		  (boolean? u)
 		  (abstract-real? u)
@@ -5878,8 +6131,8 @@
   v1))
 
 (define (abstract-value-subset?-cyclic v1 v2)
-; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
-; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
+ ; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
+ ; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
  (let loop? ((v1 v1) (v2 v2) (cs '()))
   (cond
    ((null? v1) #t)
@@ -5890,16 +6143,16 @@
     #t)
    (else
     (let ((cs (cons (cons v1 v2) cs))
-;	  (us1-atomic (remove-if-not atomic-proto-abstract-value? v1))
-;	  (us1-branching (remove-if atomic-proto-abstract-value? v1))
-;	  (us2-atomic (remove-if-not atomic-proto-abstract-value? v2)))
+	  ;	  (us1-atomic (remove-if-not atomic-proto-abstract-value? v1))
+	  ;	  (us1-branching (remove-if atomic-proto-abstract-value? v1))
+	  ;	  (us2-atomic (remove-if-not atomic-proto-abstract-value? v2)))
 	  (us1-branching (remove-if atomic-proto-abstract-value? v1)))
      (and
       (possible-abstract-value-subset? v1 v2)
-;      (every (lambda (u1)
-;	      (some (lambda (u2) (atomic-proto-abstract-value-subset? u1 u2))
-;		    us2-atomic))
-;	     us1-atomic)
+      ;      (every (lambda (u1)
+      ;	      (some (lambda (u2) (atomic-proto-abstract-value-subset? u1 u2))
+      ;		    us2-atomic))
+      ;	     us1-atomic)
       (every
        (lambda (u1)
 	(cond
@@ -6058,7 +6311,7 @@
 					    (make-up (positionq v vs-above))
 					    v))
 				       (closure-values u))))
-				       ;(nonrecursive-closure-values u))))
+		       ;(nonrecursive-closure-values u))))
 		       (else (panic "Not (yet) implemented!"))))
 		(last vs-above))))
 	 ((up? v) v)
@@ -6160,27 +6413,27 @@
 
 (define (abstract-flow-union e bs1 bs2)
  (define (abstract-flow-union bs1 bs2)
-   ;; This is one place where imprecision can be introduced.
-   (if (null? bs1)
-       bs2
-       (let ((b2 (find-if
-		  (lambda (b2)
-		   (abstract-environment=?
-		    (abstract-environment-binding-abstract-values
+  ;; This is one place where imprecision can be introduced.
+  (if (null? bs1)
+      bs2
+      (let ((b2 (find-if
+		 (lambda (b2)
+		  (abstract-environment=?
+		   (abstract-environment-binding-abstract-values
+		    (first bs1))
+		   (abstract-environment-binding-abstract-values b2)))
+		 bs2)))
+       (if b2
+	   (abstract-flow-union
+	    (rest bs1)
+	    (cons (make-abstract-environment-binding
+		   (abstract-environment-binding-abstract-values b2)
+		   (abstract-value-union
+		    (abstract-environment-binding-abstract-value
 		     (first bs1))
-		    (abstract-environment-binding-abstract-values b2)))
-		  bs2)))
-	(if b2
-	    (abstract-flow-union
-	     (rest bs1)
-	     (cons (make-abstract-environment-binding
-		    (abstract-environment-binding-abstract-values b2)
-		    (abstract-value-union
-		     (abstract-environment-binding-abstract-value
-		      (first bs1))
-		     (abstract-environment-binding-abstract-value b2)))
-		   (removeq b2 bs2)))
-	    (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
+		    (abstract-environment-binding-abstract-value b2)))
+		  (removeq b2 bs2)))
+	   (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
  (abstract-flow-union bs1 bs2))
 
 ;;; Abstract-Analysis Equivalence and Union
@@ -6295,7 +6548,7 @@
 
 (define (initial-abstract-analysis e bs)
  (abstract-analysis-union
-  (if *church?*
+  (if *church-booleans?*
       (abstract-analysis-union
        (empty-analysis-for-expression
 	(new-lambda-expression (nonrecursive-closure-variable vlad-true)
@@ -6705,7 +6958,6 @@
 	(when (and (lambda-expression? e)
 		   (let*? (lambda-expression-body e))
 		   (variable=? '(anf 298) (lambda-expression-variable e)))
-	  
 	 (let ((bs (abstract-expression-binding-abstract-flow b))
 	       (xs (free-variables e)))
 	  (format #t "expression=~s~%" (abstract->concrete e))
@@ -6798,7 +7050,7 @@
   (map (lambda (b1)
 	(let* ((timing? (or
 			 ;; foo1
-			 (and *debug-new?* 
+			 (and *debug-new?*
 			      (= *debug-level-new* 1)
 			      (= *num-updates* 459))
 			 ;; foo0
@@ -6904,7 +7156,7 @@
 	   (when (not *no-report?*)
 	    (when *debug?*
 	     (format #t "v-sizes:~%") (pp v-sizes) (newline))
-					;(report-cache-performance)
+	    ;(report-cache-performance)
 	    (if (and *debug?* (> *debug-level* 4))
 		(begin
 		 (format #t "max abstract value v-size: ~s~%" vs-max-v-size)
@@ -7280,7 +7532,7 @@
 		       (nonempty-abstract-environment-intersection?
 			(nonrecursive-closure-values u1)
 			(nonrecursive-closure-values-matching u1 u2))))
-		  v2))
+		 v2))
 	  ((recursive-closure? u1)
 	   (some (lambda (u2)
 		  (and (recursive-closure? u2)
@@ -7525,68 +7777,60 @@
 	   (else nan))
      (/ x1 x2)))
 
-(define (unary f s) (lambda (x) (f (dereference x))))
+(define (unary f s) f)
 
-(define (unary-predicate f s)
- (lambda (x) (if (f (dereference x)) vlad-true vlad-false)))
+(define (unary-predicate f s) (lambda (x) (if (f x) vlad-true vlad-false)))
 
 (define (unary-real f s)
  (lambda (x)
-  (let ((x (dereference x)))
-   (unless (real? x) (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (f x))))
+  (unless (real? x) (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (f x)))
 
 (define (unary-real-predicate f s)
  (lambda (x)
-  (let ((x (dereference x)))
-   (unless (real? x) (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (if (f x) vlad-true vlad-false))))
+  (unless (real? x) (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (if (f x) vlad-true vlad-false)))
 
 (define (binary f s)
  (lambda (x)
-  (let ((x (dereference x)))
-   (unless (vlad-pair? x '())
-    (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (f (vlad-car x '()) (vlad-cdr x '())))))
+  (unless (vlad-pair? x '())
+   (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (f (vlad-car x '()) (vlad-cdr x '()))))
 
 (define (binary-real f s)
  (lambda (x)
-  (let ((x (dereference x)))
-   (unless (vlad-pair? x '())
+  (unless (vlad-pair? x '())
+   (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (let ((x1 (vlad-car x '())) (x2 (vlad-cdr x '())))
+   (unless (and (real? x1) (real? x2))
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (dereference (vlad-car x '())))
-	 (x2 (dereference (vlad-cdr x '()))))
-    (unless (and (real? x1) (real? x2))
-     (run-time-error (format #f "Invalid argument to ~a" s) x))
-    (f x1 x2)))))
+   (f x1 x2))))
 
 (define (binary-real-predicate f s)
  (lambda (x)
-  (let ((x (dereference x)))
-   (unless (vlad-pair? x '())
+  (unless (vlad-pair? x '())
+   (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (let ((x1 (vlad-car x '())) (x2 (vlad-cdr x '())))
+   (unless (and (real? x1) (real? x2))
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (dereference (vlad-car x '())))
-	 (x2 (dereference (vlad-cdr x '()))))
-    (unless (and (real? x1) (real? x2))
-     (run-time-error (format #f "Invalid argument to ~a" s) x))
-    (if (f x1 x2) vlad-true vlad-false)))))
+   (if (f x1 x2) vlad-true vlad-false))))
 
 (define (ternary f s)
  (lambda (x)
-  (let ((x123 (dereference x)))
-   (unless (vlad-pair? x123 '())
+  (unless (vlad-pair? x '())
+   (run-time-error (format #f "Invalid argument to ~a" s) x))
+  (let ((x1 (vlad-car x '())) (x23 (vlad-cdr x '())))
+   (unless (vlad-pair? x23 '())
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (vlad-car x123 '())) (x23 (dereference (vlad-cdr x123 '()))))
-    (unless (vlad-pair? x23 '())
-     (run-time-error (format #f "Invalid argument to ~a" s) x))
-    (f x1 (vlad-car x23 '()) (vlad-cdr x23 '()))))))
+   (f x1 (vlad-car x23 '()) (vlad-cdr x23 '())))))
 
 (define (define-primitive-procedure
 	 x procedure abstract-procedure forward reverse)
  (set! *value-bindings*
        (cons (make-value-binding
-	      x (make-primitive-procedure
-		 x procedure abstract-procedure forward reverse 0))
+	      x
+	      (make-primitive-procedure
+	       x procedure abstract-procedure forward reverse 0))
 	     *value-bindings*)))
 
 (define (evaluate-in-top-level-environment e)
@@ -7611,7 +7855,7 @@
 
 (define (initialize-basis!)
  (set! vlad-true
-       (if *church?*
+       (if *church-booleans?*
 	   ;; (lambda (p)
 	   ;;  (let* ((x1 (lambda (a) (let* ((x3 (lambda (d) a))) x3)))
 	   ;;         (x2 (p x1)))
@@ -7636,7 +7880,7 @@
 	      (new-variable-access-expression 'x2))))
 	   #t))
  (set! vlad-false
-       (if *church?*
+       (if *church-booleans?*
 	   ;; (lambda (p)
 	   ;;  (let* ((x1 (lambda (a) (let* ((x3 (lambda (d) d))) x3)))
 	   ;;         (x2 (p x1)))
@@ -7714,26 +7958,6 @@
 	    (cons '()
 		  (cons (/ (sensitivity y) x2)
 			(- 0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
-(define-primitive-procedure 'increment
-  (unary-real increment "increment")
-  (abstract-unary-real increment "increment")
-  '(lambda ((forward x))
-    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (increment x) (perturbation x))))
-  '(lambda ((reverse x))
-    (let ((x (*j-inverse (reverse x))))
-     (cons (*j (increment x))
-	   (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
- (define-primitive-procedure 'decrement
-  (unary-real decrement "decrement")
-  (abstract-unary-real decrement "decrement")
-  '(lambda ((forward x))
-    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (decrement x) (perturbation x))))
-  '(lambda ((reverse x))
-    (let ((x (*j-inverse (reverse x))))
-     (cons (*j (decrement x))
-	   (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
@@ -7935,16 +8159,10 @@
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (reverse? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
- (unless *church?*
+ (unless *church-booleans?*
   (define-primitive-procedure 'if-procedure
-   (ternary (lambda (x1 x2 x3) (if (dereference x1) x2 x3)) "if-procedure")
-   (abstract-ternary
-    (lambda (x1 x2 x3)
-     (unless (boolean? (dereference x1))
-      (run-time-error
-       (format #f "Argument to if-procedure not boolean: ") x1))
-     (if (dereference x1) x2 x3))
-    "if-procedure")
+   (ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
+   (abstract-ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
    '(lambda ((forward x))
      (let (((cons* x1 x2 x3) (primal (forward x)))
 	   ((cons* (perturbation x1) (perturbation x2) (perturbation x3))
@@ -7961,6 +8179,31 @@
        (cons (*j x3)
 	     (lambda ((sensitivity y))
 	      (cons '() (cons* (zero x1) (zero x2) (sensitivity y))))))))))
+ (unless *church-pairs?*
+  (define-primitive-procedure 'car
+   (unary (lambda (x) (vlad-car x '())) "car")
+   (abstract-unary (lambda (x) (abstract-vlad-car x '())) "car")
+   '(lambda ((forward x))
+     (let (((cons x1 x2) (primal (forward x)))
+	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
+      (bundle x1 x1-tangent)))
+   '(lambda ((reverse x))
+     (let (((cons x1 x2) (*j-inverse (reverse x))))
+      (cons (*j x1)
+	    (lambda ((sensitivity y))
+	     (cons '() (cons (sensitivity y) (zero x2))))))))
+  (define-primitive-procedure 'cdr
+   (unary (lambda (x) (vlad-cdr x '())) "cdr")
+   (abstract-unary (lambda (x) (abstract-vlad-cdr x '())) "cdr")
+   '(lambda ((forward x))
+     (let (((cons x1 x2) (primal (forward x)))
+	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
+      (bundle x2 x2-tangent)))
+   '(lambda ((reverse x))
+     (let (((cons x1 x2) (*j-inverse (reverse x))))
+      (cons (*j x2)
+	    (lambda ((sensitivity y))
+	     (cons '() (cons (zero x1) (sensitivity y)))))))))
  (define-primitive-procedure 'write
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write")
@@ -8078,8 +8321,3 @@
 ;;; Commands
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
-
-;;; tmp
-(define (increment x) (+ x 1))
-(define (decrement x) (- x 1))
-
