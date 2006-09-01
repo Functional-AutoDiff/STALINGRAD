@@ -1,0 +1,5 @@
+;;; Mapping and reduction
+
+(define ((reduce f i) l) (if (null? l) i (f (car l) ((reduce f i) (cdr l)))))
+
+((reduce + 0) (list 1 2))

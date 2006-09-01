@@ -1,0 +1,18 @@
+;;; Mapping and reduction
+
+(define ((map f) l) (if (null? l) '() (cons (f (car l)) ((map f) (cdr l)))))
+
+(define ((map2 f) l1 l2)
+ (if (null? l1) '() (cons (f (car l1) (car l2)) ((map2 f) (cdr l1) (cdr l2)))))
+
+(define ((reduce f i) l) (if (null? l) i (f (car l) ((reduce f i) (cdr l)))))
+
+;;; Vectors
+
+(define (dot u v) ((reduce + 0) ((map2 *) u v)))
+
+;;; Matrices
+
+(define (m*v a v) ((map (lambda (u) (dot u v))) a))
+
+(m*v (list (list 4 2) (list -2 1)) (list 3 3))
