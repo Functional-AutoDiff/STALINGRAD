@@ -3886,7 +3886,7 @@
   (set-write-level! m)))
 
 (define (with-write-length n thunk)
- (let ((m (write-level)))
+ (let ((m (write-length)))
   (set-write-length! n)
   (thunk)
   (set-write-length! m)))
