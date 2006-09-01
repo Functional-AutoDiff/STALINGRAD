@@ -101,18 +101,20 @@
 		  ("l2" l2? (l2 "concrete-real-abstract-value-limit"
 				integer-argument #f)))
 		 (at-most-one
-		  ("l3" l3? (l3 "identical-nonrec-closure-abstract-value-limit"
+		  ("l3" l3? (l3 "matching-closure-abstract-value-limit"
 				integer-argument #f)))
 		 (at-most-one
-		  ("l4" l4? (l4 "identical-rec-closure-abstract-value-limit"
+		  ("l4"
+		   l4?
+		   (l4 "nonrec-closure-nesting-depth-limit"
+		       integer-argument #f)
+		   (l4-depth-measure "depth-measure" string-argument #f)))
+		 (at-most-one
+		  ("l5" l5? (l5 "pair-abstract-value-limit"
 				integer-argument #f)))
 		 (at-most-one
-		  ("l5" l5? (l5 "nonrec-closure-nesting-depth-limit"
-				integer-argument #f)))
-		 (at-most-one
-		  ("abstract-value-depth" abstract-value-depth?)
-		  ("matching-nonrecursive-closure-depth"
-		   matching-nonrecursive-closure-depth?))
+		  ("l6" l6?
+			(l6 "pair-nesting-depth-limit" integer-argument #f)))
 		 (at-most-one ("no-multiply-out" no-multiply-out?))
 		 (at-most-one ("no-anf" no-anf?))
 		 (at-most-one ("single-real" single-real?))
@@ -141,6 +143,8 @@
 		 (at-most-one ("test" test?))
 		 (at-most-one ("test-finish" test-finish?))
 		 (at-most-one ("fast-finish" fast-finish?))
+		 (at-most-one ("split-finish1" split-finish1?))
+		 (at-most-one ("new-subset" new-subset?))
 		 (at-most-one ("no-report" no-report?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -156,15 +160,11 @@
  (when l1? (set! *l1* l1))
  (when l2? (set! *l2* l2))
  (when l3? (set! *l3* l3))
- (when l4? (set! *l4* l4))
- (when l5?
-  (when (not (or abstract-value-depth? matching-nonrecursive-closure-depth?))
-   (panic "Must define a depth measure when specifying l5!"))
-  (set! *l5* l5))
- (when abstract-value-depth?
-  (set! *depth-measure* abstract-value-depth))
- (when matching-nonrecursive-closure-depth?
-  (set! *depth-measure* matching-nonrecursive-closure-depth))
+ (when l4?
+  (set! *l4* l4)
+  (set-l4-depth-measure-from-string! l4-depth-measure))
+ (when l5? (set! *l5* l5))
+ (when l6? (set! *l6* l5))
  (when debug?
   (set! *debug?* debug?)
   (set! *debug-level* debug-level))
@@ -189,7 +189,8 @@
 		duplicates
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
 	 ((2) '(all
 		unroll
 		remove-duplicates-circular-safe
@@ -201,7 +202,8 @@
 		remove-redundant-mappings2
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
 	 ((3) '(all
 		subset?
 		unroll
@@ -214,7 +216,8 @@
 		remove-redundant-mappings2
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
 	 ((4) '(all
 		unroll
 		multiply-out-nonrecursive-closure
@@ -229,7 +232,8 @@
 		remove-redundant-mappings2
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
 	 ((5) '(all
 		rest
 		var
@@ -244,7 +248,8 @@
 		remove-redundant-mappings2
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
 	 ((6) '(all
 		rest
 		var
@@ -261,12 +266,35 @@
 		remove-redundant-mappings2
 		reals
 		closures
-		depth))
+		depth-l4
+		depth-l6))
+	 ((7) '(all
+		rest
+		var
+		lambda
+		application
+		letrec
+		finish
+		finish1
+		finish1-true
+		finish1-false
+		finish2
+		add-new-environments
+		introduce-imprecision-to-flow1
+		remove-redundant-mappings
+		remove-redundant-mappings1
+		remove-redundant-mappings2
+		reals
+		closures
+		depth-l4
+		depth-l6))
 	 (else (panic "undefined bucket set!"))))
   (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
  (set! *test?* test?)
  (set! *test-finish?* test-finish?)
  (set! *fast-finish?* fast-finish?)
+ (set! *split-finish1?* split-finish1?)
+ (set! *new-subset?* new-subset?)
  (set! *no-report?* no-report?)
  (when no-anf? (set! *anf-convert?* (not no-anf?)))
  (set! *multiply-out-closures?* (not no-multiply-out?))
