@@ -6155,6 +6155,7 @@
 		      u (map (lambda (v) (if (eq? v v-down) v-new v))
 			     (tagged-pair-values u))))
 		    (else (panic "Not a (supported) branching type")))))
+	    ;; here I am--Need to check additions for being null?
 	    (move-values-up-tree (replaceq u u-new v) additions)))))))
   (when (not (null? (second result)))
    (panic "Addition(s) not processed in reduce-depth!"))
@@ -7076,7 +7077,9 @@
   (letrec-expression-argument-variables e)
   (letrec-expression-bodies e)))
 
-(define (create-abstract-analysis e vs)
+(define (create-flow vs v) (list (make-abstract-environment-binding vs v)))
+
+(define (create-abstract-analysis e vs v)
  (set! *num-calls-create-abstract-analysis*
        (+ *num-calls-create-abstract-analysis* 1))
  (let ((xs (free-variables e)))
@@ -7084,9 +7087,74 @@
    (format #t "xs=~s~%" xs)
    (format #t "vs=~s~%" (map-vector externalize-abstract-value vs))
    (panic "create-abstract-analysis: xs and vs should be of same length!")))
- (list
-  (make-abstract-expression-binding
-   e (list (make-abstract-environment-binding vs (empty-abstract-value))))))
+ (list (make-abstract-expression-binding e (create-flow vs v))))
+
+(define (restrict-environment vs xs xs-new)
+ (list->vector (map (lambda (x) (vector-ref vs (positionq x xs))) xs-new)))
+
+;;; Is this needed?
+(define (bind-and-restrict-environment vs xs bs xs-new)
+ (list->vector
+  (map (lambda (x) (let ((b (assq x bs)))
+		    (if (eq? b #f) (vector-ref vs (positionq x xs)) (cadr b))))
+       xs-new)))
+
+(define (abstract-analysis-rooted-at e vs)
+ (let ((xs (free-variables e)))
+  (cond ((variable-access-expression? e)
+	 (create-abstract-analysis e vs (vector-ref vs 0)))
+	((lambda-expression? e)
+	 (create-abstract-analysis
+	  e vs (multiply-out-nonrecursive-closure vs e)))
+	((application? e)
+	 (let ((e1 (application-callee e))
+	       (e2 (application-argument e)))
+	  (abstract-analysis-union
+	   (create-abstract-analysis e vs (empty-abstract-value))
+	   (abstract-analysis-union
+	    (abstract-analysis-rooted-at
+	     e1 (restrict-environment vs xs (free-variables e1)))
+	    (abstract-analysis-rooted-at
+	     e2 (restrict-environment vs xs (free-variables e2)))))))
+	((letrec-expression? e)
+	 (abstract-analysis-union
+	  (create-abstract-analysis e vs (empty-abstract-value))
+	  (let ((vs-e
+		 (list->vector
+		  (map
+		   (lambda (x)
+		    (if (memp variable=?
+			      x
+			      (letrec-expression-procedure-variables e))
+			(multiply-out-recursive-closure
+			 (letrec-expression-recursive-closure-variables e)
+			 (list->vector
+			  (map
+			   (lambda (x) (vector-ref vs (positionq x xs)))
+			   (letrec-expression-recursive-closure-variables e)))
+			 (list->vector
+			  (letrec-expression-procedure-variables e))
+			 (list->vector
+			  (letrec-expression-argument-variables e))
+			 (list->vector (letrec-expression-bodies e))
+			 (positionp
+			  variable=?
+			  x
+			  (letrec-expression-procedure-variables e)))
+			(vector-ref vs (positionq x xs))))
+		   (free-variables (letrec-expression-body e))))))
+	  (abstract-analysis-rooted-at (letrec-expression-body e) vs-e))))
+	((cons-expression? e)
+	 (let ((e1 (cons-expression-car e))
+	       (e2 (cons-expression-cdr e)))
+	  (abstract-analysis-union
+	   (create-abstract-analysis e vs (empty-abstract-value))
+	   (abstract-analysis-union
+	    (abstract-analysis-rooted-at
+	     e1 (restrict-environment vs xs (free-variables e1)))
+	    (abstract-analysis-rooted-at
+	     e2 (restrict-environment vs xs (free-variables e2)))))))
+	(else (panic "Not a valid expression")))))
 
 (define (vlad-value->abstract-value v)
  (cond ((null? v) (list v))
@@ -7171,9 +7239,11 @@
    ;;             supply an abstract value for the free variable, but there is
    ;;             no such abstract value at this point of the analysis.
    (abstract-analysis-union
-    (append
-     (create-abstract-analysis e vs)
-     (rest
+    ;; Do we even need to create an abstract expression binding for each value
+    ;; right now?  What if we delay doing so until needed?
+    (abstract-analysis-union
+     (abstract-analysis-rooted-at e vs)
+     (rest		 ; rest isn't necessary but saves a LITTLE comp effort
       (let loop ((e e))
        (cons (make-abstract-expression-binding e (empty-abstract-flow))
 	     (cond ((variable-access-expression? e) (empty-abstract-analysis))
@@ -7377,30 +7447,15 @@
 		  (cond ((primitive-procedure? u1) (empty-abstract-analysis))
 			((nonrecursive-closure? u1)
 			 (abstract-apply-nonrecursive-closure
-			  create-abstract-analysis u1 u2))
+			  abstract-analysis-rooted-at u1 u2))
 			((recursive-closure? u1)
 			 (abstract-apply-recursive-closure
-			  create-abstract-analysis u1 u2))
+			  abstract-analysis-rooted-at u1 u2))
 			(else (empty-abstract-analysis))))
 		 (closed-proto-abstract-values v2))
 	    (empty-abstract-analysis)))
    (closed-proto-abstract-values v1))
   (empty-abstract-analysis)))
-
-(define (map-all-abstract-values-in-analysis f bs)
- ;; f: abstract-value -> abstract-value
- ;; bs is an abstract analysis
- (map
-  (lambda (b)
-   (make-abstract-expression-binding
-    (abstract-expression-binding-expression b)
-    (map (lambda (b1)
-	  (make-abstract-environment-binding
-	   (map-vector (lambda (v) (f v))
-		       (abstract-environment-binding-abstract-values b1))
-	   (f (abstract-environment-binding-abstract-value b1))))
-	 (abstract-expression-binding-abstract-flow b))))
-  bs))
 
 (define (calculate-all-value-sizes bs)
  (let ((v-size (lambda (v) (second (abstract-value-size v)))))
@@ -7442,6 +7497,8 @@
 	     (v (abstract-environment-binding-abstract-value b2))
 	     (v-new
 	      (cond
+	       ;; here I am -- to remove recalculation of variable-access and
+	       ;;              lambda expressions
 	       ((variable-access-expression? e)
 		(collect-time-in-buckets
 		 'var (lambda () (vector-ref vs 0))))
@@ -7584,19 +7641,10 @@
     abstract-analysis-union
     (map
      (lambda (b)
-      (let ((e (abstract-expression-binding-expression b)))
+      (let* ((e (abstract-expression-binding-expression b))
+	     (xs (free-variables e)))
        (when (and *debug?* (> *debug-level* 5))
-	(format #t "update2: e=~s~%" (abstract->concrete e))
-	(when (and (lambda-expression? e)
-		   (let*? (lambda-expression-body e))
-		   (variable=? '(anf 298) (lambda-expression-variable e)))
-	 (let ((bs (abstract-expression-binding-abstract-flow b))
-	       (xs (free-variables e)))
-	  (format #t "expression=~s~%" (abstract->concrete e))
-	  (format #t "flow=~%~s~%" (externalize-abstract-flow xs bs))
-	  (write-object-to-file e "saddle-expression.vlad")
-	  (write-object-to-file (externalize-abstract-flow xs bs)
-				"saddle-flow.vlad"))))
+	(format #t "update2: e=~s~%" (abstract->concrete e)))
        (reduce
 	abstract-analysis-union
 	(map
@@ -7606,77 +7654,16 @@
 	    ((variable-access-expression? e) (empty-abstract-analysis))
 	    ((lambda-expression? e) (empty-abstract-analysis))
 	    ((application? e)
-	     (let ((xs (free-variables e)))
-	      (abstract-analysis-union
-	       (abstract-analysis-union
-		(create-abstract-analysis
-		 (application-callee e)
-		 ;; tag 2a
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-callee e)))))
-		(create-abstract-analysis
-		 (application-argument e)
-		 ;; tag 3a
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-argument e))))))
-	       (abstract-apply-prime
-		;; tag 2
-		(abstract-value-in-matching-abstract-environment
-		 (application-callee e)
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-callee e))))
-		 bs)
-		;; tag 3
-		(abstract-value-in-matching-abstract-environment
-		 (application-argument e)
-		 (list->vector
-		  (map (lambda (x) (vector-ref vs (positionq x xs)))
-		       (free-variables (application-argument e))))
-		 bs)))))
-	    ((letrec-expression? e)
-	     (create-abstract-analysis
-	      (letrec-expression-body e)
-	      ;; tag 1
-	      (let ((xs (free-variables e)))
-	       (list->vector
-		(map
-		 (lambda (x)
-		  (if (memp variable=?
-			    x
-			    (letrec-expression-procedure-variables e))
-		      (multiply-out-recursive-closure
-		       (letrec-expression-recursive-closure-variables e)
-		       (list->vector
-			(map
-			 (lambda (x) (vector-ref vs (positionq x xs)))
-			 (letrec-expression-recursive-closure-variables e)))
-		       (list->vector
-			(letrec-expression-procedure-variables e))
-		       (list->vector
-			(letrec-expression-argument-variables e))
-		       (list->vector (letrec-expression-bodies e))
-		       (positionp
-			variable=?
-			x
-			(letrec-expression-procedure-variables e)))
-		      (vector-ref vs (positionq x xs))))
-		 (free-variables (letrec-expression-body e)))))))
-	    ((cons-expression? e)
-	     (let ((xs (free-variables e)))
-	      (abstract-analysis-union
-	       (create-abstract-analysis
-		(cons-expression-car e)
-		(list->vector
-		 (map (lambda (x) (vector-ref vs (positionq x xs)))
-		      (free-variables (cons-expression-car e)))))
-	       (create-abstract-analysis
-		(cons-expression-cdr e)
-		(list->vector
-		 (map (lambda (x) (vector-ref vs (positionq x xs)))
-		      (free-variables (cons-expression-cdr e))))))))
+	     (let ((xs (free-variables e))
+		   (e1 (application-callee e))
+		   (e2 (application-argument e)))
+	      (abstract-apply-prime
+	       (abstract-value-in-matching-abstract-environment
+		e1 (restrict-environment vs xs (free-variables e1)) bs)
+	       (abstract-value-in-matching-abstract-environment
+		e2 (restrict-environment vs xs (free-variables e2)) bs))))
+	    ((letrec-expression? e) (empty-abstract-analysis))
+	    ((cons-expression? e) (empty-abstract-analysis))
 	    (else (fuck-up)))))
 	 (abstract-expression-binding-abstract-flow b))
 	(empty-abstract-analysis))))
@@ -7781,6 +7768,7 @@
 		(lambda (b)
 		 (cons-expression? (abstract-expression-binding-expression b)))
 		bs)))
+	    (pp (externalize-abstract-analysis bs))
 	    (format #t "Number of expressions: ~s~%" num-expressions)
 	    (format #t "  constant expressions: ~s~%" num-constant-expressions)
 	    (format #t "  variable-access expressions: ~s~%"
