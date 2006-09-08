@@ -341,6 +341,10 @@
 (define *subset-times* '())
 (define *subset-category-times* '())
 (define *no-report?* #f)
+(define *check-recalculation-unnecessary?* #f)
+(define *paranoid-widen?* #f)
+(define *paranoid-update-range?* #f)
+(define *paranoid-update?* #f)
 
 ;;; Procedures
 
@@ -5992,7 +5996,8 @@
 	  (let inner ((vs1 (branching-value-children u1))
 		      (vs2 (branching-value-children-matching u1 u2))
 		      (vs '())
-		      (additions '()))
+		      (additions additions))
+;;;		      (additions '()))
 	   (if (null? vs1)
 	       (let* ((u-new (make-new-branching-value u1 (reverse vs)))
 		      (branching-uss-new
@@ -6045,27 +6050,29 @@
 		  (let ((u (first us)))
 		   (define (do-branching-value vs-old make-branching-value)
 		    (let inner ((vs vs-old) (vs-new '()) (additions additions))
-		     (if (null? vs)
-			 (let ((vs-new (reverse vs-new)))
-			  (if (every eq? vs-old vs-new)
-			      ;; I assume this means no additions changed...
-			      (outer (rest us)
-				     (cons u us-new)
-				     additions
-				     changed?)
-			      (outer (rest us)
-				     (cons (make-branching-value vs-new)
-					   us-new)
-				     additions
-				     #t)))
-			 (let*
-			   ((v-additions
-			     (limit-matching-branching-values-over-tree-internal			      limit-at-one-level (first vs)))
-			    (v-new (first v-additions))
-			    (additions-new (second v-additions)))
-			  (inner (rest vs)
-				 (cons v-new vs-new)
-				 (merge-additions2 additions additions-new))))))
+		     (if
+		      (null? vs)
+		      (let ((vs-new (reverse vs-new)))
+		       (if (every eq? vs-old vs-new)
+			   ;; I assume this means no additions changed...
+			   (outer (rest us)
+				  (cons u us-new)
+				  additions
+				  changed?)
+			   (outer (rest us)
+				  (cons (make-branching-value vs-new)
+					us-new)
+				  additions
+				  #t)))
+		      (let*
+			((v-additions
+			  (limit-matching-branching-values-over-tree-internal
+			   limit-at-one-level (first vs)))
+			 (v-new (first v-additions))
+			 (additions-new (second v-additions)))
+		       (inner (rest vs)
+			      (cons v-new vs-new)
+			      (merge-additions2 additions additions-new))))))
 		   (cond ((or (null? u)
 			      (boolean? u)
 			      (abstract-real? u)
@@ -6155,8 +6162,9 @@
 		      u (map (lambda (v) (if (eq? v v-down) v-new v))
 			     (tagged-pair-values u))))
 		    (else (panic "Not a (supported) branching type")))))
-	    ;; here I am--Need to check additions for being null?
-	    (move-values-up-tree (replaceq u u-new v) additions)))))))
+	    (if (null? additions)
+		(list (replaceq u u-new v) '())
+		(move-values-up-tree (replaceq u u-new v) additions))))))))
   (when (not (null? (second result)))
    (panic "Addition(s) not processed in reduce-depth!"))
   (first result)))
@@ -6828,8 +6836,9 @@
   (let* ((index (cons l1 l2))
 	 (a (assp equal? index ts)))
    (if (eq? a #f)
-       (cons (cons index t) ts)
-       (list-replace ts (positionq a ts) (cons (car a) (+ t (cdr a)))))))
+       (cons (list index t 1) ts)
+       (list-replace
+	ts (positionq a ts) (cons (car a) (map + (rest a) (list t 1)))))))
  (set! *subset-category-times*
        (add-time t (length v1) (length v2) *subset-category-times*)))
 
@@ -7500,11 +7509,33 @@
 	       ;; here I am -- to remove recalculation of variable-access and
 	       ;;              lambda expressions
 	       ((variable-access-expression? e)
-		(collect-time-in-buckets
-		 'var (lambda () (vector-ref vs 0))))
+		(let* ((v-new (vector-ref vs 0))
+		       (use-v-new?
+			(and *check-recalculation-unnecessary?*
+			     (not (abstract-value-subset? v-new v)))))
+		 (when use-v-new?
+		  (format #t "**** recalculation needed! (variable) ****~%")
+		  (format #t "e= ~s~%" (abstract->concrete e))
+		  (format #t "vs= ")
+		  (pp (externalize-abstract-environment (free-variables e) vs))
+		  (newline)
+		  (format #t "v-old= ")
+		  (pp (externalize-abstract-value v)) (newline))
+		 (if use-v-new? v-new v)))
 	       ((lambda-expression? e)
-		(collect-time-in-buckets
-		 'lambda (lambda () (multiply-out-nonrecursive-closure vs e))))
+		(let* ((v-new (multiply-out-nonrecursive-closure vs e))
+		       (use-v-new?
+			(and *check-recalculation-unnecessary?*
+			   (not (abstract-value-subset? v-new v)))))
+		(when use-v-new?
+		 (format #t "**** recalculation needed! (lambda) ****~%")
+		 (format #t "e= ~s~%" (abstract->concrete e))
+		 (format #t "vs= ")
+		 (pp (externalize-abstract-environment (free-variables e) vs))
+		 (newline)
+		 (format #t "v-old= ")
+		 (pp (externalize-abstract-value v)) (newline))
+		(if use-v-new? v-new v)))
 	       ((application? e)
 		(collect-time-in-buckets
 		 'application
@@ -7679,6 +7710,8 @@
  ;; are replaced with abstract-value-in-matching-abstract-environment.
  (let* ((bs1 (update-abstract-analysis-ranges bs))
 	(bs2 (update-abstract-analysis-domains bs)))
+  ;; This whole map expression is acting as a sort of abstract-analysis union--
+  ;;   one that enforces monotonicity.
   (map (lambda (b1)
 	(let* ((timing? (or
 			 ;; foo1
@@ -7708,10 +7741,12 @@
 			'()
 			(abstract-expression-binding-abstract-flow b2)))
 	       (result
+		;; to-do: we should have introduce-imprecision check to see
+		;;        if the value is the same as in last analysis before
+		;;        going to work on the value
 		(make-abstract-expression-binding
 		 e (introduce-imprecision-to-abstract-flow
-		    (add-new-abstract-environments-to-abstract-flow
-		     bs1 bs2))))
+		    (add-new-abstract-environments-to-abstract-flow bs1 bs2))))
 	       (t-end (when timing? (clock-sample))))
 	 (when timing?
 	  (format #t "~%update-time=~s)~%" (- t-end t-start)))
@@ -7768,7 +7803,7 @@
 		(lambda (b)
 		 (cons-expression? (abstract-expression-binding-expression b)))
 		bs)))
-	    (pp (externalize-abstract-analysis bs))
+	    (pp (externalize-abstract-analysis bs)) (newline)
 	    (format #t "Number of expressions: ~s~%" num-expressions)
 	    (format #t "  constant expressions: ~s~%" num-constant-expressions)
 	    (format #t "  variable-access expressions: ~s~%"
@@ -7857,7 +7892,13 @@
 	    (if done?
 		(begin
 		 (format #t "subset-category-times=~%")
-		 (pp *subset-category-times*) (newline)
+		 (format #t "((|v1| . |v2|) total-time num-calls time/call~%")
+		 (pp (sort (map (lambda (r)
+				 (append r (list (/ (second r) (third r)))))
+				*subset-category-times*)
+			   >
+			   fourth))
+		 (newline)
 		 (format #t "Analysis reached after ~s updates.~%"
 			 *num-updates*)
 		 (instrument-report)
@@ -8260,6 +8301,9 @@
 	  (else (loop (+ i 1) bs)))))))
 
 (define (remove-redundant-abstract-mappings2 bs)
+ ;; An abstract mapping xi->yi in [x1->y1, ..., xn->yn] is redundant if
+ ;;   1. (subset? xi xj) AND
+ ;;   2. (subset? yj yi)
  (collect-time-in-buckets
   'remove-redundant-mappings2
   (lambda ()
@@ -8314,7 +8358,10 @@
     (pp (map externalize-mapping bs)) (format #t ")~%")))
   result))
 
-;; ADD: native-pairs
+;;; to-do: This has a bad name--it suggests that only mappings sigma |-> bottom
+;;;          are added, but in fact it handles adding any mappings.
+;;;        It also really acts as a sort of abstract flow union--one that
+;;;          enforces monotonicity.
 (define (add-new-abstract-environments-to-abstract-flow bs bs-new)
  (define (add-new-abstract-environments-to-abstract-flow bs bs-new)
   ;; rename?: add-new-abstract-domains-to-abstract-function
