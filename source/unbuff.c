@@ -3,7 +3,7 @@
 // this is so that the command's stdio will not buffer it's output.
 
 // by Henry Cejtin
-// modified by Barak Pearlmutter
+// modified and updated by Barak A. Pearlmutter
 
 #include <termios.h>
 #include <stdarg.h>
@@ -17,14 +17,15 @@
 int
 main(int argc, char **argv)
 {
-  int		mfd, sfd, len;
+  int		mfd, sfd, saved_stderr;
   struct termios	tbuff;
 
   if (*++argv == NULL) {
     fprintf(stderr, "error: argument required\n");
     printf("Usage: unbuff command ...\n");
     printf("  Run a subsidiary command in such a way that its standard\n");
-    printf("  output will not be buffered.\n");
+    printf("  output will not be buffered, and that its standard error\n");
+    printf("  will be merged with its standard output.\n");
     exit(1);
   }
 
@@ -40,7 +41,18 @@ main(int argc, char **argv)
       perror("error: fork");
       exit(1);
 
-    case 0:
+    case 0:			// We are the child: exec
+
+      // Errors that occur in the unbuff executable itself should go
+      // to the parent stderr.  This is tricky because we may, by that
+      // time, have already arranged for subprocess stderr to go to
+      // stdout. Therefore the parent stderr is saved away, and
+      // restored if an error needs to be reported.
+
+      saved_stderr = dup(STDERR_FILENO);
+      if (saved_stderr == STDOUT_FILENO || saved_stderr == STDERR_FILENO)
+	saved_stderr = -1;
+
       close(mfd);
       dup2(sfd, STDOUT_FILENO);
       dup2(sfd, STDERR_FILENO);
@@ -49,27 +61,38 @@ main(int argc, char **argv)
       tbuff.c_oflag &= ~ OPOST;
       tcsetattr(STDOUT_FILENO, TCSANOW, &tbuff);
       execvp(*argv, argv);
-      // Note: these messages go via the parent, to stdout
+
+      // Errors via parent to stdout, unless parent stderr available.
+      if (saved_stderr != -1) dup2(saved_stderr, STDERR_FILENO);
       perror("error: execvp");
-      fprintf(stderr, "Can't find %s\n", *argv);
+      fprintf(stderr, "Can not find %s\n", *argv);
       exit(1);
 
-    default:
+    default:			// We are the parent: relay
       close(sfd);
       {
 	char buff[BUFSIZ];
 	while (1) {
-	  len = read(mfd, buff, BUFSIZ);
+	  int writ = 0;
+	  int len = read(mfd, buff, BUFSIZ);
 	  if (len <= 0)
 	    break;
-	  // Note: the following should really be in a loop, in case
-	  // of partial success, due to Unix system call PC lusering
-	  // and all that.
-	  write(STDOUT_FILENO, buff, len);
+	  // Loop, in case of partial writes.
+	  while (len > writ) {
+	    int w = write(STDOUT_FILENO, buff+writ, len-writ);
+	    if (w < 0) {
+	      perror("error: write");
+	      fprintf(stderr, "Output failed\n");
+	      exit(1);
+	    }
+	    writ += w;
+	  }
 	}
       }
     }
   return (0);
 }
 
-// make CFLAGS='-O2 -Wall' LOADLIBES=-lutil unbuff
+// Local Variables:
+// compile-command: "make CFLAGS='-O2 -Wall' LOADLIBES=-lutil unbuff"
+// End:
