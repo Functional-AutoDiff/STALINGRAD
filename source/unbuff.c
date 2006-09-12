@@ -70,23 +70,21 @@ main(int argc, char **argv)
 
     default:			// We are the parent: relay
       close(sfd);
-      {
+      while (1) {
 	char buff[BUFSIZ];
-	while (1) {
-	  int writ = 0;
-	  int len = read(mfd, buff, BUFSIZ);
-	  if (len <= 0)
-	    break;
-	  // Loop, in case of partial writes.
-	  while (len > writ) {
-	    int w = write(STDOUT_FILENO, buff+writ, len-writ);
-	    if (w < 0) {
-	      perror("error: write");
-	      fprintf(stderr, "Output failed\n");
-	      exit(1);
-	    }
-	    writ += w;
+	int writ = 0;
+	int len = read(mfd, buff, BUFSIZ);
+	if (len <= 0)
+	  break;
+	// Loop, in case of partial writes.
+	while (writ < len) {
+	  int w = write(STDOUT_FILENO, buff+writ, len-writ);
+	  if (w < 0) {
+	    perror("error: write");
+	    fprintf(stderr, "Output failed\n");
+	    exit(1);
 	  }
+	  writ += w;
 	}
       }
     }
