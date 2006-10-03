@@ -327,8 +327,9 @@
 (define *time-in-union-us* 0)
 (define *time-in-loop* 0)
 
-(define *bucket-names* '(recalc cols merge imprec)) ; hack
-(define *time-buckets* (make-vector (length *bucket-names*) 0))
+(define *bucket-names* '(widen safe)) ; hack
+(define *time-buckets* (make-vector (length *bucket-names*) 0.))
+(define *call-cuckets* (make-vector (length *bucket-names*) 0))
 (define *bucket-stack* '())
 
 (define *test?* #f)
@@ -5143,6 +5144,7 @@
 (define (abstract-analysis-values bs)
  (reduce append (map abstract-expression-binding-values bs) '()))
 
+;;; to-do: preserve eq?-ness of {proto-,}abstract-values
 (define (process-nodes-in-abstract-value-tree f v v-context)
  (if (up? v)
      v
@@ -5569,35 +5571,6 @@
 ;;; \Widen->General
 
 ;;; Widen->Flows
-
-(define (restrict-number-of-abstract-flow-elements-to k xs bs)
- ;; This function introduces the imprecision in abstract-flow-union.
- ;; needs work: Can implement more intelligent strategies.
- (when #f
-  (format #t "restricting to ~s elements: ~s~%"
-	  k (externalize-abstract-flow bs)))
- (if (<= (length bs) k)
-     bs
-     (let* ((b1 (first bs))
-	    (b2 (second bs))
-	    (vs1 (abstract-environment-binding-abstract-values b1))
-	    (v1 (abstract-environment-binding-abstract-value b1))
-	    (vs2 (abstract-environment-binding-abstract-values b2))
-	    (v2 (abstract-environment-binding-abstract-value b2))
-	    (b-new (make-abstract-environment-binding
-		    (abstract-environment-union vs1 vs2)
-		    (abstract-value-union v1 v2))))
-      (when (and *debug?* (> *debug-level* 1))
-       (format #t "(restricting-flows:~%")
-       (format #t "  b1=")
-       (pp (externalize-abstract-environment-binding xs b1))
-       (format #t "~%  b2=")
-       (pp (externalize-abstract-environment-binding xs b2))
-       (format #t "~%  b-new=")
-       (pp (externalize-abstract-environment-binding xs b-new))
-       (format #t ")~%"))
-      (restrict-number-of-abstract-flow-elements-to
-       k xs (cons b-new (rest (rest bs)))))))
 
 ;;; \Widen->Flows
 
@@ -6281,15 +6254,18 @@
 		 v-new))))))
 
 (define (widen-abstract-value2 v)
- (let* ((v1 (remove-duplicate-proto-abstract-values v))
-	(v2 (limit-l4-depth v1))
-	(v3 (limit-l6-depth v2))
-	(v4 (limit-matching-closures v3))
-	(v5 (limit-matching-pairs v4))
-	(v6 (remove-duplicate-proto-abstract-values v5))
-	(v7 (widen-abstract-value-by-coalescing-reals v6))
-	(v8 (remove-duplicate-proto-abstract-values v7)))
-  v8))
+ (report-time-for
+  'widen #f #f v
+  (lambda ()
+   (let* ((v1 (remove-duplicate-proto-abstract-values v))
+	  (v2 (limit-l4-depth v1))
+	  (v3 (limit-l6-depth v2))
+	  (v4 (limit-matching-closures v3))
+	  (v5 (limit-matching-pairs v4))
+	  (v6 (remove-duplicate-proto-abstract-values v5))
+	  (v7 (widen-abstract-value-by-coalescing-reals v6))
+	  (v8 (remove-duplicate-proto-abstract-values v7)))
+    v8))))
 
 ;;; \Widen New
 
@@ -6359,8 +6335,6 @@
   v1))
 
 (define (abstract-value-subset?-cyclic v1 v2)
- ; (format #t "subset: v1=") (pp (externalize-abstract-value v1)) (newline)
- ; (format #t "        v2=") (pp (externalize-abstract-value v2)) (newline)
  (let loop? ((v1 v1) (v2 v2) (cs '()))
   (set! *num-calls-abstract-value-subset-loop?*
 	(+ *num-calls-abstract-value-subset-loop?* 1))
@@ -7367,15 +7341,19 @@
 	(time-end (clock-sample))
 	(changed? (not (eq? result v-old)))
 	(time (- time-end time-start))
-	(i (positionq activity *bucket-names*)))
+	(i (positionq activity *bucket-names*))
+	(num (if (eq? #f i) #f (vector-ref *call-cuckets* i))))
+  (when (and (eq? vs-index #f) (not (eq? #f i)))
+   (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time))
+   (vector-set! *call-cuckets* i (+ num 1)))
   (when *report-all-times?*
    (if *machine-style?*
-       (format #t "~s ~s ~s ~s ~s ~s ~s~%"
-	       *num-updates* activity e-index e-type vs-index changed? time)
-       (format #t "I=~s ~s: e=~s ~s vs=~s changed?=~s time=~s~%"
-	       *num-updates* activity e-index e-type vs-index changed? time)))
-  (when (and (eq? vs-index #f) (not (eq? #f i)))
-   (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time)))
+       (format #t "~s ~s ~s ~s ~s ~s ~s ~s~%"
+	       *num-updates* activity e-index e-type vs-index
+	       changed? num time)
+       (format #t "I=~s ~s: e=~s ~s vs=~s changed?=~s num=~s time=~s~%"
+	       *num-updates* activity e-index e-type vs-index
+	       changed? num time)))
   result))
 
 (define (update-abstract-analysis-ranges bs bs-old)
@@ -7398,155 +7376,151 @@
     (let* ((e (abstract-expression-binding-expression b))
 	   (ei (positionq e *expression-list*))
 	   (xs (free-variables e)))
-     (report-time-for
-      'recalc ei #f b
-      (lambda ()
-       (if (or (variable-access-expression? e) (lambda-expression? e))
-	   b
-	   (make-abstract-expression-binding
-	    e
-	    (let*
-	      ((bs-e (abstract-expression-binding-abstract-flow b))
-	       (result
-		(map
-		 (lambda (b2)
-		  (let*
-		    ((vs (abstract-environment-binding-abstract-values b2))
-		     (vsi (positionq b2 bs-e))
-		     (v (abstract-environment-binding-abstract-value b2))
-		     (v-new
-		      (report-time-for
-		       'recalc ei vsi v
-		       (lambda ()
-			(cond
-			 ((variable-access-expression? e) (fuck-up))
-			 ((lambda-expression? e) (fuck-up))
-			 ((application? e)
-			  ;; e: (e1 e2)
-			  (let* ((e1 (application-callee e))
-				 (e2 (application-argument e))
-				 (xs1 (free-variables e1))
-				 (xs2 (free-variables e2)))
-			   ;; e can be safely left un-updated if:
-			   ;;   1. exists vs->v' in (bs-old e)
-			   ;;      (basically, vs same as last iter)
-			   ;;      - NOTE: we don't say exists vs->v' in (bs e)
-			   ;;      - This means that the same environment vs gets
-			   ;;        evaluated to form bs as we're trying to
-			   ;;        evaluate now.
-			   ;;   2. (bs e1) = (bs-old e1)
-			   ;;   3. (bs e2) = (bs-old e2)
-			   ;;   AND
-			   ;;   4. forall u in (bs e1 vs)
-			   ;;        u = <sigma,e'> => (bs e') = (bs-old e') AND
-			   ;;        u = <sigma,xs,es',i> =>
-			   ;;                         (bs es'[i]) = (bs-old es'[i])
-			   (if (and
-				*fast-apply?*
+     (if (or (variable-access-expression? e) (lambda-expression? e))
+	 b
+	 (make-abstract-expression-binding
+	  e
+	  (let*
+	    ((bs-e (abstract-expression-binding-abstract-flow b))
+	     (result
+	      (map
+	       (lambda (b2)
+		(let*
+		  ((vs (abstract-environment-binding-abstract-values b2))
+		   (vsi (positionq b2 bs-e))
+		   (v (abstract-environment-binding-abstract-value b2))
+		   (v-new
+		    (cond
+		     ((variable-access-expression? e) (fuck-up))
+		     ((lambda-expression? e) (fuck-up))
+		     ((application? e)
+		      ;; e: (e1 e2)
+		      (let* ((e1 (application-callee e))
+			     (e2 (application-argument e))
+			     (xs1 (free-variables e1))
+			     (xs2 (free-variables e2)))
+		       ;; e can be safely left un-updated if:
+		       ;;   1. exists vs->v' in (bs-old e)
+		       ;;      (basically, vs same as last iter)
+		       ;;      - NOTE: we don't say exists vs->v' in (bs e)
+		       ;;      - This means that the same environment vs gets
+		       ;;        evaluated to form bs as we're trying to
+		       ;;        evaluate now.
+		       ;;   2. (bs e1) = (bs-old e1)
+		       ;;   3. (bs e2) = (bs-old e2)
+		       ;;   AND
+		       ;;   4. forall u in (bs e1 vs)
+		       ;;        u = <sigma,e'> => (bs e') = (bs-old e') AND
+		       ;;        u = <sigma,xs,es',i> =>
+		       ;;                       (bs es'[i]) = (bs-old es'[i])
+		       (if (and
+			    *fast-apply?*
+			    (mapping-with-vs-in-flow?
+			     vs (expression-abstract-flow3 e bs-old))
+			    (bs-unchanged-for-e? e1)
+			    (bs-unchanged-for-e? e2)
+			    (every
+			     (lambda (u)
+			      (cond
+			       ((nonrecursive-closure? u)
+				(bs-unchanged-for-e?
+				 (nonrecursive-closure-body u)))
+			       ((recursive-closure? u)
+				(bs-unchanged-for-e?
+				 (vector-ref (recursive-closure-bodies u)
+					     (recursive-closure-index u))))
+			       (else #t)))
+			     (abstract-value-in-matching-abstract-environment
+			      e1 (restrict-environment vs xs xs1) bs)))
+			   v
+			   (abstract-apply
+			    (abstract-value-in-matching-abstract-environment
+			     e1 (restrict-environment vs xs xs1) bs)
+			    (abstract-value-in-matching-abstract-environment
+			     e2 (restrict-environment vs xs xs2) bs)
+			    bs))))
+		     ((letrec-expression? e)
+		      ;; e: (letrec x1 = e1, ..., xn = en in e-body)
+		      (let ((es (letrec-expression-bodies e))
+			    (e-body (letrec-expression-body e))
+			    (xs1 (letrec-expression-procedure-variables e))
+			    (xs2 (letrec-expression-argument-variables e))
+			    (xs-closure
+			     (letrec-expression-recursive-closure-variables
+			      e)))
+		       ;; e can be safely left un-updated if:
+		       ;;   1. exists vs->v' in (bs-old e)
+		       ;;      (basically, vs same as last iter)
+		       ;;      - NOTE: we don't say exists vs->v' in (bs e)
+		       ;;      - This means that the same environment vs gets
+		       ;;        evaluated to form bs as we're trying to
+		       ;;        evaluate now.
+		       ;;   2. (bs e-body) = (bs-old e-body)
+		       (if (and *fast-letrec?*
+				(mapping-with-vs-in-flow?
+				 vs (expression-abstract-flow3 e bs-old))
+				(bs-unchanged-for-e? e-body))
+			   v
+			   (abstract-value-in-matching-abstract-environment
+			    e-body
+			    ;; tag 1
+			    (list->vector
+			     (map (lambda (x)
+				   (if (memp variable=? x xs1)
+				       (new-recursive-closure
+					xs-closure
+					(restrict-environment
+					 vs xs xs-closure)
+					(list->vector xs1)
+					(list->vector xs2)
+					(list->vector es)
+					(positionp variable=? x xs1))
+				       (vector-ref vs (positionq x xs))))
+				  (free-variables e-body)))
+			    bs))))
+		     ((cons-expression? e)
+		      ;; e: (cons e1 e2)
+		      ;; e can be safely left un-updated if:
+		      ;;   1. exists vs->v' in (bs-old e)--vs same as last
+		      ;;                                   iter
+		      ;;      - NOTE: we don't say exists vs->v' in (bs e)
+		      ;;      - This means that the same environment vs gets
+		      ;;        evaluated to form bs as we're trying to
+		      ;;        evaluate now.
+		      ;;   2. (bs e1) = (bs-old e1)
+		      ;;   3. (bs e2) = (bs-old e2)
+		      ;; ? - should we multiply out consn?
+		      (let* ((e1 (cons-expression-car e))
+			     (e2 (cons-expression-cdr e))
+			     (xs1 (free-variables e1))
+			     (xs2 (free-variables e2)))
+		       (if (and *fast-cons?*
 				(mapping-with-vs-in-flow?
 				 vs (expression-abstract-flow3 e bs-old))
 				(bs-unchanged-for-e? e1)
-				(bs-unchanged-for-e? e2)
-				(every
-				 (lambda (u)
-				  (cond
-				   ((nonrecursive-closure? u)
-				    (bs-unchanged-for-e?
-				     (nonrecursive-closure-body u)))
-				   ((recursive-closure? u)
-				    (bs-unchanged-for-e?
-				     (vector-ref (recursive-closure-bodies u)
-						 (recursive-closure-index u))))
-				   (else #t)))
-				 (abstract-value-in-matching-abstract-environment
-				  e1 (restrict-environment vs xs xs1) bs)))
-			       v
-			       (abstract-apply
-				(abstract-value-in-matching-abstract-environment
-				 e1 (restrict-environment vs xs xs1) bs)
-				(abstract-value-in-matching-abstract-environment
-				 e2 (restrict-environment vs xs xs2) bs)
-				bs))))
-			 ((letrec-expression? e)
-			  ;; e: (letrec x1 = e1, ..., xn = en in e-body)
-			  (let ((es (letrec-expression-bodies e))
-				(e-body (letrec-expression-body e))
-				(xs1 (letrec-expression-procedure-variables e))
-				(xs2 (letrec-expression-argument-variables e))
-				(xs-closure
-				 (letrec-expression-recursive-closure-variables
-				  e)))
-			   ;; e can be safely left un-updated if:
-			   ;;   1. exists vs->v' in (bs-old e)
-			   ;;      (basically, vs same as last iter)
-			   ;;      - NOTE: we don't say exists vs->v' in (bs e)
-			   ;;      - This means that the same environment vs gets
-			   ;;        evaluated to form bs as we're trying to
-			   ;;        evaluate now.
-			   ;;   2. (bs e-body) = (bs-old e-body)
-			   (if (and *fast-letrec?*
-				    (mapping-with-vs-in-flow?
-				     vs (expression-abstract-flow3 e bs-old))
-				    (bs-unchanged-for-e? e-body))
-			       v
+				(bs-unchanged-for-e? e2))
+			   v
+			   (let
+			     ((v-car
 			       (abstract-value-in-matching-abstract-environment
-				e-body
-				;; tag 1
-				(list->vector
-				 (map (lambda (x)
-				       (if (memp variable=? x xs1)
-					   (new-recursive-closure
-					    xs-closure
-					    (restrict-environment vs xs xs-closure)
-					    (list->vector xs1)
-					    (list->vector xs2)
-					    (list->vector es)
-					    (positionp variable=? x xs1))
-					   (vector-ref vs (positionq x xs))))
-				      (free-variables e-body)))
-				bs))))
-			 ((cons-expression? e)
-			  ;; e: (cons e1 e2)
-			  ;; e can be safely left un-updated if:
-			  ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
-			  ;;      - NOTE: we don't say exists vs->v' in (bs e)
-			  ;;      - This means that the same environment vs gets
-			  ;;        evaluated to form bs as we're trying to
-			  ;;        evaluate now.
-			  ;;   2. (bs e1) = (bs-old e1)
-			  ;;   3. (bs e2) = (bs-old e2)
-			  ;; ? - should we multiply out consn?
-			  (let* ((e1 (cons-expression-car e))
-				 (e2 (cons-expression-cdr e))
-				 (xs1 (free-variables e1))
-				 (xs2 (free-variables e2)))
-			   (if (and *fast-cons?*
-				    (mapping-with-vs-in-flow?
-				     vs (expression-abstract-flow3 e bs-old))
-				    (bs-unchanged-for-e? e1)
-				    (bs-unchanged-for-e? e2))
-			       v
-			       (let
-				 ((v-car
-				   (abstract-value-in-matching-abstract-environment
-				    e1 (restrict-environment vs xs xs1) bs))
-				  (v-cdr
-				   (abstract-value-in-matching-abstract-environment
-				    e2 (restrict-environment vs xs xs2) bs)))
-				(if (or (null? v-car) (null? v-cdr))
-				    (empty-abstract-value)
-				    (list
-				     (make-tagged-pair
-				      (cons-expression-tags e) v-car v-cdr)))))))
-			 (else (fuck-up)))))))
-		   (if *include-prior-values?*
-		       (if (or (eq? v-new v) (abstract-value-subset? v-new v))
-			   b2
-			   (make-abstract-environment-binding
-			    vs (abstract-value-union v v-new)))
-		       (make-abstract-environment-binding vs v-new))))
-		 bs-e)))
-	     (if (every eq? result bs-e) bs-e result))))))))
+				e1 (restrict-environment vs xs xs1) bs))
+			      (v-cdr
+			       (abstract-value-in-matching-abstract-environment
+				e2 (restrict-environment vs xs xs2) bs)))
+			    (if (or (null? v-car) (null? v-cdr))
+				(empty-abstract-value)
+				(list
+				 (make-tagged-pair
+				  (cons-expression-tags e) v-car v-cdr)))))))
+		     (else (fuck-up)))))
+		 (if *include-prior-values?*
+		     (if (or (eq? v-new v) (abstract-value-subset? v-new v))
+			 b2
+			 (make-abstract-environment-binding
+			  vs (abstract-value-union v v-new)))
+		     (make-abstract-environment-binding vs v-new))))
+	       bs-e)))
+	   (if (every eq? result bs-e) bs-e result))))))
    bs)))
 
 (define (update-abstract-analysis-domains bs bs-old)
@@ -7569,53 +7543,47 @@
      (let* ((e (abstract-expression-binding-expression b))
 	    (ei (positionq e *expression-list*))
 	    (xs (free-variables e)))
-      (report-time-for
-       'cols ei #f '()
-       (lambda ()
-	(cond ((variable-access-expression? e) (empty-abstract-analysis))
-	      ((lambda-expression? e) (empty-abstract-analysis))
-	      ((application? e)
-	       ;; e: (e1 e2)
-	       (let ((e1 (application-callee e))
-		     (e2 (application-argument e))
-		     (bs-e (abstract-expression-binding-abstract-flow b)))
-		;; No new mappings need to be added if:
-		;;   1. exists vs->v' in (bs-old e)--vs same as last iter
-		;;      - NOTE: we don't say exists vs->v' in (bs e)
-		;;      - This means that the same environment vs gets
-		;;        evaluated to form bs as we're trying to
-		;;        evaluate now.
-		;;   2. (bs e1) = (bs-old e1) AND
-		;;   3. (bs e2) = (bs-old e2)
-		(reduce
-		 abstract-analysis-union
-		 (map
-		  (lambda (b)
-		   (let ((vs (abstract-environment-binding-abstract-values b))
-			 (vsi (positionq b bs-e)))
-		    (report-time-for
-		     'cols ei vsi '()
-		     (lambda ()
-		      (if (and *fast-apply-prime?*
-			       (bs-unchanged-for-e? e1)
-			       (bs-unchanged-for-e? e2)
-			       (mapping-with-vs-in-flow?
-				vs (expression-abstract-flow3 e bs-old)))
-			  (empty-abstract-analysis)
-			  (abstract-apply-prime
-			   (abstract-value-in-matching-abstract-environment
-			    e1
-			    (restrict-environment vs xs (free-variables e1))
-			    bs)
-			   (abstract-value-in-matching-abstract-environment
-			    e2
-			    (restrict-environment vs xs (free-variables e2))
-			    bs)))))))
-		  bs-e)
-		 (empty-abstract-analysis))))
-	      ((letrec-expression? e) (empty-abstract-analysis))
-	      ((cons-expression? e) (empty-abstract-analysis))
-	      (else (fuck-up)))))))
+      (cond ((variable-access-expression? e) (empty-abstract-analysis))
+	    ((lambda-expression? e) (empty-abstract-analysis))
+	    ((application? e)
+	     ;; e: (e1 e2)
+	     (let ((e1 (application-callee e))
+		   (e2 (application-argument e))
+		   (bs-e (abstract-expression-binding-abstract-flow b)))
+	      ;; No new mappings need to be added if:
+	      ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
+	      ;;      - NOTE: we don't say exists vs->v' in (bs e)
+	      ;;      - This means that the same environment vs gets
+	      ;;        evaluated to form bs as we're trying to
+	      ;;        evaluate now.
+	      ;;   2. (bs e1) = (bs-old e1) AND
+	      ;;   3. (bs e2) = (bs-old e2)
+	      (reduce
+	       abstract-analysis-union
+	       (map
+		(lambda (b)
+		 (let ((vs (abstract-environment-binding-abstract-values b))
+		       (vsi (positionq b bs-e)))
+		  (if (and *fast-apply-prime?*
+			   (bs-unchanged-for-e? e1)
+			   (bs-unchanged-for-e? e2)
+			   (mapping-with-vs-in-flow?
+			    vs (expression-abstract-flow3 e bs-old)))
+		      (empty-abstract-analysis)
+		      (abstract-apply-prime
+		       (abstract-value-in-matching-abstract-environment
+			e1
+			(restrict-environment vs xs (free-variables e1))
+			bs)
+		       (abstract-value-in-matching-abstract-environment
+			e2
+			(restrict-environment vs xs (free-variables e2))
+			bs)))))
+		bs-e)
+	       (empty-abstract-analysis))))
+	    ((letrec-expression? e) (empty-abstract-analysis))
+	    ((cons-expression? e) (empty-abstract-analysis))
+	    (else (fuck-up)))))
     bs)
    (empty-abstract-analysis))))
 
@@ -7667,16 +7635,9 @@
 		   (list bs-old bs1 bs2)
 		   (string-append "e1154-flows-i" num-str)))))
 	       (bs-new
-		(report-time-for
-		 'merge ei #f '()
-		 (lambda ()
-		  (add-new-abstract-environments-to-abstract-flow
-		   ei bs1 bs2))))
+		(add-new-abstract-environments-to-abstract-flow ei bs1 bs2))
 	       (bs-new2
-		(report-time-for
-		 'imprec ei #f bs-new
-		 (lambda ()
-		  (introduce-imprecision-to-abstract-flow ei bs-new bs-old)))))
+		(introduce-imprecision-to-abstract-flow ei bs-new bs-old)))
 	 (make-abstract-expression-binding e bs-new2)))
        bs1)))
 
@@ -7761,7 +7722,7 @@
 				     (string-append "bs-bs-old-i" num-str))))
 	 (let* ((bs-prime
 		 (if *quiet?*
-		     (if #f
+		     (if #t
 			 (update-abstract-analysis bs bs-old)
 			 (report-time-for
 			  #f #f #f bs
@@ -8685,44 +8646,25 @@
 (define (make-abstract-mapping-safe-to-add b bs0)
  ;; b = x |-> y
  ;; must hold: (forall i:xi intersects x) (subset? yi y)
- (let*
-   ((flag? #f)
-    (result
-     (let ((x-bar (abstract-environment-binding-abstract-values b))
-	   (y-bar0 (abstract-environment-binding-abstract-value b)))
-      (let loop ((y-bar y-bar0) (bs bs0))
-       (cond ((null? bs)
-	      (if (eq? y-bar y-bar0)
-		  b
-		  (make-abstract-environment-binding x-bar y-bar)))
-	     ((nonempty-abstract-environment-intersection?
-	       x-bar (abstract-environment-binding-abstract-values (first bs)))
-	      (set! flag? #t)
-	      (let ((yi-bar (abstract-environment-binding-abstract-value
-			     (first bs)))
-		    (i (positionq (first bs) bs0)))
-	       (if (time (string-append
-			  (format #f "|v|=~s, |v_~s|=~s, time="
-				  (length y-bar) i (length yi-bar))
-			  "~a~%")
-			 (lambda () (abstract-value-subset? yi-bar y-bar)))
-		   (loop y-bar (rest bs))
-		   (loop (abstract-value-union y-bar yi-bar) (rest bs)))))
-	     (else (loop y-bar (rest bs))))))))
-  (when (and #f *debug?* flag?)
-   (let ((externalize-mapping
-	  (lambda (b)
-	   (list (map-vector externalize-abstract-value
-			     (abstract-environment-binding-abstract-values b))
-		 (externalize-abstract-value
-		  (abstract-environment-binding-abstract-value b))))))
-    (format #t "(old-mapping:~%")
-    (pp (externalize-mapping b)) (format #t ")~%")
-    (format #t "(new-mapping:~%")
-    (pp (externalize-mapping result)) (format #t ")~%")
-    (format #t "(bs:~%")
-    (pp (map externalize-mapping bs)) (format #t ")~%")))
-  result))
+ (report-time-for
+  'safe #f #f b
+  (lambda ()
+   (let ((x-bar (abstract-environment-binding-abstract-values b))
+	 (y-bar0 (abstract-environment-binding-abstract-value b)))
+    (let loop ((y-bar y-bar0) (bs bs0))
+     (cond ((null? bs)
+	    (if (eq? y-bar y-bar0)
+		b
+		(make-abstract-environment-binding x-bar y-bar)))
+	   ((nonempty-abstract-environment-intersection?
+	     x-bar (abstract-environment-binding-abstract-values (first bs)))
+	    (let ((yi-bar (abstract-environment-binding-abstract-value
+			   (first bs)))
+		  (i (positionq (first bs) bs0)))
+	     (if (abstract-value-subset? yi-bar y-bar)
+		 (loop y-bar (rest bs))
+		 (loop (abstract-value-union y-bar yi-bar) (rest bs)))))
+	   (else (loop y-bar (rest bs)))))))))
 
 ;;; to-do: This has a bad name--it suggests that only mappings sigma |-> bottom
 ;;;          are added, but in fact it handles adding any mappings.
@@ -8731,55 +8673,40 @@
 ;;; rename?: add-new-abstract-domains-to-abstract-function
 (define (add-new-abstract-environments-to-abstract-flow ei bs bs-new0)
  (define (add-new-abstract-environments-to-abstract-flow ei bs bs-new)
-  (if
-   (null? bs-new)
-   bs
-   ;; let b2       = (first bs-new)
-   ;;     x1 -> y1 = b1
-   ;;     x2 -> y2 = b2
-   ;; then if x1 = x2, b1 is preserved while b2 is discarded
-   (let* ((vsi (positionq (first bs-new) bs-new0))
-	  (unneeded?
-	   (report-time-for
-	    'merge ei vsi #t
-	    (lambda ()
-	     (some
-	      (lambda (b1)
-	       (abstract-environment-subset?
-		(abstract-environment-binding-abstract-values (first bs-new))
-		(abstract-environment-binding-abstract-values b1)))
-	      bs))))
-	  (result
-	   (when (not unneeded?)
-	    (report-time-for
-	     'merge ei vsi (first bs-new)
-	     (lambda ()
-	      (make-abstract-mapping-safe-to-add (first bs-new) bs))))))
-    (if unneeded?
-	(add-new-abstract-environments-to-abstract-flow ei bs (rest bs-new))
-	(add-new-abstract-environments-to-abstract-flow
-	 ei (cons result bs) (rest bs-new))))))
+  (if (null? bs-new)
+      bs
+      ;; let b2       = (first bs-new)
+      ;;     x1 -> y1 = b1
+      ;;     x2 -> y2 = b2
+      ;; then if x1 = x2, b1 is preserved while b2 is discarded
+      (if (some (lambda (b1)
+		 (abstract-environment-subset?
+		  (abstract-environment-binding-abstract-values (first bs-new))
+		  (abstract-environment-binding-abstract-values b1)))
+		bs)
+	  (add-new-abstract-environments-to-abstract-flow ei bs (rest bs-new))
+	  (add-new-abstract-environments-to-abstract-flow
+	   ei
+	   (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
+	   (rest bs-new)))))
  (if (null? bs-new0)
      bs
      (add-new-abstract-environments-to-abstract-flow ei bs bs-new0)))
 
 (define (introduce-imprecision-to-abstract-mapping-in-flow ei b bs)
- (report-time-for
-  'imprec ei (positionq b bs) bs
-  (lambda ()
-   (let* ((vs (abstract-environment-binding-abstract-values b))
-	  (vs-new (map-vector widen-abstract-value2 vs))
-	  (v (abstract-environment-binding-abstract-value
-	      (if (abstract-environment-proper-subset? vs vs-new)
-		  (make-abstract-mapping-safe-to-add
-		   (make-abstract-environment-binding
-		    vs-new (abstract-environment-binding-abstract-value b))
-		   bs)
-		  b)))
-	  (v-new (widen-abstract-value2 v)))
-    (list-replace bs
-		  (positionq b bs)
-		  (make-abstract-environment-binding vs-new v-new))))))
+ (let* ((vs (abstract-environment-binding-abstract-values b))
+	(vs-new (map-vector widen-abstract-value2 vs))
+	(v (abstract-environment-binding-abstract-value
+	    (if (abstract-environment-proper-subset? vs vs-new)
+		(make-abstract-mapping-safe-to-add
+		 (make-abstract-environment-binding
+		  vs-new (abstract-environment-binding-abstract-value b))
+		 bs)
+		b)))
+	(v-new (widen-abstract-value2 v)))
+  (list-replace bs
+		(positionq b bs)
+		(make-abstract-environment-binding vs-new v-new))))
 
 ;;; How should we deal with the widening by restricting # of flow elements?
 ;;;
@@ -8848,23 +8775,18 @@
  ;;    d. if still over the # of flow elements, goto a
  (if (<= (length bs) k)
      bs
-     (let
-       ((result
-	 (time
-	  (string-append (format #f "l=~s: " (length bs)) "t=~a~%")
-	  (lambda ()
-	   (let* ((b1 (first bs))
-		  (b2 (second bs))
-		  (vs1 (abstract-environment-binding-abstract-values b1))
-		  (v1 (abstract-environment-binding-abstract-value b1))
-		  (vs2 (abstract-environment-binding-abstract-values b2))
-		  (v2 (abstract-environment-binding-abstract-value b2))
-		  (b-new (make-abstract-mapping-safe-to-add
-			  (make-abstract-environment-binding
-			   (abstract-environment-union vs1 vs2)
-			   (abstract-value-union v1 v2))
-			  (rest (rest bs)))))
-	    b-new)))))
+     (let ((result
+	    (let* ((b1 (first bs))
+		   (b2 (second bs))
+		   (vs1 (abstract-environment-binding-abstract-values b1))
+		   (v1 (abstract-environment-binding-abstract-value b1))
+		   (vs2 (abstract-environment-binding-abstract-values b2))
+		   (v2 (abstract-environment-binding-abstract-value b2)))
+	     (make-abstract-mapping-safe-to-add
+	      (make-abstract-environment-binding (abstract-environment-union
+						  vs1 vs2)
+						 (abstract-value-union v1 v2))
+	      (rest (rest bs))))))
       (introduce-imprecision-by-restricting-abstract-function-size2
        k (cons result (rest (rest bs)))))))
 
@@ -8887,8 +8809,8 @@
 	 (let ((bs-new
 		(remove-redundant-abstract-mappings2
 		 (let loop ((i 0)
-			    ;; this remove-redundant-abstract-mappings1 sometimes
-			    ;; incites a slowdown
+			    ;; this remove-redundant-abstract-mappings1
+			    ;; sometimes incites a slowdown
 			    (bs (if *test?*
 				    bs
 				    (remove-redundant-abstract-mappings1 bs))))
@@ -8896,35 +8818,28 @@
 			;; don't introduce imprecision to unchanged mappings
 			((memq (list-ref bs i) bs-old) (loop (+ i 1) bs))
 			(else
-			 (loop (+ i 1)
-			       (introduce-imprecision-to-abstract-mapping-in-flow
-				ei (list-ref bs i) bs))))))))
+			 (loop
+			  (+ i 1)
+			  (introduce-imprecision-to-abstract-mapping-in-flow
+			   ei (list-ref bs i) bs))))))))
 	  ;; 4. restrict # of flow elements
-	  (report-time-for
-	   'imprec ei -1 bs-new
-	   (lambda ()
-	    (if (not (eq? #f *l1*))
-		(introduce-imprecision-by-restricting-abstract-function-size
-		 *l1* bs-new)
-		bs-new))))
+	  (if (not (eq? #f *l1*))
+	      (introduce-imprecision-by-restricting-abstract-function-size
+	       *l1* bs-new)
+	      bs-new))
 	 (let
 	   ((bs-new
-	     (report-time-for
-	      'imprec ei -1 bs
-	      (lambda ()
-	       (if
-		(not (eq? #f *l1*))
-		(introduce-imprecision-by-restricting-abstract-function-size2
-		 *l1* bs)
-		bs)))))
+	     (if (not (eq? #f *l1*))
+		 (introduce-imprecision-by-restricting-abstract-function-size2
+		  *l1* bs)
+		 bs)))
 	  (remove-redundant-abstract-mappings2
 	   (let loop ((i 0)
 		      ;; this remove-redundant-abstract-mappings1 sometimes
 		      ;; incites a slowdown
 		      (bs (if *test?*
 			      bs-new
-			      (remove-redundant-abstract-mappings1 
-			       bs-new))))
+			      (remove-redundant-abstract-mappings1 bs-new))))
 	    (cond ((= i (length bs)) bs)
 		  ;; don't introduce imprecision to unchanged mappings
 		  ((memq (list-ref bs i) bs-old) (loop (+ i 1) bs))
