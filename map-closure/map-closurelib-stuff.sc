@@ -1,5 +1,10 @@
 (MODULE MAP-CLOSURELIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
+;;; CVS version control block - do not edit manually
+;;;  $RCSfile$
+;;;  $Revision$
+;;;  $Date$
+;;;  $Source$
 
 ;;; Map-Closure 0.1
 ;;; Copyright 2006 Purdue University. All rights reserved.
@@ -38,7 +43,7 @@
 ;;;    voice: +353 1 7086100
 ;;;    FAX:   +353 1 7086269
 ;;;    barak@cs.nuim.ie
-;;;    http://www-bcl.cs.nuim.ie/~barak/
+;;;    http://www.bcl.hamilton.ie/~barak/
 
 (include "QobiScheme.sch")
 (include "map-closurelib-stuff.sch")
@@ -1431,3 +1436,7 @@
 ;;; Commands
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
+
+;;; Local Variables:
+;;; lisp-body-indent: 1
+;;; End:

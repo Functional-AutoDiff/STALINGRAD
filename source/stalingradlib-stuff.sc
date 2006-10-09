@@ -1,5 +1,10 @@
 (MODULE STALINGRADLIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
+;;; CVS version control block - do not edit manually
+;;;  $RCSfile$
+;;;  $Revision$
+;;;  $Date$
+;;;  $Source$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
 ;;; Copyright 2004, 2005, and 2006 Purdue University. All rights reserved.
@@ -38,7 +43,7 @@
 ;;;    voice: +353 1 7086100
 ;;;    FAX:   +353 1 7086269
 ;;;    barak@cs.nuim.ie
-;;;    http://www-bcl.cs.nuim.ie/~barak/
+;;;    http://www.bcl.hamilton.ie/~barak/
 
 ;;; needs work
 ;;;  1. zero, plus, primal, tangent, bundle, *j, and *j-inverse should be
@@ -9402,3 +9407,7 @@
 ;;; Commands
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
+
+;;; Local Variables:
+;;; lisp-body-indent: 1
+;;; End:

@@ -1,9 +1,15 @@
-// Run a command with it's standard output and stderr hooked to a
+// Run a command with its standard output and stderr hooked to a
 // pseudo-tty which we pass on to our stdout.  The point of all of
-// this is so that the command's stdio will not buffer it's output.
+// this is so that the command's stdio will not buffer its output.
 
 // by Henry Cejtin
 // modified and updated by Barak A. Pearlmutter
+
+// CVS version control block - do not edit manually
+//  $RCSfile$
+//  $Revision$
+//  $Date$
+//  $Source$
 
 #include <termios.h>
 #include <stdarg.h>
@@ -46,7 +52,7 @@ main(int argc, char **argv)
       // Errors that occur in the unbuff executable itself should go
       // to the parent stderr.  This is tricky because we may, by that
       // time, have already arranged for subprocess stderr to go to
-      // stdout. Therefore the parent stderr is saved away, and
+      // stdout.  Therefore the parent stderr is saved away, and
       // restored if an error needs to be reported.
 
       saved_stderr = dup(STDERR_FILENO);
