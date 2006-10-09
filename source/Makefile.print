@@ -1,0 +1,20 @@
+# -*- Makefile -*-
+
+all: stalingrad.ps
+
+SRC = stalingrad.sc stalingradlib-stuff.sc
+
+stalingrad.ps: $(SRC)
+	a2ps --portrait --columns=2 --rows=1 --chars-per-line=79 \
+	     --medium=Letter --margin=0 \
+	     --pretty-print=plain --borders=yes \
+	     --header= --left-footer= --right-footer= --footer= \
+	     --output=$@ \
+	     $(SRC)
+
+# stalingrad.ps: $(SRC)
+# 	enscript --portrait --columns=2 --borders --font=Courier5 \
+# 	     --media=letter --fancy-header --header= --footer= \
+# 	     --mark-wrapped-lines=box \
+# 	     --output=$@ \
+# 	     $(SRC)
