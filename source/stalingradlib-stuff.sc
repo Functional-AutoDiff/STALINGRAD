@@ -332,9 +332,10 @@
 (define *time-in-union-us* 0)
 (define *time-in-loop* 0)
 
-(define *bucket-names* '(widen safe)) ; hack
+(define *bucket-names*
+ '(imprec l1 l-rest widen sub safe remove1 remove2 check))
 (define *time-buckets* (make-vector (length *bucket-names*) 0.))
-(define *call-cuckets* (make-vector (length *bucket-names*) 0))
+(define *call-buckets* (make-vector (length *bucket-names*) 0))
 (define *bucket-stack* '())
 
 (define *test?* #f)
@@ -356,6 +357,11 @@
 (define *widen-first?* #t)
 (define *new-cyclicize?* #f)
 (define *no-apply-multiply?* #f)
+(define *new-widen?* #f)
+(define *new-remove?* #f)
+(define *new-l4-depth?* #f)
+(define *picky?* #f)
+(define *imprec-no-unroll?* #t)
 
 (define *output-at-iterations?* #f)
 (define *output-whole-analysis?* #f)
@@ -4864,7 +4870,7 @@
 (define (expression-abstract-flow3 e bs)
  (let ((b (lookup-expression-binding e bs)))
   (if (eq? b #f) '() (abstract-expression-binding-abstract-flow b))))
- 
+
 (define (expression-abstract-flow e bs)
  (abstract-expression-binding-abstract-flow
   ;; needs work: Can make abstract-analysis access O(1) instead of O(n).
@@ -4892,7 +4898,7 @@
 	(let ((u-vs-new (map-vector
 			 (lambda (v) (cyclicize-abstract-value-internal v vs))
 			 (closure-values u))))
-	 (if (every-vector eq? (closure-values u) u-vs-new)
+	 (if (every-vector-eq? (closure-values u) u-vs-new)
 	     u
 	     (make-closure-with-new-values u u-vs-new))))
        ((tagged-pair? u)
@@ -4916,7 +4922,7 @@
 			  (first us) (cons v1 vs)))
 	       (cond ((null? (rest us))
 		      (set-cdr! v2 '())
-		      (if (every eq? v v1) v v1))
+		      (if (every-eq? v v1) v v1))
 		     (else (set-cdr! v2 (cons #f #f))
 			   (loop (rest us) (cdr v2)))))))))
 
@@ -4939,7 +4945,7 @@
 		   (vs-memoized vs-memoized))
 	 (if (null? u-vs)
 	     (let ((u-vs-new (list->vector (reverse u-vs-new))))
-	      (if (every-vector eq? (closure-values u) u-vs-new)
+	      (if (every-vector-eq? (closure-values u) u-vs-new)
 		  (list u vs-memoized)
 		  (list (make-closure-with-new-values u u-vs-new)
 			vs-memoized)))
@@ -4977,7 +4983,7 @@
 		(set-car! v2 u)
 		(cond ((null? (rest us))
 		       (set-cdr! v2 '())
-		       (if (every eq? v v1)
+		       (if (every-eq? v v1)
 			   (list v (cons (cons v v) vs-memoized))
 			   (list v1 (cons (cons v v1) vs-memoized))))
 		      (else (set-cdr! v2 (cons #f #f))
@@ -5104,10 +5110,10 @@
   (format #t "v=") (pp (externalize-abstract-value l)) (newline)
   (panic "v is cyclic!!!"))
  (let loop ((i 0) (l l))
-      (cond ((= i (length l)) l)
-	    ((memp equalq? (list-ref l i) (sublist l 0 i))
-	     (loop i (list-remove l i)))
-	    (else (loop (+ i 1) l)))))
+  (cond ((= i (length l)) l)
+	((memp equalq? (list-ref l i) (sublist l 0 i))
+	 (loop i (list-remove l i)))
+	(else (loop (+ i 1) l)))))
 
 (define (abstract-value-size v)
  (if (up? v)
@@ -5185,6 +5191,54 @@
 			    (process-nodes-in-abstract-value-tree
 			     f (tagged-pair-cdr u) u-context))
 			   us-new))))
+		  (else (panic "Not a proto-abstract-value")))))))))
+
+(define (every-eq? l1 l2)
+ (and (= (length l1) (length l2)) (every eq? l1 l2)))
+
+(define (every-vector-eq? v1 v2)
+ (and (= (vector-length v1) (vector-length v2)) (every-vector eq? v1 v2)))
+
+;;; to-do: preserve eq?-ness of {proto-,}abstract-values
+(define (process-nodes-in-abstract-value-tree2 f v v-context)
+ (if (up? v)
+     v
+     (let ((v-new (f v v-context)))
+      (let loop ((us v-new) (us-new '()))
+       (if (null? us)
+	   (let ((us-new (reverse us-new))) (if (every-eq? v us-new) v us-new))
+	   (let ((u (first us)))
+	    (cond ((or (null? u)
+		       (boolean? u)
+		       (abstract-real? u)
+		       (primitive-procedure? u))
+		   (loop (rest us) (cons u us-new)))
+		  ((or (nonrecursive-closure? u) (recursive-closure? u))
+		   (let* ((u-context (cons v v-context))
+			  (vs-new
+			   (map-vector
+			    (lambda (v) (process-nodes-in-abstract-value-tree2
+					 f v u-context))
+			    (closure-values u))))
+		    (loop
+		     (rest us)
+		     (cons (if (every-vector-eq? (closure-values u) vs-new)
+			       u
+			       (make-closure-with-new-values u vs-new))
+			   us-new))))
+		  ((tagged-pair? u)
+		   (let* ((u-context (cons v v-context))
+			  (car-new (process-nodes-in-abstract-value-tree2
+				    f (tagged-pair-car u) u-context))
+			  (cdr-new (process-nodes-in-abstract-value-tree2
+				    f (tagged-pair-cdr u) u-context)))
+		    (loop (rest us)
+			  (cons (if (and (eq? car-new (tagged-pair-car u))
+					 (eq? cdr-new (tagged-pair-cdr u)))
+				    u
+				    (make-tagged-pair
+				     (tagged-pair-tags u) car-new cdr-new))
+				us-new))))
 		  (else (panic "Not a proto-abstract-value")))))))))
 
 ;;; \General
@@ -5270,10 +5324,10 @@
      (and (= (recursive-closure-index u1) (recursive-closure-index u2))
 	  (not (eq? (recursive-closure-alpha-bindings u1 u2) #f)))
      (and (= (recursive-closure-index u1) (recursive-closure-index u2))
-	  (every-vector eq?
+	  (every-vector-eq?
 			(recursive-closure-argument-variables u1)
 			(recursive-closure-argument-variables u2))
-	  (every-vector eq?
+	  (every-vector-eq?
 			(recursive-closure-procedure-variables u1)
 			(recursive-closure-procedure-variables u2))
 	  (every-vector expression-eqv?
@@ -5733,16 +5787,16 @@
 		  (let ((u (first us)))
 		   (define (do-branching-value vs make-branching-value)
 		    (define (continue-with-outer vs-new)
-		     (if (every eq? vs vs-new)
+		     (if (every-eq? vs vs-new)
 			 (outer (rest us) (cons u us-new) changed?)
 			 (outer (rest us)
 				(cons (make-branching-value vs-new) us-new)
 				#t)))
 		    (define (exit-outer vs additions)
 		     (apply-additions-to
-		       (append (rest us)
-			       (cons (make-branching-value vs) us-new))
-		       additions))
+		      (append (rest us)
+			      (cons (make-branching-value vs) us-new))
+		      additions))
 		    (let inner ((vs vs) (vs-new '()))
 		     (if (null? vs)
 			 (continue-with-outer (reverse vs-new))
@@ -5757,23 +5811,23 @@
 			       (append (reverse (cons v-new vs-new))
 				       (rest vs))
 			       additions))))))
-		    (cond ((or (null? u)
-			       (boolean? u)
-			       (abstract-real? u)
-			       (primitive-procedure? u))
-			   (outer (rest us) (cons u us-new) changed?))
-			  ((closure? u)
-			   (do-branching-value
-			    (vector->list (closure-values u))
-			    (lambda (vs) (make-closure-with-new-values
-					  u (list->vector vs)))))
-			  ((tagged-pair? u)
-			   (do-branching-value
-			    (list (tagged-pair-car u) (tagged-pair-cdr u))
-			    (lambda (vs) (make-tagged-pair (tagged-pair-tags u)
-							   (first vs)
-							   (second vs)))))
-			  (else (panic "Not (yet) implemented!")))))))
+		   (cond ((or (null? u)
+			      (boolean? u)
+			      (abstract-real? u)
+			      (primitive-procedure? u))
+			  (outer (rest us) (cons u us-new) changed?))
+			 ((closure? u)
+			  (do-branching-value
+			   (vector->list (closure-values u))
+			   (lambda (vs) (make-closure-with-new-values
+					 u (list->vector vs)))))
+			 ((tagged-pair? u)
+			  (do-branching-value
+			   (list (tagged-pair-car u) (tagged-pair-cdr u))
+			   (lambda (vs) (make-tagged-pair (tagged-pair-tags u)
+							  (first vs)
+							  (second vs)))))
+			 (else (panic "Not (yet) implemented!")))))))
 	    (else (apply-additions-to v-new additions))))))
 
 (define (widen-abstract-value-by-coalescing-matching-closures v)
@@ -5807,6 +5861,16 @@
 		  (rest path)))
        (else 0)))
 
+(define (matching-closure-depth-careful path)
+ ;; it is assumed that path starts with an abstract value
+ (cond ((null? path) 0)
+       ((null? (rest path)) 0)
+       (else (reduce
+	      max
+	      (map length (transitive-equivalence-classesp
+			   closure-match? (remove-if-not closure? path)))
+	      minus-infinity))))
+
 (define (path-of-depth-greater-than-k k depth u-or-v)
  (let loop ((u-or-v u-or-v) (path '()))
   (let ((add-to-path (lambda (u-or-v) (append path (list u-or-v)))))
@@ -5839,12 +5903,12 @@
 		  (if (> (depth (add-to-path u)) k)
 		      (add-to-path u)
 		      #f))
-		((closure? u-or-v)
-		 (do-branching-value (vector->list (closure-values u-or-v))))
-		((tagged-pair? u-or-v)
-		 (do-branching-value (list (tagged-pair-car u-or-v)
-					   (tagged-pair-cdr u-or-v))))
-		(else (panic "This part not (yet) implemented!")))))))))
+		 ((closure? u-or-v)
+		  (do-branching-value (vector->list (closure-values u-or-v))))
+		 ((tagged-pair? u-or-v)
+		  (do-branching-value (list (tagged-pair-car u-or-v)
+					    (tagged-pair-cdr u-or-v))))
+		 (else (panic "This part not (yet) implemented!")))))))))
 
 ;;; to-do: See if this and widen-abstract-value-tree-internal can be made
 ;;;        special cases of a generalized procedure somehow.
@@ -5924,15 +5988,6 @@
 
 ;;; Widen->all
 
-(define (widen-abstract-value v)
- (let* ((v1 (remove-duplicate-proto-abstract-values v))
-	(v2 (widen-abstract-value-by-limiting-depth v1))
-	(v3 (widen-abstract-value-by-coalescing-matching-closures v2))
-	(v4 (remove-duplicate-proto-abstract-values v3))
-	(v5 (widen-abstract-value-by-coalescing-reals v4))
-	(v6 (remove-duplicate-proto-abstract-values v5)))
-  v6))
-
 ;;; \Widen->all
 
 ;;; Widen New
@@ -5958,9 +6013,9 @@
  (let ((l1 (length vss1))
        (l2 (length vss2)))
   (cond ((< l1 l2) (merge-additions2 (append vss1 (make-list (- l2 l1) '()))
-				    vss2))
+				     vss2))
 	((< l2 l1) (merge-additions2 vss1
-				    (append vss2 (make-list (- l1 l2) '()))))
+				     (append vss2 (make-list (- l1 l2) '()))))
 	(else (map append vss1 vss2)))))
 
 (define (create-addition i vs) (append (make-list i '()) (list vs)))
@@ -6116,7 +6171,7 @@
 		     (if
 		      (null? vs)
 		      (let ((vs-new (reverse vs-new)))
-		       (if (every eq? vs-old vs-new)
+		       (if (every-eq? vs-old vs-new)
 			   ;; I assume this means no additions changed...
 			   (outer (rest us)
 				  (cons u us-new)
@@ -6247,6 +6302,27 @@
 	   (loop (path-of-depth-greater-than-k *l4* *depth-measure* v-new)
 		 v-new))))))
 
+(define (limit-l4-depth2 v)
+ (if (eq? *l4* #f)
+     ;;(or (eq? *l4* #f)
+     ;; (eq? (path-of-depth-greater-than-k *l4* *depth-measure* v) #f))
+     v
+     (let loop ((v v) (v-new '()))
+      (if (null? v)
+	  (let ((v-new (reverse v-new)))
+	   (if every-eq? v-new v) v v-new)
+	  (let ((path (path-of-depth-greater-than-k
+		       *l4* *depth-measure* (list (first v)))))
+	   (if (eq? path #f)
+	       (loop (rest v)
+		     (if (memp equalq? (first v) v-new)
+			 v-new
+			 (cons (first v) v-new)))
+	       (let* ((va-vb (get-values-to-merge *l4* *depth-measure* path))
+		      (v-tmp
+		       (reduce-depth2 path (first va-vb) (second va-vb))))
+		(loop (append v-tmp (rest v)) v-new))))))))
+
 (define (limit-l6-depth v)
  (if (eq? *l6* #f)
      v
@@ -6258,19 +6334,121 @@
 	   (loop (path-of-depth-greater-than-k *l6* pair-depth v-new)
 		 v-new))))))
 
-(define (widen-abstract-value2 v)
+(define (syntactic-constraints-met-on-flow? ei bs)
+ (let ((l1? (l1-met? bs))
+       (vs-met? (map (lambda (b)
+		      (and (every-vector
+			    syntactic-constraints-met-on-value?
+			    (abstract-environment-binding-abstract-values b))
+			   (syntactic-constraints-met-on-value?
+			    (abstract-environment-binding-abstract-value b))))
+		     bs)))
+  (when (not (and l1? (every (lambda (x) (eq? x #t)) vs-met?)))
+   (format #t "*** I=~s SYNTACTIC CONSTRAINTS NOT MET ON FLOW! ***~%"
+	   *num-updates*)
+   (format #t "*** ei=~s, l1?=~s~%" ei l1?)
+   (for-each-n
+    (lambda (i) (format #t "*** met(~s) => ~s~%" i (list-ref vs-met? i)))
+    (length vs-met?)))
+  (and l1? (every (lambda (x) (eq? x #t)) vs-met?))))
+
+(define (syntactic-constraints-met-on-value? v)
+ (let* ((l2? (l2-met? v))
+	(l3? (l3-met? v))
+	(l4? (l4-met? v))
+	(l4-careful? (if *picky?* (l4-met?-careful v) l4?))
+	(l5? (l5-met? v))
+	(l6? (l6-met? v)))
+  (when (and (not l4-careful?) l4?)
+   (format #t "*** l4 and l4-careful differ! ***~%"))
+  (when (not (and l2? l3? l4? l5? l6? l4-careful?))
+   (format #t "*** SYNTACTIC CONSTRAINTS NOT MET! ***~%")
+   (format #t "*** (l2?=~s, l3?=~s, l4?=~s, l5?=~s, l6?=~s, l4?-careful=~s~%"
+	   l2? l3? l4? l5? l6? l4-careful?))
+  (and l2? l3? l4? l5? l6? l4-careful?)))
+
+(define (l1-met? bs) (or (not *l1*) (<= (length bs) *l1*)))
+
+(define (l2-met? v)
+ (or (not *l2*)
+     (not (some-abstract-value?
+	   (lambda (v vs) (if (up? v) #f (> (count-if abstract-real? v) *l2*)))
+	   v))))
+
+(define (l3-met? v)
+ (or (not *l3*)
+     (not (some-abstract-value?
+	   (lambda (v vs)
+	    (if (up? v)
+		#f
+		(some (lambda (us) (> (length us) *l3*))
+		      (transitive-equivalence-classesp
+		       closure-match? (remove-if-not closure? v)))))
+	   v))))
+
+(define (l4-met? v)
+ (or (not *l4*)
+     (eq? (path-of-depth-greater-than-k *l4* *depth-measure* v) #f)))
+
+(define (l4-met?-careful v)
+ (or (not *l4*)
+     (eq? (path-of-depth-greater-than-k *l4* matching-closure-depth-careful v)
+	  #f)))
+
+(define (l5-met? v)
+ (or (not *l5*)
+     (not (some-abstract-value?
+	   (lambda (v vs) (if (up? v) #f (> (count-if tagged-pair? v) *l5*)))
+	   v))))
+
+(define (l6-met? v)
+ (or (not *l6*)
+     (eq? (path-of-depth-greater-than-k *l6* pair-depth v) #f)))
+
+(define (widen-abstract-value v)
+ (define (syntactic-constraints-met? v)
+  (and (l2-met? v)
+       (l3-met? v)
+       (l4-met? v)
+       (or (not *picky?*) (l4-met?-careful v))
+       (l5-met? v)
+       (l6-met? v)))
  (report-time-for
   'widen #f #f v
   (lambda ()
-   (let* ((v1 (remove-duplicate-proto-abstract-values v))
-	  (v2 (limit-l4-depth v1))
-	  (v3 (limit-l6-depth v2))
-	  (v4 (limit-matching-closures v3))
-	  (v5 (limit-matching-pairs v4))
-	  (v6 (remove-duplicate-proto-abstract-values v5))
-	  (v7 (widen-abstract-value-by-coalescing-reals v6))
-	  (v8 (remove-duplicate-proto-abstract-values v7)))
-    v8))))
+   (when (and #f
+	      (= *num-updates* 427)
+   	      (= (vector-ref *call-buckets* (positionq 'widen *bucket-names*))
+   		 23899))
+    (write-checkpoint-to-file v "v23899")
+    (when #f (fuck-up)))
+   (let loop ((v v))
+    (if (syntactic-constraints-met? v)
+	v
+	(loop
+	 (let ((limit-l4-depth
+		(if *new-l4-depth?* limit-l4-depth2 limit-l4-depth)))
+	  (if *new-widen?*
+	      (let* ((v1 (remove-duplicate-proto-abstract-values v))
+		     (v2a (limit-matching-closures v1))
+		     (v3a (limit-matching-pairs v2a))
+		     (v4a (limit-l4-depth v3a))
+		     (v5a (limit-l6-depth v4a))
+		     (v6a (limit-matching-closures v5a))
+		     (v7a (limit-matching-pairs v6a))
+		     (v8a (remove-duplicate-proto-abstract-values v7a))
+		     (v9a (widen-abstract-value-by-coalescing-reals v8a))
+		     (v10a (remove-duplicate-proto-abstract-values v9a)))
+	       v10a)
+	      (let* ((v1 (remove-duplicate-proto-abstract-values v))
+		     (v2 (limit-l4-depth v1))
+		     (v3 (limit-l6-depth v2))
+		     (v4 (limit-matching-closures v3))
+		     (v5 (limit-matching-pairs v4))
+		     (v6 (remove-duplicate-proto-abstract-values v5))
+		     (v7 (widen-abstract-value-by-coalescing-reals v6))
+		     (v8 (remove-duplicate-proto-abstract-values v7)))
+	       v8)))))))))
 
 ;;; \Widen New
 
@@ -6279,9 +6457,13 @@
 ;;; Duplicate removal
 
 (define (remove-duplicate-proto-abstract-values v)
- (process-nodes-in-abstract-value-tree
-  (lambda (v v-context) (remove-duplicates-circular-safe v))
-  v '()))
+ (if *new-remove?*
+     (process-nodes-in-abstract-value-tree2
+      (lambda (v v-context) (remove-duplicates-circular-safe v))
+      v '())
+     (process-nodes-in-abstract-value-tree
+      (lambda (v v-context) (remove-duplicates-circular-safe v))
+      v '())))
 
 ;;; \Duplicate removal
 
@@ -6655,7 +6837,7 @@
 		     ((closure? u)
 		      (let* ((vs (closure-values u))
 			     (vs-new (map-vector make-up-if-needed vs)))
-		       (if (every-vector eq? vs vs-new)
+		       (if (every-vector-eq? vs vs-new)
 			   u
 			   (make-closure-with-new-values u vs-new))))
 		     ((tagged-pair? u)
@@ -6687,7 +6869,7 @@
 				 (map-vector
 				  (lambda (v) (unroll-once v vs-above))
 				  vs)))
-			  (if (every-vector eq? vs vs-new)
+			  (if (every-vector-eq? vs vs-new)
 			      u
 			      (make-closure-with-new-values u vs-new))))
 			((tagged-pair? u)
@@ -6702,7 +6884,7 @@
 			       (tagged-pair-tags u) car-new cdr-new))))
 			(else (panic "Not (yet) implemented!"))))
 		 v)))
-	 (if (every eq? v result) v result)))))
+	 (if (every-eq? v result) v result)))))
 
 (define (closed-proto-abstract-values v)
  (unroll-once v '()))
@@ -6759,6 +6941,9 @@
 
 (define (abstract-environment-union vs1 vs2)
  (map-vector abstract-value-union vs1 vs2))
+
+(define (abstract-environment-union-without-unroll vs1 vs2)
+ (map-vector abstract-value-union-without-unroll vs1 vs2))
 
 ;;; Abstract-Flow Equivalence and Union
 
@@ -6935,7 +7120,7 @@
 			  (letrec-expression-procedure-variables e)))
 			(vector-ref vs (positionq x xs))))
 		   (free-variables (letrec-expression-body e))))))
-	  (abstract-analysis-rooted-at (letrec-expression-body e) vs-e))))
+	   (abstract-analysis-rooted-at (letrec-expression-body e) vs-e))))
 	((cons-expression? e)
 	 (let ((e1 (cons-expression-car e))
 	       (e2 (cons-expression-cdr e)))
@@ -7090,23 +7275,26 @@
  ;; abstract values. This will always choose an abstract-environment binding
  ;; with an equivalent abstract environment, if there is one, since it will be
  ;; the narrowest among the wider ones.
- (let ((bs (minimal-elements
-	    (lambda (b1 b2)
-	     (abstract-environment-proper-subset?
-	      (abstract-environment-binding-abstract-values b1)
-	      (abstract-environment-binding-abstract-values b2)))
-	    (remove-if-not
-	     (lambda (b)
-	      (when (not (vector? vs)) (panic "vs not a vector!"))
-	      (when (not (vector?
-			  (abstract-environment-binding-abstract-values b)))
-	       (panic "aeb-abstract-values not a vector!"))
-	      (abstract-environment-subset?
-	       vs (abstract-environment-binding-abstract-values b)))
-	     (expression-abstract-flow e bs)))))
-  (if (null? bs)
-      (empty-abstract-value)
-      (abstract-environment-binding-abstract-value (first bs)))))
+ (if (some-vector (lambda (v) (eq? v (empty-abstract-value))) vs)
+     (empty-abstract-value)
+     (let ((bs (minimal-elements
+		(lambda (b1 b2)
+		 (abstract-environment-proper-subset?
+		  (abstract-environment-binding-abstract-values b1)
+		  (abstract-environment-binding-abstract-values b2)))
+		(remove-if-not
+		 (lambda (b)
+		  (when (not (vector? vs)) (panic "vs not a vector!"))
+		  (when (not
+			 (vector? (abstract-environment-binding-abstract-values
+				   b)))
+		   (panic "aeb-abstract-values not a vector!"))
+		  (abstract-environment-subset?
+		   vs (abstract-environment-binding-abstract-values b)))
+		 (expression-abstract-flow e bs)))))
+      (if (null? bs)
+	  (empty-abstract-value)
+	  (abstract-environment-binding-abstract-value (first bs))))))
 
 (define (new-nonrecursive-closure vs e)
  (let ((xs (free-variables e))
@@ -7164,7 +7352,8 @@
   (map
    (lambda (u1)
     (if *no-apply-multiply?*
-	(cond ((primitive-procedure? u1)
+	(cond ((eq? v2 (empty-abstract-value)) (empty-abstract-value))
+	      ((primitive-procedure? u1)
 	       (reduce
 		abstract-value-union
 		(map
@@ -7178,11 +7367,11 @@
 		u1
 		v2))
 	      ((recursive-closure? u1)
-	        (abstract-apply-recursive-closure2
-		 (lambda (e vs)
-		  (abstract-value-in-matching-abstract-environment e vs bs))
-		 u1
-		 v2))
+	       (abstract-apply-recursive-closure2
+		(lambda (e vs)
+		 (abstract-value-in-matching-abstract-environment e vs bs))
+		u1
+		v2))
 	      (else (empty-abstract-value)))
 	(reduce
 	 abstract-value-union
@@ -7208,7 +7397,7 @@
 		 (else (empty-abstract-value))))
 	  (closed-proto-abstract-values v2))
 	 (empty-abstract-value))))
-       (closed-proto-abstract-values v1))
+   (closed-proto-abstract-values v1))
   (empty-abstract-value)))
 
 ;;; tmp
@@ -7284,7 +7473,8 @@
       abstract-analysis-union
       (map
        (lambda (u1)
-	(cond ((primitive-procedure? u1) (empty-abstract-analysis))
+	(cond ((eq? v2 (empty-abstract-value)) (empty-abstract-analysis))
+	      ((primitive-procedure? u1) (empty-abstract-analysis))
 	      ((nonrecursive-closure? u1)
 	       (abstract-apply-nonrecursive-closure2
 		abstract-analysis-rooted-at u1 v2))
@@ -7347,10 +7537,10 @@
 	(changed? (not (eq? result v-old)))
 	(time (- time-end time-start))
 	(i (positionq activity *bucket-names*))
-	(num (if (eq? #f i) #f (vector-ref *call-cuckets* i))))
-  (when (and (eq? vs-index #f) (not (eq? #f i)))
+	(num (if (eq? #f i) #f (vector-ref *call-buckets* i))))
+  (when (not (eq? #f i))
    (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time))
-   (vector-set! *call-cuckets* i (+ num 1)))
+   (vector-set! *call-buckets* i (+ num 1)))
   (when *report-all-times?*
    (if *machine-style?*
        (format #t "~s ~s ~s ~s ~s ~s ~s ~s~%"
@@ -7358,7 +7548,15 @@
 	       changed? num time)
        (format #t "I=~s ~s: e=~s ~s vs=~s changed?=~s num=~s time=~s~%"
 	       *num-updates* activity e-index e-type vs-index
-	       changed? num time)))
+	       changed? num time))
+   (when (eq? activity 'widen)
+    (let ((size-old (abstract-value-size v-old))
+	  (size-new (abstract-value-size result)))
+     (format #t "I=~s STATS: |v-old|= ~s ~s |v-new|= ~s ~s num=~s~%"
+	     *num-updates*
+	     (first size-old) (second size-old)
+	     (first size-new) (second size-new)
+	     num))))
   result))
 
 (define (update-abstract-analysis-ranges bs bs-old)
@@ -7525,7 +7723,7 @@
 			  vs (abstract-value-union v v-new)))
 		     (make-abstract-environment-binding vs v-new))))
 	       bs-e)))
-	   (if (every eq? result bs-e) bs-e result))))))
+	   (if (every-eq? result bs-e) bs-e result))))))
    bs)))
 
 (define (update-abstract-analysis-domains bs bs-old)
@@ -7599,6 +7797,20 @@
 ;;; X merge range-updated analysis with new analyses
 ;;; - introduce imprecision to analysis
 
+(define (closure-pair-in-flow? bs)
+ (let ((closure-pair-in-value?
+	(lambda (v) (some-abstract-value?
+		     (lambda (v vs) (and (not (up? v))
+					 (> (count-if closure? v) 0)
+					 (> (count-if tagged-pair? v) 0)))
+		     v))))
+  (some (lambda (b)
+	 (or (some-vector closure-pair-in-value?
+			  (abstract-environment-binding-abstract-values b))
+	     (closure-pair-in-value?
+	      (abstract-environment-binding-abstract-value b))))
+	bs)))
+
 (define (update-abstract-analysis bs bs-old)
  ;; The abstract evaluator induces an abstract analysis. This updates the
  ;; abstract values of all of the abstract-environment bindings of all of the
@@ -7622,6 +7834,20 @@
 			   '()
 			   (abstract-expression-binding-abstract-flow b-old)))
 	       (ei (positionq e *expression-list*))
+	       (side-effect
+		(when (and #f (closure-pair-in-flow? bs1))
+		 (format #t "*** WEIRD detected in bs1! ***~%")
+		 (write-checkpoint-to-file
+		  (list bs1 bs2 bs-old)
+		  (format #f "bs1-i~s-e~s" *num-updates* ei))
+		 (panic "BS1")))
+	       (side-effect
+		(when (and #f (closure-pair-in-flow? bs2))
+		 (format #t "*** WEIRD detected in bs2! ***~%")
+		 (write-checkpoint-to-file
+		  (list bs1 bs2 bs-old)
+		  (format #f "bs2-i~s-e~s" *num-updates* ei))
+		 (panic "BS2")))
 	       ;; abstract environments are unchanged in bs1
 	       ;; abstract environments can only be "added" in bs2
 	       ;;   - those "added" can be either:
@@ -7641,8 +7867,47 @@
 		   (string-append "e1154-flows-i" num-str)))))
 	       (bs-new
 		(add-new-abstract-environments-to-abstract-flow ei bs1 bs2))
+	       (side-effect
+		(when (and #f (closure-pair-in-flow? bs-new))
+		 (format #t "*** WEIRD detected in bs-new! ***~%")
+		 (write-checkpoint-to-file
+		  (list bs1 bs2 bs-old bs-new)
+		  (format #f "bs-new-i~s-e~s" *num-updates* ei))
+		 (panic "BS-NEW")))
+	       (value-hit?
+		(and (= *num-updates* 427)
+		     (>= (vector-ref *call-buckets*
+				     (positionq 'widen *bucket-names*))
+			 23899)))
 	       (bs-new2
-		(introduce-imprecision-to-abstract-flow ei bs-new bs-old)))
+		(introduce-imprecision-to-abstract-flow ei bs-new bs-old))
+	       (side-effect
+		(when (and #f (closure-pair-in-flow? bs-new2))
+		 (format #t "*** WEIRD detected in bs-new2! ***~%")
+		 (write-checkpoint-to-file
+		  (list bs1 bs2 bs-old bs-new bs-new2)
+		  (format #f "bs-new2-i~s-e~s" *num-updates* ei))
+		 (panic "BS-NEW2"))))
+	 (when (and #t
+		    (not value-hit?)
+		    (= *num-updates* 427)
+		    (>= (vector-ref *call-buckets*
+				    (positionq 'widen *bucket-names*))
+			23899))
+	  (write-checkpoint-to-file (list bs1 bs2 bs-new bs-new2)
+				    "bs-pre23899"))
+	 ;; This can be removed safely!
+	 (when (and #f
+		    (report-time-for
+		     'check ei #f #t
+		     (lambda ()
+		      (not (syntactic-constraints-met-on-flow? ei bs-new2)))))
+	  (write-checkpoint-to-file
+	   (list bs-old bs1 bs2 bs-new bs-new2)
+	   (string-append "syntactic-violation-e"
+			  (number->string ei) "-i"
+			  (number->string *num-updates*)))
+	  (panic "Syntactic constraints violated!!!"))
 	 (make-abstract-expression-binding e bs-new2)))
        bs1)))
 
@@ -7727,7 +7992,7 @@
 				     (string-append "bs-bs-old-i" num-str))))
 	 (let* ((bs-prime
 		 (if *quiet?*
-		     (if #t
+		     (if #f
 			 (update-abstract-analysis bs bs-old)
 			 (report-time-for
 			  #f #f #f bs
@@ -8024,6 +8289,8 @@
        (else (externalize u))))
 
 (define (externalize-abstract-value v)
+ (when (not (or (list? v) (up? v)))
+  (panic "Not an abstract value!"))
  (let ((v (if (is-cyclic? v) (uncyclicize-abstract-value v) v)))
   (cond ((up? v) v)
 	((list? v)
@@ -8033,6 +8300,9 @@
 	(else (panic (format #f "Not an abstract value: ~s" v))))))
 
 (define (externalize-abstract-environment xs vs)
+ (when (not (and (vector? vs)
+		 (every-vector (lambda (v) (or (list? v) (up? v))) vs)))
+  (panic "Not an abstract environment!"))
  ;; debugging
  (when (not (= (length xs) (vector-length vs)))
   (format #t "xs=~s~%" xs)
@@ -8042,21 +8312,31 @@
       xs (vector->list vs)))
 
 (define (externalize-abstract-environment-binding xs b)
+ (when (not (abstract-environment-binding? b))
+  (panic "Not an abstract-environment-binding!"))
  (list (externalize-abstract-environment
 	xs (abstract-environment-binding-abstract-values b))
        (externalize-abstract-value
 	(abstract-environment-binding-abstract-value b))))
 
 (define (externalize-abstract-flow xs bs)
+ (when (not (and (list? bs)
+		 (every (lambda (b) (abstract-environment-binding? b)) bs)))
+  (panic "Not an abstract flow!"))
  (map (lambda (b) (externalize-abstract-environment-binding xs b)) bs))
 
 (define (externalize-abstract-expression-binding b)
+ (when (not (abstract-expression-binding? b))
+  (panic "Not an abstract expression binding!"))
  (list (abstract->concrete (abstract-expression-binding-expression b))
        (externalize-abstract-flow
 	(free-variables (abstract-expression-binding-expression b))
 	(abstract-expression-binding-abstract-flow b))))
 
 (define (externalize-abstract-analysis bs)
+ (when (not (and (list? bs)
+		 (every (lambda (b) (abstract-expression-binding? b)) bs)))
+  (panic "Not an abstract analysis!"))
  (map externalize-abstract-expression-binding bs))
 
 (define (externalize-addition a)
@@ -8361,7 +8641,6 @@
 		  (list objects chars exacts inexacts symbols expressions
 			primitives strings pairs vectors))
 	   0)))
-    (format #t "cur #obj=~s~%" num-obj)
     (cond ((null? object) '())
 	  ((boolean? object) '())
 	  ((char? object)
@@ -8435,7 +8714,6 @@
     result))
   (map-indexed
    (lambda (object i)
-    (format #t "part1 ~s/~s~%" i num-objects)
     (cond ((null? object) object)
 	  ((boolean? object) object)
 	  ((char? object) `(character ,(char->integer object)))
@@ -8462,7 +8740,7 @@
 		       (map-vector (lambda (object) (lookup object))
 				   object))))
 	  (else (panic "Can't serialize this object"))))
-       objects)))
+   objects)))
 
 (define (eof)
  (call-with-output-file "/tmp/eof" (lambda (port) #f))
@@ -8527,6 +8805,7 @@
  (let* ((es-x (call-with-input-file (replace-extension pathname "checkpoint")
 	       read))
 	(es (unserialize-expressions (first es-x))))
+  (set! *expression-list* es)
   (unserialize (second es-x) es)))
 
 ;;; End from centersurroundlib-stuff.sc
@@ -8591,43 +8870,8 @@
 ;;; exists a different abstract mapping x'->y' in f such that:
 ;;;   - x is a subset of x' and
 ;;;   - y' is a subset of y
+
 (define (remove-redundant-abstract-mappings bs)
- (let loop ((i 0) (bs bs))
-  (cond ((= i (length bs)) bs)
-	((some-n
-	  (lambda (j)
-	   (and (not (= i j))
-		(let ((bi (list-ref bs i))
-		      (bj (list-ref bs j)))
-		 (and (abstract-environment-subset?
-		       (abstract-environment-binding-abstract-values bi)
-		       (abstract-environment-binding-abstract-values bj))
-		      (abstract-value-subset?
-		       (abstract-environment-binding-abstract-value bj)
-		       (abstract-environment-binding-abstract-value bi))))))
-	  (length bs))
-	 (loop i (list-remove bs i)))
-	(else (loop (+ i 1) bs)))))
-
-(define (remove-redundant-abstract-mappings1 bs)
- (let loop ((i 0) (bs bs))
-  (cond ((= i (length bs)) bs)
-	((some-n
-	  (lambda (j)
-	   (and (not (= i j))
-		(let ((bi (list-ref bs i))
-		      (bj (list-ref bs j)))
-		 (and (abstract-environment-subset?
-		       (abstract-environment-binding-abstract-values bi)
-		       (abstract-environment-binding-abstract-values bj))
-		      (abstract-value-subset?
-		       (abstract-environment-binding-abstract-value bj)
-		       (abstract-environment-binding-abstract-value bi))))))
-	  (length bs))
-	 (loop i (list-remove bs i)))
-	(else (loop (+ i 1) bs)))))
-
-(define (remove-redundant-abstract-mappings2 bs)
  ;; An abstract mapping xi->yi in [x1->y1, ..., xn->yn] is redundant if
  ;;   1. (subset? xi xj) AND
  ;;   2. (subset? yj yi)
@@ -8647,6 +8891,16 @@
 	  (length bs))
 	 (loop i (list-remove bs i)))
 	(else (loop (+ i 1) bs)))))
+
+(define (imprec-value-union v1 v2)
+ (if *imprec-no-unroll?*
+     (abstract-value-union-without-unroll v1 v2)
+     (abstract-value-union v1 v2)))
+
+(define (imprec-environment-union vs1 vs2)
+ (if *imprec-no-unroll?*
+     (abstract-environment-union-without-unroll vs1 vs2)
+     (abstract-environment-union vs1 vs2)))
 
 (define (make-abstract-mapping-safe-to-add b bs0)
  ;; b = x |-> y
@@ -8668,7 +8922,8 @@
 		  (i (positionq (first bs) bs0)))
 	     (if (abstract-value-subset? yi-bar y-bar)
 		 (loop y-bar (rest bs))
-		 (loop (abstract-value-union y-bar yi-bar) (rest bs)))))
+		 (loop (imprec-value-union y-bar yi-bar)
+		       (rest bs)))))
 	   (else (loop y-bar (rest bs)))))))))
 
 ;;; to-do: This has a bad name--it suggests that only mappings sigma |-> bottom
@@ -8698,20 +8953,45 @@
      bs
      (add-new-abstract-environments-to-abstract-flow ei bs bs-new0)))
 
-(define (introduce-imprecision-to-abstract-mapping-in-flow ei b bs)
- (let* ((vs (abstract-environment-binding-abstract-values b))
-	(vs-new (map-vector widen-abstract-value2 vs))
-	(v (abstract-environment-binding-abstract-value
-	    (if (abstract-environment-proper-subset? vs vs-new)
-		(make-abstract-mapping-safe-to-add
-		 (make-abstract-environment-binding
-		  vs-new (abstract-environment-binding-abstract-value b))
-		 bs)
-		b)))
-	(v-new (widen-abstract-value2 v)))
-  (list-replace bs
-		(positionq b bs)
-		(make-abstract-environment-binding vs-new v-new))))
+(define (introduce-imprecision-to-abstract-mapping-in-flow ei i bs bs-old)
+ (if (memq (list-ref bs i) bs-old)
+     bs
+     (let* ((b (list-ref bs i))
+	    (all-vs-old
+	     (reduce
+	      append
+	      (map (lambda (b)
+		    (cons (abstract-environment-binding-abstract-value b)
+			  (vector->list
+			   (abstract-environment-binding-abstract-values b))))
+		   bs-old)
+	      '()))
+	    (widen-abstract-value
+	     (lambda (v) (if (memq v all-vs-old) v (widen-abstract-value v))))
+	    (vs (abstract-environment-binding-abstract-values b))
+	    (vs-new (map-vector widen-abstract-value vs))
+	    (v (abstract-environment-binding-abstract-value
+		(if (report-time-for
+		     'sub ei (positionq b bs) #f
+		     (lambda ()
+		      (when
+			(and #t
+			     (= *num-updates* 433)
+			     (= (vector-ref *call-buckets*
+					    (positionq 'sub *bucket-names*))
+				7248))
+		       (write-checkpoint-to-file (list vs vs-new all-vs-old)
+						 "vs7248"))
+		      (abstract-environment-proper-subset? vs vs-new)))
+		    (make-abstract-mapping-safe-to-add
+		     (make-abstract-environment-binding
+		      vs-new (abstract-environment-binding-abstract-value b))
+		     bs)
+		    b)))
+	    (v-new (widen-abstract-value v)))
+      (list-replace bs
+		    (positionq b bs)
+		    (make-abstract-environment-binding vs-new v-new)))))
 
 ;;; How should we deal with the widening by restricting # of flow elements?
 ;;;
@@ -8760,13 +9040,13 @@
 	    (b-new
 	     (make-abstract-mapping-safe-to-add
 	      (make-abstract-environment-binding
-	       (map-vector
-		widen-abstract-value2 (abstract-environment-union vs1 vs2))
-	       (abstract-value-union v1 v2))
+	       (map-vector widen-abstract-value
+			   (imprec-environment-union vs1 vs2))
+	       (imprec-value-union v1 v2))
 	      (rest (rest bs))))
 	    (b-new (make-abstract-environment-binding
 		    (abstract-environment-binding-abstract-values b-new)
-		    (widen-abstract-value2
+		    (widen-abstract-value
 		     (abstract-environment-binding-abstract-value b-new)))))
       (introduce-imprecision-by-restricting-abstract-function-size
        k (remove-redundant-abstract-mappings (cons b-new (rest (rest bs))))))))
@@ -8788,9 +9068,9 @@
 		   (vs2 (abstract-environment-binding-abstract-values b2))
 		   (v2 (abstract-environment-binding-abstract-value b2)))
 	     (make-abstract-mapping-safe-to-add
-	      (make-abstract-environment-binding (abstract-environment-union
-						  vs1 vs2)
-						 (abstract-value-union v1 v2))
+	      (make-abstract-environment-binding
+	       (imprec-environment-union vs1 vs2)
+	       (imprec-value-union v1 v2))
 	      (rest (rest bs))))))
       (introduce-imprecision-by-restricting-abstract-function-size2
        k (cons result (rest (rest bs)))))))
@@ -8804,54 +9084,69 @@
 (define (introduce-imprecision-to-abstract-flow ei bs bs-old)
  ;; bs is the current abstract flow
  ;; bs-old is the last abstract flow
- (if (eq? bs bs-old)
-     bs
-     (if *widen-first?*
-	 ;; 0. remove redundant flow elements (will this do anything here??)
-	 ;; 1. widen flow domains
-	 ;; 2. widen flow ranges
-	 ;; 3. remove redundant flow elements
-	 (let ((bs-new
-		(remove-redundant-abstract-mappings2
+ (report-time-for
+  'imprec ei #f bs
+  (lambda ()
+   (if (eq? bs bs-old)
+       bs
+       (if *widen-first?*
+	   ;; 0. remove redundant flow elements (will this do anything here??)
+	   ;; 1. widen flow domains
+	   ;; 2. widen flow ranges
+	   ;; 3. remove redundant flow elements
+	   (let ((bs-new
+		  (remove-redundant-abstract-mappings
+		   (let loop ((i 0)
+			      ;; this remove-redundant-abstract-mappings
+			      ;; sometimes incites a slowdown
+			      (bs (if *test?*
+				      bs
+				      (remove-redundant-abstract-mappings
+				       bs))))
+		    (if (= i (length bs))
+			bs
+			(loop
+			 (+ i 1)
+			 (introduce-imprecision-to-abstract-mapping-in-flow
+			  ei i bs bs-old)))))))
+	    ;; 4. restrict # of flow elements
+	    (if (not (eq? #f *l1*))
+		(introduce-imprecision-by-restricting-abstract-function-size
+		 *l1* bs-new)
+		bs-new))
+	   (let*
+	     ((bs-new
+	       (report-time-for
+		'l1 ei #f bs
+		(lambda ()
+		 (if
+		  (not (eq? #f *l1*))
+		  (introduce-imprecision-by-restricting-abstract-function-size2
+		   *l1* bs)
+		  bs))))
+	      (result
+	       (report-time-for
+		'l-rest ei #f bs-new
+		(lambda ()
 		 (let loop ((i 0)
 			    ;; this remove-redundant-abstract-mappings1
 			    ;; sometimes incites a slowdown
 			    (bs (if *test?*
-				    bs
-				    (remove-redundant-abstract-mappings1 bs))))
-		  (cond ((= i (length bs)) bs)
-			;; don't introduce imprecision to unchanged mappings
-			((memq (list-ref bs i) bs-old) (loop (+ i 1) bs))
-			(else
-			 (loop
-			  (+ i 1)
-			  (introduce-imprecision-to-abstract-mapping-in-flow
-			   ei (list-ref bs i) bs))))))))
-	  ;; 4. restrict # of flow elements
-	  (if (not (eq? #f *l1*))
-	      (introduce-imprecision-by-restricting-abstract-function-size
-	       *l1* bs-new)
-	      bs-new))
-	 (let
-	   ((bs-new
-	     (if (not (eq? #f *l1*))
-		 (introduce-imprecision-by-restricting-abstract-function-size2
-		  *l1* bs)
-		 bs)))
-	  (remove-redundant-abstract-mappings2
-	   (let loop ((i 0)
-		      ;; this remove-redundant-abstract-mappings1 sometimes
-		      ;; incites a slowdown
-		      (bs (if *test?*
-			      bs-new
-			      (remove-redundant-abstract-mappings1 bs-new))))
-	    (cond ((= i (length bs)) bs)
-		  ;; don't introduce imprecision to unchanged mappings
-		  ((memq (list-ref bs i) bs-old) (loop (+ i 1) bs))
-		  (else
-		   (loop (+ i 1)
-			 (introduce-imprecision-to-abstract-mapping-in-flow
-			  ei (list-ref bs i) bs))))))))))
+				    bs-new
+				    (report-time-for
+				     'remove1 #f #f bs-new
+				     (lambda ()
+				      (remove-redundant-abstract-mappings
+				       bs-new))))))
+		  (if (= i (length bs))
+		      bs
+		      (loop
+		       (+ i 1)
+		       (introduce-imprecision-to-abstract-mapping-in-flow
+			ei i bs bs-old))))))))
+	    (report-time-for
+	     'remove2 #f #f result
+	     (lambda () (remove-redundant-abstract-mappings result)))))))))
 
 ;;; end stuff that belongs to brownfis
 
