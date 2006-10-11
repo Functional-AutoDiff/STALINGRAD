@@ -156,11 +156,17 @@
 		 (at-most-one ("quiet" quiet?))
 		 (at-most-one ("new-cyclicize" new-cyclicize?))
 		 (at-most-one ("no-apply-multiply" no-apply-multiply?))
+		 (at-most-one ("new-widen" new-widen?))
+		 (at-most-one ("new-remove" new-remove?))
+		 (at-most-one ("new-l4-depth" new-l4-depth?))
+		 (at-most-one ("picky" picky?))
+		 (at-most-one ("imprec-unroll" imprec-unroll?))
 		 (at-most-one ("output-at-iterations" output-at-iterations?))
 		 (at-most-one ("output-whole-analysis" output-whole-analysis?))
 		 (at-most-one ("widen-last" widen-last?))
 		 (at-most-one ("machine-style" machine-style?))
 		 (at-most-one ("report-all-times" report-all-times?))
+		 (at-most-one ("dont-output-result" dont-output-result?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -317,6 +323,11 @@
  (set! *quiet?* quiet?)
  (set! *new-cyclicize?* new-cyclicize?)
  (set! *no-apply-multiply?* no-apply-multiply?)
+ (set! *new-widen?* new-widen?)
+ (set! *new-remove?* new-remove?)
+ (set! *new-l4-depth?* new-l4-depth?)
+ (set! *picky?* picky?)
+ (set! *imprec-no-unroll?* (not imprec-unroll?))
  (set! *output-at-iterations?* output-at-iterations?)
  (set! *output-whole-analysis?* output-whole-analysis?)
  (set! *output-iterations* '(288 297 354 398 424))
@@ -363,9 +374,10 @@
 	  (newline))
 	 (cond
 	  (flow-analysis?
-	   (pp (externalize-abstract-analysis
-		(flow-analysis (first result) (second result))))
-	   (newline))
+	   (let ((bs (flow-analysis (first result) (second result))))
+	    (when (not dont-output-result?)
+	     (pp (externalize-abstract-analysis bs)))
+	    (newline)))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)
