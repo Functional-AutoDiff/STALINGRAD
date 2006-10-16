@@ -362,6 +362,7 @@
 (define *new-l4-depth?* #f)
 (define *picky?* #f)
 (define *imprec-no-unroll?* #t)
+(define *correct-add-cols?* #t)
 
 (define *output-at-iterations?* #f)
 (define *output-whole-analysis?* #f)
@@ -4202,6 +4203,7 @@
        (bucket-time
 	(reduce-vector
 	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
+  (format #t "Total number of iterations: ~s~%" *num-updates*)
   (format #t "Total time since start: ~a~%"
 	  (number->string-of-length-and-precision total-time 16 2))
   (format #t "Total time in all buckets: ~a~%"
@@ -4230,6 +4232,7 @@
        (bucket-time
 	(reduce-vector
 	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
+  (format #t "Total number of iterations: ~s~%" *num-updates*)
   (format #t "Total time since start: ~a~%"
 	  (number->string-of-length-and-precision total-time 16 2))
   (format #t "Total time in all buckets: ~a~%"
@@ -6987,6 +6990,29 @@
 		    (abstract-environment-binding-abstract-value b2)))
 		  (removeq b2 bs2)))
 	   (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
+ (define (abstract-flow-union2 bs1 bs2)
+  ;; This is one place where imprecision can be introduced.
+  (if (null? bs1)
+      bs2
+      (let* ((b1 (first bs1))
+	     (b2 (find-if
+		  (lambda (b2)
+		   (abstract-environment=?
+		    (abstract-environment-binding-abstract-values b1)
+		    (abstract-environment-binding-abstract-values b2)))
+		  bs2)))
+       (if b2
+	   (let* ((v1 (abstract-environment-binding-abstract-value b1))
+		  (v2 (abstract-environment-binding-abstract-value b2))
+		  (vs2 (abstract-environment-binding-abstract-values b2))
+		  (v-new (abstract-value-union v1 v2))
+		  (bs2-new (cond ((eq? v-new v2) bs2)
+				 ((eq? v-new v1) (replaceq b2 b1 bs2))
+				 (else (cons (make-abstract-environment-binding
+					      vs2 v-new)
+					     (removeq b2 bs2))))))
+	    (abstract-flow-union2 (rest bs1) bs2-new))
+	   (cons (first bs1) (abstract-flow-union2 (rest bs1) bs2))))))
  (abstract-flow-union bs1 bs2))
 
 ;;; Abstract-Analysis Equivalence and Union
@@ -7024,26 +7050,23 @@
  (define (abstract-analysis-union bs1 bs2)
   (if (null? bs1)
       bs2
-      (let ((b2 (find-if
-		 (lambda (b2)
-		  ;; needs work: Do we need identity or alpha equivalence here?
-		  (eq? (abstract-expression-binding-expression (first bs1))
-		       (abstract-expression-binding-expression b2)))
-		 bs2)))
+      (let* ((b1 (first bs1))
+	     (e (abstract-expression-binding-expression b1))
+	     (b2 (find-if
+		  (lambda (b2)
+		   ;; needs work: Do we need identity/alpha equivalence here?
+		   (eq? e (abstract-expression-binding-expression b2)))
+		  bs2)))
        (if b2
-	   (abstract-analysis-union
-	    (rest bs1)
-	    (let ((result
-		   (cons (make-abstract-expression-binding
-			  (abstract-expression-binding-expression b2)
-			  (abstract-flow-union
-			   ;; brownfis -- added for debugging
-			   (abstract-expression-binding-expression (first bs1))
-			   (abstract-expression-binding-abstract-flow
-			    (first bs1))
-			   (abstract-expression-binding-abstract-flow b2)))
-			 (removeq b2 bs2))))
-	     result))
+	   (let* ((flow1 (abstract-expression-binding-abstract-flow b1))
+		  (flow2 (abstract-expression-binding-abstract-flow b2))
+		  (flow-new (abstract-flow-union e flow1 flow2))
+		  (bs2-new (cond ((eq? flow-new flow2) bs2)
+				 ((eq? flow-new flow1) (replaceq b2 b1 bs2))
+				 (else (cons (make-abstract-expression-binding
+					      e flow-new)
+					     (removeq b2 bs2))))))
+	    (abstract-analysis-union (rest bs1) bs2-new))
 	   (cons (first bs1) (abstract-analysis-union (rest bs1) bs2))))))
  (abstract-analysis-union bs1 bs2))
 
@@ -7257,8 +7280,7 @@
 			     (nonrecursive-closure-body u))
 			    (nonrecursive-closure-values u)))
 		     ((recursive-closure? u) (panic "error2"))
-		     ((tagged-pair? u)
-		      (panic "tagged-pair constants not (yet) implemented"))
+		     ((tagged-pair? u) (empty-abstract-analysis))
 		     (else (format #t "u=~s~%" u) (panic "error3"))))
 	      v)
 	 (empty-abstract-analysis)))
@@ -7727,68 +7749,107 @@
    bs)))
 
 (define (update-abstract-analysis-domains bs bs-old)
- (let* ((bs-unchanged?
-	 (map
-	  (lambda (b)
-	   (let* ((e (abstract-expression-binding-expression b))
-		  (bs-e (abstract-expression-binding-abstract-flow b))
-		  (bs-old-e (expression-abstract-flow2 e bs-old)))
-	    (cons e (and (not (eq? bs-old-e #f))
-			 ;; does eq? work well enough?
-			 (or (eq? bs-e bs-old-e)
-			     (set-equalq? bs-e bs-old-e))))))
-	  bs))
+ (let* ((bs-to-add
+	 (if *correct-add-cols?*
+	     (reduce
+	      abstract-analysis-union
+	      (map
+	       (lambda (b)
+		(let* ((e (abstract-expression-binding-expression b))
+		       (flow-old (expression-abstract-flow3 e bs-old)))
+		 (if (application? e)
+		     (reduce
+		      abstract-analysis-union
+		      (map
+		       (lambda (b)
+			(let ((vs (abstract-environment-binding-abstract-values
+				   b)))
+			 (if (mapping-with-vs-in-flow? vs flow-old)
+			     '()
+			     (abstract-analysis-rooted-at e vs))))
+		       (abstract-expression-binding-abstract-flow b))
+		      '())
+		     '())))
+	       bs)
+	      '())
+	     '()))
+	;; This is meant to handle cases whenever a new column occurs for an
+	;; application due to widening.
+	(bs (abstract-analysis-union bs bs-to-add))
+	;; to-do: if *correct-add-cols?*, there are sometimes bindings in bs
+	;;        which aren't in the original bs, and these need added to the
+	;;        final result.  But how???
+	(bs-unchanged?
+	 (map (lambda (b)
+	       (let* ((e (abstract-expression-binding-expression b))
+		      (bs-e (abstract-expression-binding-abstract-flow b))
+		      (bs-old-e (expression-abstract-flow2 e bs-old)))
+		(cons e (and (not (eq? bs-old-e #f))
+			     ;; does eq? work well enough?
+			     (or (eq? bs-e bs-old-e)
+				 (set-equalq? bs-e bs-old-e))))))
+	      bs))
 	(bs-unchanged-for-e? (lambda (e) (cdr (assq e bs-unchanged?)))))
-  (reduce
-   abstract-analysis-union
-   (map
-    (lambda (b)
-     (let* ((e (abstract-expression-binding-expression b))
-	    (ei (positionq e *expression-list*))
-	    (xs (free-variables e)))
-      (cond ((variable-access-expression? e) (empty-abstract-analysis))
-	    ((lambda-expression? e) (empty-abstract-analysis))
-	    ((application? e)
-	     ;; e: (e1 e2)
-	     (let ((e1 (application-callee e))
-		   (e2 (application-argument e))
-		   (bs-e (abstract-expression-binding-abstract-flow b)))
-	      ;; No new mappings need to be added if:
-	      ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
-	      ;;      - NOTE: we don't say exists vs->v' in (bs e)
-	      ;;      - This means that the same environment vs gets
-	      ;;        evaluated to form bs as we're trying to
-	      ;;        evaluate now.
-	      ;;   2. (bs e1) = (bs-old e1) AND
-	      ;;   3. (bs e2) = (bs-old e2)
-	      (reduce
-	       abstract-analysis-union
-	       (map
-		(lambda (b)
-		 (let ((vs (abstract-environment-binding-abstract-values b))
-		       (vsi (positionq b bs-e)))
-		  (if (and *fast-apply-prime?*
-			   (bs-unchanged-for-e? e1)
-			   (bs-unchanged-for-e? e2)
-			   (mapping-with-vs-in-flow?
-			    vs (expression-abstract-flow3 e bs-old)))
-		      (empty-abstract-analysis)
-		      (abstract-apply-prime
-		       (abstract-value-in-matching-abstract-environment
-			e1
-			(restrict-environment vs xs (free-variables e1))
-			bs)
-		       (abstract-value-in-matching-abstract-environment
-			e2
-			(restrict-environment vs xs (free-variables e2))
-			bs)))))
-		bs-e)
-	       (empty-abstract-analysis))))
-	    ((letrec-expression? e) (empty-abstract-analysis))
-	    ((cons-expression? e) (empty-abstract-analysis))
-	    (else (fuck-up)))))
-    bs)
-   (empty-abstract-analysis))))
+  (abstract-analysis-union
+   bs-to-add
+   (reduce
+    abstract-analysis-union
+    (map
+     (lambda (b)
+      (let* ((e (abstract-expression-binding-expression b))
+	     (ei (positionq e *expression-list*))
+	     (xs (free-variables e)))
+       (cond ((variable-access-expression? e) (empty-abstract-analysis))
+	     ((lambda-expression? e) (empty-abstract-analysis))
+	     ((application? e)
+	      ;; e: (e1 e2)
+	      (let ((e1 (application-callee e))
+		    (e2 (application-argument e))
+		    (bs-e (abstract-expression-binding-abstract-flow b)))
+	       ;; No new mappings need to be added if:
+	       ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
+	       ;;      - NOTE: we don't say exists vs->v' in (bs e)
+	       ;;      - This means that the same environment vs gets
+	       ;;        evaluated to form bs as we're trying to
+	       ;;        evaluate now.
+	       ;;      - A "column" (abstract environment binding, really)
+	       ;;        vs->v' can only be introduced by:
+	       ;;          a. update-abstract-analysis-domains
+	       ;;             - If this is the case, then e1 and e2 have had
+	       ;;               the appropriate columns added to them already.
+	       ;;          b. introduce-imprecision-to-abstract-flow
+	       ;;             - If this is the case, then e1 and e2 have NOT
+	       ;;                had the appropriate columns added to them.
+	       ;;   2. (bs e1) = (bs-old e1) AND
+	       ;;   3. (bs e2) = (bs-old e2)
+	       (reduce
+		abstract-analysis-union
+		(map
+		 (lambda (b)
+		  (let ((vs (abstract-environment-binding-abstract-values b))
+			(vsi (positionq b bs-e)))
+		   (if (and *fast-apply-prime?*
+			    (bs-unchanged-for-e? e1)
+			    (bs-unchanged-for-e? e2)
+			    (mapping-with-vs-in-flow?
+			     vs (expression-abstract-flow3 e bs-old)))
+		       (empty-abstract-analysis)
+		       (abstract-apply-prime
+			(abstract-value-in-matching-abstract-environment
+			 e1
+			 (restrict-environment vs xs (free-variables e1))
+			 bs)
+			(abstract-value-in-matching-abstract-environment
+			 e2
+			 (restrict-environment vs xs (free-variables e2))
+			 bs)))))
+		 bs-e)
+		(empty-abstract-analysis))))
+	     ((letrec-expression? e) (empty-abstract-analysis))
+	     ((cons-expression? e) (empty-abstract-analysis))
+	     (else (fuck-up)))))
+     bs)
+    (empty-abstract-analysis)))))
 
 ;;; Instrumentation:
 
@@ -8001,6 +8062,7 @@
 			   (lambda () (update-abstract-analysis bs bs-old)))))
 		(total-time (- (clock-sample) *start-time*)))
 	  (when (not *quiet?*)
+	   (format #t "Total number of iterations: ~s~%" *num-updates*)
 	   (format #t "Total time since start: ~a~%"
 		   (number->string-of-length-and-precision total-time 16 2)))
 	  (when *track-flow-analysis?*
