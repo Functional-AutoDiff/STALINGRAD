@@ -363,6 +363,7 @@
 (define *picky?* #f)
 (define *imprec-no-unroll?* #t)
 (define *correct-add-cols?* #t)
+(define *aesthetic-reduce-depth?* #f)
 
 (define *output-at-iterations?* #f)
 (define *output-whole-analysis?* #f)
@@ -4913,6 +4914,14 @@
 		  (eq? (tagged-pair-cdr u) cdr-new))
 	     u
 	     (make-tagged-pair (tagged-pair-tags u) car-new cdr-new))))
+       ((bundle? u)
+	(let* ((primal (bundle-primal u))
+	       (tangent (bundle-tangent u))
+	       (primal-new (cyclicize-abstract-value-internal primal vs))
+	       (tangent-new (cyclicize-abstract-value-internal tangent vs)))
+	 (if (and (eq? primal primal-new) (eq? tangent tangent-new))
+	     u
+	     (make-bundle primal-new tangent-new))))
        (else (fuck-up))))
 
 (define (cyclicize-abstract-value-internal v vs)
@@ -4971,6 +4980,18 @@
 	     (list u vs-memoized)
 	     (list (make-tagged-pair (tagged-pair-tags u) car-new cdr-new)
 		   vs-memoized))))
+       ((bundle? u)
+	(let* ((primal (bundle-primal u))
+	       (result (cyclicize-abstract-value2 primal vs vs-memoized))
+	       (primal-new (first result))
+	       (vs-memoized (second result))
+	       (tangent (bundle-tangent u))
+	       (result (cyclicize-abstract-value2 tangent vs vs-memoized))
+	       (tangent-new (first result))
+	       (vs-memoized (second result)))
+	 (if (and (eq? primal primal-new) (eq? tangent tangent-new))
+	     (list u vs-memoized)
+	     (list (make-bundle primal-new tangent-new) vs-memoized))))
        (else (fuck-up))))
 
 (define (cyclicize-abstract-value2 v vs vs-memoized)
@@ -6337,6 +6358,29 @@
 	   (loop (path-of-depth-greater-than-k *l6* pair-depth v-new)
 		 v-new))))))
 
+(define (aesthetic-reduce-l6-depth v)
+ (if (eq? *l6* #f)
+     v
+     (let outer ((limit (- *l6* 1)) (v-old v))
+      (if (<= limit 1)
+	  v-old
+	  (let ((v-new
+		 (let inner ((path (path-of-depth-greater-than-k
+				    limit pair-depth v))
+			     (v v))
+		  (if (eq? path #f)
+		      v
+		      (let* ((va-vb (get-values-to-merge
+				     limit pair-depth path))
+			     (v-new (reduce-depth2
+				     path (first va-vb) (second va-vb))))
+		       (inner (path-of-depth-greater-than-k
+			       limit pair-depth v-new)
+			      v-new))))))
+	   (if (abstract-value=? v-new v-old)
+	       (outer (- limit 1) v-new)
+	       v-old))))))
+
 (define (syntactic-constraints-met-on-flow? ei bs)
  (let ((l1? (l1-met? bs))
        (vs-met? (map (lambda (b)
@@ -6437,7 +6481,10 @@
 		     (v3a (limit-matching-pairs v2a))
 		     (v4a (limit-l4-depth v3a))
 		     (v5a (limit-l6-depth v4a))
-		     (v6a (limit-matching-closures v5a))
+		     (v5b (if *aesthetic-reduce-depth?*
+			      (aesthetic-reduce-l6-depth v5a)
+			      v5a))
+		     (v6a (limit-matching-closures v5b))
 		     (v7a (limit-matching-pairs v6a))
 		     (v8a (remove-duplicate-proto-abstract-values v7a))
 		     (v9a (widen-abstract-value-by-coalescing-reals v8a))
@@ -6446,7 +6493,10 @@
 	      (let* ((v1 (remove-duplicate-proto-abstract-values v))
 		     (v2 (limit-l4-depth v1))
 		     (v3 (limit-l6-depth v2))
-		     (v4 (limit-matching-closures v3))
+		     (v3a (if *aesthetic-reduce-depth?*
+			      (aesthetic-reduce-l6-depth v3)
+			      v3))
+		     (v4 (limit-matching-closures v3a))
 		     (v5 (limit-matching-pairs v4))
 		     (v6 (remove-duplicate-proto-abstract-values v5))
 		     (v7 (widen-abstract-value-by-coalescing-reals v6))
