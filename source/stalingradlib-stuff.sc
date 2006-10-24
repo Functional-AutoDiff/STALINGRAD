@@ -358,7 +358,6 @@
 (define *new-cyclicize?* #f)
 (define *no-apply-multiply?* #f)
 (define *new-widen?* #f)
-(define *new-remove?* #f)
 (define *new-l4-depth?* #f)
 (define *picky?* #f)
 (define *imprec-no-unroll?* #t)
@@ -4898,30 +4897,10 @@
        ((real? u) u)
        ((eq? u 'real) u)
        ((primitive-procedure? u) u)
-       ((or (nonrecursive-closure? u) (recursive-closure? u))
-	(let ((u-vs-new (map-vector
-			 (lambda (v) (cyclicize-abstract-value-internal v vs))
-			 (closure-values u))))
-	 (if (every-vector-eq? (closure-values u) u-vs-new)
-	     u
-	     (make-closure-with-new-values u u-vs-new))))
-       ((tagged-pair? u)
-	(let ((car-new (cyclicize-abstract-value-internal (tagged-pair-car u)
-							  vs))
-	      (cdr-new (cyclicize-abstract-value-internal (tagged-pair-cdr u)
-							  vs)))
-	 (if (and (eq? (tagged-pair-car u) car-new)
-		  (eq? (tagged-pair-cdr u) cdr-new))
-	     u
-	     (make-tagged-pair (tagged-pair-tags u) car-new cdr-new))))
-       ((bundle? u)
-	(let* ((primal (bundle-primal u))
-	       (tangent (bundle-tangent u))
-	       (primal-new (cyclicize-abstract-value-internal primal vs))
-	       (tangent-new (cyclicize-abstract-value-internal tangent vs)))
-	 (if (and (eq? primal primal-new) (eq? tangent tangent-new))
-	     u
-	     (make-bundle primal-new tangent-new))))
+       ((branching-value? u)
+	(make-branching-value-with-new-values
+	 u (map (lambda (v) (cyclicize-abstract-value-internal v vs))
+		(branching-value-values u))))
        (else (fuck-up))))
 
 (define (cyclicize-abstract-value-internal v vs)
@@ -4951,47 +4930,18 @@
        ((real? u) (list u vs-memoized))
        ((eq? u 'real) (list u vs-memoized))
        ((primitive-procedure? u) (list u vs-memoized))
-       ((or (nonrecursive-closure? u) (recursive-closure? u))
-	(let loop ((u-vs (vector->list (closure-values u)))
+       ((branching-value? u)
+	(let loop ((u-vs (branching-value-values u))
 		   (u-vs-new '())
 		   (vs-memoized vs-memoized))
 	 (if (null? u-vs)
-	     (let ((u-vs-new (list->vector (reverse u-vs-new))))
-	      (if (every-vector-eq? (closure-values u) u-vs-new)
-		  (list u vs-memoized)
-		  (list (make-closure-with-new-values u u-vs-new)
-			vs-memoized)))
-	     (let ((result (cyclicize-abstract-value2
-			    (first u-vs) vs vs-memoized)))
+	     (list (make-branching-value-with-new-values u (reverse u-vs-new))
+		   vs-memoized)
+	     (let ((result
+		    (cyclicize-abstract-value2 (first u-vs) vs vs-memoized)))
 	      (loop (rest u-vs)
 		    (cons (first result) u-vs-new)
 		    (second result))))))
-       ((tagged-pair? u)
-	(let* ((result (cyclicize-abstract-value2
-			(tagged-pair-car u) vs vs-memoized))
-	       (car-new (first result))
-	       (vs-memoized (second result))
-	       (result (cyclicize-abstract-value2
-			(tagged-pair-cdr u) vs vs-memoized))
-	       (cdr-new (first result))
-	       (vs-memoized (second result)))
-	 (if (and (eq? (tagged-pair-car u) car-new)
-		  (eq? (tagged-pair-cdr u) cdr-new))
-	     (list u vs-memoized)
-	     (list (make-tagged-pair (tagged-pair-tags u) car-new cdr-new)
-		   vs-memoized))))
-       ((bundle? u)
-	(let* ((primal (bundle-primal u))
-	       (result (cyclicize-abstract-value2 primal vs vs-memoized))
-	       (primal-new (first result))
-	       (vs-memoized (second result))
-	       (tangent (bundle-tangent u))
-	       (result (cyclicize-abstract-value2 tangent vs vs-memoized))
-	       (tangent-new (first result))
-	       (vs-memoized (second result)))
-	 (if (and (eq? primal primal-new) (eq? tangent tangent-new))
-	     (list u vs-memoized)
-	     (list (make-bundle primal-new tangent-new) vs-memoized))))
        (else (fuck-up))))
 
 (define (cyclicize-abstract-value2 v vs vs-memoized)
@@ -5022,15 +4972,10 @@
        ((real? u) u)
        ((eq? u 'real) u)
        ((primitive-procedure? u) u)
-       ((or (nonrecursive-closure? u) (recursive-closure? u))
-	(make-closure-with-new-values
-	 u (map-vector (lambda (v) (uncyclicize-abstract-value-internal v vs))
-		       (closure-values u))))
-       ((tagged-pair? u)
-	(make-tagged-pair
-	 (tagged-pair-tags u)
-	 (uncyclicize-abstract-value-internal (tagged-pair-car u) vs)
-	 (uncyclicize-abstract-value-internal (tagged-pair-cdr u) vs)))
+       ((branching-value? u)
+	(make-branching-value-with-new-values
+	 u (map (lambda (v) (uncyclicize-abstract-value-internal v vs))
+		(branching-value-values u))))
        (else (fuck-up))))
 
 (define (uncyclicize-abstract-value-internal v vs)
@@ -5146,16 +5091,9 @@
        ((vs-to-explore
 	 (reduce
 	  append
-	  (map
-	   (lambda (u)
-	    (cond ((nonrecursive-closure? u)
-		   (vector->list (nonrecursive-closure-values u)))
-		  ((recursive-closure? u)
-		   (vector->list (recursive-closure-values u)))
-		  ((tagged-pair? u)
-		   (list (tagged-pair-car u) (tagged-pair-cdr u)))
-		  (else '())))
-	   v)
+	  (map (lambda (u)
+		(if (branching-value? u) (branching-value-values u) '()))
+	       v)
 	  '()))
 	(num-vs 1)
 	(num-us (length v)))
@@ -5179,52 +5117,7 @@
 (define (abstract-analysis-values bs)
  (reduce append (map abstract-expression-binding-values bs) '()))
 
-;;; to-do: preserve eq?-ness of {proto-,}abstract-values
 (define (process-nodes-in-abstract-value-tree f v v-context)
- (if (up? v)
-     v
-     (let ((v-new (f v v-context)))
-      (let loop ((us v-new) (us-new '()))
-       (if (null? us)
-	   (reverse us-new)
-	   (let ((u (first us)))
-	    (cond ((or (null? u)
-		       (boolean? u)
-		       (abstract-real? u)
-		       (primitive-procedure? u))
-		   (loop (rest us) (cons u us-new)))
-		  ((or (nonrecursive-closure? u) (recursive-closure? u))
-		   (let ((u-context (cons v v-context)))
-		    (loop (rest us)
-			  (cons
-			   (make-closure-with-new-values
-			    u
-			    (map-vector
-			     (lambda (v) (process-nodes-in-abstract-value-tree
-					  f v u-context))
-			     (closure-values u)))
-			   us-new))))
-		  ((tagged-pair? u)
-		   (let ((u-context (cons v v-context)))
-		    (loop (rest us)
-			  (cons
-			   (make-tagged-pair
-			    (tagged-pair-tags u)
-			    (process-nodes-in-abstract-value-tree
-			     f (tagged-pair-car u) u-context)
-			    (process-nodes-in-abstract-value-tree
-			     f (tagged-pair-cdr u) u-context))
-			   us-new))))
-		  (else (panic "Not a proto-abstract-value")))))))))
-
-(define (every-eq? l1 l2)
- (and (= (length l1) (length l2)) (every eq? l1 l2)))
-
-(define (every-vector-eq? v1 v2)
- (and (= (vector-length v1) (vector-length v2)) (every-vector eq? v1 v2)))
-
-;;; to-do: preserve eq?-ness of {proto-,}abstract-values
-(define (process-nodes-in-abstract-value-tree2 f v v-context)
  (if (up? v)
      v
      (let ((v-new (f v v-context)))
@@ -5237,33 +5130,23 @@
 		       (abstract-real? u)
 		       (primitive-procedure? u))
 		   (loop (rest us) (cons u us-new)))
-		  ((or (nonrecursive-closure? u) (recursive-closure? u))
-		   (let* ((u-context (cons v v-context))
-			  (vs-new
-			   (map-vector
-			    (lambda (v) (process-nodes-in-abstract-value-tree2
-					 f v u-context))
-			    (closure-values u))))
-		    (loop
-		     (rest us)
-		     (cons (if (every-vector-eq? (closure-values u) vs-new)
-			       u
-			       (make-closure-with-new-values u vs-new))
-			   us-new))))
-		  ((tagged-pair? u)
-		   (let* ((u-context (cons v v-context))
-			  (car-new (process-nodes-in-abstract-value-tree2
-				    f (tagged-pair-car u) u-context))
-			  (cdr-new (process-nodes-in-abstract-value-tree2
-				    f (tagged-pair-cdr u) u-context)))
+		  ((branching-value? u)
+		   (let ((u-context (cons v v-context)))
 		    (loop (rest us)
-			  (cons (if (and (eq? car-new (tagged-pair-car u))
-					 (eq? cdr-new (tagged-pair-cdr u)))
-				    u
-				    (make-tagged-pair
-				     (tagged-pair-tags u) car-new cdr-new))
+			  (cons (make-branching-value-with-new-values
+				 u (map (lambda (v)
+					 (process-nodes-in-abstract-value-tree
+					  f v u-context))
+					(branching-value-values u)))
 				us-new))))
 		  (else (panic "Not a proto-abstract-value")))))))))
+
+;;; Perhaps the first eq? check is a slowdown...
+(define (every-eq? l1 l2)
+ (or (eq? l1 l2) (and (= (length l1) (length l2)) (every eq? l1 l2))))
+
+(define (every-vector-eq? v1 v2)
+ (and (= (vector-length v1) (vector-length v2)) (every-vector eq? v1 v2)))
 
 ;;; \General
 
@@ -5383,6 +5266,58 @@
 
 ;;; \Pair Procedures
 
+;;; Bundle Procedures
+
+(define (bundle-match? u1 u2)
+ ;; do we really want to check for non-bundle u1, u2?
+ (and (bundle? u1) (bundle? u2)))
+
+(define (bundle-values u) (list (bundle-primal u) (bundle-tangent u)))
+
+(define (make-bundle-with-new-values u vs)
+ ;; should we do a check here and preserve eq?-ness if possible?
+ (make-bundle (first vs) (second vs)))
+
+;;; \Bundle Procedures
+
+;;; Branching Value Procedures
+
+;;; Should we restrict closures with no free variables from being considered
+;;; branching values?  They would then be atomic values...
+(define (branching-value? u) (or (closure? u) (tagged-pair? u) (bundle? u)))
+
+(define (branching-value-match? u1 u2)
+ (cond ((and (closure? u1) (closure? u2)) (closure-match? u1 u2))
+       ((and (tagged-pair? u1) (tagged-pair? u2)) (tagged-pair-match? u1 u2))
+       ((and (bundle? u1) (bundle? u2)) (bundle-match? u1 u2))
+       (else #f)))
+
+(define (branching-value-values u)
+ ;; In order to preserve the type of this function, we require that closures
+ ;; return a list of values.
+ (cond ((closure? u) (vector->list (closure-values u)))
+       ((tagged-pair? u) (tagged-pair-values u))
+       ((bundle? u) (bundle-values u))
+       (else (fuck-up))))
+
+(define (branching-value-values-matching u1 u2)
+ (if (and (closure? u1) (closure? u2))
+     (vector->list (closure-values-matching u1 u2))
+     (branching-value-values u2)))
+
+(define (make-branching-value-with-new-values u vs)
+ ;; In order to preserve the type of this function, we require that closures
+ ;;   take a list of values instead of a vector of them.
+ ;; In addition, we preserve eq?-ness of u if vs are identical to
+ ;;   (branching-value-values u).
+ (cond ((every-eq? vs (branching-value-values u)) u)
+       ((closure? u) (make-closure-with-new-values u (list->vector vs)))
+       ((tagged-pair? u) (make-tagged-pair-with-new-values u vs))
+       ((bundle? u) (make-bundle-with-new-values u vs))
+       (else (fuck-up))))
+
+;;; \Branching Value Procedures
+
 ;;; Widen
 
 ;;; Widen->General
@@ -5423,15 +5358,9 @@
 	    (abstract-real? u)
 	    (primitive-procedure? u))
 	#f)
-       ((nonrecursive-closure? u)
-	(some-vector (lambda (v) (some-abstract-value?-internal p v u-context))
-		     (nonrecursive-closure-values u)))
-       ((recursive-closure? u)
-	(some-vector (lambda (v) (some-abstract-value?-internal p v u-context))
-		     (recursive-closure-values u)))
-       ((tagged-pair? u)
-	(or (some-abstract-value?-internal p (tagged-pair-car u) u-context)
-	    (some-abstract-value?-internal p (tagged-pair-cdr u) u-context)))
+       ((branching-value? u)
+	(some (lambda (v) (some-abstract-value?-internal p v u-context))
+	      (branching-value-values u)))
        (else (panic (format #f "Not a handled proto-abstract-value: ~s"
 			    (externalize-proto-abstract-value u))))))
 
@@ -5454,14 +5383,18 @@
 	    (abstract-real? u)
 	    (primitive-procedure? u))
 	u)
-       ((or (nonrecursive-closure? u) (recursive-closure? u))
-	(make-closure-with-new-values
-	 u (map-vector (lambda (v) (process-free-ups-internal f v u-context))
-		       (closure-values u))))
-       ((tagged-pair? u)
-	(make-tagged-pair-with-new-values
+       ((branching-value? u)
+	(make-branching-value-with-new-values
 	 u (map (lambda (v) (process-free-ups-internal f v u-context))
-		(tagged-pair-values u))))
+		(branching-value-values u))))
+;;;       ((or (nonrecursive-closure? u) (recursive-closure? u))
+;;;	(make-closure-with-new-values
+;;;	 u (map-vector (lambda (v) (process-free-ups-internal f v u-context))
+;;;		       (closure-values u))))
+;;;       ((tagged-pair? u)
+;;;	(make-tagged-pair-with-new-values
+;;;	 u (map (lambda (v) (process-free-ups-internal f v u-context))
+;;;		(tagged-pair-values u))))
        (else (fuck-up))))
 
 (define (process-free-ups-internal f v v-context)
@@ -5793,7 +5726,7 @@
 	   (widen-abstract-value-tree-internal v-new)
 	   (cons v-new additions-new))))))
 
-(define (widen-abstract-value-tree-internal v)
+(define (widen-abstract-value-tree-internal-old v)
  ;; returns: value x (LIST additions-to-value)
  (if (up? v)
      (cons v '())
@@ -5852,6 +5785,61 @@
 							  (first vs)
 							  (second vs)))))
 			 (else (panic "Not (yet) implemented!")))))))
+	    (else (apply-additions-to v-new additions))))))
+
+(define (widen-abstract-value-tree-internal v)
+ ;; returns: value x (LIST additions-to-value)
+ (if (up? v)
+     (cons v '())
+     (let* ((v-additions (widen-single-abstract-value v))
+	    (v-new (car v-additions))
+	    (additions (cdr v-additions))
+	    (changed? (not (eq? v-new v))))
+      (cond ((and (null? additions) (up? v-new))
+	     (cons v-new '()))
+	    ((null? additions)
+	     ;; recursively widen each abstract value below v-new
+	     (let outer ((us v-new) (us-new '()))
+	      (if (null? us)
+		  (let ((us-new (reverse us-new)))
+		   (if (every-eq? us-new v) (cons v '()) (cons us-new '())))
+		  (let ((u (first us)))
+		   (cond ((or (null? u)
+			      (boolean? u)
+			      (abstract-real? u)
+			      (primitive-procedure? u))
+			  (outer (rest us) (cons u us-new)))
+			 ((branching-value? u)
+			  (let inner ((vs (branching-value-values u))
+				      (vs-new '()))
+			   (if (null? vs)
+			       (outer (rest us)
+				      (make-branching-value-with-new-values
+				       u (reverse vs-new)))
+			       (let* ((v-additions
+				       (widen-abstract-value-tree-internal
+					(first vs)))
+				      (v-new (car v-additions))
+				      (additions (cdr v-additions)))
+				(if (null? additions)
+				    (inner (rest vs) (cons v-new vs-new))
+				    (let*
+				      ((vs1 (append
+					     (reverse (cons v-new vs-new))
+					     (rest vs)))
+				       (u-new
+					(make-branching-value-with-new-values
+					 u vs1)))
+				     ;; I reverse the order of the proto-
+				     ;;  abstract values here from the previous
+				     ;;  version b/c I don't want to change
+				     ;;  the order.  This *could* impact
+				     ;;  perfomance.
+				     (apply-additions-to
+				      (append (reverse (cons u-new us-new))
+					      (rest us))
+				      additions)))))))
+			 (else (fuck-up)))))))
 	    (else (apply-additions-to v-new additions))))))
 
 (define (widen-abstract-value-by-coalescing-matching-closures v)
@@ -5927,11 +5915,21 @@
 		  (if (> (depth (add-to-path u)) k)
 		      (add-to-path u)
 		      #f))
-		 ((closure? u-or-v)
-		  (do-branching-value (vector->list (closure-values u-or-v))))
-		 ((tagged-pair? u-or-v)
-		  (do-branching-value (list (tagged-pair-car u-or-v)
-					    (tagged-pair-cdr u-or-v))))
+		 ((branching-value? u)
+		  (let inner ((vs (branching-value-values u)))
+		   (if (null? vs)
+		       (if (> (depth (add-to-path u)) k)
+			   (add-to-path u)
+			   #f)
+		       (let ((result (loop (first vs) (add-to-path u))))
+			(if (eq? #f result)
+			    (inner (rest vs))
+			    result)))))
+;;;		 ((closure? u-or-v)
+;;;		  (do-branching-value (vector->list (closure-values u-or-v))))
+;;;		 ((tagged-pair? u-or-v)
+;;;		  (do-branching-value (list (tagged-pair-car u-or-v)
+;;;					    (tagged-pair-cdr u-or-v))))
 		 (else (panic "This part not (yet) implemented!")))))))))
 
 ;;; to-do: See if this and widen-abstract-value-tree-internal can be made
@@ -6174,63 +6172,57 @@
       (cond ((and (null? additions) (up? v-new)) (list v-new '()))
 	    ((null? additions)
 	     ;; recursively widen each abstract value below v-new
-	     (let outer ((us v-new)
-			 (us-new '())
-			 (additions '())
-			 (changed? changed?))
+	     (let outer ((us v-new) (us-new '()) (additions '()))
 	      (if (null? us)
-		  (if (null? additions)
-		      (if changed? (list us-new '()) (list v '()))
-		      (let* ((v-additions
-			      (move-values-up-tree us-new additions))
-			     (v-new (first v-additions))
-			     (additions-new (second v-additions)))
-		       (if (null? additions-new)
-			   (limit-matching-branching-values-over-tree-internal
-			    limit-at-one-level v-new)
-			   v-additions)))
+		  (let ((us-new (reverse us-new)))
+		   (if (null? additions)
+		       (if (every-eq? us-new v) (list v '()) (list us-new '()))
+		       (let* ((v-additions
+			       (move-values-up-tree us-new additions))
+			      (v-new (first v-additions))
+			      (additions-new (second v-additions)))
+			(if (null? additions-new)
+			    (limit-matching-branching-values-over-tree-internal
+			     limit-at-one-level v-new)
+			    v-additions))))
 		  (let ((u (first us)))
-		   (define (do-branching-value vs-old make-branching-value)
-		    (let inner ((vs vs-old) (vs-new '()) (additions additions))
-		     (if
-		      (null? vs)
-		      (let ((vs-new (reverse vs-new)))
-		       (if (every-eq? vs-old vs-new)
-			   ;; I assume this means no additions changed...
-			   (outer (rest us)
-				  (cons u us-new)
-				  additions
-				  changed?)
-			   (outer (rest us)
-				  (cons (make-branching-value vs-new)
-					us-new)
-				  additions
-				  #t)))
-		      (let*
-			((v-additions
-			  (limit-matching-branching-values-over-tree-internal
-			   limit-at-one-level (first vs)))
-			 (v-new (first v-additions))
-			 (additions-new (second v-additions)))
-		       (inner (rest vs)
-			      (cons v-new vs-new)
-			      (merge-additions2 additions additions-new))))))
-		   (cond ((or (null? u)
-			      (boolean? u)
-			      (abstract-real? u)
-			      (primitive-procedure? u))
-			  (outer (rest us) (cons u us-new) additions changed?))
-			 ((closure? u)
-			  (do-branching-value
-			   (vector->list (closure-values u))
-			   (lambda (vs) (make-closure-with-new-values
-					 u (list->vector vs)))))
-			 ((tagged-pair? u)
-			  (do-branching-value
-			   (tagged-pair-values u)
-			   (lambda (vs)
-			    (make-tagged-pair-with-new-values u vs))))
-			 (else (panic "Not (yet) implemented!")))))))
+		   (cond
+		    ((or (null? u)
+			 (boolean? u)
+			 (abstract-real? u)
+			 (primitive-procedure? u))
+		     (outer (rest us) (cons u us-new) additions))
+		    ((branching-value? u)
+		     (let inner ((vs (branching-value-values u))
+				 (vs-new '())
+				 (additions additions))
+		      (if
+		       (null? vs)
+		       (let ((u-new (make-branching-value-with-new-values
+				     u (reverse vs-new))))
+			(outer (rest us)
+			       (cons u-new us-new)
+			       additions))
+		       (let*
+			 ((v-additions
+			   (limit-matching-branching-values-over-tree-internal
+			    limit-at-one-level (first vs)))
+			  (v-new (first v-additions))
+			  (additions-new (second v-additions)))
+			(inner (rest vs)
+			       (cons v-new vs-new)
+			       (merge-additions2 additions additions-new))))))
+;;;		    ((closure? u)
+;;;		     (do-branching-value
+;;;		      (vector->list (closure-values u))
+;;;		      (lambda (vs) (make-closure-with-new-values
+;;;				    u (list->vector vs)))))
+;;;		    ((tagged-pair? u)
+;;;		     (do-branching-value
+;;;		      (tagged-pair-values u)
+;;;		      (lambda (vs)
+;;;		       (make-tagged-pair-with-new-values u vs))))
+		    (else (panic "Not (yet) implemented!")))))))
 	    (else
 	     (let* ((v-additions (move-values-up-tree v-new additions))
 		    (v-new (first v-additions))
@@ -6279,34 +6271,25 @@
 
 (define (reduce-depth2 path v-target v-add)
  ;; path = [] | [v u] ++ path
- (let
-   ((result
-     (let loop ((path path) (v-context '()))
-      (when (null? path) (panic "This should never happen!"))
-      (let ((v (first path)))
-       (if (eq? v v-add)
-	   (let ((index (positionq v-target v-context)))
-	    (list (make-up index) (create-addition index (list v))))
-	   (let* ((v-and-additions
-		   (loop (rest (rest path)) (cons v v-context)))
-		  (v-new (first v-and-additions))
-		  (additions (second v-and-additions))
-		  (u (second path))
-		  (v-down (third path))
-		  (u-new
-		   (cond
-		    ((closure? u)
-		     (make-closure-with-new-values
-		      u (map-vector (lambda (v) (if (eq? v v-down) v-new v))
-				    (closure-values u))))
-		    ((tagged-pair? u)
-		     (make-tagged-pair-with-new-values
-		      u (map (lambda (v) (if (eq? v v-down) v-new v))
-			     (tagged-pair-values u))))
-		    (else (panic "Not a (supported) branching type")))))
-	    (if (null? additions)
-		(list (replaceq u u-new v) '())
-		(move-values-up-tree (replaceq u u-new v) additions))))))))
+ (let ((result
+	(let loop ((path path) (v-context '()))
+	 (when (null? path) (panic "This should never happen!"))
+	 (let ((v (first path)))
+	  (if (eq? v v-add)
+	      (let ((index (positionq v-target v-context)))
+	       (list (make-up index) (create-addition index (list v))))
+	      (let* ((v-and-additions
+		      (loop (rest (rest path)) (cons v v-context)))
+		     (v-new (first v-and-additions))
+		     (additions (second v-and-additions))
+		     (u (second path))
+		     (v-down (third path))
+		     (u-new (make-branching-value-with-new-values
+			     u (map (lambda (v) (if (eq? v v-down) v-new v))
+				    (branching-value-values u)))))
+	       (if (null? additions)
+		   (list (replaceq u u-new v) '())
+		   (move-values-up-tree (replaceq u u-new v) additions))))))))
   (when (not (null? (second result)))
    (panic "Addition(s) not processed in reduce-depth!"))
   (first result)))
@@ -6510,13 +6493,9 @@
 ;;; Duplicate removal
 
 (define (remove-duplicate-proto-abstract-values v)
- (if *new-remove?*
-     (process-nodes-in-abstract-value-tree2
-      (lambda (v v-context) (remove-duplicates-circular-safe v))
-      v '())
-     (process-nodes-in-abstract-value-tree
-      (lambda (v v-context) (remove-duplicates-circular-safe v))
-      v '())))
+ (process-nodes-in-abstract-value-tree
+  (lambda (v v-context) (remove-duplicates-circular-safe v))
+  v '()))
 
 ;;; \Duplicate removal
 
@@ -6555,22 +6534,28 @@
 	  (some (lambda (u2)
 		 (and (primitive-procedure? u2) (eq? u1 u2)))
 		v2))
-	 ((nonrecursive-closure? u1)
-	  (some (lambda (u2)
-		 (and (nonrecursive-closure? u2)
-		      (nonrecursive-closure-match? u1 u2)))
-		v2))
-	 ((recursive-closure? u1)
-	  (some (lambda (u2)
-		 (and (recursive-closure? u2)
-		      (recursive-closure-match? u1 u2)))
-		v2))
-	 ;; needs work: do I need to do anything with tags?
-	 ((tagged-pair? u1)
-	  (some (lambda (u2)
-		 (and (tagged-pair? u2)
-		      (equal? (tagged-pair-tags u1) (tagged-pair-tags u2))))
-		v2))
+	 ((branching-value? u1)
+	  ;; Do we need to do (and (branching-value? u1) ...) here?
+	  ;; branching-value-match? will check for this possiblity
+	  (some (lambda (u2) (and (branching-value? u2)
+				  (branching-value-match? u1 u2)))
+			v2))
+;;;	 ((nonrecursive-closure? u1)
+;;;	  (some (lambda (u2)
+;;;		 (and (nonrecursive-closure? u2)
+;;;		      (nonrecursive-closure-match? u1 u2)))
+;;;		v2))
+;;;	 ((recursive-closure? u1)
+;;;	  (some (lambda (u2)
+;;;		 (and (recursive-closure? u2)
+;;;		      (recursive-closure-match? u1 u2)))
+;;;		v2))
+;;;	 ;; needs work: do I need to do anything with tags?
+;;;	 ((tagged-pair? u1)
+;;;	  (some (lambda (u2)
+;;;		 (and (tagged-pair? u2)
+;;;		      (equal? (tagged-pair-tags u1) (tagged-pair-tags u2))))
+;;;		v2))
 	 (else (panic (format #f "Not a known proto-abstract value: ~s" u1)))))
   v1))
 
@@ -6604,33 +6589,20 @@
 	*new-subset?*
 	(lambda (u1)
 	 (cond
-	  ;;	 ((null? u1) (some null? v2))
-	  ;;	 ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
-	  ;;	 ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
-	  ;;	 ((real? u1)
-	  ;;	  (some (lambda (u2)
-	  ;;		 (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
-	  ;;		v2))
-	  ;;	 ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
-	  ;;	 ((primitive-procedure? u1)
-	  ;; 	  (some (lambda (u2)
-	  ;; 		 (and (primitive-procedure? u2) (eq? u1 u2)))
-	  ;; 	        v2))
-	  ((closure? u1)
-	   (let ((vs1 (closure-values u1))
-		 (k (vector-length (closure-values u1)))
-		 (vs2s-matching
-		  (map (lambda (u2) (closure-values-matching u1 u2))
-		       (remove-if-not (lambda (u2) (closure-match? u1 u2))
-				      us2-branching))))
+	  ((branching-value? u1)
+	   (let* ((vs1 (branching-value-values u1))
+		  (k (length vs1))
+		  (us2-matching (remove-if-not
+				 (lambda (u2) (branching-value-match? u1 u2))
+				 us2-branching))
+		  (vs2s-matching (map (lambda (u2)
+				       (branching-value-values-matching u1 u2))
+				      us2-matching)))
 	    (let outer ((vs2s vs2s-matching) (results '()))
 	     (if (null? vs2s)
 		 (if (= k 1)
 		     #f
 		     (let ((results (reverse results)))
-		      ;; if there are any positions i such that more than 1 of
-		      ;; the vs2s match for every spot but that position, then
-		      ;; test what happens
 		      (some-n
 		       (lambda (i)
 			(let ((vs2s-matching-all-but-i
@@ -6642,56 +6614,106 @@
 					 (positionq vs2 vs2s-matching))))
 				  (every-n
 				   (lambda (j)
-				    (if (= i j) #t (vector-ref result j)))
+				    (if (= i j) #t (list-ref result j)))
 				   k)))
-				vs2s)))
+				vs2s-matching)))
 			 (if (<= (length vs2s-matching-all-but-i) 1)
 			     #f
-			     (loop? (vector-ref vs1 i)
-				    (reduce
-				     abstract-value-union-cyclic
-				     (map (lambda (vs2) (vector-ref vs2 i))
-					  vs2s-matching-all-but-i)
-				     '())
+			     (loop? (list-ref vs1 i)
+				    (reduce abstract-value-union-cyclic
+					    (map
+					     (lambda (vs2) (list-ref vs2 i))
+					     vs2s-matching-all-but-i)
+					    (empty-abstract-value))
 				    cs))))
 		       k)))
-		 (let ((result (map-vector (lambda (v1 v2) (loop? v1 v2 cs))
-					   vs1
-					   (first vs2s))))
-		  (if (every-vector identity result)
+		 (let ((result (map (lambda (v1 v2) (loop? v1 v2 cs))
+				    vs1
+				    (first vs2s))))
+		  (if (every (lambda (b) (eq? b #t)) result)
 		      #t
 		      (outer (rest vs2s) (cons result results))))))))
-	  ((tagged-pair? u1)
-	   (let ((tags1 (tagged-pair-tags u1))
-		 (car1 (tagged-pair-car u1))
-		 (cdr1 (tagged-pair-cdr u1)))
-	    (or (let ((us-matching-car
-		       (remove-if-not
-			(lambda (u2)
-			 (and (tagged-pair? u2)
-			      (equal? (tagged-pair-tags u2) tags1)
-			      (loop? car1 (tagged-pair-car u2) cs)))
-			us2-branching)))
-		 (loop? cdr1
-			(reduce abstract-value-union-cyclic
-				(map tagged-pair-cdr us-matching-car)
-				(empty-abstract-value))
-			cs))
-		(let ((us-matching-cdr
-		       (remove-if-not
-			(lambda (u2)
-			 (and (tagged-pair? u2)
-			      (equal? (tagged-pair-tags u2) tags1)
-			      (loop? cdr1 (tagged-pair-cdr u2) cs)))
-			us2-branching)))
-		 (loop? car1
-			(reduce abstract-value-union-cyclic
-				(map tagged-pair-car us-matching-cdr)
-				(empty-abstract-value))
-			cs)))))
-	  ((bundle? u1)
-	   (panic (string-append "abstract-value-subset? not defined "
-				 " (yet) for bundles!")))
+;;;	  ((closure? u1)
+;;;	   (let ((vs1 (closure-values u1))
+;;;		 (k (vector-length (closure-values u1)))
+;;;		 (vs2s-matching
+;;;		  (map (lambda (u2) (closure-values-matching u1 u2))
+;;;		       (remove-if-not (lambda (u2) (closure-match? u1 u2))
+;;;				      us2-branching))))
+;;;	    (let outer ((vs2s vs2s-matching) (results '()))
+;;;	     (if (null? vs2s)
+;;;		 (if (= k 1)
+;;;		     #f
+;;;		     (let ((results (reverse results)))
+;;;		      ;; if there are any positions i such that more than 1 of
+;;;		      ;; the vs2s match for every spot but that position, then
+;;;		      ;; test what happens
+;;;		      (some-n
+;;;		       (lambda (i)
+;;;			;; definition of vs2s-matching... seems odd to me --
+;;;			;;   Isn't vs2s simply nil?  How can this be any use,
+;;;			;;   then?  Shouldn't we rather remove all elements of
+;;;			;;   vs2s-matching whose results aren't #T everywhere
+;;;			;;   except position i?
+;;;			(let ((vs2s-matching-all-but-i
+;;;			       (remove-if-not
+;;;				(lambda (vs2)
+;;;				 (let ((result
+;;;					(list-ref
+;;;					 results
+;;;					 (positionq vs2 vs2s-matching))))
+;;;				  (every-n
+;;;				   (lambda (j)
+;;;				    (if (= i j) #t (vector-ref result j)))
+;;;				   k)))
+;;;				vs2s-matching)))
+;;;			 (if (<= (length vs2s-matching-all-but-i) 1)
+;;;			     #f
+;;;			     (loop? (vector-ref vs1 i)
+;;;				    (reduce
+;;;				     abstract-value-union-cyclic
+;;;				     (map (lambda (vs2) (vector-ref vs2 i))
+;;;					  vs2s-matching-all-but-i)
+;;;				     '())
+;;;				    cs))))
+;;;		       k)))
+;;;		 (let ((result (map-vector (lambda (v1 v2) (loop? v1 v2 cs))
+;;;					   vs1
+;;;					   (first vs2s))))
+;;;		  (if (every-vector identity result)
+;;;		      #t
+;;;		      (outer (rest vs2s) (cons result results))))))))
+;;;	  ((tagged-pair? u1)
+;;;	   (let ((tags1 (tagged-pair-tags u1))
+;;;		 (car1 (tagged-pair-car u1))
+;;;		 (cdr1 (tagged-pair-cdr u1)))
+;;;	    (or (let ((us-matching-car
+;;;		       (remove-if-not
+;;;			(lambda (u2)
+;;;			 (and (tagged-pair? u2)
+;;;			      (equal? (tagged-pair-tags u2) tags1)
+;;;			      (loop? car1 (tagged-pair-car u2) cs)))
+;;;			us2-branching)))
+;;;		 (loop? cdr1
+;;;			(reduce abstract-value-union-cyclic
+;;;				(map tagged-pair-cdr us-matching-car)
+;;;				(empty-abstract-value))
+;;;			cs))
+;;;		(let ((us-matching-cdr
+;;;		       (remove-if-not
+;;;			(lambda (u2)
+;;;			 (and (tagged-pair? u2)
+;;;			      (equal? (tagged-pair-tags u2) tags1)
+;;;			      (loop? cdr1 (tagged-pair-cdr u2) cs)))
+;;;			us2-branching)))
+;;;		 (loop? car1
+;;;			(reduce abstract-value-union-cyclic
+;;;				(map tagged-pair-car us-matching-cdr)
+;;;				(empty-abstract-value))
+;;;			cs)))))
+;;;	  ((bundle? u1)
+;;;	   (panic (string-append "abstract-value-subset? not defined "
+;;;				 " (yet) for bundles!")))
 	  ((reverse-tagged-value? u1)
 	   (panic (string-append "abstract-value-subset? not defined "
 				 " (yet) for reverse-tagged-values!")))
@@ -6711,107 +6733,138 @@
 	  ;; 		 (and (primitive-procedure? u2) (eq? u1 u2)))
 	  ;; 	        v2))
 	  ((memq u1 v2) #t)
-	  ((nonrecursive-closure? u1)
-	   (let ((vs1 (nonrecursive-closure-values u1)))
+	  ((branching-value? u1)
+	   (let ((vs1 (branching-value-values u1))
+		 (us2-matching (remove-if-not
+				(lambda (u2) (branching-value-match? u1 u2))
+				us2-branching)))
 	    (some-n
 	     (lambda (i)
 	      (let ((us-matching-all-but-u1_i
 		     (remove-if-not
 		      (lambda (u2)
-		       (if (and (nonrecursive-closure? u2)
-				(nonrecursive-closure-match? u1 u2))
-			   (let ((vs2-matching
-				  (nonrecursive-closure-values-matching
-				   u1 u2)))
-			    (every-n
-			     (lambda (j)
-			      (if (= i j)
-				  #t
-				  (loop?
-				   (vector-ref vs1 j)
-				   (vector-ref vs2-matching j)
-				   cs)))
-			     (vector-length vs1)))
-			   #f))
-		      us2-branching)))
-	       (loop? (vector-ref vs1 i)
-		      (reduce
-		       abstract-value-union-cyclic
-		       (map
-			(lambda (u)
-			 (vector-ref
-			  (nonrecursive-closure-values-matching u1 u)
-			  i))
-			us-matching-all-but-u1_i)
-		       (empty-abstract-value))
+		       (let ((vs2-matching
+			      (branching-value-values-matching u1 u2)))
+			(every-n
+			 (lambda (j)
+			  (if (= i j)
+			      #t
+			      (loop? (list-ref vs1 j)
+				     (list-ref vs2-matching j)
+				     cs)))
+			 (length vs1))))
+		      us2-matching)))
+	       (loop? (list-ref vs1 i)
+		      (reduce abstract-value-union-cyclic
+			      (map (lambda (u)
+				    (list-ref
+				     (branching-value-values-matching u1 u)
+				     i))
+				   us-matching-all-but-u1_i)
+			      (empty-abstract-value))
 		      cs)))
-	     (vector-length vs1))))
-	  ((recursive-closure? u1)
-	   (let ((vs1 (recursive-closure-values u1)))
-	    (some-n
-	     (lambda (i)
-	      (let ((us-matching-all-but-u1_i
-		     (remove-if-not
-		      (lambda (u2)
-		       (if (and (recursive-closure? u2)
-				(recursive-closure-match? u1 u2))
-			   (let ((vs2-matching
-				  (recursive-closure-values-matching
-				   u1 u2)))
-			    (every-n
-			     (lambda (j)
-			      (if (= i j)
-				  #t
-				  (loop?
-				   (vector-ref vs1 j)
-				   (vector-ref vs2-matching j)
-				   cs)))
-			     (vector-length vs1)))
-			   #f))
-		      us2-branching)))
-	       (loop? (vector-ref vs1 i)
-		      (reduce
-		       abstract-value-union-cyclic
-		       (map
-			(lambda (u)
-			 (vector-ref
-			  (recursive-closure-values-matching u1 u)
-			  i))
-			us-matching-all-but-u1_i)
-		       (empty-abstract-value))
-		      cs)))
-	     (vector-length vs1))))
-	  ((tagged-pair? u1)
-	   (let ((tags1 (tagged-pair-tags u1))
-		 (car1 (tagged-pair-car u1))
-		 (cdr1 (tagged-pair-cdr u1)))
-	    (or (let ((us-matching-car
-		       (remove-if-not
-			(lambda (u2)
-			 (and (tagged-pair? u2)
-			      (equal? (tagged-pair-tags u2) tags1)
-			      (loop? car1 (tagged-pair-car u2) cs)))
-			us2-branching)))
-		 (loop? cdr1
-			(reduce abstract-value-union-cyclic
-				(map tagged-pair-cdr us-matching-car)
-				(empty-abstract-value))
-			cs))
-		(let ((us-matching-cdr
-		       (remove-if-not
-			(lambda (u2)
-			 (and (tagged-pair? u2)
-			      (equal? (tagged-pair-tags u2) tags1)
-			      (loop? cdr1 (tagged-pair-cdr u2) cs)))
-			us2-branching)))
-		 (loop? car1
-			(reduce abstract-value-union-cyclic
-				(map tagged-pair-car us-matching-cdr)
-				(empty-abstract-value))
-			cs)))))
-	  ((bundle? u1)
-	   (panic (string-append "abstract-value-subset? not defined "
-				 " (yet) for bundles!")))
+	     (length vs1))))
+;;;	  ((nonrecursive-closure? u1)
+;;;	   (let ((vs1 (nonrecursive-closure-values u1)))
+;;;	    (some-n
+;;;	     (lambda (i)
+;;;	      (let ((us-matching-all-but-u1_i
+;;;		     (remove-if-not
+;;;		      (lambda (u2)
+;;;		       (if (and (nonrecursive-closure? u2)
+;;;				(nonrecursive-closure-match? u1 u2))
+;;;			   (let ((vs2-matching
+;;;				  (nonrecursive-closure-values-matching
+;;;				   u1 u2)))
+;;;			    (every-n
+;;;			     (lambda (j)
+;;;			      (if (= i j)
+;;;				  #t
+;;;				  (loop?
+;;;				   (vector-ref vs1 j)
+;;;				   (vector-ref vs2-matching j)
+;;;				   cs)))
+;;;			     (vector-length vs1)))
+;;;			   #f))
+;;;		      us2-branching)))
+;;;	       (loop? (vector-ref vs1 i)
+;;;		      (reduce
+;;;		       abstract-value-union-cyclic
+;;;		       (map
+;;;			(lambda (u)
+;;;			 (vector-ref
+;;;			  (nonrecursive-closure-values-matching u1 u)
+;;;			  i))
+;;;			us-matching-all-but-u1_i)
+;;;		       (empty-abstract-value))
+;;;		      cs)))
+;;;	     (vector-length vs1))))
+;;;	  ((recursive-closure? u1)
+;;;	   (let ((vs1 (recursive-closure-values u1)))
+;;;	    (some-n
+;;;	     (lambda (i)
+;;;	      (let ((us-matching-all-but-u1_i
+;;;		     (remove-if-not
+;;;		      (lambda (u2)
+;;;		       (if (and (recursive-closure? u2)
+;;;				(recursive-closure-match? u1 u2))
+;;;			   (let ((vs2-matching
+;;;				  (recursive-closure-values-matching
+;;;				   u1 u2)))
+;;;			    (every-n
+;;;			     (lambda (j)
+;;;			      (if (= i j)
+;;;				  #t
+;;;				  (loop?
+;;;				   (vector-ref vs1 j)
+;;;				   (vector-ref vs2-matching j)
+;;;				   cs)))
+;;;			     (vector-length vs1)))
+;;;			   #f))
+;;;		      us2-branching)))
+;;;	       (loop? (vector-ref vs1 i)
+;;;		      (reduce
+;;;		       abstract-value-union-cyclic
+;;;		       (map
+;;;			(lambda (u)
+;;;			 (vector-ref
+;;;			  (recursive-closure-values-matching u1 u)
+;;;			  i))
+;;;			us-matching-all-but-u1_i)
+;;;		       (empty-abstract-value))
+;;;		      cs)))
+;;;	     (vector-length vs1))))
+;;;	  ((tagged-pair? u1)
+;;;	   (let ((tags1 (tagged-pair-tags u1))
+;;;		 (car1 (tagged-pair-car u1))
+;;;		 (cdr1 (tagged-pair-cdr u1)))
+;;;	    (or (let ((us-matching-car
+;;;		       (remove-if-not
+;;;			(lambda (u2)
+;;;			 (and (tagged-pair? u2)
+;;;			      (equal? (tagged-pair-tags u2) tags1)
+;;;			      (loop? car1 (tagged-pair-car u2) cs)))
+;;;			us2-branching)))
+;;;		 (loop? cdr1
+;;;			(reduce abstract-value-union-cyclic
+;;;				(map tagged-pair-cdr us-matching-car)
+;;;				(empty-abstract-value))
+;;;			cs))
+;;;		(let ((us-matching-cdr
+;;;		       (remove-if-not
+;;;			(lambda (u2)
+;;;			 (and (tagged-pair? u2)
+;;;			      (equal? (tagged-pair-tags u2) tags1)
+;;;			      (loop? cdr1 (tagged-pair-cdr u2) cs)))
+;;;			us2-branching)))
+;;;		 (loop? car1
+;;;			(reduce abstract-value-union-cyclic
+;;;				(map tagged-pair-car us-matching-cdr)
+;;;				(empty-abstract-value))
+;;;			cs)))))
+;;;	  ((bundle? u1)
+;;;	   (panic (string-append "abstract-value-subset? not defined "
+;;;				 " (yet) for bundles!")))
 	  ((reverse-tagged-value? u1)
 	   (panic (string-append "abstract-value-subset? not defined "
 				 " (yet) for reverse-tagged-values!")))
@@ -6887,26 +6940,30 @@
 			  (abstract-real? u)
 			  (primitive-procedure? u))
 		      u)
-		     ((closure? u)
-		      (let* ((vs (closure-values u))
-			     (vs-new (map-vector make-up-if-needed vs)))
-		       (if (every-vector-eq? vs vs-new)
-			   u
-			   (make-closure-with-new-values u vs-new))))
-		     ((tagged-pair? u)
-		      (let* ((car-old (tagged-pair-car u))
-			     (cdr-old (tagged-pair-cdr u))
-			     (car-new (make-up-if-needed car-old))
-			     (cdr-new (make-up-if-needed cdr-old)))
-		       (if (and (eq? car-old car-new) (eq? cdr-old cdr-new))
-			   u
-			   (make-tagged-pair
-			    (tagged-pair-tags u) car-new cdr-new))))
+		     ((branching-value? u)
+		      (make-branching-value-with-new-values
+		       u (map make-up-if-needed (branching-value-values u))))
+;;;		     ((closure? u)
+;;;		      (let* ((vs (closure-values u))
+;;;			     (vs-new (map-vector make-up-if-needed vs)))
+;;;		       (if (every-vector-eq? vs vs-new)
+;;;			   u
+;;;			   (make-closure-with-new-values u vs-new))))
+;;;		     ((tagged-pair? u)
+;;;		      (let* ((car-old (tagged-pair-car u))
+;;;			     (cdr-old (tagged-pair-cdr u))
+;;;			     (car-new (make-up-if-needed car-old))
+;;;			     (cdr-new (make-up-if-needed cdr-old)))
+;;;		       (if (and (eq? car-old car-new) (eq? cdr-old cdr-new))
+;;;			   u
+;;;			   (make-tagged-pair
+;;;			    (tagged-pair-tags u) car-new cdr-new))))
 		     (else (panic "Not (yet) implemented!"))))
 	      (last vs-above))))
        ((up? v) v)
        (else
 	(let* ((vs-above (cons v vs-above))
+	       (unroll (lambda (v) (unroll-once v vs-above)))
 	       (result
 		(map
 		 (lambda (u)
@@ -6915,26 +6972,29 @@
 			     (abstract-real? u)
 			     (primitive-procedure? u))
 			 u)
-			((or (nonrecursive-closure? u)
-			     (recursive-closure? u))
-			 (let* ((vs (closure-values u))
-				(vs-new
-				 (map-vector
-				  (lambda (v) (unroll-once v vs-above))
-				  vs)))
-			  (if (every-vector-eq? vs vs-new)
-			      u
-			      (make-closure-with-new-values u vs-new))))
-			((tagged-pair? u)
-			 (let* ((car-old (tagged-pair-car u))
-				(cdr-old (tagged-pair-cdr u))
-				(car-new (unroll-once car-old vs-above))
-				(cdr-new (unroll-once cdr-old vs-above)))
-			  (if (and (eq? car-old car-new)
-				   (eq? cdr-old cdr-new))
-			      u
-			      (make-tagged-pair
-			       (tagged-pair-tags u) car-new cdr-new))))
+			((branching-value? u)
+			 (make-branching-value-with-new-values
+			  u (map unroll (branching-value-values u))))
+;;;			((or (nonrecursive-closure? u)
+;;;			     (recursive-closure? u))
+;;;			 (let* ((vs (closure-values u))
+;;;				(vs-new
+;;;				 (map-vector
+;;;				  (lambda (v) (unroll-once v vs-above))
+;;;				  vs)))
+;;;			  (if (every-vector-eq? vs vs-new)
+;;;			      u
+;;;			      (make-closure-with-new-values u vs-new))))
+;;;			((tagged-pair? u)
+;;;			 (let* ((car-old (tagged-pair-car u))
+;;;				(cdr-old (tagged-pair-cdr u))
+;;;				(car-new (unroll-once car-old vs-above))
+;;;				(cdr-new (unroll-once cdr-old vs-above)))
+;;;			  (if (and (eq? car-old car-new)
+;;;				   (eq? cdr-old cdr-new))
+;;;			      u
+;;;			      (make-tagged-pair
+;;;			       (tagged-pair-tags u) car-new cdr-new))))
 			(else (panic "Not (yet) implemented!"))))
 		 v)))
 	 (if (every-eq? v result) v result)))))
@@ -7211,14 +7271,17 @@
        ((boolean? v) (list v))
        ((abstract-real? v) (list v))
        ((primitive-procedure? v) (list v))
-       ((or (nonrecursive-closure? v) (recursive-closure? v))
-	(list (make-closure-with-new-values
-	       v (map-vector vlad-value->abstract-value (closure-values v)))))
-       ((tagged-pair? v)
-	(list (make-tagged-pair
-	       (tagged-pair-tags v)
-	       (vlad-value->abstract-value (tagged-pair-car v))
-	       (vlad-value->abstract-value (tagged-pair-cdr v)))))
+       ((branching-value? v)
+	(list (make-branching-value-with-new-values
+	       v (map vlad-value->abstract-value (branching-value-values v)))))
+;;;       ((or (nonrecursive-closure? v) (recursive-closure? v))
+;;;	(list (make-closure-with-new-values
+;;;	       v (map-vector vlad-value->abstract-value (closure-values v)))))
+;;;       ((tagged-pair? v)
+;;;	(list (make-tagged-pair
+;;;	       (tagged-pair-tags v)
+;;;	       (vlad-value->abstract-value (tagged-pair-car v))
+;;;	       (vlad-value->abstract-value (tagged-pair-cdr v)))))
        (else (panic "Not a vlad value!"))))
 
 ;;; brownfis: The set of expressions that the initial abstract analysis needs
@@ -7331,6 +7394,8 @@
 			    (nonrecursive-closure-values u)))
 		     ((recursive-closure? u) (panic "error2"))
 		     ((tagged-pair? u) (empty-abstract-analysis))
+		     ;; Should never have a bundle here, so let error happen
+		     ;; ((bundle? u) (empty-abstract-analysis))
 		     (else (format #t "u=~s~%" u) (panic "error3"))))
 	      v)
 	 (empty-abstract-analysis)))
@@ -7908,20 +7973,6 @@
 ;;; X merge range-updated analysis with new analyses
 ;;; - introduce imprecision to analysis
 
-(define (closure-pair-in-flow? bs)
- (let ((closure-pair-in-value?
-	(lambda (v) (some-abstract-value?
-		     (lambda (v vs) (and (not (up? v))
-					 (> (count-if closure? v) 0)
-					 (> (count-if tagged-pair? v) 0)))
-		     v))))
-  (some (lambda (b)
-	 (or (some-vector closure-pair-in-value?
-			  (abstract-environment-binding-abstract-values b))
-	     (closure-pair-in-value?
-	      (abstract-environment-binding-abstract-value b))))
-	bs)))
-
 (define (update-abstract-analysis bs bs-old)
  ;; The abstract evaluator induces an abstract analysis. This updates the
  ;; abstract values of all of the abstract-environment bindings of all of the
@@ -7945,20 +7996,6 @@
 			   '()
 			   (abstract-expression-binding-abstract-flow b-old)))
 	       (ei (positionq e *expression-list*))
-	       (side-effect
-		(when (and #f (closure-pair-in-flow? bs1))
-		 (format #t "*** WEIRD detected in bs1! ***~%")
-		 (write-checkpoint-to-file
-		  (list bs1 bs2 bs-old)
-		  (format #f "bs1-i~s-e~s" *num-updates* ei))
-		 (panic "BS1")))
-	       (side-effect
-		(when (and #f (closure-pair-in-flow? bs2))
-		 (format #t "*** WEIRD detected in bs2! ***~%")
-		 (write-checkpoint-to-file
-		  (list bs1 bs2 bs-old)
-		  (format #f "bs2-i~s-e~s" *num-updates* ei))
-		 (panic "BS2")))
 	       ;; abstract environments are unchanged in bs1
 	       ;; abstract environments can only be "added" in bs2
 	       ;;   - those "added" can be either:
@@ -7978,27 +8015,13 @@
 		   (string-append "e1154-flows-i" num-str)))))
 	       (bs-new
 		(add-new-abstract-environments-to-abstract-flow ei bs1 bs2))
-	       (side-effect
-		(when (and #f (closure-pair-in-flow? bs-new))
-		 (format #t "*** WEIRD detected in bs-new! ***~%")
-		 (write-checkpoint-to-file
-		  (list bs1 bs2 bs-old bs-new)
-		  (format #f "bs-new-i~s-e~s" *num-updates* ei))
-		 (panic "BS-NEW")))
 	       (value-hit?
 		(and (= *num-updates* 427)
 		     (>= (vector-ref *call-buckets*
 				     (positionq 'widen *bucket-names*))
 			 23899)))
 	       (bs-new2
-		(introduce-imprecision-to-abstract-flow ei bs-new bs-old))
-	       (side-effect
-		(when (and #f (closure-pair-in-flow? bs-new2))
-		 (format #t "*** WEIRD detected in bs-new2! ***~%")
-		 (write-checkpoint-to-file
-		  (list bs1 bs2 bs-old bs-new bs-new2)
-		  (format #f "bs-new2-i~s-e~s" *num-updates* ei))
-		 (panic "BS-NEW2"))))
+		(introduce-imprecision-to-abstract-flow ei bs-new bs-old)))
 	 (when (and #t
 		    (not value-hit?)
 		    (= *num-updates* 427)
@@ -8209,7 +8232,27 @@
 
 (define (abstract-real? u) (or (real? u) (eq? u 'real)))
 
-(define (abstract-zero u) (panic "abstract-zero not implemented!"))
+(define (abstract-zero u)
+ (panic "abstract-zero not (yet) implemented!")
+ (cond ((null? u) '())
+       ((and (not *church-booleans?*) (vlad-boolean? u)) '())
+       ((abstract-real? u) 0)
+       ((primitive-procedure? u) '())
+       ((nonrecursive-closure? u)
+	;; We must map the variant of abstract-zero that deals with abstract
+	;; values (and not proto-abstract value) over (base-values u)
+	(cons*ify (map zero (base-values u)) (nonrecursive-closure-tags u)))
+       ((recursive-closure? x)
+	(cons*ify (map zero (base-values x)) (recursive-closure-tags x)))
+       ((bundle? x)
+	(make-bundle (zero (bundle-primal x)) (zero (bundle-tangent x))))
+       ((reverse-tagged-value? x)
+	(make-reverse-tagged-value (zero (reverse-tagged-value-primal x))))
+       ((and (not *church-pairs?*) (tagged-pair? x))
+	(make-tagged-pair (tagged-pair-tags x)
+			  (zero (vlad-car x (tagged-pair-tags x)))
+			  (zero (vlad-cdr x (tagged-pair-tags x)))))
+       (else (fuck-up))))
 
 (define (abstract-plus u) (panic "abstract-plus not implemented!"))
 
@@ -8485,37 +8528,6 @@
 		    `(,(cons-expression-car e) ,(cons-expression-cdr e)))))
 	(else (fuck-up)))))
 
-(define (serialize-proto-abstract-value u es)
- (define (lookup-e e)
-  ;; (positionp expression-eqv? e es)
-  (shorten-expression e es))
- (let ((serialize-value (lambda (v) (serialize-abstract-value v es))))
-  (cond ((or (null? u) (vlad-boolean? u) (abstract-real? u)) u)
-	((primitive-procedure? u) (externalize u))
-	((nonrecursive-closure? u)
-	 (make-nonrecursive-closure
-	  (nonrecursive-closure-variables u)
-	  (map-vector serialize-value (nonrecursive-closure-values u))
-	  (nonrecursive-closure-variable u)
-	  (lookup-e (nonrecursive-closure-body u))))
-	((recursive-closure? u)
-	 (make-recursive-closure
-	  (recursive-closure-variables u)
-	  (map-vector serialize-value (recursive-closure-values u))
-	  (recursive-closure-procedure-variables u)
-	  (recursive-closure-argument-variables u)
-	  (map-vector lookup-e (recursive-closure-bodies u))
-	  (recursive-closure-index u)))
-	((tagged-pair? u)
-	 (make-tagged-pair (tagged-pair-tags u)
-			   (serialize-value (tagged-pair-car u))
-			   (serialize-value (tagged-pair-cdr u))))
-	(else (panic "Not yet supported")))))
-
-(define (serialize-abstract-value v es)
- (cond ((up? v) v)
-       (else (map (lambda (u) (serialize-proto-abstract-value u es)) v))))
-
 (define (map-threaded f l tx)
  (let loop ((l l) (l-new '()) (tx tx))
   (if (null? l)
@@ -8526,111 +8538,6 @@
 (define (map-vector-threaded f v tx)
  (let ((l-tx (map-threaded f (vector->list v) tx)))
   (cons (list->vector (car l-tx)) (cdr l-tx))))
-
-(define (serialize-proto-abstract-value2 u es vs)
- (define (lookup-e e) (positionq e es))
- (let ((serialize-value (lambda (v) (serialize-abstract-value v es))))
-  (cond ((or (null? u) (vlad-boolean? u) (abstract-real? u)) u)
-	((primitive-procedure? u) u)
-	((nonrecursive-closure? u)
-	 (let ((vs-tv (map-vector-threaded
-		       (lambda (v vs) (serialize-abstract-value2 v es vs))
-		       (nonrecursive-closure-values u)
-		       vs)))
-	  (make-nonrecursive-closure
-	   (nonrecursive-closure-variables u)
-	   (map-vector serialize-value (nonrecursive-closure-values u))
-	   (nonrecursive-closure-variable u)
-	   (lookup-e (nonrecursive-closure-body u)))))
-	((recursive-closure? u)
-	 (make-recursive-closure
-	  (recursive-closure-variables u)
-	  (map-vector serialize-value (recursive-closure-values u))
-	  (recursive-closure-procedure-variables u)
-	  (recursive-closure-argument-variables u)
-	  (map-vector lookup-e (recursive-closure-bodies u))
-	  (recursive-closure-index u)))
-	((tagged-pair? u)
-	 (make-tagged-pair (tagged-pair-tags u)
-			   (serialize-value (tagged-pair-car u))
-			   (serialize-value (tagged-pair-cdr u))))
-	(else (panic "Not yet supported")))))
-
-(define (serialize-abstract-value2 v es vs)
- (cond ((up? v) (cons v vs))
-       ((memq v vs) (cons (positionq v vs) vs))
-       (else
-	(map-threaded
-	 (lambda (u vs)
-	  (serialize-proto-abstract-value2 u es (append vs `(,v))))
-	 v vs))))
-
-(define (serialize-abstract-environment-binding b es)
- (let ((serialize-value (lambda (v) (serialize-abstract-value v es))))
-  (make-abstract-environment-binding
-   (map-vector serialize-value
-	       (abstract-environment-binding-abstract-values b))
-   (serialize-value (abstract-environment-binding-abstract-value b)))))
-
-(define (serialize-abstract-expression-binding b es)
- (define (lookup-e e) (positionq e es))
- (make-abstract-expression-binding
-  (lookup-e (abstract-expression-binding-expression b))
-  (map (lambda (b) (serialize-abstract-environment-binding b es))
-       (abstract-expression-binding-abstract-flow b))))
-
-(define (serialize-abstract-analysis bs es)
- (map (lambda (b) (serialize-abstract-expression-binding b es))
-      bs))
-
-(define (unserialize-proto-abstract-value u es)
- (define (lookup-e i) (list-ref es i))
- (let ((unserialize-value (lambda (v) (unserialize-abstract-value v es)))
-       (b (find-if (lambda (b) (eq? u (value-binding-variable b)))
-		   *value-bindings*)))
-  (cond ((or (null? u) (vlad-boolean? u) (abstract-real? u)) u)
-	((not (eq? b #f)) ; primitive procedure
-	 (value-binding-value b))
-	((nonrecursive-closure? u)
-	 (make-nonrecursive-closure
-	  (nonrecursive-closure-variables u)
-	  (map-vector unserialize-value (nonrecursive-closure-values u))
-	  (nonrecursive-closure-variable u)
-	  (lookup-e (nonrecursive-closure-body u))))
-	((recursive-closure? u)
-	 (make-recursive-closure
-	  (recursive-closure-variables u)
-	  (map-vector unserialize-value (recursive-closure-values u))
-	  (recursive-closure-procedure-variables u)
-	  (recursive-closure-argument-variables u)
-	  (map-vector lookup-e (recursive-closure-bodies u))
-	  (recursive-closure-index u)))
-	((tagged-pair? u)
-	 (make-tagged-pair (tagged-pair-tags u)
-			   (unserialize-value (tagged-pair-car u))
-			   (unserialize-value (tagged-pair-cdr u))))
-	(else (panic "Not yet supported")))))
-
-(define (unserialize-abstract-value v es)
- (cond ((up? v) v)
-       (else (map (lambda (u) (unserialize-proto-abstract-value u es)) v))))
-
-(define (unserialize-abstract-environment-binding b es)
- (let ((unserialize-value (lambda (v) (unserialize-abstract-value v es))))
-  (make-abstract-environment-binding
-   (map-vector unserialize-value
-	       (abstract-environment-binding-abstract-values b))
-   (unserialize-value (abstract-environment-binding-abstract-value b)))))
-
-(define (unserialize-abstract-expression-binding b es)
- (define (lookup-e i) (list-ref es i))
- (make-abstract-expression-binding
-  (lookup-e (abstract-expression-binding-expression b))
-  (map (lambda (b) (unserialize-abstract-environment-binding b es))
-       (abstract-expression-binding-abstract-flow b))))
-
-(define (unserialize-abstract-analysis bs es)
- (map (lambda (b) (unserialize-abstract-expression-binding b es)) bs))
 
 (define (serialize-expressions es)
  (define (lookup e) (positionq e es))
@@ -8947,31 +8854,44 @@
 	  ((eq? u1 'real)
 	   (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
 	  ((primitive-procedure? u1) (some (lambda (u2) (eq? u2 u1)) v2))
-	  ((nonrecursive-closure? u1)
+	  ;; For two pairs to possibly have a nonempty intersection, must they
+	  ;;   have the same set of tags?  This is what the following code
+	  ;;   assumes.
+	  ((branching-value? u1)
 	   (some (lambda (u2)
-		  (and (nonrecursive-closure? u2)
-		       (nonrecursive-closure-match? u1 u2)
-		       (nonempty-abstract-environment-intersection?
-			(nonrecursive-closure-values u1)
-			(nonrecursive-closure-values-matching u1 u2))))
+		  ;; Do we really need (branching-value? u2) here?
+		  ;;   branching-value-match? will check what's necessary
+		  (and (branching-value? u2)
+		       (branching-value-match? u1 u2)
+		       (every nonempty-abstract-value-intersection?
+			      (branching-value-values u1)
+			      (branching-value-values-matching u1 u2))))
 		 v2))
-	  ((recursive-closure? u1)
-	   (some (lambda (u2)
-		  (and (recursive-closure? u2)
-		       (recursive-closure-match? u1 u2)
-		       (nonempty-abstract-environment-intersection?
-			(recursive-closure-values u1)
-			(recursive-closure-values-matching u1 u2))))
-		 v2))
-	  ;; needs work: do I need to worry about tags yet?
-	  ((tagged-pair? u1)
-	   (some (lambda (u2)
-		  (and (tagged-pair? u2)
-		       (nonempty-abstract-value-intersection?
-			(tagged-pair-car u1) (tagged-pair-car u2))
-		       (nonempty-abstract-value-intersection?
-			(tagged-pair-cdr u1) (tagged-pair-cdr u2))))
-		 v2))
+;;;	  ((nonrecursive-closure? u1)
+;;;	   (some (lambda (u2)
+;;;		  (and (nonrecursive-closure? u2)
+;;;		       (nonrecursive-closure-match? u1 u2)
+;;;		       (nonempty-abstract-environment-intersection?
+;;;			(nonrecursive-closure-values u1)
+;;;			(nonrecursive-closure-values-matching u1 u2))))
+;;;		 v2))
+;;;	  ((recursive-closure? u1)
+;;;	   (some (lambda (u2)
+;;;		  (and (recursive-closure? u2)
+;;;		       (recursive-closure-match? u1 u2)
+;;;		       (nonempty-abstract-environment-intersection?
+;;;			(recursive-closure-values u1)
+;;;			(recursive-closure-values-matching u1 u2))))
+;;;		 v2))
+;;;	  ;; needs work: do I need to worry about tags yet?
+;;;	  ((tagged-pair? u1)
+;;;	   (some (lambda (u2)
+;;;		  (and (tagged-pair? u2)
+;;;		       (nonempty-abstract-value-intersection?
+;;;			(tagged-pair-car u1) (tagged-pair-car u2))
+;;;		       (nonempty-abstract-value-intersection?
+;;;			(tagged-pair-cdr u1) (tagged-pair-cdr u2))))
+;;;		 v2))
 	  (else (panic "Not a proto-abstract value!"))))
    v1)))
 

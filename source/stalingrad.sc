@@ -326,7 +326,6 @@
  (set! *new-cyclicize?* new-cyclicize?)
  (set! *no-apply-multiply?* no-apply-multiply?)
  (set! *new-widen?* new-widen?)
- (set! *new-remove?* new-remove?)
  (set! *new-l4-depth?* new-l4-depth?)
  (set! *picky?* picky?)
  (set! *imprec-no-unroll?* (not imprec-unroll?))
