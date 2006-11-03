@@ -3732,7 +3732,8 @@
  (let ((v
 	(let loop ((v v) (quote? #f))
 	 (cond
-	  ((and (or (not *church-pairs?*) (not *unabbreviate-transformed?*))
+	  ((and (or (not *unabbreviate-transformed?*)
+		    (and (not *church-pairs?*) (tagged-pair? v)))
 		(vlad-forward? v))
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (fuck-up))
@@ -3740,7 +3741,8 @@
 			   ,(loop (tangent v) quote?)))
 		 (else `(forward ,(loop (primal v) quote?)
 				 ,(loop (tangent v) quote?)))))
-	  ((and (or (not *church-pairs?*) (not *unabbreviate-transformed?*))
+	  ((and (or (not *unabbreviate-transformed?*)
+		    (and (not *church-pairs?*) (tagged-pair? v)))
 		(vlad-reverse? v))
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (fuck-up))
