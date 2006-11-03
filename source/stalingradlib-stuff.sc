@@ -3732,14 +3732,16 @@
  (let ((v
 	(let loop ((v v) (quote? #f))
 	 (cond
-	  ((and (not *unabbreviate-transformed?*) (vlad-forward? v))
+	  ((and (or (not *church-pairs?*) (not *unabbreviate-transformed?*))
+		(vlad-forward? v))
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (fuck-up))
 		  `(bundle ,(loop (primal v) quote?)
 			   ,(loop (tangent v) quote?)))
 		 (else `(forward ,(loop (primal v) quote?)
 				 ,(loop (tangent v) quote?)))))
-	  ((and (not *unabbreviate-transformed?*) (vlad-reverse? v))
+	  ((and (or (not *church-pairs?*) (not *unabbreviate-transformed?*))
+		(vlad-reverse? v))
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (fuck-up))
 		  `(*j ,(loop (*j-inverse v) quote?)))
