@@ -2466,11 +2466,10 @@
 	      (cons expression-cache-entry *forward-expression-cache*)))
        e-forward))))
 
-(define (forward-transform-inverse e-forward)
+(define (forward-transform-inverse e)
  (let ((cache-entry
 	(find-if (lambda (entry)
-		  (eq? (forward-expression-cache-entry-e-forward entry)
-		       e-forward))
+		  (eq? (forward-expression-cache-entry-e-forward entry) e))
 		 *forward-expression-cache*)))
   (cond ((and *cache-transformed-expressions?* cache-entry)
 	 (forward-expression-cache-entry-e cache-entry))
