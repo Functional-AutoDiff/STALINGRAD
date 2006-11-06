@@ -96,6 +96,8 @@
 		 (at-most-one
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
+		 (at-most-one ("cache-transformed-expressions"
+			       cache-transformed-expressions?))
 		 (at-most-one ("memoized" memoized?))
 		 (at-most-one ("church-booleans" church-booleans?))
 		 (at-most-one ("church-pairs" church-pairs?))
@@ -362,6 +364,7 @@
  (set! *anal?* (not not-anal?))
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
+ (set! *cache-transformed-expressions?* cache-transformed-expressions?)
  (set! *memoized?* memoized?)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
