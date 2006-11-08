@@ -138,6 +138,12 @@
 			       debug-new?
 			       (debug-level-new "level" integer-argument 0)))
 		 (at-most-one ("no-warn" no-warn?))
+		 (at-most-one ("expression-equality-using-identity"
+			       expression-equality-using-identity?)
+			      ("expression-equality-using-structural"
+			       expression-equality-using-structural?)
+			      ("expression-equality-using-alpha"
+			       expression-equality-using-alpha?))
 		 (at-most-one ("use-alpha-equivalence" use-alpha-equivalence?))
 		 (at-most-one
 		  ("memoize-alpha-matching" memoize-alpha-matching?))
@@ -196,6 +202,14 @@
  (when debug-new?
   (set! *debug-new?* debug-new?)
   (set! *debug-level-new* debug-level-new))
+ (when (or expression-equality-using-identity?
+	   expression-equality-using-structural?
+	   expression-equality-using-alpha?)
+  (set! *expression-equality-using-identity?*
+	expression-equality-using-identity?)
+  (set! *expression-equality-using-structural?*
+	expression-equality-using-structural?)
+  (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
  (when no-warn? (set! *warn?* #f))
  (set! *use-alpha-equivalence?* use-alpha-equivalence?)
  (set! *memoize-alpha-matching?* memoize-alpha-matching?)
