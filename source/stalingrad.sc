@@ -127,7 +127,8 @@
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
 		 (at-most-one
 		  ("only-initialized-flows" only-initialized-flows?)
-		  ("only-updated-bindings" only-updated-bindings?))
+		  ("only-updated-bindings" only-updated-bindings?)
+		  ("only-updated-bindings2" only-updated-bindings2?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
 		 (at-most-one ("exclude-prelude" exclude-prelude?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
@@ -138,6 +139,7 @@
 			       debug-new?
 			       (debug-level-new "level" integer-argument 0)))
 		 (at-most-one ("no-warn" no-warn?))
+		 (at-most-one ("old-initial" old-initial?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
 			      ("expression-equality-using-structural"
@@ -202,6 +204,7 @@
  (when debug-new?
   (set! *debug-new?* debug-new?)
   (set! *debug-level-new* debug-level-new))
+ (set! *old-initial?* old-initial?)
  (when (or expression-equality-using-identity?
 	   expression-equality-using-structural?
 	   expression-equality-using-alpha?)
@@ -218,117 +221,9 @@
  (when bucket-set?
   (set! *bucket-names*
 	(case bucket-set
-	 ((0) '(all
-		abstract-value-subset?
-		widen-abstract-value))
-	 ((1) '(all
-		subset?
-		unroll
-		remove-duplicates-circular-safe
-		duplicates
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((2) '(all
-		unroll
-		remove-duplicates-circular-safe
-		duplicates
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((3) '(all
-		subset?
-		unroll
-		remove-duplicates-circular-safe
-		duplicates
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((4) '(all
-		unroll
-		multiply-out-nonrecursive-closure
-		multiply-out-recursive-closure
-		abstract-value-in-matching...
-		remove-duplicates-circular-safe
-		duplicates
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((5) '(all
-		rest
-		var
-		lambda
-		application
-		letrec
-		finish
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((6) '(all
-		rest
-		var
-		lambda
-		application
-		letrec
-		finish
-		finish1
-		finish2
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
-	 ((7) '(all
-		rest
-		var
-		lambda
-		application
-		letrec
-		finish
-		finish1
-		finish1-true
-		finish1-false
-		finish2
-		add-new-environments
-		introduce-imprecision-to-flow1
-		remove-redundant-mappings
-		remove-redundant-mappings1
-		remove-redundant-mappings2
-		reals
-		closures
-		depth-l4
-		depth-l6))
+	 ((0) '(expression=?))
 	 (else (panic "undefined bucket set!"))))
-  (set! *time-buckets* (make-vector (length *bucket-names*) 0)))
+  (set! *time-buckets* (make-vector (length *bucket-names*) 0.)))
  (set! *test?* test?)
  (set! *new-subset?* new-subset?)
  (set! *paranoid-widen?* paranoid-widen?)
@@ -358,6 +253,7 @@
  (set! *track-flow-analysis?* track-flow-analysis?)
  (set! *only-initialized-flows?* only-initialized-flows?)
  (set! *only-updated-bindings?* only-updated-bindings?)
+ (set! *only-updated-bindings2?* only-updated-bindings2?)
  (set! *include-prior-values?* (not exclude-prior-values?))
  (set! *exclude-prelude?* exclude-prelude?)
  (initialize-basis!)
