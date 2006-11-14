@@ -285,6 +285,7 @@
 
 (define *only-initialized-flows?* #f)
 (define *only-updated-bindings?* #f)
+(define *only-updated-bindings2?* #f)
 
 (define *include-prior-values?* #t)
 
@@ -296,6 +297,7 @@
 (define *debug-level-new* 0)
 
 (define *warn?* #t)
+(define *old-initial?* #f)
 (define *expression-equality-using-identity?* #f)
 (define *expression-equality-using-structural?* #t)
 (define *expression-equality-using-alpha?* #f)
@@ -342,7 +344,13 @@
 (define *time-in-loop* 0)
 
 (define *bucket-names*
- '(imprec l1 l-rest widen sub safe remove1 remove2 check))
+ '(imprec l1 l-rest widen sub safe remove1 remove2 check
+	  abstract-analysis=? update-ranges update-domains
+	  recalc-unchanged? recalc-unchanged-e?
+	  recalc-app? recalc-app
+	  recalc-letrec? recalc-letrec
+	  recalc-cons? recalc-cons
+	  recalc-etc recalc-etc2 recalc-free-variables))
 (define *time-buckets* (make-vector (length *bucket-names*) 0.))
 (define *call-buckets* (make-vector (length *bucket-names*) 0))
 (define *bucket-stack* '())
@@ -865,7 +873,7 @@
 	 (else (fuck-up))))
        (else (fuck-up))))
 
-(define (variable=? x1 x2) (equal? x1 x2))
+(define (variable=? x1 x2) (equalq? x1 x2))
 
 (define (variable-base x)
  (if (and (list? x) (eq? (first x) 'alpha)) (variable-base (second x)) x))
@@ -4235,7 +4243,6 @@
 	result)))))
 
 (define (report-bucket-times)
- ;; ASSUMPTION - first bucket is always ALL
  (let ((total-time (- (clock-sample) *start-time*))
        (bucket-time
 	(reduce-vector
@@ -4246,25 +4253,21 @@
   (format #t "Total time in all buckets: ~a~%"
 	  (number->string-of-length-and-precision bucket-time 16 2))
   (for-each
-   (lambda (bucket-name bucket)
+   (lambda (bucket-name bucket calls)
     (format
-     #t "  time in ~s=~a (~a% total)~%"
+     #t "  time in ~s=~a (~a% total) (~s calls)~%"
      bucket-name
      (number->string-of-length-and-precision bucket 16 2)
      (if (and (positive? bucket) (positive? total-time))
 	 (number->string-of-length-and-precision
 	  (* 100 (/ bucket total-time)) 6 2)
-	 #f)))
+	 #f)
+     calls))
    *bucket-names*
-   (let ((time-buckets (vector->list *time-buckets*)))
-    (cond ((null? time-buckets) time-buckets)
-	  ((negative? (first time-buckets))
-	   (cons (+ (first time-buckets) total-time)
-		 (rest time-buckets)))
-	  (else time-buckets))))))
+   (vector->list *time-buckets*)
+   (vector->list *call-buckets*))))
 
 (define (report-bucket-times2)
- ;; ASSUMPTION - first bucket is always ALL
  (let ((total-time (- (clock-sample) *start-time*))
        (bucket-time
 	(reduce-vector
@@ -4275,17 +4278,19 @@
   (format #t "Total time in all buckets: ~a~%"
 	  (number->string-of-length-and-precision bucket-time 16 2))
   (for-each
-   (lambda (bucket-name bucket)
+   (lambda (bucket-name bucket calls)
     (format
-     #t "  time in ~s=~a (~a% total)~%"
+     #t "  time in ~s=~a (~a% total) (~s calls)~%"
      bucket-name
      (number->string-of-length-and-precision bucket 16 2)
      (if (and (positive? bucket) (positive? total-time))
 	 (number->string-of-length-and-precision
 	  (* 100 (/ bucket total-time)) 6 2)
-	 #f)))
+	 #f)
+     calls))
    *bucket-names*
-   (vector->list *time-buckets*))))
+   (vector->list *time-buckets*)
+   (vector->list *call-buckets*))))
 
 (define *alpha-match-cache-hits* 0)
 (define *hits-constant* 0)
@@ -4445,16 +4450,15 @@
 	  (expression-eqv? (cons-expression-cdr e1)
 			   (cons-expression-cdr e2)))))
 
+;;;(define *time-true* 0)
+;;;(define *time-false* 0)
+
 (define (expression=? e1 e2)
- (if #t
-     (cond (*expression-equality-using-identity?* (eq? e1 e2))
-	   (*expression-equality-using-structural?* (expression-eqv? e1 e2))
-	   (*expression-equality-using-alpha?* (panic "Not yet implemented!"))
-	   (else (fuck-up)))
-     (or (and *expression-equality-using-identity?* (eq? e1 e2))
-	 (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
-	 (and *expression-equality-using-alpha?*
-	      (panic "Not yet implemented!")))))
+ (cond (*expression-equality-using-identity?* (eq? e1 e2))
+       (*expression-equality-using-structural?* (expression-eqv? e1 e2))
+       (*expression-equality-using-alpha?*
+	(panic "Not yet implemented!"))
+       (else (fuck-up))))
 
 (define-structure expression-cache-entry expression result)
 
@@ -7116,89 +7120,102 @@
 	     (else (fuck-up)))))
 
 (define (initial-abstract-analysis e bs)
- (abstract-analysis-union
-  (if *church-booleans?*
-      (abstract-analysis-union
-       (empty-analysis-for-expression
-	(new-lambda-expression (nonrecursive-closure-variable vlad-true)
-			       (nonrecursive-closure-body vlad-true)))
-       (empty-analysis-for-expression
-	(new-lambda-expression (nonrecursive-closure-variable vlad-false)
-			       (nonrecursive-closure-body vlad-false))))
-      '())
-  (let loop ((e e) (vs (list->vector
-			(map
-			 (lambda (x)
-			  ;; here I am
-			  (vlad-value->abstract-value
-			   (value-binding-value
-			    (find-if
-			     (lambda (b)
-			      (variable=? x (value-binding-variable b)))
-			     bs))))
-			 (free-variables e)))))
-   ;; brownfis -- There is a subtle bug at play here.  We only wish to create
-   ;;             one abstract-expression-binding with a non-empty
-   ;;             abstract flow--that of the initial expression on which flow
-   ;;             analysis is being performed.  As it stands, this
-   ;;             implementation *tries* to do so for the body of every
-   ;;             constant nonrecursive closure (#t/#f).  This ends up causing
-   ;;             an error, as there is one free variable in the closure-body
-   ;;             of #t/#f--a.  To guard against this, I've had the reduce
-   ;;             portion loop on the lambda expression which formed the
-   ;;             closure, not on the closure itself.  Otherwise, we'd need to
-   ;;             supply an abstract value for the free variable, but there is
-   ;;             no such abstract value at this point of the analysis.
-   (abstract-analysis-union
-    ;; Do we even need to create an abstract expression binding for each value
-    ;; right now?  What if we delay doing so until needed?
-    (abstract-analysis-union
-     (abstract-analysis-rooted-at e vs)
-     (rest		 ; rest isn't necessary but saves a LITTLE comp effort
-      (let loop ((e e))
-       (cons (make-abstract-expression-binding e (empty-abstract-flow))
-	     (cond ((variable-access-expression? e) (empty-abstract-analysis))
-		   ((lambda-expression? e) (loop (lambda-expression-body e)))
-		   ((application? e)
-		    (append (loop (application-callee e))
-			    (loop (application-argument e))))
-		   ((letrec-expression? e)
-		    (append (loop (letrec-expression-body e))
-			    (reduce append
-				    (map loop (letrec-expression-bodies e))
-				    (empty-abstract-flow))))
-		   ((cons-expression? e)
-		    (append (loop (cons-expression-car e))
-			    (loop (cons-expression-cdr e))))
-		   (else (fuck-up)))))))
-    (reduce
-     abstract-analysis-union
-     (vector->list
-      (map-vector
-       (lambda (v)
+ (if (not *old-initial?*)
+     (let ((vs (list->vector
+		(map (lambda (x)
+		      ;; here I am
+		      (vlad-value->abstract-value
+		       (value-binding-value
+			(find-if
+			 (lambda (b) (variable=? x (value-binding-variable b)))
+			 bs))))
+		     (free-variables e)))))
+      (abstract-analysis-rooted-at e vs))
+     (abstract-analysis-union
+      (if *church-booleans?*
+	  (abstract-analysis-union
+	   (empty-analysis-for-expression
+	    (new-lambda-expression (nonrecursive-closure-variable vlad-true)
+				   (nonrecursive-closure-body vlad-true)))
+	   (empty-analysis-for-expression
+	    (new-lambda-expression (nonrecursive-closure-variable vlad-false)
+				   (nonrecursive-closure-body vlad-false))))
+	  '())
+      (let loop ((e e) (vs (list->vector
+			    (map
+			     (lambda (x)
+			      ;; here I am
+			      (vlad-value->abstract-value
+			       (value-binding-value
+				(find-if
+				 (lambda (b)
+				  (variable=? x (value-binding-variable b)))
+				 bs))))
+			     (free-variables e)))))
+       ;; brownfis -- There is a subtle bug at play here.  We only wish to create
+       ;;             one abstract-expression-binding with a non-empty
+       ;;             abstract flow--that of the initial expression on which flow
+       ;;             analysis is being performed.  As it stands, this
+       ;;             implementation *tries* to do so for the body of every
+       ;;             constant nonrecursive closure (#t/#f).  This ends up causing
+       ;;             an error, as there is one free variable in the closure-body
+       ;;             of #t/#f--a.  To guard against this, I've had the reduce
+       ;;             portion loop on the lambda expression which formed the
+       ;;             closure, not on the closure itself.  Otherwise, we'd need to
+       ;;             supply an abstract value for the free variable, but there is
+       ;;             no such abstract value at this point of the analysis.
+       (abstract-analysis-union
+	;; Do we even need to create an abstract expression binding for each value
+	;; right now?  What if we delay doing so until needed?
+	(abstract-analysis-union
+	 (abstract-analysis-rooted-at e vs)
+	 (rest		 ; rest isn't necessary but saves a LITTLE comp effort
+	  (let loop ((e e))
+	   (cons (make-abstract-expression-binding e (empty-abstract-flow))
+		 (cond ((variable-access-expression? e)
+			(empty-abstract-analysis))
+		       ((lambda-expression? e)
+			(loop (lambda-expression-body e)))
+		       ((application? e)
+			(append (loop (application-callee e))
+				(loop (application-argument e))))
+		       ((letrec-expression? e)
+			(append (loop (letrec-expression-body e))
+				(reduce append
+					(map loop (letrec-expression-bodies e))
+					(empty-abstract-flow))))
+		       ((cons-expression? e)
+			(append (loop (cons-expression-car e))
+				(loop (cons-expression-cdr e))))
+		       (else (fuck-up)))))))
 	(reduce
 	 abstract-analysis-union
-	 (map (lambda (u)
-	       (cond ((null? u) (empty-abstract-analysis))
-		     ((eq? u #t) (empty-abstract-analysis))
-		     ((eq? u #f) (empty-abstract-analysis))
-		     ((real? u) (empty-abstract-analysis))
-		     ((eq? u 'real) (empty-abstract-analysis))
-		     ((primitive-procedure? u) (empty-abstract-analysis))
-		     ((nonrecursive-closure? u)
-		      (loop (new-lambda-expression
-			     (nonrecursive-closure-variable u)
-			     (nonrecursive-closure-body u))
-			    (nonrecursive-closure-values u)))
-		     ((recursive-closure? u) (panic "error2"))
-		     ((tagged-pair? u) (empty-abstract-analysis))
-		     ;; Should never have a bundle here, so let error happen
-		     ;; ((bundle? u) (empty-abstract-analysis))
-		     (else (format #t "u=~s~%" u) (panic "error3"))))
-	      v)
-	 (empty-abstract-analysis)))
-       vs))
-     (empty-abstract-analysis))))))
+	 (vector->list
+	  (map-vector
+	   (lambda (v)
+	    (reduce
+	     abstract-analysis-union
+	     (map (lambda (u)
+		   (cond ((null? u) (empty-abstract-analysis))
+			 ((eq? u #t) (empty-abstract-analysis))
+			 ((eq? u #f) (empty-abstract-analysis))
+			 ((real? u) (empty-abstract-analysis))
+			 ((eq? u 'real) (empty-abstract-analysis))
+			 ((primitive-procedure? u) (empty-abstract-analysis))
+			 ((nonrecursive-closure? u)
+			  (loop (new-lambda-expression
+				 (nonrecursive-closure-variable u)
+				 (nonrecursive-closure-body u))
+				(nonrecursive-closure-values u)))
+			 ((recursive-closure? u) (panic "error2"))
+			 ((tagged-pair? u) (empty-abstract-analysis))
+			 ;; Should never have a bundle here, so let error happen
+			 ;; ((bundle? u) (empty-abstract-analysis))
+			 (else (format #t "u=~s~%" u) (panic "error3"))))
+		  v)
+	     (empty-abstract-analysis)))
+	   vs))
+	 (empty-abstract-analysis)))))))
 
 (define (abstract-value-in-matching-abstract-environment e vs bs)
  ;; vs is an abstract environment. bs is an abstract analysis. We want to find
@@ -7460,28 +7477,43 @@
 	     num))))
   result))
 
+(define (report-time-for-lite activity thunk)
+ (let* ((time-start (clock-sample))
+	(result (thunk))
+	(time-end (clock-sample))
+	(time (- time-end time-start))
+	(i (positionq activity *bucket-names*)))
+  (when (not (eq? #f i))
+   (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time)))
+  result))
+
 (define (update-abstract-analysis-ranges bs bs-old)
  ;; bs is the abstract analysis from some iteration i of flow-analysis
  ;; bs-old is the abstract analysis from iteration i-1 of flow-analysis
  (let* ((bs-unchanged?
-	 (map
-	  (lambda (b)
-	   (let* ((e (abstract-expression-binding-expression b))
-		  (bs-e (abstract-expression-binding-abstract-flow b))
-		  (bs-old-e (expression-abstract-flow2 e bs-old)))
-	    (cons e (and (not (eq? bs-old-e #f))
-			 ;; does eq? work well enough?
-			 (or (eq? bs-e bs-old-e)
-			     (set-equalq? bs-e bs-old-e))))))
-	  bs))
+	 (report-time-for
+	  'recalc-unchanged? #f #f #f
+	  (lambda ()
+	   (map
+	    (lambda (b)
+	     (let* ((e (abstract-expression-binding-expression b))
+		    (bs-e (abstract-expression-binding-abstract-flow b))
+		    (bs-old-e (expression-abstract-flow2 e bs-old)))
+	      (cons e (and (not (eq? bs-old-e #f))
+			   ;; does eq? work well enough?
+			   (or (eq? bs-e bs-old-e)
+			       (set-equalq? bs-e bs-old-e))))))
+	    bs))))
 	(bs-unchanged-for-e?
 	 (lambda (e)
-	  (let ((result (assp expression=? e bs-unchanged?)))
-	   (if result (cdr result) #f)))))
+	  (report-time-for
+	   'recalc-unchanged-e? #f #f #f
+	   (lambda ()
+	    (let ((result (assp expression=? e bs-unchanged?)))
+	     (if result (cdr result) #f)))))))
   (map
    (lambda (b)
     (let* ((e (abstract-expression-binding-expression b))
-	   (ei (positionp expression=? e *expression-list*))
 	   (xs (free-variables e)))
      (if (or (variable-access-expression? e) (lambda-expression? e))
 	 b
@@ -7520,32 +7552,39 @@
 		       ;;        u = <sigma,e'> => (bs e') = (bs-old e') AND
 		       ;;        u = <sigma,xs,es',i> =>
 		       ;;                       (bs es'[i]) = (bs-old es'[i])
-		       (if (and
-			    *fast-apply?*
-			    (mapping-with-vs-in-flow?
-			     vs (expression-abstract-flow3 e bs-old))
-			    (bs-unchanged-for-e? e1)
-			    (bs-unchanged-for-e? e2)
-			    (every
-			     (lambda (u)
-			      (cond
-			       ((nonrecursive-closure? u)
-				(bs-unchanged-for-e?
-				 (nonrecursive-closure-body u)))
-			       ((recursive-closure? u)
-				(bs-unchanged-for-e?
-				 (vector-ref (recursive-closure-bodies u)
-					     (recursive-closure-index u))))
-			       (else #t)))
-			     (abstract-value-in-matching-abstract-environment
-			      e1 (restrict-environment vs xs xs1) bs)))
+		       (if
+			(report-time-for
+			 'recalc-app? #f #f #f
+			 (lambda ()
+			  (and
+			   *fast-apply?*
+			   (mapping-with-vs-in-flow?
+			    vs (expression-abstract-flow3 e bs-old))
+			   (bs-unchanged-for-e? e1)
+			   (bs-unchanged-for-e? e2)
+			   (every
+			    (lambda (u)
+			     (cond
+			      ((nonrecursive-closure? u)
+			       (bs-unchanged-for-e?
+				(nonrecursive-closure-body u)))
+			      ((recursive-closure? u)
+			       (bs-unchanged-for-e?
+				(vector-ref (recursive-closure-bodies u)
+					    (recursive-closure-index u))))
+			      (else #t)))
+			    (abstract-value-in-matching-abstract-environment
+			     e1 (restrict-environment vs xs xs1) bs)))))
 			   v
-			   (abstract-apply
-			    (abstract-value-in-matching-abstract-environment
-			     e1 (restrict-environment vs xs xs1) bs)
-			    (abstract-value-in-matching-abstract-environment
-			     e2 (restrict-environment vs xs xs2) bs)
-			    bs))))
+			   (report-time-for
+			    'recalc-app #f #f #f
+			    (lambda ()
+			     (abstract-apply
+			      (abstract-value-in-matching-abstract-environment
+			       e1 (restrict-environment vs xs xs1) bs)
+			      (abstract-value-in-matching-abstract-environment
+			       e2 (restrict-environment vs xs xs2) bs)
+			      bs))))))
 		     ((letrec-expression? e)
 		      ;; e: (letrec x1 = e1, ..., xn = en in e-body)
 		      (let ((es (letrec-expression-bodies e))
@@ -7563,27 +7602,33 @@
 		       ;;        evaluated to form bs as we're trying to
 		       ;;        evaluate now.
 		       ;;   2. (bs e-body) = (bs-old e-body)
-		       (if (and *fast-letrec?*
-				(mapping-with-vs-in-flow?
-				 vs (expression-abstract-flow3 e bs-old))
-				(bs-unchanged-for-e? e-body))
+		       (if (report-time-for
+			    'recalc-letrec? #f #f #f
+			    (lambda ()
+			     (and *fast-letrec?*
+				  (mapping-with-vs-in-flow?
+				   vs (expression-abstract-flow3 e bs-old))
+				  (bs-unchanged-for-e? e-body))))
 			   v
-			   (abstract-value-in-matching-abstract-environment
-			    e-body
-			    ;; tag 1
-			    (list->vector
-			     (map (lambda (x)
-				   (if (memp variable=? x xs1)
-				       (new-recursive-closure
-					xs-closure
-					(restrict-environment vs xs xs-closure)
-					(list->vector xs1)
-					(list->vector xs2)
-					(list->vector es)
-					(positionp variable=? x xs1))
-				       (vector-ref vs (positionq x xs))))
-				  (free-variables e-body)))
-			    bs))))
+			   (report-time-for
+			    'recalc-letrec #f #f #f
+			    (lambda ()
+			     (abstract-value-in-matching-abstract-environment
+			      e-body
+			      ;; tag 1
+			      (list->vector
+			       (map (lambda (x)
+				     (if (memp variable=? x xs1)
+					 (new-recursive-closure
+					  xs-closure
+					  (restrict-environment vs xs xs-closure)
+					  (list->vector xs1)
+					  (list->vector xs2)
+					  (list->vector es)
+					  (positionp variable=? x xs1))
+					 (vector-ref vs (positionq x xs))))
+				    (free-variables e-body)))
+			      bs))))))
 		     ((cons-expression? e)
 		      ;; e: (cons e1 e2)
 		      ;; e can be safely left un-updated if:
@@ -7600,33 +7645,44 @@
 			     (e2 (cons-expression-cdr e))
 			     (xs1 (free-variables e1))
 			     (xs2 (free-variables e2)))
-		       (if (and *fast-cons?*
-				(mapping-with-vs-in-flow?
-				 vs (expression-abstract-flow3 e bs-old))
-				(bs-unchanged-for-e? e1)
-				(bs-unchanged-for-e? e2))
+		       (if (report-time-for
+			    'recalc-cons? #f #f #f
+			    (lambda ()
+			     (and *fast-cons?*
+				  (mapping-with-vs-in-flow?
+				   vs (expression-abstract-flow3 e bs-old))
+				  (bs-unchanged-for-e? e1)
+				  (bs-unchanged-for-e? e2))))
 			   v
-			   (let
-			     ((v-car
-			       (abstract-value-in-matching-abstract-environment
-				e1 (restrict-environment vs xs xs1) bs))
-			      (v-cdr
-			       (abstract-value-in-matching-abstract-environment
-				e2 (restrict-environment vs xs xs2) bs)))
-			    (if (or (null? v-car) (null? v-cdr))
-				(empty-abstract-value)
-				(list
-				 (make-tagged-pair
-				  (cons-expression-tags e) v-car v-cdr)))))))
+			   (report-time-for
+			    'recalc-cons #f #f #f
+			    (lambda ()
+			     (let
+			       ((v-car
+				 (abstract-value-in-matching-abstract-environment
+				  e1 (restrict-environment vs xs xs1) bs))
+				(v-cdr
+				 (abstract-value-in-matching-abstract-environment
+				  e2 (restrict-environment vs xs xs2) bs)))
+			      (if (or (null? v-car) (null? v-cdr))
+				  (empty-abstract-value)
+				  (list
+				   (make-tagged-pair
+				    (cons-expression-tags e) v-car v-cdr)))))))))
 		     (else (fuck-up)))))
-		 (if *include-prior-values?*
-		     (if (or (eq? v-new v) (abstract-value-subset? v-new v))
-			 b2
-			 (make-abstract-environment-binding
-			  vs (abstract-value-union v v-new)))
-		     (make-abstract-environment-binding vs v-new))))
+		 (report-time-for
+		  'recalc-etc #f #f #f
+		  (lambda ()
+		   (if *include-prior-values?*
+		       (if (or (eq? v-new v) (abstract-value-subset? v-new v))
+			   b2
+			   (make-abstract-environment-binding
+			    vs (abstract-value-union v v-new)))
+		       (make-abstract-environment-binding vs v-new))))))
 	       bs-e)))
-	   (if (every-eq? result bs-e) bs-e result))))))
+	   (report-time-for
+	    'recalc-etc2 #f #f #f
+	    (lambda () (if (every-eq? result bs-e) bs-e result))))))))
    bs)))
 
 (define (update-abstract-analysis-domains bs bs-old)
@@ -7740,8 +7796,12 @@
  ;; value is calculated by abstract evaluation in the abstract environment of
  ;; the abstract-environment binding. Recursive calls to the abstract evaluator
  ;; are replaced with abstract-value-in-matching-abstract-environment.
- (let* ((bs1 (update-abstract-analysis-ranges bs bs-old))
-	(bs2 (update-abstract-analysis-domains bs bs-old))
+ (let* ((bs1 (report-time-for
+	      'update-ranges #f #f #f
+	      (lambda () (update-abstract-analysis-ranges bs bs-old))))
+	(bs2 (report-time-for
+	      'update-domains #f #f #f
+	      (lambda () (update-abstract-analysis-domains bs bs-old))))
 	(bs-new-e (remove-if (lambda (b)
 			      (memp expression=?
 				    (abstract-expression-binding-expression b)
@@ -7878,16 +7938,27 @@
 		 (*only-updated-bindings?*
 		  (remove-if
 		   (lambda (b)
-		    (let ((e (abstract-expression-binding-expression b)))
-		     (abstract-flow=?
-		      (expression-abstract-flow e bs)
-		      (abstract-expression-binding-abstract-flow b))))
+		    (let* ((e (abstract-expression-binding-expression b))
+			   (flow (expression-abstract-flow e bs)))
+		     (and flow
+			  (abstract-flow=?
+			   flow
+			   (abstract-expression-binding-abstract-flow b)))))
+		   bs-prime))
+		 (*only-updated-bindings2?*
+		  (remove-if
+		   (lambda (b)
+		    (let* ((e (abstract-expression-binding-expression b)))
+		     (eq? (expression-abstract-flow2 e bs)
+			  (abstract-expression-binding-abstract-flow b))))
 		   bs-prime))
 		 (else bs-prime))))
 	   (newline))
 	  (let ((done?
 		 (if *quiet?*
-		     (abstract-analysis=? bs bs-prime)
+		     (report-time-for
+		      'abstract-analysis=? #f #f #f
+		      (lambda () (abstract-analysis=? bs bs-prime)))
 		     (time "convergence-check-time:~a~%"
 			   (lambda () (abstract-analysis=? bs bs-prime))))))
 	   (when (not *quiet?*)
@@ -7900,6 +7971,8 @@
 			    *num-updates*)
 		    bs))
 	       (loop bs-prime bs))))))))
+;;;    (format #t "*** time-true =  ~s~%*** time-false = ~s ~%"
+;;;	    *time-true* *time-false*)
     (if *quiet?*
 	(report-bucket-times2)
 	(report-bucket-times))
@@ -8089,7 +8162,7 @@
 (define (abstract-primal-v v-forward)
  (if (up? v-forward)
      v-forward
-     (reduce abstract-value-union
+     (reduce abstract-value-union-without-unroll
 	     (map abstract-primal-u v-forward)
 	     (empty-abstract-value))))
 
@@ -8202,7 +8275,7 @@
 (define (abstract-tangent-v v)
  (if (up? v)
      v
-     (reduce abstract-value-union
+     (reduce abstract-value-union-without-unroll
 	     (map abstract-tangent-u v)
 	     (empty-abstract-value))))
 
@@ -8277,20 +8350,45 @@
 
 ;;; \AB{V} x \AB{V} -> \AB{V}
 (define (abstract-bundle-v v v-perturbation)
- (reduce abstract-value-union
-	 (map (lambda (u)
-	       (reduce abstract-value-union
-		       (map (lambda (u-perturbation)
-			     (abstract-bundle-u u u-perturbation))
-			    ;; should this be closed-... or other???
-			    v-perturbation)
-		       (empty-abstract-value)))
-	      ;; should this be closed-... or other???
-	      v)
-	 (empty-abstract-value)))
+ (abstract-bundle-v-internal v v-perturbation '()))
 			    
+(define (abstract-bundle-v-internal v v-perturbation cs)
+ (cond ((and (up? v) (up? v-perturbation)
+	     (= (up-index v) (up-index v-perturbation)))
+	v)
+       ((up? v) (abstract-bundle-v-internal
+		 (car (list-ref cs (up-index v))) v-perturbation cs))
+       ((up? v-perturbation)
+	(abstract-bundle-v-internal
+	 v (cdr (list-ref cs (up-index v-perturbation))) cs))
+       (else (let ((i (position-if
+		       (lambda (c) (and (eq? (car c) v)
+					(eq? (cdr c) v-perturbation)))
+		       cs))
+		   (cs-new (cons (cons v v-perturbation) cs)))
+	      (if (not (eq? i #f))
+		  (make-up i)
+		  (reduce
+		   abstract-value-union-without-unroll
+		   (map
+		    (lambda (u)
+		     (reduce
+		      abstract-value-union-without-unroll
+		      (map
+		       (lambda (u-perturbation)
+			(abstract-bundle-u-internal u u-perturbation cs-new))
+		       v-perturbation)
+		      (empty-abstract-value)))
+		    v)
+		   (empty-abstract-value)))))))
+
 ;;; \AB{U} x \AB{U} -> \AB{V}
 (define (abstract-bundle-u u u-perturbation)
+ (abstract-bundle-u-internal u u-perturbation '()))
+
+(define (abstract-bundle-u-internal u u-perturbation cs)
+ ;; Does tagged-null? need any modifications to handle backlinks???
+ (define (tagged-null?-v tags v) (some (lambda (u) (tagged-null?-u tags u)) v))
  (define (tagged-null?-u tags u)
   (if (null? tags)
       (null? u)
@@ -8302,56 +8400,70 @@
 	(and (reverse-tagged-value? u)
 	     (tagged-null?-v (rest tags) (reverse-tagged-value-primal u))))
        (else (fuck-up)))))
- (define (tagged-null?-v tags v) (some (lambda (u) (tagged-null?-u tags u)) v))
- (define (legitimate*? vs v-perturbations tags)
+ (define (legitimate*? vs v-perturbations tags cs)
   ;; VS is a list, V-PERTURBATIONS is an abstract tuple.
   (or (and (null? vs) (tagged-null?-v tags v-perturbations))
       (and (not (null? vs))
 	   (null? (rest vs))
-	   (legitimate?-v (first vs) v-perturbations))
+	   (legitimate?-v (first vs) v-perturbations cs))
       (and (not (null? vs))
 	   (not (null? (rest vs)))
 	   (abstract-vlad-pair? v-perturbations tags)
-	   (legitimate?-v (first vs)
-			  (abstract-vlad-car-v v-perturbations tags))
-	   (legitimate*? (rest vs)
-			 (abstract-vlad-cdr-v v-perturbations tags)
-			 tags))))
- (define (legitimate?-v v v-perturbation)
-  (some (lambda (u)
-	 (some (lambda (u-perturbation) (legitimate?-u u u-perturbation))
-	       v-perturbation))
-	v))
- (define (legitimate?-u u u-perturbation)
+	   (legitimate?-v
+	    (first vs) (abstract-vlad-car-v v-perturbations tags) cs)
+	   (legitimate*?
+	    (rest vs) (abstract-vlad-cdr-v v-perturbations tags) tags cs))))
+ (define (legitimate?-v v v-perturbation cs)
+  (cond ((and (up? v) (up? v-perturbation)
+	      (= (up-index v) (up-index v-perturbation)))
+	 #t)
+	((up? v)
+	 (legitimate?-v (car (list-ref cs (up-index v))) v-perturbation cs))
+	((up? v-perturbation)
+	 (legitimate?-v v (cdr (list-ref cs (up-index v-perturbation))) cs))
+	(else
+	 (let ((i (position-if (lambda (c) (and (eq? (car c) v)
+						(eq? (cdr c) v-perturbation)))
+			       cs))
+	       (cs-new (cons (cons v v-perturbation) cs)))
+	  (or (not (eq? i #f))
+	      (some (lambda (u) (some (lambda (u-perturbation)
+				       (legitimate?-u u u-perturbation cs-new))
+				      v-perturbation))
+		    v))))))
+ (define (legitimate?-u u u-perturbation cs)
   (or (and (null? u) (null? u-perturbation))
       (and (not *church-booleans?*) (vlad-boolean? u) (null? u-perturbation))
-      (and (real? u) (real? u-perturbation))
+      (and (abstract-real? u) (abstract-real? u-perturbation))
       (and (primitive-procedure? u) (null? u-perturbation))
       (and (nonrecursive-closure? u)
 	   (legitimate*? (abstract-base-values-u u)
 			 (list u-perturbation)
-			 (nonrecursive-closure-tags u)))
+			 (nonrecursive-closure-tags u)
+			 cs))
       (and (recursive-closure? u)
 	   (legitimate*? (abstract-base-values-u u)
 			 (list u-perturbation)
-			 (recursive-closure-tags u)))
+			 (recursive-closure-tags u)
+			 cs))
       (and (bundle? u)
 	   (bundle? u-perturbation)
-	   (legitimate?-v (bundle-primal u)
-			  (bundle-primal u-perturbation))
-	   (legitimate?-v (bundle-tangent u)
-			  (bundle-tangent u-perturbation)))
+	   (legitimate?-v (bundle-primal u) (bundle-primal u-perturbation) cs)
+	   (legitimate?-v
+	    (bundle-tangent u) (bundle-tangent u-perturbation) cs))
       (and (reverse-tagged-value? u)
 	   (reverse-tagged-value? u-perturbation)
 	   (legitimate?-v (reverse-tagged-value-primal u)
-			  (reverse-tagged-value-primal u-perturbation)))
+			  (reverse-tagged-value-primal u-perturbation)
+			  cs))
       (and (not *church-pairs?*)
 	   (tagged-pair? u)
 	   (tagged-pair? u-perturbation)
 	   (equal? (tagged-pair-tags u) (tagged-pair-tags u-perturbation))
-	   (legitimate?-v (tagged-pair-car u) (tagged-pair-car u-perturbation))
-	   (legitimate?-v (tagged-pair-cdr u)
-			  (tagged-pair-cdr u-perturbation)))))
+	   (legitimate?-v
+	    (tagged-pair-car u) (tagged-pair-car u-perturbation) cs)
+	   (legitimate?-v
+	    (tagged-pair-cdr u) (tagged-pair-cdr u-perturbation) cs))))
  (define (bundle* vs v-perturbations tags)
   ;; VS is a list of abstract values,
   ;; V-PERTURBATIONS is an abstract vlad tuple of abstract values,
@@ -8365,93 +8477,84 @@
 			tags)))))
  ;; \AB{V} x \AB{V} -> \AB{V}
  (define (bundle-v v v-perturbation)
-  (if (not #f)
-      (reduce abstract-value-union
-	      (map (lambda (u)
-		    (reduce abstract-value-union
-			    (map (lambda (u-perturbation)
-				  (bundle-u u u-perturbation))
-				 v-perturbation)
-			    (empty-abstract-value)))
-		   v)
-	      (empty-abstract-value))))
+  (abstract-bundle-v-internal v v-perturbation cs))
  ;; \AB{U} x \AB{U} -> \AB{V}
- (define (bundle-u u u-perturbation)
-  (cond
-   ((not (legitimate?-u u u-perturbation))
-    (compile-time-warning "Mismatch!" u u-perturbation))
-   ((null? u) (list (make-bundle (list u) (list u-perturbation))))
-   ((and (not *church-booleans?*) (vlad-boolean? u))
-    (list (make-bundle (list u) (list u-perturbation))))
-   ((real? u) (list (make-bundle (list u) (list u-perturbation))))
-   ((primitive-procedure? u)
-    (unless (null? u-perturbation) (fuck-up))
-    (vlad-value->abstract-value (primitive-procedure-forward u)))
-   ((nonrecursive-closure? u)
-    (let* ((e (forward-transform
-	       (new-lambda-expression (nonrecursive-closure-variable u)
-				      (nonrecursive-closure-body u))))
-	   (x (lambda-expression-variable e))
-	   (xs (free-variables e)))
-     (list (make-nonrecursive-closure
-	    xs
-	    ;; This should use a generalized add/remove-slots here.
-	    (list->vector
-	     (let ((xs (abstract-base-variables-u u))
-		   ;; needs work: change bundle*
-		   (vs (bundle* (abstract-base-values-u u)
-				(list u-perturbation)
-				(nonrecursive-closure-tags u))))
-	      (map (lambda (x v)
-		    (let ((i (positionp variable=? x xs)))
-		     (if i (list-ref vs i) (abstract-j*-v v))))
-		   (nonrecursive-closure-variables u)
-		   (vector->list (nonrecursive-closure-values u)))))
-	    x
-	    (index x xs (lambda-expression-body e))))))
-   ((recursive-closure? u)
-    (let* ((es (vector->list
-		(map-vector (lambda (x e)
-			     (forward-transform (new-lambda-expression x e)))
-			    (recursive-closure-argument-variables u)
-			    (recursive-closure-bodies u))))
-	   (xs1 (map-vector forwardify
-			    (recursive-closure-procedure-variables u)))
-	   (xs (letrec-recursive-closure-variables
-		(vector->list xs1)
-		(map lambda-expression-variable es)
-		(map lambda-expression-body es))))
-     (list (make-recursive-closure
-	    xs
-	    ;; This should use a generalized add/remove-slots here.
-	    (list->vector
-	     (let ((xs (abstract-base-variables-u u))
-		   (vs (bundle* (abstract-base-values-u u)
-				(list u-perturbation)
-				(recursive-closure-tags x))))
-	      (map (lambda (x v)
-		    (let ((i (positionp variable=? x xs)))
-		     (if i (list-ref vs i) (abstract-j*-v v))))
-		   (recursive-closure-variables x)
-		   (vector->list (recursive-closure-values x)))))
-	    xs1
-	    (list->vector (map lambda-expression-variable es))
-	    (list->vector (map (lambda (e)
-				(index (lambda-expression-variable e)
-				       (append (vector->list xs1) xs)
-				       (lambda-expression-body e)))
-			       es))
-	    (recursive-closure-index u)))))
-   ((bundle? u) (list (make-bundle (list u) (list u-perturbation))))
-   ((reverse-tagged-value? u)
-    (list (make-bundle (list u) (list u-perturbation))))
-   ((and (not *church-pairs?*) (tagged-pair? u))
-    (list (make-tagged-pair
-	   (cons 'forward (tagged-pair-tags u))
-	   (bundle-v (tagged-pair-car u) (tagged-pair-car u-perturbation))
-	   (bundle-v (tagged-pair-cdr u) (tagged-pair-cdr u-perturbation)))))
-   (else (fuck-up))))
- (bundle-u u u-perturbation))
+ (cond
+  ((not (legitimate?-u u u-perturbation cs))
+   (compile-time-warning "Mismatch!" u u-perturbation))
+  ((null? u) (list (make-bundle (list u) (list u-perturbation))))
+  ((and (not *church-booleans?*) (vlad-boolean? u))
+   (list (make-bundle (list u) (list u-perturbation))))
+  ((abstract-real? u) (list (make-bundle (list u) (list u-perturbation))))
+  ((primitive-procedure? u)
+   (unless (null? u-perturbation) (fuck-up))
+   (vlad-value->abstract-value (primitive-procedure-forward u)))
+  ((nonrecursive-closure? u)
+   (let* ((e (forward-transform
+	      (new-lambda-expression (nonrecursive-closure-variable u)
+				     (nonrecursive-closure-body u))))
+	  (x (lambda-expression-variable e))
+	  (xs (free-variables e)))
+    (list (make-nonrecursive-closure
+	   xs
+	   ;; This should use a generalized add/remove-slots here.
+	   (list->vector
+	    ;; Is there any case where abstract-base-variables-u would need
+	    ;; to keep track of cs (in case of backlinks)???
+	    (let ((xs (abstract-base-variables-u u))
+		  ;; needs work: change bundle*
+		  (vs (bundle* (abstract-base-values-u u)
+			       (list u-perturbation)
+			       (nonrecursive-closure-tags u))))
+	     (map (lambda (x v)
+		   (let ((i (positionp variable=? x xs)))
+		    (if i (list-ref vs i) (abstract-j*-v v))))
+		  (nonrecursive-closure-variables u)
+		  (vector->list (nonrecursive-closure-values u)))))
+	   x
+	   (index x xs (lambda-expression-body e))))))
+  ((recursive-closure? u)
+   (let* ((es (vector->list
+	       (map-vector (lambda (x e)
+			    (forward-transform (new-lambda-expression x e)))
+			   (recursive-closure-argument-variables u)
+			   (recursive-closure-bodies u))))
+	  (xs1 (map-vector forwardify
+			   (recursive-closure-procedure-variables u)))
+	  (xs (letrec-recursive-closure-variables
+	       (vector->list xs1)
+	       (map lambda-expression-variable es)
+	       (map lambda-expression-body es))))
+    (list (make-recursive-closure
+	   xs
+	   ;; This should use a generalized add/remove-slots here.
+	   (list->vector
+	    (let ((xs (abstract-base-variables-u u))
+		  (vs (bundle* (abstract-base-values-u u)
+			       (list u-perturbation)
+			       (recursive-closure-tags x))))
+	     (map (lambda (x v)
+		   (let ((i (positionp variable=? x xs)))
+		    (if i (list-ref vs i) (abstract-j*-v v))))
+		  (recursive-closure-variables x)
+		  (vector->list (recursive-closure-values x)))))
+	   xs1
+	   (list->vector (map lambda-expression-variable es))
+	   (list->vector (map (lambda (e)
+			       (index (lambda-expression-variable e)
+				      (append (vector->list xs1) xs)
+				      (lambda-expression-body e)))
+			      es))
+	   (recursive-closure-index u)))))
+  ((bundle? u) (list (make-bundle (list u) (list u-perturbation))))
+  ((reverse-tagged-value? u)
+   (list (make-bundle (list u) (list u-perturbation))))
+  ((and (not *church-pairs?*) (tagged-pair? u))
+   (list (make-tagged-pair
+	  (cons 'forward (tagged-pair-tags u))
+	  (bundle-v (tagged-pair-car u) (tagged-pair-car u-perturbation))
+	  (bundle-v (tagged-pair-cdr u) (tagged-pair-cdr u-perturbation)))))
+  (else (fuck-up))))
 
 ;;; \AB{V} -> \AB{V}
 (define (abstract-j*-v v)
