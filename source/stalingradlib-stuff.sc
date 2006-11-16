@@ -4454,11 +4454,23 @@
 ;;;(define *time-false* 0)
 
 (define (expression=? e1 e2)
- (cond (*expression-equality-using-identity?* (eq? e1 e2))
-       (*expression-equality-using-structural?* (expression-eqv? e1 e2))
-       (*expression-equality-using-alpha?*
-	(panic "Not yet implemented!"))
-       (else (fuck-up))))
+ (or (and *expression-equality-using-identity?* (eq? e1 e2))
+	 (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
+	 (and *expression-equality-using-alpha?*
+	      (panic "Not yet implemented!"))))
+;;; (let*
+;;;   ((time-start (clock-sample))
+;;;    (result
+;;;     (or (and *expression-equality-using-identity?* (eq? e1 e2))
+;;; 	(and *expression-equality-using-structural?*
+;;; 	     (expression-eqv? e1 e2))
+;;; 	(and *expression-equality-using-alpha?*
+;;; 	     (panic "Not yet implemented!"))))
+;;;    (time (- (clock-sample) time-start))
+;;;    (i (positionq 'expression=? *bucket-names*)))
+;;;  (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time))
+;;;  (vector-set! *call-buckets* i (+ (vector-ref *call-buckets* i) 1))
+;;;  result)
 
 (define-structure expression-cache-entry expression result)
 
@@ -7789,6 +7801,39 @@
      bs)
     (empty-abstract-analysis)))))
 
+;;; in adding expressions to the exisiting expression list, we need to:
+;;; 1. ensure previous expression-list remains unchanged in contents/order...
+;;; 2. PREFER: not to change order for these subexpressions...
+;;; 3. ensure no duplicates in result
+;;;
+(define (expressions-union es1 es2)
+ (let loop ((l es2) (c '()))
+  (cond ((null? l) (append es1 (reverse c)))
+	((memp expression=? (first l) es1) (loop (rest l) c))
+	(else (loop (rest l) (cons (first l) c))))))
+
+(define (all-subexpressions e)
+ (cond ((variable-access-expression? e) (list e))
+       ((lambda-expression? e)
+	(expressions-union (list e)
+			   (all-subexpressions (lambda-expression-body e))))
+       ((application? e)
+	(expressions-union (cons e (all-subexpressions (application-callee e)))
+			   (all-subexpressions (application-argument e))))
+       ((letrec-expression? e)
+	;;; procedure bodies
+	;;; letrec-body
+	(reduce expressions-union
+		(cons (list e) (map all-subexpressions
+				    (cons (letrec-expression-body e)
+					  (letrec-expression-bodies e))))
+		'()))
+       ((cons-expression? e)
+	(expressions-union
+	 (cons e (all-subexpressions (cons-expression-car e)))
+	 (cons-expression-cdr e)))
+       (else (panic "Not a valid expression"))))
+
 (define (update-abstract-analysis bs bs-old)
  ;; The abstract evaluator induces an abstract analysis. This updates the
  ;; abstract values of all of the abstract-environment bindings of all of the
@@ -8182,79 +8227,79 @@
 	   (compile-time-warning
 	    "Attempt to take primal of a non-forward value" u-forward))
 	  ((nonrecursive-closure? u-forward)
-	   (unless (and
-		    (not (null? (nonrecursive-closure-tags u-forward)))
-		    (eq? (first (nonrecursive-closure-tags u-forward))
-			 'forward))
-	    (compile-time-warning
-	     "Attempt to take primal of a non-forward value" u-forward))
-	   (let ((b (find-if
-		     (lambda (b)
-		      (abstract-value=? (list u-forward)
-					(vlad-value->abstract-value
-					 (primitive-procedure-forward
-					  (value-binding-value b)))))
-		     *value-bindings*)))
-	    (if b
-		(vlad-value->abstract-value (value-binding-value b))
-		(let* ((e (forward-transform-inverse
-			   (new-lambda-expression
-			    (nonrecursive-closure-variable u-forward)
-			    (nonrecursive-closure-body u-forward))))
-		       (x (lambda-expression-variable e))
-		       (xs (free-variables e)))
-		 (list (make-nonrecursive-closure
-			xs
-			;; We don't do add/remove-slots here.
-			(map-vector abstract-primal-v
-				    (nonrecursive-closure-values u-forward))
-			x
-			(index x xs (lambda-expression-body e))))))))
-	  ((recursive-closure? u-forward)
-	   (unless (and (not (null? (recursive-closure-tags u-forward)))
-			(eq? (first (recursive-closure-tags u-forward))
-			     'forward))
-	    (compile-time-warning
-	     "Attempt to take primal of a non-forward value" u-forward))
-	   (let ((b (find-if
-		     (lambda (b)
-		      (abstract-value=? (list u-forward)
-					(vlad-value->abstract-value
-					 (primitive-procedure-forward
-					  (value-binding-value b)))))
-		     *value-bindings*)))
-	    (if b
-		(vlad-value->abstract-value (value-binding-value b))
-		(let* ((es (vector->list
+	   (if (or (null? (nonrecursive-closure-tags u-forward))
+		   (not (eq? (first (nonrecursive-closure-tags u-forward))
+			     'forward)))
+	       (compile-time-warning
+		"Attempt to take primal of a non-forward value" u-forward)
+	       (let ((b (find-if
+			 (lambda (b)
+			  (abstract-value=? (list u-forward)
+					    (vlad-value->abstract-value
+					     (primitive-procedure-forward
+					      (value-binding-value b)))))
+			 *value-bindings*)))
+		(if b
+		    (vlad-value->abstract-value (value-binding-value b))
+		    (let* ((e (forward-transform-inverse
+			       (new-lambda-expression
+				(nonrecursive-closure-variable u-forward)
+				(nonrecursive-closure-body u-forward))))
+			   (x (lambda-expression-variable e))
+			   (xs (free-variables e)))
+		     (list (make-nonrecursive-closure
+			    xs
+			    ;; We don't do add/remove-slots here.
 			    (map-vector
-			     (lambda (x e)
-			      (forward-transform-inverse
-			       (new-lambda-expression x e)))
-			     (recursive-closure-argument-variables
-			      u-forward)
-			     (recursive-closure-bodies u-forward))))
-		       (xs1 (map-vector
-			     unforwardify
-			     (recursive-closure-procedure-variables
-			      u-forward)))
-		       (xs (letrec-recursive-closure-variables
-			    (vector->list xs1)
-			    (map lambda-expression-variable es)
-			    (map lambda-expression-body es))))
-		 (list (make-recursive-closure
-			xs
-			;; We don't do add/remove-slots here.
-			(map-vector abstract-primal-v
-				    (recursive-closure-values u-forward))
-			xs1
-			(list->vector (map lambda-expression-variable es))
-			(list->vector
-			 (map (lambda (e)
-			       (index (lambda-expression-variable e)
-				      (append (vector->list xs1) xs)
-				      (lambda-expression-body e)))
-			      es))
-			(recursive-closure-index u-forward)))))))
+			     abstract-primal-v
+			     (nonrecursive-closure-values u-forward))
+			    x
+			    (index x xs (lambda-expression-body e)))))))))
+	  ((recursive-closure? u-forward)
+	   (if (or (null? (recursive-closure-tags u-forward))
+		   (not (eq? (first (recursive-closure-tags u-forward))
+			     'forward)))
+	       (compile-time-warning
+		"Attempt to take primal of a non-forward value" u-forward)
+	       (let ((b (find-if
+			 (lambda (b)
+			  (abstract-value=? (list u-forward)
+					    (vlad-value->abstract-value
+					     (primitive-procedure-forward
+					      (value-binding-value b)))))
+			 *value-bindings*)))
+		(if b
+		    (vlad-value->abstract-value (value-binding-value b))
+		    (let* ((es (vector->list
+				(map-vector
+				 (lambda (x e)
+				  (forward-transform-inverse
+				   (new-lambda-expression x e)))
+				 (recursive-closure-argument-variables
+				  u-forward)
+				 (recursive-closure-bodies u-forward))))
+			   (xs1 (map-vector
+				 unforwardify
+				 (recursive-closure-procedure-variables
+				  u-forward)))
+			   (xs (letrec-recursive-closure-variables
+				(vector->list xs1)
+				(map lambda-expression-variable es)
+				(map lambda-expression-body es))))
+		     (list (make-recursive-closure
+			    xs
+			    ;; We don't do add/remove-slots here.
+			    (map-vector abstract-primal-v
+					(recursive-closure-values u-forward))
+			    xs1
+			    (list->vector (map lambda-expression-variable es))
+			    (list->vector
+			     (map (lambda (e)
+				   (index (lambda-expression-variable e)
+					  (append (vector->list xs1) xs)
+					  (lambda-expression-body e)))
+				  es))
+			    (recursive-closure-index u-forward))))))))
 	  ((bundle? u-forward) (bundle-primal u-forward))
 	  ((reverse-tagged-value? u-forward)
 	   (compile-time-warning
@@ -8295,37 +8340,37 @@
 	   (compile-time-warning
 	    "Attempt to take tangent of a non-forward value" u-forward))
 	  ((nonrecursive-closure? u-forward)
-	   (unless (and (not (null? (nonrecursive-closure-tags u-forward)))
-			(eq? (first (nonrecursive-closure-tags u-forward))
-			     'forward))
-	    (compile-time-warning
-	     "Attempt to take tangent of a non-forward value" u-forward))
-	   (if (some (lambda (b)
-		      (abstract-value=? (list u-forward)
-					(vlad-value->abstract-value
-					 (primitive-procedure-forward
-					  (value-binding-value b)))))
-		     *value-bindings*)
-	       '()
-	       (abstract-cons*ify
-		(map abstract-tangent-v (abstract-base-values-u u-forward))
-		(rest (nonrecursive-closure-tags u-forward)))))
+	   (if (or (null? (nonrecursive-closure-tags u-forward))
+		   (not (eq? (first (nonrecursive-closure-tags u-forward))
+			     'forward)))
+	       (compile-time-warning
+		"Attempt to take tangent of a non-forward value" u-forward)
+	       (if (some (lambda (b)
+			  (abstract-value=? (list u-forward)
+					    (vlad-value->abstract-value
+					     (primitive-procedure-forward
+					      (value-binding-value b)))))
+			 *value-bindings*)
+		   '(())
+		   (abstract-cons*ify
+		    (map abstract-tangent-v (abstract-base-values-u u-forward))
+		    (rest (nonrecursive-closure-tags u-forward))))))
 	  ((recursive-closure? u-forward)
-	   (unless (and (not (null? (recursive-closure-tags u-forward)))
-			(eq? (first (recursive-closure-tags u-forward))
-			     'forward))
-	    (compile-time-warning
-	     "Attempt to take tangent of a non-forward value" u-forward))
-	   (if (some (lambda (b)
-		      (abstract-value=? (list u-forward)
-					(vlad-value->abstract-value
-					 (primitive-procedure-forward
-					  (value-binding-value b)))))
-		     *value-bindings*)
-	       '()
-	       (abstract-cons*ify
-		(map abstract-tangent-v (abstract-base-values-u u-forward))
-		(rest (recursive-closure-tags u-forward)))))
+	   (if (or (null? (nonrecursive-closure-tags u-forward))
+		   (not (eq? (first (nonrecursive-closure-tags u-forward))
+			     'forward)))
+	       (compile-time-warning
+		"Attempt to take tangent of a non-forward value" u-forward)
+	       (if (some (lambda (b)
+			  (abstract-value=? (list u-forward)
+					    (vlad-value->abstract-value
+					     (primitive-procedure-forward
+					      (value-binding-value b)))))
+			 *value-bindings*)
+		   '(())
+		   (abstract-cons*ify
+		    (map abstract-tangent-v (abstract-base-values-u u-forward))
+		    (rest (recursive-closure-tags u-forward))))))
 	  ((bundle? u-forward) (bundle-tangent u-forward))
 	  ((reverse-tagged-value? u-forward)
 	   (compile-time-warning
