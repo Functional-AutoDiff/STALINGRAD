@@ -117,11 +117,14 @@
 		       integer-argument #f)
 		   (l4-depth-measure "depth-measure" string-argument #f)))
 		 (at-most-one
-		  ("l5" l5? (l5 "pair-abstract-value-limit"
+		  ("l5" l5? (l5 "matching-pair-abstract-value-limit"
 				integer-argument #f)))
 		 (at-most-one
 		  ("l6" l6?
 			(l6 "pair-nesting-depth-limit" integer-argument #f)))
+		 (at-most-one
+		  ("l7" l7? (l7 "matching-bundle-abstract-value-limit"
+				integer-argument #f)))
 		 (at-most-one ("no-anf" no-anf?))
 		 (at-most-one ("single-real" single-real?))
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
@@ -198,6 +201,7 @@
   (set-l4-depth-measure-from-string! l4-depth-measure))
  (when l5? (set! *l5* l5))
  (when l6? (set! *l6* l6))
+ (when l7? (set! *l7* l7))
  (when debug?
   (set! *debug?* debug?)
   (set! *debug-level* debug-level))
