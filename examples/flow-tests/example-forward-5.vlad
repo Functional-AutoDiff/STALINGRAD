@@ -1,0 +1,6 @@
+(define (sqr x) (* x x))
+
+(define (derivative-using-j* f)
+ (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+
+((derivative-using-j* (derivative-using-j* sqr)) 45)
