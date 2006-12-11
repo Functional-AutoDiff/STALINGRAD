@@ -1,0 +1,19 @@
+;;; $Id$
+;;; map-closure -cps-converted -closure-converted bug1
+(include "set")
+
+;;; This gives the correct result (1 3).
+(let ((x 1))
+ (let ((f (lambda () x)))
+  (let ((x 2))
+   (let ((ignore-me (set! x 3)))
+    (list (f) x)))))
+
+;;; This gives the wrong result (11 12). It should give (11 21).
+(let ((f (lambda (n)
+	  (lambda ()
+	   (let ((ignore-me (set! n (+ n 1))))
+	    n)))))
+ (let ((g (f 10))
+       (h (f 20)))
+  (list (g) (h))))
