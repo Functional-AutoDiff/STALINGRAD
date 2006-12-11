@@ -1,0 +1,45 @@
+(include "set")
+
+(define (top-level-fail) (car #f))
+
+(define (fail) (top-level-fail))
+
+(define (a-boolean)
+ (call-with-current-continuation
+  (lambda (c)
+   (let* ((saved-fail fail)
+	  ((ignore) (set! fail (lambda () (c (set! fail saved-fail))))))
+
+    #t))))
+
+(define (reverse l)
+ (letrec ((loop (lambda (r l)
+		 (if (null? l) r (loop (cons (car l) r) (cdr l))))))
+  (loop '() l)))
+
+(define (all-values-thunk thunk)
+ (let ((values '()))
+  (call-with-current-continuation
+   (lambda (c)
+    (let* ((saved-fail fail)
+	   ((ignore)
+	    (set! fail
+		  (lambda ()
+		   (let (((ignore) (set! fail saved-fail)))
+		    (c (reverse values))))))
+	   ((ignore) (set! values (cons (thunk) values))))
+     (fail))))))
+
+(define (local-set-in n v c)
+ (cond
+  ((procedure? c)
+   (map-closure (lambda (n1 v1)
+		 (cond ((name=? n1 n) v)
+		       ((name=? n1 (fail)) v1)
+		       (else (local-set-in n v v1))))
+		c))
+  ((pair? c) (cons (local-set-in n v (car c)) (local-set-in n v (cdr c))))
+  (else c)))
+
+(define (local-set n v)
+ (call-with-current-continuation (lambda (c) ((local-set-in n v c) #f))))

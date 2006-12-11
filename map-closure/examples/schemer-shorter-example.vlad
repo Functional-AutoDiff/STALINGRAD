@@ -1,0 +1,4 @@
+(include "schemer-shorter")
+
+(write (a-boolean))
+(fail)

@@ -1,0 +1,13 @@
+(include "set")
+
+(define (top-level-fail) (car #f))
+
+(define (fail) (top-level-fail))
+
+(define (a-boolean)
+ (call-with-current-continuation
+  (lambda (c)
+   (let* ((saved-fail fail)
+	  ((ignore) (set! fail (lambda () (c (set! fail saved-fail))))))
+
+    #t))))

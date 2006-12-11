@@ -1,0 +1,23 @@
+#!/bin/tcsh -f
+echo Example 1
+mzscheme <<EOF
+(load "ex1.sc")
+EOF
+echo Example 2
+mzscheme <<EOF EOF
+(load "ex2.sc")
+EOF
+echo Example 3
+map-closure -closure-converted ex3
+echo Example 4
+map-closure -closure-converted ex4
+echo Example 5
+map-closure -closure-converted ex5
+echo Example 6
+map-closure -closure-converted ex6
+echo Example 7
+map-closure -cps-converted -closure-converted ex7
+echo Example 8
+map-closure -cps-converted -closure-converted ex8
+echo Example 9
+map-closure -cps-converted -closure-converted ex9

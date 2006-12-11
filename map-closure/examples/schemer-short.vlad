@@ -1,0 +1,26 @@
+(include "set")
+
+(define (top-level-fail) (car #f))
+
+(define (fail) (top-level-fail))
+
+(define (a-boolean)
+ (call-with-current-continuation
+  (lambda (c)
+   (let* ((saved-fail fail)
+	  ((ignore) (set! fail (lambda () (c (set! fail saved-fail))))))
+
+    #t))))
+
+(define (all-values-thunk thunk)
+ (let ((values '()))
+  (call-with-current-continuation
+   (lambda (c)
+    (let* ((saved-fail fail)
+	   ((ignore)
+	    (set! fail
+		  (lambda ()
+		   (let (((ignore) (set! fail saved-fail)))
+		    (c values)))))
+	   ((ignore) (set! values (cons (thunk) values))))
+     (fail))))))
