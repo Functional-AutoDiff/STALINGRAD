@@ -1,3 +1,5 @@
+;;; $Id$
+
 (define (f x) (+ x x))
 
 (define g (let ((y 10)) (lambda (x) (+ x y))))

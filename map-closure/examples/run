@@ -1,4 +1,5 @@
 #!/bin/tcsh -f
+# $Id$
 echo Example 1
 mzscheme <<EOF
 (load "ex1.sc")

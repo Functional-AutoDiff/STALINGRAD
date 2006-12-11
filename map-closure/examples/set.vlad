@@ -1,3 +1,5 @@
+;;; $Id$
+
 (define (set-in n v c)
  (cond ((procedure? c)
 	(map-closure (lambda (n1 v1) (if (name=? n n1) v (set-in n v v1))) c))

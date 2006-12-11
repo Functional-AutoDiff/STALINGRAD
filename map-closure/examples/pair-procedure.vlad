@@ -1,1 +1,3 @@
+;;; $Id$
+
 (list (pair? (cons 1 1)) (pair? +) (procedure? (cons 1 1)) (procedure? +))

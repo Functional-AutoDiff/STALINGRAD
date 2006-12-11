@@ -1,3 +1,5 @@
+;;; $Id$
+
 (letrec ((substitute
 	  (lambda (x y z)
 	   (cond ((equal? y z) x)

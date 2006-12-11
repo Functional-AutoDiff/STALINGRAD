@@ -1,3 +1,5 @@
+;;; $Id$
+
 (let ((five 5))
  (let ((h (let ((+ +)) (lambda (x) (+ x five)))))
   (letrec ((substitute

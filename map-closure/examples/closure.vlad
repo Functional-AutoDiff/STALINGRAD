@@ -1,3 +1,5 @@
+;;; $Id$
+
 (let ((x 1) (y 2))
  ((map-closure (lambda (n v) (if (name=? n (name x)) 3 v))
 	       (lambda (z) (list x y z)))
