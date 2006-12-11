@@ -1063,6 +1063,7 @@
 (define (parse e)
  ;; needs work: we no-longer alpha convert
  (let* ((e (concrete->abstract-expression e))
+	(e (alpha-convert e (free-variables e)))
 	(e (if *cps-converted?* (cps-convert e) e))
 	(e (if *closure-converted?* (closure-convert e) e))
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
