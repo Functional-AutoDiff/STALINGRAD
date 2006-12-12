@@ -1,0 +1,9 @@
+;;; $Id$
+
+(include "set")
+
+(let ((x 1))
+ (let ((f (lambda () x)))
+  (let ((x 2))
+   (let (((ignore) (set! x 3)))
+    (list (f) x)))))

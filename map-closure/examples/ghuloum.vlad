@@ -1,0 +1,11 @@
+;;; $Id$
+
+(include "set")
+
+(let ((f (lambda (n)
+	  (lambda ()
+	   (let (((ignore) (set! n (+ n 1))))
+	    n)))))
+ (let ((g (f 10))
+       (h (f 20)))
+  (list (g) (h))))
