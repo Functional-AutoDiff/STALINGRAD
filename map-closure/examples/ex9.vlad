@@ -1,12 +1,5 @@
 ;;; $Id$
 
-(define (set-in n v c)
- (cond ((procedure? c)
-	(map-closure (lambda (n1 v1) (if (name=? n n1) v (set-in n v v1))) c))
-       ((pair? c) (cons (set-in n v (car c)) (set-in n v (cdr c))))
-       (else c)))
-
-(define (set n v)
- (call-with-current-continuation (lambda (c) ((set-in n v c) #f))))
+(include "set")
 
 (let* ((foo 0) ((ignore) (set! foo 1))) foo)

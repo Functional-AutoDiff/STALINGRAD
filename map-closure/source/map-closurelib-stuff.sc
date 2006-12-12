@@ -86,6 +86,8 @@
 
 (define *trace-level* 0)
 
+(define *alpha* 0)
+
 ;;; Parameters
 
 (define *include-path* '())
@@ -291,12 +293,7 @@
  (if (null? xs)
      e
      (new-application
-      (if #f
-	  (make-lambda-expression #f
-				  #f
-				  (first xs)
-				  (new-let* (rest xs) (rest es) e))
-	  (new-lambda-expression (first xs) (new-let* (rest xs) (rest es) e)))
+      (new-lambda-expression (first xs) (new-let* (rest xs) (rest es) e))
       (first es))))
 
 (define (union-variables xs1 xs2) (unionp variable=? xs1 xs2))
@@ -371,8 +368,7 @@
 				   (cons (f (car l)) (map (cdr l))))))))))
 	      (y (lambda (ys)
 		  (lambda (fs)
-		   ((map (lambda (f) (lambda (x) ((f (ys fs)) x))))
-		    fs)))))))
+		   ((map (lambda (f) (lambda (x) ((f (ys fs)) x)))) fs)))))))
    ,e))
 
 ;;; Definitions
@@ -404,57 +400,6 @@
     ,e)))
 
 ;;; Alpha conversion
-
-(define (alphaify x xs)
- (if (memp variable=? x xs)
-     `(alpha ,x
-	     ,(+ (reduce max
-			 (map (lambda (x1)
-			       (if (and (list? x1)
-					(eq? (first x1) 'alpha)
-					(variable=? (second x1) x))
-				   (third x1)
-				   0))
-			      xs)
-			 0)
-		 1))
-     x))
-
-(define (alpha-convert e xs)
- (second
-  (let outer ((e e) (xs xs) (bs (map make-alpha-binding xs xs)))
-   (cond
-    ((constant-expression? e) e)
-    ((variable-access-expression? e)
-     (list xs
-	   (new-variable-access-expression
-	    (alpha-binding-variable2
-	     (find-if (lambda (b)
-		       (variable=? (alpha-binding-variable1 b)
-				   (variable-access-expression-variable e)))
-		      bs)))))
-    ((name-expression? e)
-     (list xs
-	   (new-name-expression
-	    (alpha-binding-variable2
-	     (find-if (lambda (b)
-		       (variable=? (alpha-binding-variable1 b)
-				   (name-expression-variable e)))
-		      bs)))))
-    ((lambda-expression? e)
-     (let* ((x (alphaify (lambda-expression-variable e) xs))
-	    (result (outer (lambda-expression-body e)
-			   (cons x xs)
-			   (cons (make-alpha-binding
-				  (lambda-expression-variable e) x)
-				 bs))))
-      (list (first result) (new-lambda-expression x (second result)))))
-    ((application? e)
-     (let* ((result1 (outer (application-callee e) xs bs))
-	    (result2 (outer (application-argument e) (first result1) bs)))
-      (list (first result2)
-	    (new-application (second result1) (second result2)))))
-    (else (fuck-up))))))
 
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  (or
@@ -771,6 +716,7 @@
 ;;; Free variables
 
 (define (letrec-recursive-closure-variables xs1 xs2 es)
+ ;; In stalingrad, we sort the variables. This is not necessary here.
  (sort-variables
   (set-differencep
    variable=?
@@ -781,19 +727,14 @@
    xs1)))
 
 (define (free-variables e)
+ ;; In stalingrad, we sort the variables. This is not necessary here.
  (sort-variables
   (let loop ((e e))
    (cond ((constant-expression? e) '())
 	 ((variable-access-expression? e)
 	  (list (variable-access-expression-variable e)))
 	 ((name-expression? e) (list (name-expression-variable e)))
-	 ((lambda-expression? e)
-	  ;; This is a vestigial let*-expression.
-	  (if (eq? (lambda-expression-free-variables e) #f)
-	      (removep variable=?
-		       (lambda-expression-variable e)
-		       (loop (lambda-expression-body e)))
-	      (lambda-expression-free-variables e)))
+	 ((lambda-expression? e) (lambda-expression-free-variables e))
 	 ((application? e)
 	  (union-variables (loop (application-callee e))
 			   (loop (application-argument e))))
@@ -811,28 +752,25 @@
       ;; This is a vestigial let*-expression.
       (- (length xs) (positionp variable=? x-prime (reverse xs)) 1)
       -1))
- (cond ((variable-access-expression? e)
-	(make-variable-access-expression
-	 (variable-access-expression-variable e)
-	 (lookup (variable-access-expression-variable e))))
-       ((name-expression? e)
-	(make-name-expression
-	 (name-expression-variable e) (lookup (name-expression-variable e))))
-       ((lambda-expression? e)
-	(make-lambda-expression
-	 (lambda-expression-free-variables e)
-	 ;; This is a vestigial let*-expression.
-	 (if (eq? (lambda-expression-free-variables e) #f)
-	     #f
-	     (list->vector (map lookup (free-variables e))))
-	 (lambda-expression-variable e)
-	 (index (lambda-expression-variable e)
-		(free-variables e)
-		(lambda-expression-body e))))
-       ((application? e)
-	(make-application (index x xs (application-callee e))
-			  (index x xs (application-argument e))))
-       (else (fuck-up))))
+ (cond
+  ((variable-access-expression? e)
+   (make-variable-access-expression
+    (variable-access-expression-variable e)
+    (lookup (variable-access-expression-variable e))))
+  ((name-expression? e)
+   (make-name-expression
+    (name-expression-variable e) (lookup (name-expression-variable e))))
+  ((lambda-expression? e)
+   (let ((xs (free-variables e)))
+    (make-lambda-expression
+     xs
+     (list->vector (map lookup xs))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e) xs (lambda-expression-body e)))))
+  ((application? e)
+   (make-application (index x xs (application-callee e))
+		     (index x xs (application-argument e))))
+  (else (fuck-up))))
 
 ;;; Concrete->Abstract
 
@@ -1057,9 +995,9 @@
   (else (fuck-up))))
 
 (define (parse e)
- ;; needs work: we no-longer alpha convert
+ ;; In stalingrad, we alpha convert. We don't do so here since we need to
+ ;; alpha convert in the evaluator and that obviates alpha conversion here.
  (let* ((e (concrete->abstract-expression e))
-	(e (alpha-convert e (free-variables e)))
 	(e (if *cps-converted?* (cps-convert e) e))
 	(e (if *closure-converted?* (closure-convert e) e))
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
@@ -1229,6 +1167,30 @@
  (for-each (lambda (v) ((if *pp?* pp write) (externalize v)) (newline)) vs)
  (panic message))
 
+(define (substitute x1 x2 e)
+ (cond ((variable-access-expression? e)
+	(if (variable=? (variable-access-expression-variable e) x2)
+	    (make-variable-access-expression
+	     x1 (variable-access-expression-index e))
+	    e))
+       ((name-expression? e)
+	(if (variable=? (name-expression-variable e) x2)
+	    (make-name-expression x1 (name-expression-index e))
+	    e))
+       ((lambda-expression? e)
+	(if (memp variable=? x2 (lambda-expression-free-variables e))
+	    (make-lambda-expression
+	     (map (lambda (x) (if (variable=? x x2) x1 x))
+		  (lambda-expression-free-variables e))
+	     (lambda-expression-free-variable-indices e)
+	     (lambda-expression-variable e)
+	     (substitute x1 x2 (lambda-expression-body e)))
+	    e))
+       ((application? e)
+	(make-application (substitute x1 x2 (application-callee e))
+			  (substitute x1 x2 (application-argument e))))
+       (else (fuck-up))))
+
 (define (call callee argument)
  (unless (vlad-procedure? callee)
   (run-time-error "Target is not a procedure" callee))
@@ -1253,7 +1215,12 @@
 	 ((primitive-procedure? callee)
 	  ((primitive-procedure-procedure callee) argument))
 	 ((closure? callee)
-	  (evaluate (closure-body callee) argument (closure-values callee)))
+	  (set! *alpha* (- *alpha* 1))
+	  (evaluate (substitute `(alpha ,(closure-variable callee) ,*alpha*)
+				(closure-variable callee)
+				(closure-body callee))
+		    argument
+		    (closure-values callee)))
 	 (else (fuck-up)))))
   (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
@@ -1277,7 +1244,7 @@
        ((name-expression? e) (make-name (name-expression-variable e)))
        ((lambda-expression? e)
 	(make-closure
-	 (free-variables e)
+	 (lambda-expression-free-variables e)
 	 (map-vector lookup (lambda-expression-free-variable-indices e))
 	 (lambda-expression-variable e)
 	 (lambda-expression-body e)))

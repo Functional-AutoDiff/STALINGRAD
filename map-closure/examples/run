@@ -22,3 +22,7 @@ echo Example 8
 map-closure -cps-converted -closure-converted ex8
 echo Example 9
 map-closure -cps-converted -closure-converted ex9
+echo Blume Example
+map-closure -cps-converted -closure-converted blume
+echo Ghuloum Example
+map-closure -cps-converted -closure-converted ghuloum

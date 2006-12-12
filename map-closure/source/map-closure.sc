@@ -45,7 +45,7 @@
 (include "map-closure.sch")
 
 (set! *program* "map-closure")
-(set! *panic?* #t)
+(set! *panic?* #f)			;debugging
 
 ;;; Macros
 
@@ -84,7 +84,8 @@
 		 (at-most-one ("pp" pp?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-closures?)
-  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-closures"))
+  (panic
+   "Can't specify both -unabbreviate-executably and -unabbreviate-closures"))
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/map-closure/include")))

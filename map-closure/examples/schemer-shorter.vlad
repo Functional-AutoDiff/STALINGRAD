@@ -11,5 +11,4 @@
   (lambda (c)
    (let* ((saved-fail fail)
 	  ((ignore) (set! fail (lambda () (c (set! fail saved-fail))))))
-
     #t))))
