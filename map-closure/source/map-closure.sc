@@ -45,7 +45,7 @@
 (include "map-closure.sch")
 
 (set! *program* "map-closure")
-(set! *panic?* #f)			;debugging
+(set! *panic?* #t)
 
 ;;; Macros
 
