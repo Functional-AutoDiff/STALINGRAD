@@ -1,0 +1,85 @@
+#!/bin/tcsh
+
+set EXAMPLE = $1
+set NUM = $2
+set L1 = $3
+set L2 = $4
+set L3 = $5
+set L4 = $6
+set L5 = $7
+set L6 = $8
+set L7 = $9
+
+set POLYSTR = poly-${L1}-${L2}-${L3}-${L4}-${L5}-${L6}-${L7}
+set OUTFILE=${EXAMPLE}-${POLYSTR}-`date +"%m%d%y"`-${NUM}.txt
+
+if $L1 > 0 then
+  set L1opt = "-l1 $L1"
+else
+  set L1opt = ""
+endif
+
+if $L2 > 0 then
+  set L2opt = "-l2 $L2"
+else
+  set L2opt = ""
+endif
+  
+if $L3 > 0 then
+  set L3opt = "-l3 $L3"
+else
+  set L3opt = ""
+endif
+  
+if $L4 > 0 then
+  set L4opt = "-l4 $L4 matching-nonrecursive-closure"
+else
+  set L4opt = ""
+endif
+  
+if $L5 > 0 then
+  set L5opt = "-l5 $L5"
+else
+  set L5opt = ""
+endif
+  
+if $L6 > 0 then
+  set L6opt = "-l6 $L6"
+else
+  set L6opt = ""
+endif
+
+if $L7 > 0 then
+  set L7opt = "-l7 $L7"
+else
+  set L7opt = ""
+endif
+
+#set OTHER_OPTIONS = "\
+#-widen-last\
+#-quiet\
+#-no-apply-multiply\
+#-new-widen\
+#-new-l4-depth\
+#-aesthetic\
+#-expression-equality-using-structural"
+
+#set OPTS1 = "-widen-last -quiet -no-apply-multiply"
+#set OPTS2 = "-new-widen -new-l4-depth"
+#set OPTS3 = "-aesthetic -expression-equality-using-structural"
+#set OPTS4 = ""
+
+set OPTS1 = "-no-warn -widen-last -no-apply-multiply"
+set OPTS2 = "-new-widen -new-l4-depth"
+set OPTS3 = "-aesthetic -expression-equality-using-structural"
+set OPTS4 = ""
+
+echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
+$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt \
+$OPTS1 $OPTS2 $OPTS3 $OPTS4 \
+${EXAMPLE}.vlad > $OUTFILE
+
+unbuff >> $OUTFILE time ./stalingrad -pp -flow-analysis\
+$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt\
+$OPTS1 $OPTS2 $OPTS3 $OPTS4\
+${EXAMPLE}.vlad
