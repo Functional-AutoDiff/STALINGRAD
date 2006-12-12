@@ -1,0 +1,3 @@
+(define (box a) (lambda (m) a))
+
+(zero (box (box 1)))
