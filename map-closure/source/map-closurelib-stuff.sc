@@ -716,7 +716,6 @@
 ;;; Free variables
 
 (define (letrec-recursive-closure-variables xs1 xs2 es)
- ;; In stalingrad, we sort the variables. This is not necessary here.
  (sort-variables
   (set-differencep
    variable=?
@@ -727,7 +726,6 @@
    xs1)))
 
 (define (free-variables e)
- ;; In stalingrad, we sort the variables. This is not necessary here.
  (sort-variables
   (let loop ((e e))
    (cond ((constant-expression? e) '())
