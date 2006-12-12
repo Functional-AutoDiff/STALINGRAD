@@ -5,7 +5,7 @@ mzscheme <<EOF
 (load "ex1.sc")
 EOF
 echo Example 2
-mzscheme <<EOF EOF
+mzscheme <<EOF
 (load "ex2.sc")
 EOF
 echo Example 3
