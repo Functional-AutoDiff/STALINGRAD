@@ -29,4 +29,3 @@
 (let* ((a (list (list 4 2) (list -2 1)))
        (v (list 3 3)))
  (m*v a v))
- 

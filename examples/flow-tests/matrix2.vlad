@@ -66,4 +66,3 @@
        (stuff (write a))
        (stuff (write a-inverse)))
  (m*v a-inverse (m*v a v)))
- 
