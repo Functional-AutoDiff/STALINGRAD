@@ -1,5 +1,3 @@
-;;; -*- Scheme -*-
-
 ;;; Lists
 
 (define (first x) (car x))

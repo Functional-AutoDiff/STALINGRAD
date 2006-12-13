@@ -1,5 +1,3 @@
-;;; -*- Scheme -*-
-
 ;;; Arithmetic
 
 (define (negate x) (- 0 x))
