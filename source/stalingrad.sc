@@ -1,10 +1,6 @@
 (MODULE STALINGRAD (WITH QOBISCHEME XLIB STALINGRADLIB-STUFF) (MAIN MAIN))
 ;;; LaHaShem HaAretz U'Mloah
-;;; CVS version control block - do not edit manually
-;;;  $RCSfile$
-;;;  $Revision$
-;;;  $Date$
-;;;  $Source$
+;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
 ;;; Copyright 2004 and 2005 Purdue University. All rights reserved.

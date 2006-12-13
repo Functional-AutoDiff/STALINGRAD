@@ -1,10 +1,6 @@
 (MODULE STALINGRADLIB-STUFF)
 ;;; LaHaShem HaAretz U'Mloah
-;;; CVS version control block - do not edit manually
-;;;  $RCSfile$
-;;;  $Revision$
-;;;  $Date$
-;;;  $Source$
+;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
 ;;; Copyright 2004, 2005, and 2006 Purdue University. All rights reserved.
@@ -682,31 +678,27 @@
 		 (new-variable-access-expression 'x2))))
      (make-tagged-pair '() v1 v2)))
 
-(define (cons*ify xs tags)
+(define (listify xs tags)
  (if *church-pairs?*
      (if (null? tags)
 	 (let loop ((xs xs))
-	  (cond ((null? xs) '())
-		((null? (rest xs)) (first xs))
-		(else (vlad-cons (first xs) (loop (rest xs))))))
+	  (if (null? xs) '() (vlad-cons (first xs) (loop (rest xs)))))
 	 (case (first tags)
-	  ((forward) (bundle (cons*ify (map primal xs) (rest tags))
-			     (cons*ify (map tangent xs) (rest tags))))
-	  ((reverse) (*j (cons*ify (map *j-inverse xs) (rest tags))))
+	  ((forward) (bundle (listify (map primal xs) (rest tags))
+			     (listify (map tangent xs) (rest tags))))
+	  ((reverse) (*j (listify (map *j-inverse xs) (rest tags))))
 	  (else (fuck-up))))
-     (if (null? xs)
-	 (let loop ((tags tags))
-	  (if (null? tags)
-	      '()
-	      ((case (first tags)
-		((forward) j*)
-		((reverse) *j)
-		(else (fuck-up)))
-	       (loop (rest tags)))))
-	 (let loop ((xs xs))
-	  (if (null? (rest xs))
-	      (first xs)
-	      (make-tagged-pair tags (first xs) (loop (rest xs))))))))
+     (let loop ((xs xs))
+      (if (null? xs)
+	  (let loop ((tags tags))
+	   (if (null? tags)
+	       '()
+	       ((case (first tags)
+		 ((forward) j*)
+		 ((reverse) *j)
+		 (else (fuck-up)))
+		(loop (rest tags)))))
+	  (make-tagged-pair tags (first xs) (loop (rest xs)))))))
 
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v)
@@ -2281,9 +2273,9 @@
        ((real? x) 0)
        ((primitive-procedure? x) '())
        ((nonrecursive-closure? x)
-	(cons*ify (map zero (base-values x)) (nonrecursive-closure-tags x)))
+	(listify (map zero (base-values x)) (nonrecursive-closure-tags x)))
        ((recursive-closure? x)
-	(cons*ify (map zero (base-values x)) (recursive-closure-tags x)))
+	(listify (map zero (base-values x)) (recursive-closure-tags x)))
        ((bundle? x)
 	(make-bundle (zero (bundle-primal x)) (zero (bundle-tangent x))))
        ((reverse-tagged-value? x)
@@ -2675,8 +2667,8 @@
 					 (value-binding-value b))))
 			  *value-bindings*)
 		    '()
-		    (cons*ify (map tangent (base-values x-forward))
-			      (rest (nonrecursive-closure-tags x-forward)))))
+		    (listify (map tangent (base-values x-forward))
+			     (rest (nonrecursive-closure-tags x-forward)))))
 	       ((recursive-closure? x-forward)
 		(unless (and (not (null? (recursive-closure-tags x-forward)))
 			     (eq? (first (recursive-closure-tags x-forward))
@@ -2689,8 +2681,8 @@
 					 (value-binding-value b))))
 			  *value-bindings*)
 		    '()
-		    (cons*ify (map tangent (base-values x-forward))
-			      (rest (recursive-closure-tags x-forward)))))
+		    (listify (map tangent (base-values x-forward))
+			     (rest (recursive-closure-tags x-forward)))))
 	       ((bundle? x-forward) (bundle-tangent x-forward))
 	       ((reverse-tagged-value? x-forward)
 		(run-time-error
@@ -2734,27 +2726,22 @@
 	(and (reverse-tagged-value? x)
 	     (tagged-null? (rest tags) (reverse-tagged-value-primal x))))
        (else (fuck-up)))))
- (define (legitimate*? xs x-perturbations tags)
-  ;; XS is a list, X-PERTURBATIONS is a tuple.
+ (define (legitimate-list? xs x-perturbations tags)
   (or (and (null? xs) (tagged-null? tags x-perturbations))
       (and (not (null? xs))
-	   (null? (rest xs))
-	   (legitimate? (first xs) x-perturbations))
-      (and (not (null? xs))
-	   (not (null? (rest xs)))
 	   (vlad-pair? x-perturbations tags)
 	   (legitimate? (first xs) (vlad-car x-perturbations tags))
-	   (legitimate*? (rest xs) (vlad-cdr x-perturbations tags) tags))))
+	   (legitimate-list? (rest xs) (vlad-cdr x-perturbations tags) tags))))
  (define (legitimate? x x-perturbation)
   (or (and (null? x) (null? x-perturbation))
       (and (not *church-booleans?*) (vlad-boolean? x) (null? x-perturbation))
       (and (real? x) (real? x-perturbation))
       (and (primitive-procedure? x) (null? x-perturbation))
       (and (nonrecursive-closure? x)
-	   (legitimate*?
+	   (legitimate-list?
 	    (base-values x) x-perturbation (nonrecursive-closure-tags x)))
       (and (recursive-closure? x)
-	   (legitimate*?
+	   (legitimate-list?
 	    (base-values x) x-perturbation (recursive-closure-tags x)))
       (and (bundle? x)
 	   (bundle? x-perturbation)
@@ -2773,13 +2760,11 @@
 	   (legitimate? (tagged-pair-car x) (tagged-pair-car x-perturbation))
 	   (legitimate? (tagged-pair-cdr x)
 			(tagged-pair-cdr x-perturbation)))))
- (define (bundle* xs x-perturbations tags)
-  ;; XS is a list, X-PERTURBATIONS is a tuple, the result is a list.
-  (cond
-   ((null? xs) '())
-   ((null? (rest xs)) (list (bundle (first xs) x-perturbations)))
-   (else (cons (bundle (first xs) (vlad-car x-perturbations tags))
-	       (bundle* (rest xs) (vlad-cdr x-perturbations tags) tags)))))
+ (define (bundle-list xs x-perturbations tags)
+  (if (null? xs)
+      '()
+      (cons (bundle (first xs) (vlad-car x-perturbations tags))
+	    (bundle-list (rest xs) (vlad-cdr x-perturbations tags) tags))))
  (define (bundle x x-perturbation)
   (cond
    ((null? x) (make-bundle x x-perturbation))
@@ -2800,9 +2785,9 @@
       ;; This should use a generalized add/remove-slots here.
       (list->vector
        (let ((xs (base-variables x))
-	     (vs (bundle* (base-values x)
-			  x-perturbation
-			  (nonrecursive-closure-tags x))))
+	     (vs (bundle-list (base-values x)
+			      x-perturbation
+			      (nonrecursive-closure-tags x))))
 	(map (lambda (x v)
 	      (let ((i (positionp variable=? x xs)))
 	       (if i (list-ref vs i) (j* v))))
@@ -2827,7 +2812,7 @@
       ;; This should use a generalized add/remove-slots here.
       (list->vector
        (let ((xs (base-variables x))
-	     (vs (bundle*
+	     (vs (bundle-list
 		  (base-values x) x-perturbation (recursive-closure-tags x))))
 	(map (lambda (x v)
 	      (let ((i (positionp variable=? x xs)))
@@ -2968,29 +2953,37 @@
        ((null? (rest es)) (first es))
        (else (make-cons bs tags (first es) (make-cons* bs tags (rest es))))))
 
-(define (make-cons*-bindings bs tags xs e)
- (cond
-  ((null? xs) '())
-  ((null? (rest xs)) (list (make-variable-binding (first xs) e)))
-  (else
-   (let ((x (parameter->consvar `(cons* ,@xs))))
-    (cons
-     (make-variable-binding x e)
-     (let loop ((xs xs) (x x))
-      (if (null? (rest (rest xs)))
-	  (list (make-variable-binding
-		 (first xs)
-		 (make-car bs tags (new-variable-access-expression x)))
-		(make-variable-binding
-		 (second xs)
-		 (make-cdr bs tags (new-variable-access-expression x))))
-	  (cons (make-variable-binding
-		 (first xs)
-		 (make-car bs tags (new-variable-access-expression x)))
-		(cons (make-variable-binding
-		       (third x)
-		       (make-cdr bs tags (new-variable-access-expression x)))
-		      (loop (rest xs) (third x)))))))))))
+(define (make-list-invocation bs tags es)
+ (if (null? es)
+     (tagify bs tags (added-variable bs 'null))
+     (make-cons bs tags (first es) (make-list-invocation bs tags (rest es)))))
+
+(define (make-cons-bindings bs tags x0 x1 e)
+ (let ((x (parameter->consvar `(cons ,x0 ,x1))))
+  (list (make-variable-binding x e)
+	(make-variable-binding
+	 x0 (make-car bs tags (new-variable-access-expression x)))
+	(make-variable-binding
+	 x1 (make-cdr bs tags (new-variable-access-expression x))))))
+
+(define (make-list-bindings bs tags xs e)
+ (if (null? xs)
+     '()
+     (let ((x (parameter->consvar `(list ,@xs))))
+      (cons
+       (make-variable-binding x e)
+       (let loop ((xs xs) (x x))
+	(if (null? (rest xs))
+	    (list (make-variable-binding
+		   (first xs)
+		   (make-car bs tags (new-variable-access-expression x))))
+	    (cons (make-variable-binding
+		   (first xs)
+		   (make-car bs tags (new-variable-access-expression x)))
+		  (cons (make-variable-binding
+			 (third x)
+			 (make-cdr bs tags (new-variable-access-expression x)))
+			(loop (rest xs) (third x))))))))))
 
 (define (reverse-transform bs e ws gs zs)
  (let* ((tags (lambda-expression-tags e))
@@ -3019,74 +3012,54 @@
 		   '())))
 	     ((lambda-expression? e)
 	      (let ((xs (lambda-expression-base-free-variables e)))
-	       (cond
-		((null? xs) '())
-		((null? (rest xs))
-		 (if (needed? (first xs))
-		     (list (make-variable-binding
-			    (sensitivityify (first xs))
-			    (make-plus bs
-				       (sensitivity-access (first xs))
-				       (sensitivity-access t))))
-		     '()))
-		(else
-		 (let ((x (parameter->consvar
-			   `(cons* ,@(map sensitivityify xs)))))
-		  (cons
-		   (make-variable-binding x (sensitivity-access t))
-		   (let loop ((xs xs) (x x))
-		    (if (null? (rest (rest xs)))
-			(append
-			 (if (needed? (first xs))
-			     (list (make-variable-binding
-				    (sensitivityify (first xs))
-				    (make-plus
-				     bs
-				     (sensitivity-access (first xs))
-				     (make-car
+	       (if (null? xs)
+		   '()
+		   (let ((x (parameter->consvar
+			     `(list ,@(map sensitivityify xs)))))
+		    (cons
+		     (make-variable-binding x (sensitivity-access t))
+		     (let loop ((xs xs) (x x))
+		      (if (null? (rest xs))
+			  (if (needed? (first xs))
+			      (list (make-variable-binding
+				     (sensitivityify (first xs))
+				     (make-plus
 				      bs
-				      (lambda-expression-tags e)
-				      (new-variable-access-expression x)))))
-			     '())
-			 (if (needed? (second xs))
-			     (list (make-variable-binding
-				    (sensitivityify (second xs))
-				    (make-plus
-				     bs
-				     (sensitivity-access (second xs))
-				     (make-cdr
-				      bs
-				      (lambda-expression-tags e)
-				      (new-variable-access-expression x)))))
-			     '()))
-			(if (needed? (first xs))
-			    (cons
-			     (make-variable-binding
-			      (sensitivityify (first xs))
-			      (make-plus
-			       bs
-			       (sensitivity-access (first xs))
-			       (make-car bs
-					 (lambda-expression-tags e)
-					 (new-variable-access-expression x))))
-			     (if (some needed? (rest xs))
-				 (cons (make-variable-binding
-					(third x)
-					(make-cdr
-					 bs
-					 (lambda-expression-tags e)
-					 (new-variable-access-expression x)))
-				       (loop (rest xs) (third x)))
-				 '()))
-			    (if (some needed? (rest xs))
-				(cons (make-variable-binding
-				       (third x)
-				       (make-cdr
-					bs
-					(lambda-expression-tags e)
-					(new-variable-access-expression x)))
-				      (loop (rest xs) (third x)))
-				'()))))))))))
+				      (sensitivity-access (first xs))
+				      (make-car
+				       bs
+				       (lambda-expression-tags e)
+				       (new-variable-access-expression x)))))
+			      '())
+			  (if (needed? (first xs))
+			      (cons
+			       (make-variable-binding
+				(sensitivityify (first xs))
+				(make-plus
+				 bs
+				 (sensitivity-access (first xs))
+				 (make-car
+				  bs
+				  (lambda-expression-tags e)
+				  (new-variable-access-expression x))))
+			       (if (some needed? (rest xs))
+				   (cons (make-variable-binding
+					  (third x)
+					  (make-cdr
+					   bs
+					   (lambda-expression-tags e)
+					   (new-variable-access-expression x)))
+					 (loop (rest xs) (third x)))
+				   '()))
+			      (if (some needed? (rest xs))
+				  (cons (make-variable-binding
+					 (third x)
+					 (make-cdr
+					  bs
+					  (lambda-expression-tags e)
+					  (new-variable-access-expression x)))
+					(loop (rest xs) (third x)))
+				  '())))))))))
 	     ((application? e)
 	      (let ((x1 (variable-access-expression-variable
 			 (application-callee e)))
@@ -3178,10 +3151,11 @@
 		       '()
 		       (lambda-expression-base-free-variables e)))))
 	      ((application? e)
-	       (make-cons*-bindings
+	       (make-cons-bindings
 		bs
 		'()
-		(list (reverseify x) (backpropagatorify x))
+		(reverseify x)
+		(backpropagatorify x)
 		(new-application
 		 (reverseify-access (application-callee e))
 		 (reverseify-access (application-argument e)))))
@@ -3213,13 +3187,14 @@
 		      (anf-variable e1)
 		      (cons x (append (anf-let*-variables e1) fs gs zs))))
 		    bs0
-		    (make-cons*-bindings
+		    (make-list-bindings
 		     bs
 		     tags
 		     (map sensitivityify ws)
 		     (let loop ((fs fs))
 		      (if (null? fs)
-			  (make-cons* bs tags (map sensitivity-access ws))
+			  (make-list-invocation
+			   bs tags (map sensitivity-access ws))
 			  (make-plus bs
 				     (sensitivity-access (first fs))
 				     (loop (rest fs)))))))
@@ -3228,7 +3203,8 @@
 		    '()
 		    (let loop ((gs gs))
 		     (if (null? gs)
-			 (make-cons* bs tags (map sensitivity-access zs))
+			 (make-list-invocation
+			  bs tags (map sensitivity-access zs))
 			 (make-plus
 			  bs
 			  (sensitivity-access (first gs)) (loop (rest gs)))))
@@ -3312,7 +3288,7 @@
  ;; x2=car x1
  ;; x3=cdr x1
  ;; --------------------------------------------
- ;; x2,x3=xa xb
+ ;; x2=xa xb
  (and (application? e1)
       ;; Technically not needed since in ANF.
       (variable-access-expression? (application-callee e1))
@@ -4457,9 +4433,9 @@
 
 (define (expression=? e1 e2)
  (or (and *expression-equality-using-identity?* (eq? e1 e2))
-	 (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
-	 (and *expression-equality-using-alpha?*
-	      (panic "Not yet implemented!"))))
+     (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
+     (and *expression-equality-using-alpha?*
+	  (panic "Not yet implemented!"))))
 ;;; (let*
 ;;;   ((time-start (clock-sample))
 ;;;    (result
@@ -4949,7 +4925,7 @@
   (let ((aeb (find-if (lambda (b)
 		       (expression=? (abstract-expression-binding-expression b)
 				     e))
-	      bs)))
+		      bs)))
    ;; debugging
    (when (not (abstract-expression-binding? aeb))
     (format #t "No matching abstract flow!~%")
@@ -5306,11 +5282,11 @@
 	  (not (eq? (recursive-closure-alpha-bindings u1 u2) #f)))
      (and (= (recursive-closure-index u1) (recursive-closure-index u2))
 	  (every-vector-eq?
-			(recursive-closure-argument-variables u1)
-			(recursive-closure-argument-variables u2))
+	   (recursive-closure-argument-variables u1)
+	   (recursive-closure-argument-variables u2))
 	  (every-vector-eq?
-			(recursive-closure-procedure-variables u1)
-			(recursive-closure-procedure-variables u2))
+	   (recursive-closure-procedure-variables u1)
+	   (recursive-closure-procedure-variables u2))
 	  (every-vector expression-eqv?
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
@@ -6634,7 +6610,7 @@
 	  ;; branching-value-match? will check for this possiblity
 	  (some (lambda (u2) (and (branching-value? u2)
 				  (branching-value-match? u1 u2)))
-			v2))
+		v2))
 ;;;	 ((nonrecursive-closure? u1)
 ;;;	  (some (lambda (u2)
 ;;;		 (and (nonrecursive-closure? u2)
@@ -7621,16 +7597,16 @@
 			      (else #t)))
 			    (abstract-value-in-matching-abstract-environment
 			     e1 (restrict-environment vs xs xs1) bs)))))
-			   v
-			   (report-time-for
-			    'recalc-app #f #f #f
-			    (lambda ()
-			     (abstract-apply
-			      (abstract-value-in-matching-abstract-environment
-			       e1 (restrict-environment vs xs xs1) bs)
-			      (abstract-value-in-matching-abstract-environment
-			       e2 (restrict-environment vs xs xs2) bs)
-			      bs))))))
+			v
+			(report-time-for
+			 'recalc-app #f #f #f
+			 (lambda ()
+			  (abstract-apply
+			   (abstract-value-in-matching-abstract-environment
+			    e1 (restrict-environment vs xs xs1) bs)
+			   (abstract-value-in-matching-abstract-environment
+			    e2 (restrict-environment vs xs xs2) bs)
+			   bs))))))
 		     ((letrec-expression? e)
 		      ;; e: (letrec x1 = e1, ..., xn = en in e-body)
 		      (let ((es (letrec-expression-bodies e))
@@ -7800,7 +7776,7 @@
 		     (e2 (application-argument e))
 		     (xs1 (free-variables e1))
 		     (xs2 (free-variables e2)))
-		    ;; (flow-old (expression-abstract-flow3 e bs-old)))
+	       ;; (flow-old (expression-abstract-flow3 e bs-old)))
 	       ;; No new mappings need to be added if:
 	       ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
 	       ;;      - NOTE: we don't say exists vs->v' in (bs e)
@@ -7825,7 +7801,7 @@
 		   (if (and *fast-apply-prime?*
 			    (bs-unchanged-for-e? e1)
 			    (bs-unchanged-for-e? e2))
-			    ;; (mapping-with-vs-in-flow? vs flow-old))
+		       ;; (mapping-with-vs-in-flow? vs flow-old))
 		       (empty-abstract-analysis)
 		       (abstract-apply-prime
 			(abstract-value-in-matching-abstract-environment
@@ -7890,7 +7866,7 @@
 			      (memp expression=?
 				    (abstract-expression-binding-expression b)
 				    *expression-list*))
-		   bs2))
+			     bs2))
 	(bs2 (remove-if (lambda (b) (memq b bs-new-e)) bs2))
 	(es-new (map abstract-expression-binding-expression bs-new-e)))
   (when (not (null? es-new))
@@ -8470,7 +8446,7 @@
 ;;; \AB{V} x \AB{V} -> \AB{V}
 (define (abstract-bundle-v v v-perturbation)
  (abstract-bundle-v-internal v v-perturbation '() '()))
-			    
+
 (define (abstract-bundle-v-internal v v-perturbation vs-above cs)
  (format #t "v:~%") (pp (externalize-abstract-value v)) (newline)
  (format #t "v-pert:~%") (pp (externalize-abstract-value v-perturbation))
