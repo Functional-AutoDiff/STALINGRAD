@@ -13,43 +13,43 @@ set L7 = $9
 set POLYSTR = poly-${L1}-${L2}-${L3}-${L4}-${L5}-${L6}-${L7}
 set OUTFILE=${EXAMPLE}-${POLYSTR}-`date +"%m%d%y"`-${NUM}.txt
 
-if $L1 > 0 then
+if ($L1 > 0) then
   set L1opt = "-l1 $L1"
 else
   set L1opt = ""
 endif
 
-if $L2 > 0 then
+if ($L2 > 0) then
   set L2opt = "-l2 $L2"
 else
   set L2opt = ""
 endif
   
-if $L3 > 0 then
+if ($L3 > 0) then
   set L3opt = "-l3 $L3"
 else
   set L3opt = ""
 endif
   
-if $L4 > 0 then
+if ($L4 > 0) then
   set L4opt = "-l4 $L4 matching-nonrecursive-closure"
 else
   set L4opt = ""
 endif
   
-if $L5 > 0 then
+if ($L5 > 0) then
   set L5opt = "-l5 $L5"
 else
   set L5opt = ""
 endif
   
-if $L6 > 0 then
+if ($L6 > 0) then
   set L6opt = "-l6 $L6"
 else
   set L6opt = ""
 endif
 
-if $L7 > 0 then
+if ($L7 > 0) then
   set L7opt = "-l7 $L7"
 else
   set L7opt = ""
