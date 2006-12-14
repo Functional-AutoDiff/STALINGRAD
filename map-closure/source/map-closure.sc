@@ -61,11 +61,29 @@
 
 ;;; Top Level
 
+;;;                                                 map-closure behavior
+;;;                                                   different on letrec, also
+;;;                                                   can't (yet) call call/cc
+;;; -closure-converted:                             not allowed
+;;; -cps-converted:                                 not allowed
+;;; -cps-converted -closure-converted:              not allowed
+;;; -letrec-as-y                                    can't (yet) call call/cc
+;;; -letrec-as-y -closure-converted                 can't (yet) call call/cc
+;;; -letrec-as-y -cps-converted:                    can't call map-closure
+;;; -letrec-as-y -cps-converted -closure-converted:
+
+;;; Bugs:
+;;; map-closure -letrec-as-y ex5
+;;; map-closure -letrec-as-y ex6
+;;; map-closure ex5
+;;; map-closure ex6
+
 (define-command (main
 		 (any-number
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("cps-converted" cps-converted?))
 		 (at-most-one ("closure-converted" closure-converted?))
@@ -73,19 +91,29 @@
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
-		 (at-most-one ("trace-closures" trace-closures?))
+		 (at-most-one ("trace-nonrecursive-closures"
+			       trace-nonrecursive-closures?))
+		 (at-most-one
+		  ("trace-recursive-closures" trace-recursive-closures?))
 		 (at-most-one ("trace-argument/result" trace-argument/result?))
 		 (at-most-one
 		  ("unabbreviate-executably" unabbreviate-executably?))
-		 (at-most-one ("unabbreviate-closures" unabbreviate-closures?))
+		 (at-most-one ("unabbreviate-nonrecursive-closures"
+			       unabbreviate-nonrecursive-closures?))
+		 (at-most-one ("unabbreviate-recursive-closures"
+			       unabbreviate-recursive-closures?))
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
 		  ("length" length? (length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
 		 (required (pathname "pathname" string-argument)))
- (when (and unabbreviate-executably? unabbreviate-closures?)
-  (panic
-   "Can't specify both -unabbreviate-executably and -unabbreviate-closures"))
+ (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
+  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
+ (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
+  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
+ (when (and (or cps-converted? closure-converted?) (not letrec-as-y?))
+  (panic "When you specify -cps-converted or -closure-converted you must (currently) specify -letrec-as-y"))
+ (set! *letrec-as-y?* letrec-as-y?)
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/map-closure/include")))
@@ -94,10 +122,13 @@
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
- (set! *trace-closures?* trace-closures?)
+ (set! *trace-nonrecursive-closures?* trace-nonrecursive-closures?)
+ (set! *trace-recursive-closures?* trace-recursive-closures?)
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-executably?* unabbreviate-executably?)
- (set! *unabbreviate-closures?* unabbreviate-closures?)
+ (set! *unabbreviate-nonrecursive-closures?*
+       unabbreviate-nonrecursive-closures?)
+ (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)

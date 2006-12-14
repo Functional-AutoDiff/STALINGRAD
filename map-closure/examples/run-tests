@@ -1,9 +1,10 @@
 #!/bin/tcsh -f
 # $Id$
-map-closure -cps-converted -closure-converted cps
-map-closure -cps-converted -closure-converted closure
-map-closure -cps-converted -closure-converted even-odd
-map-closure -cps-converted -closure-converted factorial
-map-closure -cps-converted -closure-converted pair-procedure
-map-closure -cps-converted -closure-converted set-bang
-#map-closure -cps-converted -closure-converted schemer-example
+setenv OPTIONS "-letrec-as-y -cps-converted -closure-converted"
+map-closure $OPTIONS cps
+map-closure $OPTIONS closure
+map-closure $OPTIONS even-odd
+map-closure $OPTIONS factorial
+map-closure $OPTIONS pair-procedure
+map-closure $OPTIONS set-bang
+#map-closure $OPTIONS schemer-example

@@ -14,5 +14,5 @@
 			 (y (if (pair? y) y (cons y 0))))
 		    (cons (+ (car x) (car y)) (+ (cdr x) (cdr y)))))))
 	 (with-complex (lambda (thunk) ((substitute (lift-+ +) + thunk)))))
- (let ((h (let ((+ +)) (lambda (x) (+ x 5)))))
+ (let ((h (let ((p +)) (lambda (x) (p x 5)))))
   (with-complex (lambda () (h '(1 . 2))))))

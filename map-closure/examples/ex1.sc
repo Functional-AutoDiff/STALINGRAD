@@ -17,7 +17,7 @@
 
 (define g (let ((y 10)) (lambda (x) (+ x y))))
 
-(define h (let ((+ +)) (lambda (x) (+ x 5))))
+(define h (let ((p +)) (lambda (x) (p x 5))))
 
 (write (f '(2 . 3)))
 (newline)

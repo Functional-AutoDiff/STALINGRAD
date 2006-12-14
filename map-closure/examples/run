@@ -1,5 +1,7 @@
 #!/bin/tcsh -f
 # $Id$
+setenv OPTIONS "-letrec-as-y -closure-converted"
+unlimit stack
 echo Example 1
 mzscheme <<EOF
 (load "ex1.sc")
@@ -9,20 +11,20 @@ mzscheme <<EOF
 (load "ex2.sc")
 EOF
 echo Example 3
-map-closure -closure-converted ex3
+map-closure $OPTIONS ex3
 echo Example 4
-map-closure -closure-converted ex4
+map-closure $OPTIONS ex4
 echo Example 5
-map-closure -closure-converted ex5
+map-closure $OPTIONS ex5
 echo Example 6
-map-closure -closure-converted ex6
+map-closure $OPTIONS ex6
 echo Example 7
-map-closure -cps-converted -closure-converted ex7
+map-closure $OPTIONS -cps-converted ex7
 echo Example 8
-map-closure -cps-converted -closure-converted ex8
+map-closure $OPTIONS -cps-converted ex8
 echo Example 9
-map-closure -cps-converted -closure-converted ex9
+map-closure $OPTIONS -cps-converted ex9
 echo Blume Example
-map-closure -cps-converted -closure-converted blume
+map-closure $OPTIONS -cps-converted blume
 echo Ghuloum Example
-map-closure -cps-converted -closure-converted ghuloum
+map-closure $OPTIONS -cps-converted ghuloum

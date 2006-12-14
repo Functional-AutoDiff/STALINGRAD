@@ -1,26 +1,26 @@
 ;;; $Id$
 
-(let ((five 5))
- (let ((h (let ((+ +)) (lambda (x) (+ x five)))))
-  (letrec ((substitute
-	    (lambda (x y z)
-	     (cond ((equal? y z) x)
-		   ((pair? z)
-		    (cons (substitute x y (car z)) (substitute x y (cdr z))))
-		   ((procedure? z)
-		    (map-closure (lambda (n z) (substitute x y z)) z))
-		   (else z))))
-	   (lift-+
-	    (lambda (+)
-	     (lambda (x y) (cons (+ (car x) (car y)) (+ (cdr x) (cdr y))))))
-	   (lift-r->c
-	    (lambda (x)
-	     (cond
-	      ((real? x) (cons x 0))
-	      ((pair? x) (cons (lift-r->c (car x)) (lift-r->c (cdr x))))
-	      ((procedure? x) (map-closure (lambda (n x) (lift-r->c x)) x))
-	      (else x))))
-	   (with-complex
-	    (lambda (thunk) ((substitute (lift-+ +) + (lift-r->c thunk))))))
-   (let (((ignore) (call-with-current-continuation with-complex)))
-    (h '(1 . 2))))))
+(let ((h (let ((p +)) (lambda (x) (p x 5)))))
+ (letrec ((substitute
+	   (lambda (x y z)
+	    (cond ((equal? y z) x)
+		  ((pair? z)
+		   (cons (substitute x y (car z)) (substitute x y (cdr z))))
+		  ((procedure? z)
+		   (map-closure (lambda (n z) (substitute x y z)) z))
+		  (else z))))
+	  (lift-+
+	   (lambda (+)
+	    (lambda (x y) (cons (+ (car x) (car y)) (+ (cdr x) (cdr y))))))
+	  (lift-r->c
+	   (lambda (x)
+	    (cond
+	     ((real? x) (cons x 0))
+	     ((pair? x) (cons (lift-r->c (car x)) (lift-r->c (cdr x))))
+	     ((procedure? x) (map-closure (lambda (n x) (lift-r->c x)) x))
+	     (else x))))
+	  (with-complex
+	   (lambda (thunk) ((substitute (lift-+ +) + (lift-r->c thunk))))))
+  (let (((ignore) (call-with-current-continuation with-complex)))
+   ;; used to be '(1 . 2)
+   (h 1))))

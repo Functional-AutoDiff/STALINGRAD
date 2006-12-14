@@ -1,6 +1,6 @@
 ;;; $Id$
 
-(let ((h (let ((+ +)) (lambda (x) (+ x 5)))))
+(let ((h (let ((p +)) (lambda (x) (p x 5)))))
  (letrec ((substitute
 	  (lambda (x y z)
 	   (cond ((equal? y z) x)
