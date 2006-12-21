@@ -89,6 +89,7 @@
 		 (at-most-one ("closure-converted" closure-converted?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
+		 (at-most-one ("cps-evaluator" cps-evaluator?))
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
 		 (at-most-one ("trace-nonrecursive-closures"
@@ -113,8 +114,13 @@
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (when (and (or cps-converted? closure-converted?) (not letrec-as-y?))
   (panic "When you specify -cps-converted or -closure-converted you must (currently) specify -letrec-as-y"))
+ (when (and cps-evaluator?
+	    (or trace-primitive-procedures?
+		trace-nonrecursive-closures?
+		trace-recursive-closures?))
+  (panic "Cannot (currently) trace when using the CPS evaluator"))
  (set! *letrec-as-y?* letrec-as-y?)
- (initialize-basis!)
+ (initialize-basis! cps-evaluator?)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/map-closure/include")))
  (set! *cps-converted?* cps-converted?)
@@ -153,10 +159,10 @@
 	    length
 	    (lambda ()
 	     ((if *pp?* pp write)
-	      (externalize
-	       (evaluate (first result)
-			 'unspecified
-			 (list->vector (second result)))))))))
+	      (externalize ((if cps-evaluator? cps-evaluate evaluate)
+			    (first result)
+			    'unspecified
+			    (list->vector (second result)))))))))
 	 (newline)
 	 (when metered?
 	  (for-each (lambda (b)
