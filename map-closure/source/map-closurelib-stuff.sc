@@ -101,6 +101,8 @@
 
 (define-structure call-continuation c v)
 
+(define-structure map-closure-continuation c v1 v2 i vs xs)
+
 ;;; Variables
 
 (define *gensym* 0)
@@ -174,7 +176,11 @@
 (define (vlad-procedure? v)
  (or (primitive-procedure? v)
      (nonrecursive-closure? v)
-     (recursive-closure? v)))
+     (recursive-closure? v)
+     (done-continuation? v)
+     (argument-continuation? v)
+     (call-continuation? v)
+     (map-closure-continuation? v)))
 
 (define (vlad-equal? v1 v2)
  (or (eq? v1 v2)
@@ -1014,15 +1020,9 @@
  (list->vector (reduce append (map vector->list vss) '())))
 
 (define (index x xs e)
- ;; needs work: remove the vestigial let* stuff
  (define (lookup x-prime)
   (unless (or (variable=? x-prime x) (memp variable=? x-prime xs)) (fuck-up))
-  ;; The reverse is necessary because let*-expression doesn't prune unaccessed
-  ;; variables.
-  (if (memp variable=? x-prime xs)
-      ;; This is a vestigial let*-expression.
-      (- (length xs) (positionp variable=? x-prime (reverse xs)) 1)
-      -1))
+  (if (memp variable=? x-prime xs) (positionp variable=? x-prime xs) -1))
  (cond
   ((variable-access-expression? e)
    (make-variable-access-expression
@@ -1757,6 +1757,63 @@
 		  (argument-continuation-vs c)))
    ((call-continuation? c)
     (cps-call (call-continuation-c c) (call-continuation-v c) argument))
+   ((map-closure-continuation? c)
+    (cond
+     ((nonrecursive-closure? (map-closure-continuation-v2 c))
+      (if (null? (map-closure-continuation-xs c))
+	  (cps-call-continuation
+	   (map-closure-continuation-c c)
+	   (make-nonrecursive-closure
+	    (nonrecursive-closure-variables (map-closure-continuation-v2 c))
+	    (list->vector
+	     (reverse (cons argument (map-closure-continuation-vs c))))
+	    (nonrecursive-closure-variable (map-closure-continuation-v2 c))
+	    (nonrecursive-closure-body (map-closure-continuation-v2 c))))
+	  (cps-call
+	   (make-map-closure-continuation
+	    (map-closure-continuation-c c)
+	    (map-closure-continuation-v1 c)
+	    (map-closure-continuation-v2 c)
+	    (+ (map-closure-continuation-i c) 1)
+	    (cons argument (map-closure-continuation-vs c))
+	    (rest (map-closure-continuation-xs c)))
+	   (map-closure-continuation-v1 c)
+	   (vlad-cons
+	    (make-name (first (map-closure-continuation-xs c)))
+	    (vector-ref
+	     (nonrecursive-closure-values (map-closure-continuation-v2 c))
+	     (map-closure-continuation-i c))))))
+     ((recursive-closure? (map-closure-continuation-v2 c))
+      ;; needs work: This is incorrect because it doesn't map over the
+      ;;             procedure-variable slots.
+      (if (null? (map-closure-continuation-xs c))
+	  (cps-call-continuation
+	   (map-closure-continuation-c c)
+	   (make-recursive-closure
+	    (recursive-closure-variables (map-closure-continuation-v2 c))
+	    (list->vector
+	     (reverse (cons argument (map-closure-continuation-vs c))))
+	    (recursive-closure-procedure-variables
+	     (map-closure-continuation-v2 c))
+	    (recursive-closure-argument-variables
+	     (map-closure-continuation-v2 c))
+	    (recursive-closure-bodies (map-closure-continuation-v2 c))
+	    (recursive-closure-index (map-closure-continuation-v2 c))))
+	  (cps-call
+	   (make-map-closure-continuation
+	    (map-closure-continuation-c c)
+	    (map-closure-continuation-v1 c)
+	    (map-closure-continuation-v2 c)
+	    (+ (map-closure-continuation-i c) 1)
+	    (cons argument (map-closure-continuation-vs c))
+	    (rest (map-closure-continuation-xs c)))
+	   (map-closure-continuation-v1 c)
+	   (vlad-cons
+	    (make-name (first (map-closure-continuation-xs c)))
+	    (vector-ref
+	     (recursive-closure-values (map-closure-continuation-v2 c))
+	     (map-closure-continuation-i c))))))
+     (else (fuck-up))))
    (else (fuck-up))))
  (define (cps-call c callee argument)
   ;; needs work: stack, tracing
@@ -1772,7 +1829,42 @@
 	"Cannot call call-with-current-continuation when you specify -closure-converted together with -cps-evaluator unless you also specify -cps-converted"
 	argument))
       (cps-call c argument c))
-     ((map-closure) (panic "needs work"))
+     ((map-closure)
+      (unless (vlad-pair? argument)
+       (run-time-error "Invalid argument to map-closure" x))
+      (let ((v1 (vlad-car argument))
+	    (v2 (vlad-cdr argument)))
+       (cond
+	((primitive-procedure? v2) (cps-call-continuation c v2))
+	((nonrecursive-closure? v2)
+	 (if (null? (nonrecursive-closure-variables v2))
+	     (cps-call-continuation c v2)
+	     (cps-call
+	      (make-map-closure-continuation
+	       c v1 v2 1 '() (rest (nonrecursive-closure-variables v2)))
+	      v1
+	      (vlad-cons
+	       (make-name (first (nonrecursive-closure-variables v2)))
+	       (vector-ref (nonrecursive-closure-values v2) 0)))))
+	((recursive-closure? v2)
+	 ;; needs work: This is incorrect because it doesn't map over the
+	 ;;             procedure-variable slots.
+	 (if (null? (recursive-closure-variables v2))
+	     (cps-call-continuation c v2)
+	     (cps-call
+	      (make-map-closure-continuation
+	       c v1 v2 1 '() (rest (recursive-closure-variables v2)))
+	      v1
+	      (vlad-cons (make-name (first (recursive-closure-variables v2)))
+			 (vector-ref (recursive-closure-values v2) 0)))))
+	((or (done-continuation? v2)
+	     (argument-continuation? v2)
+	     (call-continuation? v2)
+	     (map-closure-continuation? v2))
+	 (panic "Cannot (yet) call map-closure on a continuation"))
+	(else
+	 (run-time-error
+	  "Invalid argument to map-closure" (vlad-cons v1 v2))))))
      (else (cps-call-continuation
 	    c ((primitive-procedure-procedure callee) argument)))))
    ((nonrecursive-closure? callee)
@@ -1809,7 +1901,8 @@
 		    (recursive-closure-values callee))))
    ((or (done-continuation? callee)
 	(argument-continuation? callee)
-	(call-continuation? callee))
+	(call-continuation? callee)
+	(map-closure-continuation? callee))
     (cps-call-continuation callee argument))
    (else (run-time-error "Target is not a procedure" callee))))
  (define (cps-evaluate c e v vs)
@@ -1998,8 +2091,6 @@
 	(when *cps-converted?*
 	 (run-time-error
 	  "Cannot call map-closure when you specify -cps-converted unless you also specify -closure-converted" (vlad-cons x1 x2)))
-	(unless (vlad-procedure? x1)
-	 (run-time-error "Invalid argument to map-closure" (vlad-cons x1 x2)))
 	(cond
 	 ((primitive-procedure? x2) x2)
 	 ((nonrecursive-closure? x2)
