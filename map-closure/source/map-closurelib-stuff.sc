@@ -101,7 +101,7 @@
 
 (define-structure call-continuation c v)
 
-(define-structure map-closure-continuation c v1 v2 i vs xs)
+(define-structure map-closure-continuation c v1 v2 xs vs1 vs2)
 
 ;;; Variables
 
@@ -1758,62 +1758,48 @@
    ((call-continuation? c)
     (cps-call (call-continuation-c c) (call-continuation-v c) argument))
    ((map-closure-continuation? c)
-    (cond
-     ((nonrecursive-closure? (map-closure-continuation-v2 c))
-      (if (null? (map-closure-continuation-xs c))
-	  (cps-call-continuation
-	   (map-closure-continuation-c c)
-	   (make-nonrecursive-closure
-	    (nonrecursive-closure-variables (map-closure-continuation-v2 c))
-	    (list->vector
-	     (reverse (cons argument (map-closure-continuation-vs c))))
-	    (nonrecursive-closure-variable (map-closure-continuation-v2 c))
-	    (nonrecursive-closure-body (map-closure-continuation-v2 c))))
-	  (cps-call
-	   (make-map-closure-continuation
-	    (map-closure-continuation-c c)
-	    (map-closure-continuation-v1 c)
-	    (map-closure-continuation-v2 c)
-	    (+ (map-closure-continuation-i c) 1)
-	    (cons argument (map-closure-continuation-vs c))
-	    (rest (map-closure-continuation-xs c)))
-	   (map-closure-continuation-v1 c)
-	   (vlad-cons
-	    (make-name (first (map-closure-continuation-xs c)))
-	    (vector-ref
-	     (nonrecursive-closure-values (map-closure-continuation-v2 c))
-	     (map-closure-continuation-i c))))))
-     ((recursive-closure? (map-closure-continuation-v2 c))
-      ;; needs work: This is incorrect because it doesn't map over the
-      ;;             procedure-variable slots.
-      (if (null? (map-closure-continuation-xs c))
-	  (cps-call-continuation
-	   (map-closure-continuation-c c)
-	   (make-recursive-closure
-	    (recursive-closure-variables (map-closure-continuation-v2 c))
-	    (list->vector
-	     (reverse (cons argument (map-closure-continuation-vs c))))
-	    (recursive-closure-procedure-variables
-	     (map-closure-continuation-v2 c))
-	    (recursive-closure-argument-variables
-	     (map-closure-continuation-v2 c))
-	    (recursive-closure-bodies (map-closure-continuation-v2 c))
-	    (recursive-closure-index (map-closure-continuation-v2 c))))
-	  (cps-call
-	   (make-map-closure-continuation
-	    (map-closure-continuation-c c)
-	    (map-closure-continuation-v1 c)
-	    (map-closure-continuation-v2 c)
-	    (+ (map-closure-continuation-i c) 1)
-	    (cons argument (map-closure-continuation-vs c))
-	    (rest (map-closure-continuation-xs c)))
-	   (map-closure-continuation-v1 c)
-	   (vlad-cons
-	    (make-name (first (map-closure-continuation-xs c)))
-	    (vector-ref
-	     (recursive-closure-values (map-closure-continuation-v2 c))
-	     (map-closure-continuation-i c))))))
-     (else (fuck-up))))
+    (if (null? (map-closure-continuation-xs c))
+	(cps-call-continuation
+	 (map-closure-continuation-c c)
+	 (let ((vs (reverse (cons argument (map-closure-continuation-vs2 c))))
+	       (v2 (map-closure-continuation-v2 c)))
+	  (cond
+	   ((nonrecursive-closure? v2)
+	    (make-nonrecursive-closure
+	     (nonrecursive-closure-variables v2)
+	     (list->vector vs)
+	     (nonrecursive-closure-variable v2)
+	     (nonrecursive-closure-body v2)))
+	   ((recursive-closure? v2)
+	    ;; needs work: This is incorrect because it doesn't map over the
+	    ;;             procedure-variable slots.
+	    (make-recursive-closure
+	     (recursive-closure-variables v2)
+	     (list->vector vs)
+	     (recursive-closure-procedure-variables v2)
+	     (recursive-closure-argument-variables v2)
+	     (recursive-closure-bodies v2)
+	     (recursive-closure-index v2)))
+	   ((argument-continuation? v2)
+	    (make-argument-continuation
+	     (first vs)
+	     (argument-continuation-e v2)
+	     (second vs)
+	     (list->vector (rest (rest vs)))))
+	   ((call-continuation? v2)
+	    (make-call-continuation (first vs) (second vs)))
+	   (else (fuck-up)))))
+	(cps-call
+	 (make-map-closure-continuation
+	  (map-closure-continuation-c c)
+	  (map-closure-continuation-v1 c)
+	  (map-closure-continuation-v2 c)
+	  (rest (map-closure-continuation-xs c))
+	  (rest (map-closure-continuation-vs1 c))
+	  (cons argument (map-closure-continuation-vs2 c)))
+	 (map-closure-continuation-v1 c)
+	 (vlad-cons (make-name (first (map-closure-continuation-xs c)))
+		    (first (map-closure-continuation-vs1 c))))))
    (else (fuck-up))))
  (define (cps-call c callee argument)
   ;; needs work: stack, tracing
@@ -1841,7 +1827,12 @@
 	     (cps-call-continuation c v2)
 	     (cps-call
 	      (make-map-closure-continuation
-	       c v1 v2 1 '() (rest (nonrecursive-closure-variables v2)))
+	       c
+	       v1
+	       v2
+	       (rest (nonrecursive-closure-variables v2))
+	       (rest (vector->list (nonrecursive-closure-values v2)))
+	       '())
 	      v1
 	      (vlad-cons
 	       (make-name (first (nonrecursive-closure-variables v2)))
@@ -1853,15 +1844,36 @@
 	     (cps-call-continuation c v2)
 	     (cps-call
 	      (make-map-closure-continuation
-	       c v1 v2 1 '() (rest (recursive-closure-variables v2)))
+	       c
+	       v1
+	       v2
+	       (rest (recursive-closure-variables v2))
+	       (rest (vector->list (recursive-closure-values v2)))
+	       '())
 	      v1
 	      (vlad-cons (make-name (first (recursive-closure-variables v2)))
 			 (vector-ref (recursive-closure-values v2) 0)))))
-	((or (done-continuation? v2)
-	     (argument-continuation? v2)
-	     (call-continuation? v2)
-	     (map-closure-continuation? v2))
-	 (panic "Cannot (yet) call map-closure on a continuation"))
+	((done-continuation? v2) (cps-call-continuation c v2))
+	((argument-continuation? v2)
+	 (cps-call
+	  (make-map-closure-continuation
+	   c
+	   v1
+	   v2
+	   (map-n (lambda (name) #f)
+		  (+ (vector-length (argument-continuation-vs v2)) 1))
+	   (cons (argument-continuation-v v2)
+		 (vector->list (argument-continuation-vs v2)))
+	   '())
+	  v1
+	  (vlad-cons (make-name #f) (argument-continuation-c v2))))
+	((call-continuation? v2)
+	 (cps-call (make-map-closure-continuation
+		    c v1 v2 '(#f) (list (call-continuation-v v2)) '())
+		   v1
+		   (vlad-cons (make-name #f) (call-continuation-c v2))))
+	((map-closure-continuation? v2)
+	 (panic "Cannot (yet) call map-closure on a map-closure continuation"))
 	(else
 	 (run-time-error
 	  "Invalid argument to map-closure" (vlad-cons v1 v2))))))
