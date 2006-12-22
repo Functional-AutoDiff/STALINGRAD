@@ -30,3 +30,7 @@ echo Ghuloum Example
 map-closure $OPTIONS ghuloum
 echo Second Blume Example
 map-closure $OPTIONS blume2
+echo Second Ghuloum Example
+map-closure $OPTIONS ghuloum2
+echo Third Ghuloum Example
+map-closure $OPTIONS ghuloum3
