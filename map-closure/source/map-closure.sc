@@ -61,23 +61,6 @@
 
 ;;; Top Level
 
-;;;                                                 map-closure behavior
-;;;                                                   different on letrec, also
-;;;                                                   can't (yet) call call/cc
-;;; -closure-converted:                             not allowed
-;;; -cps-converted:                                 not allowed
-;;; -cps-converted -closure-converted:              not allowed
-;;; -letrec-as-y                                    can't (yet) call call/cc
-;;; -letrec-as-y -closure-converted                 can't (yet) call call/cc
-;;; -letrec-as-y -cps-converted:                    can't call map-closure
-;;; -letrec-as-y -cps-converted -closure-converted:
-
-;;; Bugs:
-;;; map-closure -letrec-as-y ex5
-;;; map-closure -letrec-as-y ex6
-;;; map-closure ex5
-;;; map-closure ex6
-
 (define-command (main
 		 (any-number
 		  ("I"
@@ -90,6 +73,7 @@
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one ("cps-evaluator" cps-evaluator?))
+		 (at-most-one ("lazy-map-closure" lazy-map-closure?))
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
 		 (at-most-one ("trace-nonrecursive-closures"
@@ -159,10 +143,15 @@
 	    length
 	    (lambda ()
 	     ((if *pp?* pp write)
-	      (externalize ((if cps-evaluator? cps-evaluate evaluate)
-			    (first result)
-			    'unspecified
-			    (list->vector (second result)))))))))
+	      (externalize
+	       (if cps-evaluator?
+		   (cps-evaluate lazy-map-closure?
+				 (first result)
+				 'unspecified
+				 (list->vector (second result)))
+		   (evaluate (first result)
+			     'unspecified
+			     (list->vector (second result))))))))))
 	 (newline)
 	 (when metered?
 	  (for-each (lambda (b)

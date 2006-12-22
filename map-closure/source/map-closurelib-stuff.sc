@@ -103,6 +103,10 @@
 
 (define-structure map-closure-continuation c v1 v2 xs vs1 vs2)
 
+(define-structure promise-continuation c v)
+
+(define-structure cps-promise v1 v2 v? v)
+
 ;;; Variables
 
 (define *gensym* 0)
@@ -180,7 +184,8 @@
      (done-continuation? v)
      (argument-continuation? v)
      (call-continuation? v)
-     (map-closure-continuation? v)))
+     (map-closure-continuation? v)
+     (promise-continuation? v)))
 
 (define (vlad-equal? v1 v2)
  (or (eq? v1 v2)
@@ -1746,7 +1751,7 @@
 
 ;;; This encapsulation and the resulting hair is needed to get tail recursion
 ;;; in Scheme->C.
-(define (cps-evaluate e v vs)
+(define (cps-evaluate lazy-map-closure? e v vs)
  (define (cps-call-continuation c argument)
   (cond
    ((done-continuation? c) argument)
@@ -1765,27 +1770,24 @@
 	       (v2 (map-closure-continuation-v2 c)))
 	  (cond
 	   ((nonrecursive-closure? v2)
-	    (make-nonrecursive-closure
-	     (nonrecursive-closure-variables v2)
-	     (list->vector vs)
-	     (nonrecursive-closure-variable v2)
-	     (nonrecursive-closure-body v2)))
+	    (make-nonrecursive-closure (nonrecursive-closure-variables v2)
+				       (list->vector vs)
+				       (nonrecursive-closure-variable v2)
+				       (nonrecursive-closure-body v2)))
 	   ((recursive-closure? v2)
 	    ;; needs work: This is incorrect because it doesn't map over the
 	    ;;             procedure-variable slots.
-	    (make-recursive-closure
-	     (recursive-closure-variables v2)
-	     (list->vector vs)
-	     (recursive-closure-procedure-variables v2)
-	     (recursive-closure-argument-variables v2)
-	     (recursive-closure-bodies v2)
-	     (recursive-closure-index v2)))
+	    (make-recursive-closure (recursive-closure-variables v2)
+				    (list->vector vs)
+				    (recursive-closure-procedure-variables v2)
+				    (recursive-closure-argument-variables v2)
+				    (recursive-closure-bodies v2)
+				    (recursive-closure-index v2)))
 	   ((argument-continuation? v2)
-	    (make-argument-continuation
-	     (first vs)
-	     (argument-continuation-e v2)
-	     (second vs)
-	     (list->vector (rest (rest vs)))))
+	    (make-argument-continuation (first vs)
+					(argument-continuation-e v2)
+					(second vs)
+					(list->vector (rest (rest vs)))))
 	   ((call-continuation? v2)
 	    (make-call-continuation (first vs) (second vs)))
 	   (else (fuck-up)))))
@@ -1800,6 +1802,10 @@
 	 (map-closure-continuation-v1 c)
 	 (vlad-cons (make-name (first (map-closure-continuation-xs c)))
 		    (first (map-closure-continuation-vs1 c))))))
+   ((promise-continuation? c)
+    (set-cps-promise-v?! (promise-continuation-v c) #t)
+    (set-cps-promise-v! (promise-continuation-v c) argument)
+    (cps-call-continuation (promise-continuation-c c) argument))
    (else (fuck-up))))
  (define (cps-call c callee argument)
   ;; needs work: stack, tracing
@@ -1825,34 +1831,63 @@
 	((nonrecursive-closure? v2)
 	 (if (null? (nonrecursive-closure-variables v2))
 	     (cps-call-continuation c v2)
-	     (cps-call
-	      (make-map-closure-continuation
-	       c
-	       v1
-	       v2
-	       (rest (nonrecursive-closure-variables v2))
-	       (rest (vector->list (nonrecursive-closure-values v2)))
-	       '())
-	      v1
-	      (vlad-cons
-	       (make-name (first (nonrecursive-closure-variables v2)))
-	       (vector-ref (nonrecursive-closure-values v2) 0)))))
+	     (if lazy-map-closure?
+		 (cps-call-continuation
+		  c
+		  (make-nonrecursive-closure
+		   (nonrecursive-closure-variables v2)
+		   (map-vector
+		    (lambda (x v)
+		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
+		    (list->vector (nonrecursive-closure-variables v2))
+		    (nonrecursive-closure-values v2))
+		   (nonrecursive-closure-variable v2)
+		   (nonrecursive-closure-body v2)))
+		 (cps-call
+		  (make-map-closure-continuation
+		   c
+		   v1
+		   v2
+		   (rest (nonrecursive-closure-variables v2))
+		   (rest (vector->list (nonrecursive-closure-values v2)))
+		   '())
+		  v1
+		  (vlad-cons
+		   (make-name (first (nonrecursive-closure-variables v2)))
+		   (vector-ref (nonrecursive-closure-values v2) 0))))))
 	((recursive-closure? v2)
 	 ;; needs work: This is incorrect because it doesn't map over the
 	 ;;             procedure-variable slots.
 	 (if (null? (recursive-closure-variables v2))
 	     (cps-call-continuation c v2)
-	     (cps-call
-	      (make-map-closure-continuation
-	       c
-	       v1
-	       v2
-	       (rest (recursive-closure-variables v2))
-	       (rest (vector->list (recursive-closure-values v2)))
-	       '())
-	      v1
-	      (vlad-cons (make-name (first (recursive-closure-variables v2)))
-			 (vector-ref (recursive-closure-values v2) 0)))))
+	     (if lazy-map-closure?
+		 ;; needs work: This is incorrect because it doesn't map over
+		 ;;             the procedure-variable slots.
+		 (cps-call-continuation
+		  c
+		  (make-recursive-closure
+		   (recursive-closure-variables v2)
+		   (map-vector
+		    (lambda (x v)
+		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
+		    (list->vector (recursive-closure-variables v2))
+		    (recursive-closure-values v2))
+		   (recursive-closure-procedure-variables v2)
+		   (recursive-closure-argument-variables v2)
+		   (recursive-closure-bodies v2)
+		   (recursive-closure-index v2)))
+		 (cps-call
+		  (make-map-closure-continuation
+		   c
+		   v1
+		   v2
+		   (rest (recursive-closure-variables v2))
+		   (rest (vector->list (recursive-closure-values v2)))
+		   '())
+		  v1
+		  (vlad-cons
+		   (make-name (first (recursive-closure-variables v2)))
+		   (vector-ref (recursive-closure-values v2) 0))))))
 	((done-continuation? v2) (cps-call-continuation c v2))
 	((argument-continuation? v2)
 	 (cps-call
@@ -1860,20 +1895,27 @@
 	   c
 	   v1
 	   v2
+	   ;; needs work: Not sure that it is correct to give v and vs
+	   ;;             anonymous names.
 	   (map-n (lambda (name) #f)
 		  (+ (vector-length (argument-continuation-vs v2)) 1))
 	   (cons (argument-continuation-v v2)
 		 (vector->list (argument-continuation-vs v2)))
 	   '())
 	  v1
+	  ;; This gives the continuation an anonymous name.
 	  (vlad-cons (make-name #f) (argument-continuation-c v2))))
 	((call-continuation? v2)
 	 (cps-call (make-map-closure-continuation
+		    ;; This gives the callee value an anonymous name.
 		    c v1 v2 '(#f) (list (call-continuation-v v2)) '())
 		   v1
+		   ;; This gives the continuation an anonymous name.
 		   (vlad-cons (make-name #f) (call-continuation-c v2))))
 	((map-closure-continuation? v2)
 	 (panic "Cannot (yet) call map-closure on a map-closure continuation"))
+	((promise-continuation? v2)
+	 (panic "Cannot (yet) call map-closure on a promise continuation"))
 	(else
 	 (run-time-error
 	  "Invalid argument to map-closure" (vlad-cons v1 v2))))))
@@ -1914,14 +1956,22 @@
    ((or (done-continuation? callee)
 	(argument-continuation? callee)
 	(call-continuation? callee)
-	(map-closure-continuation? callee))
+	(map-closure-continuation? callee)
+	(promise-continuation? callee))
     (cps-call-continuation callee argument))
    (else (run-time-error "Target is not a procedure" callee))))
  (define (cps-evaluate c e v vs)
   (define (lookup i) (if (= i -1) v (vector-ref vs i)))
   (cond
    ((variable-access-expression? e)
-    (cps-call-continuation c (lookup (variable-access-expression-index e))))
+    (let ((v (lookup (variable-access-expression-index e))))
+     (if (cps-promise? v)
+	 (if (cps-promise-v? v)
+	     (cps-call-continuation c (cps-promise-v v))
+	     (cps-call (make-promise-continuation c v)
+		       (cps-promise-v1 v)
+		       (cps-promise-v2 v)))
+	 (cps-call-continuation c v))))
    ((name-expression? e)
     (cps-call-continuation c (make-name (name-expression-variable e))))
    ((lambda-expression? e)
