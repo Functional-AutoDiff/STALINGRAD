@@ -1,6 +1,6 @@
 #!/bin/tcsh -f
 # $Id$
-setenv OPTIONS "-letrec-as-y -closure-converted"
+setenv OPTIONS "-cps-evaluator -lazy-map-closure"
 unlimit stack
 echo Example 1
 mzscheme <<EOF
@@ -19,12 +19,14 @@ map-closure $OPTIONS ex5
 echo Example 6
 map-closure $OPTIONS ex6
 echo Example 7
-map-closure $OPTIONS -cps-converted ex7
+map-closure $OPTIONS ex7
 echo Example 8
-map-closure $OPTIONS -cps-converted ex8
+map-closure $OPTIONS ex8
 echo Example 9
-map-closure $OPTIONS -cps-converted ex9
+map-closure $OPTIONS ex9
 echo Blume Example
-map-closure $OPTIONS -cps-converted blume
+map-closure $OPTIONS blume
 echo Ghuloum Example
-map-closure $OPTIONS -cps-converted ghuloum
+map-closure $OPTIONS ghuloum
+echo Second Blume Example
+map-closure $OPTIONS blume2

@@ -6,5 +6,4 @@ map-closure $OPTIONS closure
 map-closure $OPTIONS even-odd
 map-closure $OPTIONS factorial
 map-closure $OPTIONS pair-procedure
-map-closure $OPTIONS set-bang
 #map-closure $OPTIONS schemer-example

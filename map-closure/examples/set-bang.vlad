@@ -1,5 +1,0 @@
-;;; $Id$
-
-(include "set")
-
-(let* ((foo 0) ((ignore) (set! foo 1))) foo)
