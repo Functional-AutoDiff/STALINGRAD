@@ -1,0 +1,14 @@
+;;; $Id$
+
+(include "set.vlad")
+
+(let ((g (cons 1 1)))
+ (let ((g (cons g g)))
+  (let ((g (cons g g)))
+   (let ((g (cons g g)))
+    (let ((g (cons g g)))
+     (let ((g (cons g g)))
+      (let ((g (cons g g)))
+       (let ((g (cons g g)))
+	(let (((ignore) (set! g (cons g 12))))
+	 (cdr g))))))))))
