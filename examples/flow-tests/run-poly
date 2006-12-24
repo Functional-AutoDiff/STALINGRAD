@@ -9,8 +9,9 @@ set L4 = $6
 set L5 = $7
 set L6 = $8
 set L7 = $9
+set L8 = $10
 
-set POLYSTR = poly-${L1}-${L2}-${L3}-${L4}-${L5}-${L6}-${L7}
+set POLYSTR = poly-${L1}-${L2}-${L3}-${L4}-${L5}-${L6}-${L7}-${L8}
 set OUTFILE=${EXAMPLE}-${POLYSTR}-`date +"%m%d%y"`-${NUM}.txt
 
 if ($L1 > 0) then
@@ -55,6 +56,12 @@ else
   set L7opt = ""
 endif
 
+if ($L8 > 0) then
+  set L8opt = "-l8 $L8"
+else
+  set L8opt = ""
+endif
+
 #set OTHER_OPTIONS = "\
 #-widen-last\
 #-quiet\
@@ -75,11 +82,11 @@ set OPTS3 = "-aesthetic -expression-equality-using-structural"
 set OPTS4 = ""
 
 echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
-$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt \
+$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt $L8opt \
 $OPTS1 $OPTS2 $OPTS3 $OPTS4 \
 ${EXAMPLE}.vlad > $OUTFILE
 
 unbuff >> $OUTFILE time ./stalingrad -pp -flow-analysis\
-$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt\
+$L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt $L8opt\
 $OPTS1 $OPTS2 $OPTS3 $OPTS4\
 ${EXAMPLE}.vlad
