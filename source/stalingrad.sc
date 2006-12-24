@@ -97,7 +97,6 @@
 		 (at-most-one ("memoized" memoized?))
 		 (at-most-one ("church-booleans" church-booleans?))
 		 (at-most-one ("church-pairs" church-pairs?))
-		 (at-most-one ("cfa0" cfa0?))
 		 (at-most-one
 		  ("l1" l1? (l1 "flow-size-limit" integer-argument #f)))
 		 (at-most-one
@@ -121,31 +120,24 @@
 		 (at-most-one
 		  ("l7" l7? (l7 "matching-bundle-abstract-value-limit"
 				integer-argument #f)))
-		 (at-most-one ("no-anf" no-anf?))
-		 (at-most-one ("single-real" single-real?))
+		 (at-most-one
+		  ("l8" l8?
+			(l8 "bundle-nesting-depth-limit" integer-argument #f)))
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
 		 (at-most-one
 		  ("only-initialized-flows" only-initialized-flows?)
 		  ("only-updated-bindings" only-updated-bindings?)
 		  ("only-updated-bindings2" only-updated-bindings2?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
-		 (at-most-one ("exclude-prelude" exclude-prelude?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
-		 (at-most-one
-		  ("debug" debug? (debug-level "level" integer-argument 0)))
-		 (at-most-one ("debug-new"
-			       debug-new?
-			       (debug-level-new "level" integer-argument 0)))
 		 (at-most-one ("no-warn" no-warn?))
-		 (at-most-one ("old-initial" old-initial?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
 			      ("expression-equality-using-structural"
 			       expression-equality-using-structural?)
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
-		 (at-most-one ("use-alpha-equivalence" use-alpha-equivalence?))
 		 (at-most-one
 		  ("memoize-alpha-matching" memoize-alpha-matching?))
 		 (at-most-one ("memoize-nonrecursive-alpha-matching"
@@ -154,6 +146,13 @@
 		  ("bucket-set" bucket-set?
 				(bucket-set "number" integer-argument 0)))
 		 (at-most-one ("test" test?))
+		 (at-most-one
+		  ("checkpoint-at" checkpoint-at?
+				   (i "iteration" integer-argument #f)))
+		 (at-most-one
+		  ("output-procedure-names-after"
+		   output-procedure-names-after?
+		   (i-output-procedure-names "iteration" integer-argument #f)))
 		 (at-most-one ("new-subset" new-subset?))
 		 (at-most-one ("paranoid-widen" paranoid-widen?))
 		 (at-most-one ("paranoid-update-range" paranoid-update-range?))
@@ -188,7 +187,6 @@
  (set! *letrec-as-y?* letrec-as-y?)
  (set! *church-booleans?* church-booleans?)
  (set! *church-pairs?* church-pairs?)
- (set! *cfa0?* cfa0?)
  (when l1? (set! *l1* l1))
  (when l2? (set! *l2* l2))
  (when l3? (set! *l3* l3))
@@ -198,13 +196,7 @@
  (when l5? (set! *l5* l5))
  (when l6? (set! *l6* l6))
  (when l7? (set! *l7* l7))
- (when debug?
-  (set! *debug?* debug?)
-  (set! *debug-level* debug-level))
- (when debug-new?
-  (set! *debug-new?* debug-new?)
-  (set! *debug-level-new* debug-level-new))
- (set! *old-initial?* old-initial?)
+ (when l8? (set! *l8* l8))
  (when (or expression-equality-using-identity?
 	   expression-equality-using-structural?
 	   expression-equality-using-alpha?)
@@ -214,7 +206,6 @@
 	expression-equality-using-structural?)
   (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
  (when no-warn? (set! *warn?* #f))
- (set! *use-alpha-equivalence?* use-alpha-equivalence?)
  (set! *memoize-alpha-matching?* memoize-alpha-matching?)
  (set! *memoize-nonrecursive-alpha-matching?*
        memoize-nonrecursive-alpha-matching?)
@@ -225,6 +216,12 @@
 	 (else (panic "undefined bucket set!"))))
   (set! *time-buckets* (make-vector (length *bucket-names*) 0.)))
  (set! *test?* test?)
+ (when checkpoint-at?
+  (set! *checkpoint-at?* checkpoint-at?)
+  (set! *checkpoint-iteration* i))
+ (when output-procedure-names-after?
+  (set! *output-procedure-names?* output-procedure-names-after?)
+  (set! *i-output-procedure-names* i-output-procedure-names))
  (set! *new-subset?* new-subset?)
  (set! *paranoid-widen?* paranoid-widen?)
  (set! *paranoid-update-range?* paranoid-update-range?)
@@ -248,14 +245,11 @@
  (set! *widen-first?* (not widen-last?))
  (set! *machine-style?* machine-style?)
  (set! *report-all-times?* report-all-times?)
- (when no-anf? (set! *anf-convert?* (not no-anf?)))
- (set! *allow-only-single-concrete-real?* single-real?)
  (set! *track-flow-analysis?* track-flow-analysis?)
  (set! *only-initialized-flows?* only-initialized-flows?)
  (set! *only-updated-bindings?* only-updated-bindings?)
  (set! *only-updated-bindings2?* only-updated-bindings2?)
  (set! *include-prior-values?* (not exclude-prior-values?))
- (set! *exclude-prelude?* exclude-prelude?)
  (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
