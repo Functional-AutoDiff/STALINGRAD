@@ -2,7 +2,7 @@
 ;;; LaHaShem HaAretz U'Mloah
 ;;; $Id$
 
-;;; Map-Closure 0.1
+;;; Map-Closure 0.4
 ;;; Copyright 2006 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
@@ -97,7 +97,7 @@
 ;;; dummy slot is needed because of a bug in QobiScheme
 (define-structure done-continuation dummy)
 
-(define-structure argument-continuation c e v vs)
+(define-structure argument-continuation c e v vs x xs)
 
 (define-structure call-continuation c v)
 
@@ -1343,6 +1343,7 @@
 	(bs (append bs0 bs1 *value-bindings*)))
   (list
    (index #f xs e)
+   xs
    (map (lambda (x)
 	 (value-binding-value
 	  (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs)))
@@ -1587,46 +1588,6 @@
  (for-each (lambda (v) ((if *pp?* pp write) (externalize v)) (newline)) vs)
  (panic message))
 
-(define (substitute x1 x2 e)
- (cond ((variable-access-expression? e)
-	(if (variable=? (variable-access-expression-variable e) x2)
-	    (make-variable-access-expression
-	     x1 (variable-access-expression-index e))
-	    e))
-       ((name-expression? e)
-	(if (variable=? (name-expression-variable e) x2)
-	    (make-name-expression x1 (name-expression-index e))
-	    e))
-       ((lambda-expression? e)
-	(if (memp variable=? x2 (lambda-expression-free-variables e))
-	    (make-lambda-expression
-	     (map (lambda (x) (if (variable=? x x2) x1 x))
-		  (lambda-expression-free-variables e))
-	     (lambda-expression-free-variable-indices e)
-	     (lambda-expression-variable e)
-	     (substitute x1 x2 (lambda-expression-body e)))
-	    e))
-       ((application? e)
-	(make-application (substitute x1 x2 (application-callee e))
-			  (substitute x1 x2 (application-argument e))))
-       ((letrec-expression? e)
-	(if (memp variable=? x2 (letrec-expression-body-free-variables e))
-	    (make-letrec-expression
-	     (map (lambda (x) (if (variable=? x x2) x1 x))
-		  (letrec-expression-bodies-free-variables e))
-	     (letrec-expression-bodies-free-variable-indices e)
-	     (map (lambda (x) (if (variable=? x x2) x1 x))
-		  (letrec-expression-body-free-variables e))
-	     (letrec-expression-body-free-variable-indices e)
-	     (letrec-expression-procedure-variables e)
-	     (letrec-expression-argument-variables e)
-	     (map (lambda (x e) (if (variable=? x x2) e (substitute x1 x2 e)))
-		  (letrec-expression-argument-variables e)
-		  (letrec-expression-bodies e))
-	     (substitute x1 x2 (letrec-expression-body e)))
-	    e))
-       (else (fuck-up))))
-
 (define (call callee argument)
  (unless (vlad-procedure? callee)
   (run-time-error "Target is not a procedure" callee))
@@ -1652,36 +1613,35 @@
 	 ((primitive-procedure? callee)
 	  ((primitive-procedure-procedure callee) argument))
 	 ((nonrecursive-closure? callee)
-	  (evaluate (substitute (alpha (nonrecursive-closure-variable callee))
-				(nonrecursive-closure-variable callee)
-				(nonrecursive-closure-body callee))
+	  (evaluate (nonrecursive-closure-body callee)
 		    argument
-		    (nonrecursive-closure-values callee)))
+		    (nonrecursive-closure-values callee)
+		    (alpha (nonrecursive-closure-variable callee))
+		    (list->vector (nonrecursive-closure-variables callee))))
 	 ((recursive-closure? callee)
 	  (evaluate
-	   (substitute
-	    (alpha (vector-ref (recursive-closure-argument-variables callee)
-			       (recursive-closure-index callee)))
-	    (vector-ref (recursive-closure-argument-variables callee)
-			(recursive-closure-index callee))
-	    (vector-ref (recursive-closure-bodies callee)
-			(recursive-closure-index callee)))
+	   (vector-ref (recursive-closure-bodies callee)
+		       (recursive-closure-index callee))
 	   argument
+	   (vector-append (map-n-vector
+			   (lambda (i)
+			    (if (= i (recursive-closure-index callee))
+				;; to preserve eq?ness
+				callee
+				(make-recursive-closure
+				 (recursive-closure-variables callee)
+				 (recursive-closure-values callee)
+				 (recursive-closure-procedure-variables callee)
+				 (recursive-closure-argument-variables callee)
+				 (recursive-closure-bodies callee)
+				 i)))
+			   (vector-length (recursive-closure-bodies callee)))
+			  (recursive-closure-values callee))
+	   (alpha (vector-ref (recursive-closure-argument-variables callee)
+			      (recursive-closure-index callee)))
 	   (vector-append
-	    (map-n-vector
-	     (lambda (i)
-	      (if (= i (recursive-closure-index callee))
-		  ;; to preserve eq?ness
-		  callee
-		  (make-recursive-closure
-		   (recursive-closure-variables callee)
-		   (recursive-closure-values callee)
-		   (recursive-closure-procedure-variables callee)
-		   (recursive-closure-argument-variables callee)
-		   (recursive-closure-bodies callee)
-		   i)))
-	     (vector-length (recursive-closure-bodies callee)))
-	    (recursive-closure-values callee))))
+	    (recursive-closure-procedure-variables callee)
+	    (list->vector (recursive-closure-variables callee)))))
 	 (else (fuck-up)))))
   (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
@@ -1699,59 +1659,57 @@
 	       (externalize callee))))
   result))
 
-(define (evaluate e v vs)
+(define (evaluate e v vs x xs)
  (define (lookup i) (if (= i -1) v (vector-ref vs i)))
+ (define (lookup-name i) (if (= i -1) x (vector-ref xs i)))
  (cond ((variable-access-expression? e)
 	(lookup (variable-access-expression-index e)))
-       ((name-expression? e) (make-name (name-expression-variable e)))
+       ((name-expression? e)
+	(make-name (lookup-name (name-expression-index e))))
        ((lambda-expression? e)
 	(make-nonrecursive-closure
-	 (free-variables e)
+	 (map lookup-name
+	      (vector->list (lambda-expression-free-variable-indices e)))
 	 (map-vector lookup (lambda-expression-free-variable-indices e))
 	 (lambda-expression-variable e)
 	 (lambda-expression-body e)))
        ((application? e)
 	;; This LET* is to specify the evaluation order.
-	(let* ((callee (evaluate (application-callee e) v vs))
-	       (argument (evaluate (application-argument e) v vs)))
+	(let* ((callee (evaluate (application-callee e) v vs x xs))
+	       (argument (evaluate (application-argument e) v vs x xs)))
 	 (call callee argument)))
        ((letrec-expression? e)
 	(evaluate
 	 (letrec-expression-body e)
 	 v
 	 (vector-append
-	  (let* ((vs (map-vector
-		      lookup
-		      (letrec-expression-bodies-free-variable-indices e)))
-		 (xs0 (letrec-expression-procedure-variables e))
-		 (xs1 (letrec-expression-argument-variables e))
-		 (xs2 (map alpha xs0))
-		 (es (list->vector
-		      (map (lambda (x1 e)
-			    (let loop ((xs2 xs2) (xs0 xs0) (e e))
-			     (if (null? xs2)
-				 e
-				 (loop (rest xs2)
-				       (rest xs0)
-				       (if (variable=? x1 (first xs0))
-					   e
-					   (substitute
-					    (first xs2) (first xs0) e))))))
-			   xs1 (letrec-expression-bodies e))))
-		 (xs1 (list->vector xs1))
-		 (xs2 (list->vector xs2)))
+	  (let ((vs (map-vector
+		     lookup
+		     (letrec-expression-bodies-free-variable-indices e)))
+		;; We don't alpha-rename the procedure variables since, with
+		;; the current implementation, map-closure won't see them.
+		(xs0 (list->vector (letrec-expression-procedure-variables e)))
+		(xs1 (list->vector (letrec-expression-argument-variables e)))
+		(es (list->vector (letrec-expression-bodies e))))
 	   (map-n-vector
 	    (lambda (i)
 	     (make-recursive-closure
-	      (letrec-expression-bodies-free-variables e) vs xs2 xs1 es i))
+	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
 	    (vector-length es)))
 	  (map-vector lookup
+		      (letrec-expression-body-free-variable-indices e)))
+	 x
+	 (vector-append
+	  ;; We don't alpha-rename the procedure variables since, with
+	  ;; the current implementation, map-closure won't see them.
+	  (list->vector (letrec-expression-procedure-variables e))
+	  (map-vector lookup-name
 		      (letrec-expression-body-free-variable-indices e)))))
        (else (fuck-up))))
 
 ;;; This encapsulation and the resulting hair is needed to get tail recursion
 ;;; in Scheme->C.
-(define (cps-evaluate lazy-map-closure? e v vs)
+(define (cps-evaluate lazy-map-closure? e v vs x xs)
  (define (cps-call-continuation c argument)
   (cond
    ((done-continuation? c) argument)
@@ -1759,7 +1717,9 @@
     (cps-evaluate (make-call-continuation (argument-continuation-c c) argument)
 		  (argument-continuation-e c)
 		  (argument-continuation-v c)
-		  (argument-continuation-vs c)))
+		  (argument-continuation-vs c)
+		  (argument-continuation-x c)
+		  (argument-continuation-xs c)))
    ((call-continuation? c)
     (cps-call (call-continuation-c c) (call-continuation-v c) argument))
    ((map-closure-continuation? c)
@@ -1775,8 +1735,10 @@
 				       (nonrecursive-closure-variable v2)
 				       (nonrecursive-closure-body v2)))
 	   ((recursive-closure? v2)
-	    ;; needs work: This is incorrect because it doesn't map over the
-	    ;;             procedure-variable slots.
+	    ;; Native map-closure (when you don't specify -closure-converted)
+	    ;; has a different semantics when using native letrec (when you
+	    ;; don't specify -letrec-as-y). It doesn't map over the
+	    ;; procedure-variable slots.
 	    (make-recursive-closure (recursive-closure-variables v2)
 				    (list->vector vs)
 				    (recursive-closure-procedure-variables v2)
@@ -1787,7 +1749,9 @@
 	    (make-argument-continuation (first vs)
 					(argument-continuation-e v2)
 					(second vs)
-					(list->vector (rest (rest vs)))))
+					(list->vector (rest (rest vs)))
+					(argument-continuation-x v2)
+					(argument-continuation-xs v2)))
 	   ((call-continuation? v2)
 	    (make-call-continuation (first vs) (second vs)))
 	   (else (fuck-up)))))
@@ -1858,13 +1822,17 @@
 		   (make-name (first (nonrecursive-closure-variables v2)))
 		   (vector-ref (nonrecursive-closure-values v2) 0))))))
 	((recursive-closure? v2)
-	 ;; needs work: This is incorrect because it doesn't map over the
-	 ;;             procedure-variable slots.
 	 (if (null? (recursive-closure-variables v2))
+	     ;; Native map-closure (when you don't specify -closure-converted)
+	     ;; has a different semantics when using native letrec (when you
+	     ;; don't specify -letrec-as-y). It doesn't map over the
+	     ;; procedure-variable slots.
 	     (cps-call-continuation c v2)
 	     (if lazy-map-closure?
-		 ;; needs work: This is incorrect because it doesn't map over
-		 ;;             the procedure-variable slots.
+		 ;; Native map-closure (when you don't specify
+		 ;; -closure-converted) has a different semantics when using
+		 ;; native letrec (when you don't specify -letrec-as-y). It
+		 ;; doesn't map over the procedure-variable slots.
 		 (cps-call-continuation
 		  c
 		  (make-recursive-closure
@@ -1880,6 +1848,10 @@
 		   (recursive-closure-argument-variables v2)
 		   (recursive-closure-bodies v2)
 		   (recursive-closure-index v2)))
+		 ;; Native map-closure (when you don't specify
+		 ;; -closure-converted) has a different semantics when using
+		 ;; native letrec (when you don't specify -letrec-as-y). It
+		 ;; doesn't map over the procedure-variable slots.
 		 (cps-call
 		  (make-map-closure-continuation
 		   c
@@ -1894,21 +1866,18 @@
 		   (vector-ref (recursive-closure-values v2) 0))))))
 	((done-continuation? v2) (cps-call-continuation c v2))
 	((argument-continuation? v2)
-	 (cps-call
-	  (make-map-closure-continuation
-	   c
-	   v1
-	   v2
-	   ;; needs work: Not sure that it is correct to give v and vs
-	   ;;             anonymous names.
-	   (map-n (lambda (name) #f)
-		  (+ (vector-length (argument-continuation-vs v2)) 1))
-	   (cons (argument-continuation-v v2)
-		 (vector->list (argument-continuation-vs v2)))
-	   '())
-	  v1
-	  ;; This gives the continuation an anonymous name.
-	  (vlad-cons (make-name #f) (argument-continuation-c v2))))
+	 (cps-call (make-map-closure-continuation
+		    c
+		    v1
+		    v2
+		    (cons (argument-continuation-x v2)
+			  (vector->list (argument-continuation-xs v2)))
+		    (cons (argument-continuation-v v2)
+			  (vector->list (argument-continuation-vs v2)))
+		    '())
+		   v1
+		   ;; This gives the continuation an anonymous name.
+		   (vlad-cons (make-name #f) (argument-continuation-c v2))))
 	((call-continuation? v2)
 	 (cps-call (make-map-closure-continuation
 		    ;; This gives the callee value an anonymous name.
@@ -1920,28 +1889,22 @@
 	 (panic "Cannot (yet) call map-closure on a map-closure continuation"))
 	((promise-continuation? v2)
 	 (panic "Cannot (yet) call map-closure on a promise continuation"))
-	(else
-	 (run-time-error
-	  "Invalid argument to map-closure" (vlad-cons v1 v2))))))
+	(else (run-time-error
+	       "Invalid argument to map-closure" (vlad-cons v1 v2))))))
      (else (cps-call-continuation
 	    c ((primitive-procedure-procedure callee) argument)))))
    ((nonrecursive-closure? callee)
     (cps-evaluate c
-		  (substitute (alpha (nonrecursive-closure-variable callee))
-			      (nonrecursive-closure-variable callee)
-			      (nonrecursive-closure-body callee))
+		  (nonrecursive-closure-body callee)
 		  argument
-		  (nonrecursive-closure-values callee)))
+		  (nonrecursive-closure-values callee)
+		  (alpha (nonrecursive-closure-variable callee))
+		  (list->vector (nonrecursive-closure-variables callee))))
    ((recursive-closure? callee)
     (cps-evaluate
      c
-     (substitute
-      (alpha (vector-ref (recursive-closure-argument-variables callee)
-			 (recursive-closure-index callee)))
-      (vector-ref (recursive-closure-argument-variables callee)
-		  (recursive-closure-index callee))
-      (vector-ref (recursive-closure-bodies callee)
-		  (recursive-closure-index callee)))
+     (vector-ref (recursive-closure-bodies callee)
+		 (recursive-closure-index callee))
      argument
      (vector-append (map-n-vector
 		     (lambda (i)
@@ -1956,7 +1919,11 @@
 			   (recursive-closure-bodies callee)
 			   i)))
 		     (vector-length (recursive-closure-bodies callee)))
-		    (recursive-closure-values callee))))
+		    (recursive-closure-values callee))
+     (alpha (vector-ref (recursive-closure-argument-variables callee)
+			(recursive-closure-index callee)))
+     (vector-append (recursive-closure-procedure-variables callee)
+		    (list->vector (recursive-closure-variables callee)))))
    ((or (done-continuation? callee)
 	(argument-continuation? callee)
 	(call-continuation? callee)
@@ -1964,8 +1931,9 @@
 	(promise-continuation? callee))
     (cps-call-continuation callee argument))
    (else (run-time-error "Target is not a procedure" callee))))
- (define (cps-evaluate c e v vs)
+ (define (cps-evaluate c e v vs x xs)
   (define (lookup i) (if (= i -1) v (vector-ref vs i)))
+  (define (lookup-name i) (if (= i -1) x (vector-ref xs i)))
   (cond
    ((variable-access-expression? e)
     (let ((v (lookup (variable-access-expression-index e))))
@@ -1977,53 +1945,53 @@
 		       (cps-promise-v2 v)))
 	 (cps-call-continuation c v))))
    ((name-expression? e)
-    (cps-call-continuation c (make-name (name-expression-variable e))))
+    (cps-call-continuation
+     c (make-name (lookup-name (name-expression-index e)))))
    ((lambda-expression? e)
     (cps-call-continuation
      c
      (make-nonrecursive-closure
-      (free-variables e)
+      (map lookup-name
+	   (vector->list (lambda-expression-free-variable-indices e)))
       (map-vector lookup (lambda-expression-free-variable-indices e))
       (lambda-expression-variable e)
       (lambda-expression-body e))))
    ((application? e)
-    (cps-evaluate (make-argument-continuation c (application-argument e) v vs)
-		  (application-callee e)
-		  v
-		  vs))
+    (cps-evaluate
+     (make-argument-continuation c (application-argument e) v vs x xs)
+     (application-callee e)
+     v
+     vs
+     x
+     xs))
    ((letrec-expression? e)
     (cps-evaluate
      c
      (letrec-expression-body e)
      v
      (vector-append
-      (let* ((vs (map-vector
-		  lookup (letrec-expression-bodies-free-variable-indices e)))
-	     (xs0 (letrec-expression-procedure-variables e))
-	     (xs1 (letrec-expression-argument-variables e))
-	     (xs2 (map alpha xs0))
-	     (es (list->vector
-		  (map (lambda (x1 e)
-			(let loop ((xs2 xs2) (xs0 xs0) (e e))
-			 (if (null? xs2)
-			     e
-			     (loop (rest xs2)
-				   (rest xs0)
-				   (if (variable=? x1 (first xs0))
-				       e
-				       (substitute
-					(first xs2) (first xs0) e))))))
-		       xs1 (letrec-expression-bodies e))))
-	     (xs1 (list->vector xs1))
-	     (xs2 (list->vector xs2)))
+      (let ((vs (map-vector
+		 lookup (letrec-expression-bodies-free-variable-indices e)))
+	    ;; We don't alpha-rename the procedure variables since, with
+	    ;; the current implementation, map-closure won't see them.
+	    (xs0 (list->vector (letrec-expression-procedure-variables e)))
+	    (xs1 (list->vector (letrec-expression-argument-variables e)))
+	    (es (list->vector (letrec-expression-bodies e))))
        (map-n-vector
 	(lambda (i)
 	 (make-recursive-closure
-	  (letrec-expression-bodies-free-variables e) vs xs2 xs1 es i))
+	  (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
 	(vector-length es)))
-      (map-vector lookup (letrec-expression-body-free-variable-indices e)))))
+      (map-vector lookup (letrec-expression-body-free-variable-indices e)))
+     x
+     (vector-append
+      ;; We don't alpha-rename the procedure variables since, with
+      ;; the current implementation, map-closure won't see them.
+      (list->vector (letrec-expression-procedure-variables e))
+      (map-vector lookup-name
+		  (letrec-expression-body-free-variable-indices e)))))
    (else (fuck-up))))
- (cps-evaluate (make-done-continuation #f) e v vs))
+ (cps-evaluate (make-done-continuation #f) e v vs x xs))
 
 ;;; Primitives
 
@@ -2124,8 +2092,8 @@
 	 "write"))
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
- ;; needs work: map-closure will not see the closure slot of a partial
- ;;             application of cons-procedure.
+ ;; Note that map-closure will not see the closure slot of a partial
+ ;; application of cons-procedure.
  (define-primitive-procedure 'cons-procedure
   (unary (lambda (x1)
 	  (make-primitive-procedure
@@ -2158,7 +2126,7 @@
        (lambda (x1 x2)
 	(when *cps-converted?*
 	 (run-time-error
-	  "Cannot call map-closure when you specify -cps-converted unless you also specify -closure-converted" (vlad-cons x1 x2)))
+	  "Cannot call map-closure when you specify -cps-converted unless you also specify -closure-converted or -cps-evaluator" (vlad-cons x1 x2)))
 	(cond
 	 ((primitive-procedure? x2) x2)
 	 ((nonrecursive-closure? x2)
@@ -2170,8 +2138,10 @@
 	   (nonrecursive-closure-variable x2)
 	   (nonrecursive-closure-body x2)))
 	 ((recursive-closure? x2)
-	  ;; needs work: This is incorrect because it doesn't map over the
-	  ;;             procedure-variable slots.
+	  ;; Native map-closure (when you don't specify -closure-converted) has
+	  ;; a different semantics when using native letrec (when you don't
+	  ;; specify -letrec-as-y). It doesn't map over the
+	  ;; procedure-variable slots.
 	  (make-recursive-closure
 	   (recursive-closure-variables x2)
 	   (map-vector (lambda (x v) (call x1 (vlad-cons (make-name x) v)))
@@ -2181,9 +2151,8 @@
 	   (recursive-closure-argument-variables x2)
 	   (recursive-closure-bodies x2)
 	   (recursive-closure-index x2)))
-	 (else
-	  (run-time-error
-	   "Invalid argument to map-closure" (vlad-cons x1 x2)))))
+	 (else (run-time-error
+		"Invalid argument to map-closure" (vlad-cons x1 x2)))))
        "map-closure")))
  ;; needs work: To implement this natively as part of closure conversion.
  (define-primitive-procedure 'lookup

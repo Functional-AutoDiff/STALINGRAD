@@ -2,7 +2,7 @@
 ;;; LaHaShem HaAretz U'Mloah
 ;;; $Id$
 
-;;; Map-Closure 0.1
+;;; Map-Closure 0.4
 ;;; Copyright 2006 Purdue University. All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
@@ -103,6 +103,11 @@
 		trace-nonrecursive-closures?
 		trace-recursive-closures?))
   (panic "Cannot (currently) trace when using the CPS evaluator"))
+ (when (and lazy-map-closure? (not cps-evaluator?))
+  (panic "When you specify -lazy-map-closure you must (currently) also specify -cps-evaluator"))
+ (when (and lazy-map-closure? closure-converted?)
+  (panic
+   "Cannot (currently) specify both -lazy-map-closure and -closure-converted"))
  (set! *letrec-as-y?* letrec-as-y?)
  (initialize-basis! cps-evaluator?)
  (set! *include-path*
@@ -148,9 +153,13 @@
 		   (cps-evaluate lazy-map-closure?
 				 (first result)
 				 'unspecified
+				 (list->vector (third result))
+				 #f
 				 (list->vector (second result)))
 		   (evaluate (first result)
 			     'unspecified
+			     (list->vector (third result))
+			     #f
 			     (list->vector (second result))))))))))
 	 (newline)
 	 (when metered?
