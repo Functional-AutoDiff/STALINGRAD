@@ -64,10 +64,14 @@ map-closure -letrec-as-y -cps-converted -closure-converted factorial
 echo factorial
 map-closure factorial
 
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
 echo -letrec-as-y -cps-evaluator cps
 map-closure -letrec-as-y -cps-evaluator cps
-echo -letrec-as-y -closure-converted -cps-evaluator cps
-map-closure -letrec-as-y -closure-converted -cps-evaluator cps
 echo -letrec-as-y -cps-converted -cps-evaluator cps
 map-closure -letrec-as-y -cps-converted -cps-evaluator cps
 echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator cps
@@ -82,17 +86,12 @@ map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
   cps
 echo -cps-evaluator -lazy-map-closure cps
 map-closure -cps-evaluator -lazy-map-closure cps
-echo -letrec-as-y cps
-map-closure -letrec-as-y cps
-echo -letrec-as-y -closure-converted cps
-map-closure -letrec-as-y -closure-converted cps
 echo -letrec-as-y -cps-converted cps
 map-closure -letrec-as-y -cps-converted cps
 echo -letrec-as-y -cps-converted -closure-converted cps
 map-closure -letrec-as-y -cps-converted -closure-converted cps
-echo cps
-map-closure cps
 
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
 echo -letrec-as-y -cps-evaluator closure
 map-closure -letrec-as-y -cps-evaluator closure
 echo -letrec-as-y -closure-converted -cps-evaluator closure
@@ -115,8 +114,6 @@ echo -letrec-as-y closure
 map-closure -letrec-as-y closure
 echo -letrec-as-y -closure-converted closure
 map-closure -letrec-as-y -closure-converted closure
-echo -letrec-as-y -cps-converted closure
-map-closure -letrec-as-y -cps-converted closure
 echo -letrec-as-y -cps-converted -closure-converted closure
 map-closure -letrec-as-y -cps-converted -closure-converted closure
 echo closure
