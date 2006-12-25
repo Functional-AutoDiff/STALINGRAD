@@ -1,8 +1,10 @@
 #!/bin/tcsh -f
 # $Id$
 
-# needs work: versions without -cps-evaluator
-# needs work: versions with -lazy-map-closure
+# -cps-converted and/or -closure-clonverted without -letrec-as-y is not
+# implemented.
+# -lazy-map-closure without -cps-evaluator is not implemented.
+# -lazy-map-closure together with -closure-converted is not implemented.
 
 echo -letrec-as-y -cps-evaluator even-odd
 map-closure -letrec-as-y -cps-evaluator even-odd
@@ -11,9 +13,28 @@ map-closure -letrec-as-y -closure-converted -cps-evaluator even-odd
 echo -letrec-as-y -cps-converted -cps-evaluator even-odd
 map-closure -letrec-as-y -cps-converted -cps-evaluator even-odd
 echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator even-odd
-map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator even-odd
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  even-odd
 echo -cps-evaluator even-odd
 map-closure -cps-evaluator even-odd
+echo -letrec-as-y -cps-evaluator -lazy-map-closure even-odd
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure even-odd
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure even-odd
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  even-odd
+echo -cps-evaluator -lazy-map-closure even-odd
+map-closure -cps-evaluator -lazy-map-closure even-odd
+echo -letrec-as-y even-odd
+map-closure -letrec-as-y even-odd
+echo -letrec-as-y -closure-converted even-odd
+map-closure -letrec-as-y -closure-converted even-odd
+echo -letrec-as-y -cps-converted even-odd
+map-closure -letrec-as-y -cps-converted even-odd
+echo -letrec-as-y -cps-converted -closure-converted even-odd
+map-closure -letrec-as-y -cps-converted -closure-converted even-odd
+echo even-odd
+map-closure even-odd
+
 echo -letrec-as-y -cps-evaluator factorial
 map-closure -letrec-as-y -cps-evaluator factorial
 echo -letrec-as-y -closure-converted -cps-evaluator factorial
@@ -21,17 +42,57 @@ map-closure -letrec-as-y -closure-converted -cps-evaluator factorial
 echo -letrec-as-y -cps-converted -cps-evaluator factorial
 map-closure -letrec-as-y -cps-converted -cps-evaluator factorial
 echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator factorial
-map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator factorial
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  factorial
 echo -cps-evaluator factorial
 map-closure -cps-evaluator factorial
+echo -letrec-as-y -cps-evaluator -lazy-map-closure factorial
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure factorial
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure factorial
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  factorial
+echo -cps-evaluator -lazy-map-closure factorial
+map-closure -cps-evaluator -lazy-map-closure factorial
+echo -letrec-as-y factorial
+map-closure -letrec-as-y factorial
+echo -letrec-as-y -closure-converted factorial
+map-closure -letrec-as-y -closure-converted factorial
+echo -letrec-as-y -cps-converted factorial
+map-closure -letrec-as-y -cps-converted factorial
+echo -letrec-as-y -cps-converted -closure-converted factorial
+map-closure -letrec-as-y -cps-converted -closure-converted factorial
+echo factorial
+map-closure factorial
+
 echo -letrec-as-y -cps-evaluator cps
 map-closure -letrec-as-y -cps-evaluator cps
+echo -letrec-as-y -closure-converted -cps-evaluator cps
+map-closure -letrec-as-y -closure-converted -cps-evaluator cps
 echo -letrec-as-y -cps-converted -cps-evaluator cps
 map-closure -letrec-as-y -cps-converted -cps-evaluator cps
 echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator cps
-map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator cps
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  cps
 echo -cps-evaluator cps
 map-closure -cps-evaluator cps
+echo -letrec-as-y -cps-evaluator -lazy-map-closure cps
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure cps
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure cps
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  cps
+echo -cps-evaluator -lazy-map-closure cps
+map-closure -cps-evaluator -lazy-map-closure cps
+echo -letrec-as-y cps
+map-closure -letrec-as-y cps
+echo -letrec-as-y -closure-converted cps
+map-closure -letrec-as-y -closure-converted cps
+echo -letrec-as-y -cps-converted cps
+map-closure -letrec-as-y -cps-converted cps
+echo -letrec-as-y -cps-converted -closure-converted cps
+map-closure -letrec-as-y -cps-converted -closure-converted cps
+echo cps
+map-closure cps
+
 echo -letrec-as-y -cps-evaluator closure
 map-closure -letrec-as-y -cps-evaluator closure
 echo -letrec-as-y -closure-converted -cps-evaluator closure
@@ -39,16 +100,55 @@ map-closure -letrec-as-y -closure-converted -cps-evaluator closure
 echo -letrec-as-y -cps-converted -cps-evaluator closure
 map-closure -letrec-as-y -cps-converted -cps-evaluator closure
 echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator closure
-map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator closure
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  closure
 echo -cps-evaluator closure
 map-closure -cps-evaluator closure
+echo -letrec-as-y -cps-evaluator -lazy-map-closure closure
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure closure
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure closure
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  closure
+echo -cps-evaluator -lazy-map-closure closure
+map-closure -cps-evaluator -lazy-map-closure closure
+echo -letrec-as-y closure
+map-closure -letrec-as-y closure
+echo -letrec-as-y -closure-converted closure
+map-closure -letrec-as-y -closure-converted closure
+echo -letrec-as-y -cps-converted closure
+map-closure -letrec-as-y -cps-converted closure
+echo -letrec-as-y -cps-converted -closure-converted closure
+map-closure -letrec-as-y -cps-converted -closure-converted closure
+echo closure
+map-closure closure
+
 echo -letrec-as-y -cps-evaluator pair-procedure
 map-closure -letrec-as-y -cps-evaluator pair-procedure
 echo -letrec-as-y -closure-converted -cps-evaluator pair-procedure
 map-closure -letrec-as-y -closure-converted -cps-evaluator pair-procedure
 echo -letrec-as-y -cps-converted -cps-evaluator pair-procedure
 map-closure -letrec-as-y -cps-converted -cps-evaluator pair-procedure
-echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator pair-procedure
-map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator pair-procedure
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  pair-procedure
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  pair-procedure
 echo -cps-evaluator pair-procedure
 map-closure -cps-evaluator pair-procedure
+echo -letrec-as-y -cps-evaluator -lazy-map-closure pair-procedure
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure pair-procedure
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  pair-procedure
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  pair-procedure
+echo -cps-evaluator -lazy-map-closure pair-procedure
+map-closure -cps-evaluator -lazy-map-closure pair-procedure
+echo -letrec-as-y pair-procedure
+map-closure -letrec-as-y pair-procedure
+echo -letrec-as-y -closure-converted pair-procedure
+map-closure -letrec-as-y -closure-converted pair-procedure
+echo -letrec-as-y -cps-converted pair-procedure
+map-closure -letrec-as-y -cps-converted pair-procedure
+echo -letrec-as-y -cps-converted -closure-converted pair-procedure
+map-closure -letrec-as-y -cps-converted -closure-converted pair-procedure
+echo pair-procedure
+map-closure pair-procedure

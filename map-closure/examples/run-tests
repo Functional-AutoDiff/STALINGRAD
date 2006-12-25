@@ -1,9 +1,0 @@
-#!/bin/tcsh -f
-# $Id$
-setenv OPTIONS "-letrec-as-y -cps-converted -closure-converted"
-map-closure $OPTIONS cps
-map-closure $OPTIONS closure
-map-closure $OPTIONS even-odd
-map-closure $OPTIONS factorial
-map-closure $OPTIONS pair-procedure
-#map-closure $OPTIONS schemer-example
