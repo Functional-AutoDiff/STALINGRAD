@@ -1837,6 +1837,8 @@
 		  (make-nonrecursive-closure
 		   (nonrecursive-closure-variables v2)
 		   (map-vector
+		    ;; needs work: To handle the case where the closure values
+		    ;;             are promises.
 		    (lambda (x v)
 		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
 		    (list->vector (nonrecursive-closure-variables v2))
@@ -1868,6 +1870,8 @@
 		  (make-recursive-closure
 		   (recursive-closure-variables v2)
 		   (map-vector
+		    ;; needs work: To handle the case where the closure values
+		    ;;             are promises.
 		    (lambda (x v)
 		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
 		    (list->vector (recursive-closure-variables v2))
@@ -2120,6 +2124,8 @@
 	 "write"))
  (define-primitive-procedure 'car (binary (lambda (x1 x2) x1) "car"))
  (define-primitive-procedure 'cdr (binary (lambda (x1 x2) x2) "cdr"))
+ ;; needs work: map-closure will not see the closure slot of a partial
+ ;;             application of cons-procedure.
  (define-primitive-procedure 'cons-procedure
   (unary (lambda (x1)
 	  (make-primitive-procedure
