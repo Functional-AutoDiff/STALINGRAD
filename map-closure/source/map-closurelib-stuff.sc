@@ -103,9 +103,9 @@
 
 (define-structure map-closure-continuation c v1 v2 xs vs1 vs2)
 
-(define-structure promise-continuation c v)
+(define-structure promise-continuation c v x vs)
 
-(define-structure cps-promise v1 x v2 v? v)
+(define-structure cps-promise vs1 v2 v? v)
 
 ;;; Variables
 
@@ -1547,6 +1547,15 @@
 			    (recursive-closure-index v))))
 	    (else (vector-ref (recursive-closure-procedure-variables v)
 			      (recursive-closure-index v)))))
+	  ((cps-promise? v)
+	   ;; needs work: I haven't thought through quote? and cps-promise.
+	   (when *unabbreviate-executably?*
+	    (panic "Cannot unabbreviate promises executably"))
+	   (if (cps-promise-v? v)
+	       `(promise ,(loop (cps-promise-v v) quote?))
+	       `(promise ,(map (lambda (v) (loop v quote?))
+			       (cps-promise-vs1 v))
+			 ,(loop (cps-promise-v2 v) quote?))))
 	  (else (fuck-up))))))
   (if *unabbreviate-executably?*
       `(let* ,(map (lambda (b)
@@ -1769,7 +1778,10 @@
 			  (length (map-closure-continuation-vs2 v2))
 			  3)))))
 	   ((promise-continuation? v2)
-	    (make-promise-continuation (first vs) (second vs)))
+	    (make-promise-continuation (first vs)
+				       (second vs)
+				       (promise-continuation-x v2)
+				       (rest (rest vs))))
 	   (else (fuck-up)))))
 	(cps-call
 	 (make-map-closure-continuation
@@ -1783,9 +1795,18 @@
 	 (vlad-cons (make-name (first (map-closure-continuation-xs c)))
 		    (first (map-closure-continuation-vs1 c))))))
    ((promise-continuation? c)
-    (set-cps-promise-v?! (promise-continuation-v c) #t)
-    (set-cps-promise-v! (promise-continuation-v c) argument)
-    (cps-call-continuation (promise-continuation-c c) argument))
+    (cond
+     ((null? (promise-continuation-vs c))
+      (set-cps-promise-v?! (promise-continuation-v c) #t)
+      (set-cps-promise-v! (promise-continuation-v c) argument)
+      (cps-call-continuation (promise-continuation-c c) argument))
+     (else (cps-call
+	    (make-promise-continuation (promise-continuation-c c)
+				       (promise-continuation-v c)
+				       (promise-continuation-x c)
+				       (but-last (promise-continuation-vs c)))
+	    (last (promise-continuation-vs c))
+	    (vlad-cons (make-name (promise-continuation-x c)) argument)))))
    (else (fuck-up))))
  (define (cps-call c callee argument)
   ;; needs work: stack, tracing
@@ -1798,12 +1819,15 @@
      ((call-with-current-continuation)
       (when *closure-converted?*
        (run-time-error
-	"Cannot call call-with-current-continuation when you specify -closure-converted together with -cps-evaluator unless you also specify -cps-converted"
+	"Cannot (currently) call call-with-current-continuation when you specify -closure-converted together with -cps-evaluator unless you also specify -cps-converted"
 	argument))
       (cps-call c argument c))
      ((map-closure)
+      (when *cps-converted?*
+       (run-time-error
+	"Cannot (currently) call map-closure when you specify -cps-converted unless you also specify -closure-converted" argument))
       (unless (vlad-pair? argument)
-       (run-time-error "Invalid argument to map-closure" x))
+       (run-time-error "Invalid argument to map-closure" argument))
       (let ((v1 (vlad-car argument))
 	    (v2 (vlad-cdr argument)))
        (cond
@@ -1817,9 +1841,16 @@
 		  (make-nonrecursive-closure
 		   (nonrecursive-closure-variables v2)
 		   (map-vector
-		    ;; needs work: To handle the case where the closure values
-		    ;;             are promises.
-		    (lambda (x v) (make-cps-promise v1 x v #f #f))
+		    (lambda (x v)
+		     (if (cps-promise? v)
+			 (if (cps-promise-v? v)
+			     (make-cps-promise
+			      (list v1) (cps-promise-v v) #f #f)
+			     (make-cps-promise (cons v1 (cps-promise-vs1 v))
+					       (cps-promise-v2 v)
+					       #f
+					       #f))
+			 (make-cps-promise (list v1) v #f #f)))
 		    (list->vector (nonrecursive-closure-variables v2))
 		    (nonrecursive-closure-values v2))
 		   (nonrecursive-closure-variable v2)
@@ -1853,9 +1884,16 @@
 		  (make-recursive-closure
 		   (recursive-closure-variables v2)
 		   (map-vector
-		    ;; needs work: To handle the case where the closure values
-		    ;;             are promises.
-		    (lambda (x v) (make-cps-promise v1 x v #f #f))
+		    (lambda (x v)
+		     (if (cps-promise? v)
+			 (if (cps-promise-v? v)
+			     (make-cps-promise
+			      (list v1) (cps-promise-v v) #f #f)
+			     (make-cps-promise (cons v1 (cps-promise-vs1 v))
+					       (cps-promise-v2 v)
+					       #f
+					       #f))
+			 (make-cps-promise (list v1) v #f #f)))
 		    (list->vector (recursive-closure-variables v2))
 		    (recursive-closure-values v2))
 		   (recursive-closure-procedure-variables v2)
@@ -1902,14 +1940,10 @@
 	((map-closure-continuation? v2)
 	 (cps-call
 	  (make-map-closure-continuation
-	   ;; This gives the callee value an anonymous name.
 	   c
 	   v1
 	   v2
-	   ;; This gives the v1, v2, vs1, and vs2 values anonymous
-	   ;; names. This is correct for v1 and v2.
-	   ;; needs work: I'm not sure whether xs should be passed
-	   ;; for some portion of vs1 and/or vs2.
+	   ;; This gives the v1, v2, vs1, and vs2 values anonymous names.
 	   (map-n (lambda (i) #f)
 		  (+ (length (map-closure-continuation-vs1 v2))
 		     (length (map-closure-continuation-vs2 v2))
@@ -1923,12 +1957,18 @@
 	  ;; This gives the continuation an anonymous name.
 	  (vlad-cons (make-name #f) (map-closure-continuation-c v2))))
 	((promise-continuation? v2)
-	 (cps-call (make-map-closure-continuation
-		    ;; This gives the promise value an anonymous name.
-		    c v1 v2 '(#f) (list (promise-continuation-v v2)) '())
-		   v1
-		   ;; This gives the continuation an anonymous name.
-		   (vlad-cons (make-name #f) (promise-continuation-c v2))))
+	 (cps-call
+	  (make-map-closure-continuation
+	   c
+	   v1
+	   v2
+	   ;; This gives the v and vs values anonymous names.
+	   (map-n (lambda (i) #f) (+ (length (promise-continuation-vs v2)) 1))
+	   (cons (promise-continuation-v v2) (promise-continuation-vs v2))
+	   '())
+	  v1
+	  ;; This gives the continuation an anonymous name.
+	  (vlad-cons (make-name #f) (promise-continuation-c v2))))
 	(else (run-time-error
 	       "Invalid argument to map-closure" (vlad-cons v1 v2))))))
      (else (cps-call-continuation
@@ -1980,10 +2020,16 @@
      (if (cps-promise? v)
 	 (if (cps-promise-v? v)
 	     (cps-call-continuation c (cps-promise-v v))
-	     (cps-call (make-promise-continuation c v)
-		       (cps-promise-v1 v)
-		       (vlad-cons (make-name (cps-promise-x v))
-				  (cps-promise-v2 v))))
+	     (cps-call
+	      (make-promise-continuation
+	       c
+	       v
+	       (make-name (lookup-name (variable-access-expression-index e)))
+	       (but-last (cps-promise-vs1 v)))
+	      (last (cps-promise-vs1 v))
+	      (vlad-cons
+	       (make-name (lookup-name (variable-access-expression-index e)))
+	       (cps-promise-v2 v))))
 	 (cps-call-continuation c v))))
    ((name-expression? e)
     (cps-call-continuation
@@ -2157,7 +2203,7 @@
       'call-with-current-continuation
       (unary (lambda (x)
 	      (run-time-error
-	       "Cannot call call-with-current-continuation unless you specify -cps-converted or -cps-evaluator"
+	       "Cannot (currently) call call-with-current-continuation unless you specify -cps-converted or -cps-evaluator"
 	       x))
 	     "call-with-current-continuation")))
  (define-primitive-procedure 'map-closure
@@ -2167,7 +2213,7 @@
        (lambda (x1 x2)
 	(when *cps-converted?*
 	 (run-time-error
-	  "Cannot call map-closure when you specify -cps-converted unless you also specify -closure-converted or -cps-evaluator" (vlad-cons x1 x2)))
+	  "Cannot (currently) call map-closure when you specify -cps-converted unless you also specify -closure-converted" (vlad-cons x1 x2)))
 	(cond
 	 ((primitive-procedure? x2) x2)
 	 ((nonrecursive-closure? x2)
