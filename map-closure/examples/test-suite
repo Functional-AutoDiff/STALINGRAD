@@ -1,6 +1,8 @@
 #!/bin/tcsh -f
 # $Id$
 
+unlimit stack
+
 # -cps-converted and/or -closure-clonverted without -letrec-as-y is not
 # implemented.
 # -lazy-map-closure without -cps-evaluator is not implemented.
@@ -149,3 +151,276 @@ echo -letrec-as-y -cps-converted -closure-converted pair-procedure
 map-closure -letrec-as-y -cps-converted -closure-converted pair-procedure
 echo pair-procedure
 map-closure pair-procedure
+
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex3
+map-closure -letrec-as-y -cps-evaluator ex3
+echo -letrec-as-y -closure-converted -cps-evaluator ex3
+map-closure -letrec-as-y -closure-converted -cps-evaluator ex3
+echo -letrec-as-y -cps-converted -cps-evaluator ex3
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex3
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex3
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex3
+echo -cps-evaluator ex3
+map-closure -cps-evaluator ex3
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex3
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex3
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex3
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex3
+echo -cps-evaluator -lazy-map-closure ex3
+map-closure -cps-evaluator -lazy-map-closure ex3
+echo -letrec-as-y ex3
+map-closure -letrec-as-y ex3
+echo -letrec-as-y -closure-converted ex3
+map-closure -letrec-as-y -closure-converted ex3
+echo -letrec-as-y -cps-converted -closure-converted ex3
+map-closure -letrec-as-y -cps-converted -closure-converted ex3
+echo ex3
+map-closure ex3
+
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex4
+map-closure -letrec-as-y -cps-evaluator ex4
+echo -letrec-as-y -closure-converted -cps-evaluator ex4
+map-closure -letrec-as-y -closure-converted -cps-evaluator ex4
+echo -letrec-as-y -cps-converted -cps-evaluator ex4
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex4
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex4
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex4
+echo -cps-evaluator ex4
+map-closure -cps-evaluator ex4
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex4
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex4
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex4
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex4
+echo -cps-evaluator -lazy-map-closure ex4
+map-closure -cps-evaluator -lazy-map-closure ex4
+echo -letrec-as-y ex4
+map-closure -letrec-as-y ex4
+echo -letrec-as-y -closure-converted ex4
+map-closure -letrec-as-y -closure-converted ex4
+echo -letrec-as-y -cps-converted -closure-converted ex4
+map-closure -letrec-as-y -cps-converted -closure-converted ex4
+echo ex4
+map-closure ex4
+
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex5
+map-closure -letrec-as-y -cps-evaluator ex5
+echo -letrec-as-y -closure-converted -cps-evaluator ex5
+map-closure -letrec-as-y -closure-converted -cps-evaluator ex5
+echo -letrec-as-y -cps-converted -cps-evaluator ex5
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex5
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex5
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex5
+echo -cps-evaluator ex5
+map-closure -cps-evaluator ex5
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex5
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex5
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex5
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex5
+echo -cps-evaluator -lazy-map-closure ex5
+map-closure -cps-evaluator -lazy-map-closure ex5
+echo -letrec-as-y ex5
+map-closure -letrec-as-y ex5
+echo -letrec-as-y -closure-converted ex5
+map-closure -letrec-as-y -closure-converted ex5
+echo -letrec-as-y -cps-converted -closure-converted ex5
+map-closure -letrec-as-y -cps-converted -closure-converted ex5
+echo ex5
+map-closure ex5
+
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex6
+map-closure -letrec-as-y -cps-evaluator ex6
+echo -letrec-as-y -closure-converted -cps-evaluator ex6
+map-closure -letrec-as-y -closure-converted -cps-evaluator ex6
+echo -letrec-as-y -cps-converted -cps-evaluator ex6
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex6
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex6
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex6
+echo -cps-evaluator ex6
+map-closure -cps-evaluator ex6
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex6
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex6
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex6
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex6
+echo -cps-evaluator -lazy-map-closure ex6
+map-closure -cps-evaluator -lazy-map-closure ex6
+echo -letrec-as-y ex6
+map-closure -letrec-as-y ex6
+echo -letrec-as-y -closure-converted ex6
+map-closure -letrec-as-y -closure-converted ex6
+echo -letrec-as-y -cps-converted -closure-converted ex6
+map-closure -letrec-as-y -cps-converted -closure-converted ex6
+echo ex6
+map-closure ex6
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex7
+map-closure -letrec-as-y -cps-evaluator ex7
+echo -letrec-as-y -cps-converted -cps-evaluator ex7
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex7
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex7
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex7
+echo -cps-evaluator ex7
+map-closure -cps-evaluator ex7
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex7
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex7
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex7
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex7
+echo -cps-evaluator -lazy-map-closure ex7
+map-closure -cps-evaluator -lazy-map-closure ex7
+echo -letrec-as-y -cps-converted -closure-converted ex7
+map-closure -letrec-as-y -cps-converted -closure-converted ex7
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex8
+map-closure -letrec-as-y -cps-evaluator ex8
+echo -letrec-as-y -cps-converted -cps-evaluator ex8
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex8
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex8
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex8
+echo -cps-evaluator ex8
+map-closure -cps-evaluator ex8
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex8
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex8
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex8
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex8
+echo -cps-evaluator -lazy-map-closure ex8
+map-closure -cps-evaluator -lazy-map-closure ex8
+echo -letrec-as-y -cps-converted -closure-converted ex8
+map-closure -letrec-as-y -cps-converted -closure-converted ex8
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ex9
+map-closure -letrec-as-y -cps-evaluator ex9
+echo -letrec-as-y -cps-converted -cps-evaluator ex9
+map-closure -letrec-as-y -cps-converted -cps-evaluator ex9
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex9
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator ex9
+echo -cps-evaluator ex9
+map-closure -cps-evaluator ex9
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ex9
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ex9
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex9
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ex9
+echo -cps-evaluator -lazy-map-closure ex9
+map-closure -cps-evaluator -lazy-map-closure ex9
+echo -letrec-as-y -cps-converted -closure-converted ex9
+map-closure -letrec-as-y -cps-converted -closure-converted ex9
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator blume
+map-closure -letrec-as-y -cps-evaluator blume
+echo -letrec-as-y -cps-converted -cps-evaluator blume
+map-closure -letrec-as-y -cps-converted -cps-evaluator blume
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator blume
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator blume
+echo -cps-evaluator blume
+map-closure -cps-evaluator blume
+echo -letrec-as-y -cps-evaluator -lazy-map-closure blume
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure blume
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure blume
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure blume
+echo -cps-evaluator -lazy-map-closure blume
+map-closure -cps-evaluator -lazy-map-closure blume
+echo -letrec-as-y -cps-converted -closure-converted blume
+map-closure -letrec-as-y -cps-converted -closure-converted blume
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+echo -letrec-as-y -cps-evaluator ghuloum
+map-closure -letrec-as-y -cps-evaluator ghuloum
+echo -letrec-as-y -cps-converted -cps-evaluator ghuloum
+map-closure -letrec-as-y -cps-converted -cps-evaluator ghuloum
+echo -letrec-as-y -cps-converted -closure-converted -cps-evaluator ghuloum
+map-closure -letrec-as-y -cps-converted -closure-converted -cps-evaluator \
+  ghuloum
+echo -cps-evaluator ghuloum
+map-closure -cps-evaluator ghuloum
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ghuloum
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  ghuloum
+echo -cps-evaluator -lazy-map-closure ghuloum
+map-closure -cps-evaluator -lazy-map-closure ghuloum
+echo -letrec-as-y -cps-converted -closure-converted ghuloum
+map-closure -letrec-as-y -cps-converted -closure-converted ghuloum
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+# eliminate all but ones with -lazy-map-closure
+echo -letrec-as-y -cps-evaluator -lazy-map-closure blume2
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure blume2
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure blume2
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure blume2
+echo -cps-evaluator -lazy-map-closure blume2
+map-closure -cps-evaluator -lazy-map-closure blume2
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+# eliminate all but ones with -lazy-map-closure
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum2
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum2
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ghuloum2
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  ghuloum2
+echo -cps-evaluator -lazy-map-closure ghuloum2
+map-closure -cps-evaluator -lazy-map-closure ghuloum2
+
+# eliminated -letrec-as-y -closure-converted -cps-evaluator since not
+# implemented for call/cc.
+# eliminated -letrec-as-y since not implemented for call/cc.
+# eliminated blank since not implemented for call/cc.
+# eliminated -letrec-as-y -closure-converted cps since not implemented for
+# call/cc.
+# eliminated -letrec-as-y -cps-converted since not implemented for map-closure.
+# eliminate all but ones with -lazy-map-closure
+echo -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum3
+map-closure -letrec-as-y -cps-evaluator -lazy-map-closure ghuloum3
+echo -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure ghuloum3
+map-closure -letrec-as-y -cps-converted -cps-evaluator -lazy-map-closure \
+  ghuloum3
+echo -cps-evaluator -lazy-map-closure ghuloum3
+map-closure -cps-evaluator -lazy-map-closure ghuloum3
