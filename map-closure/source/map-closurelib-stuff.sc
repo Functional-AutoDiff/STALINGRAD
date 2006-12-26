@@ -105,7 +105,7 @@
 
 (define-structure promise-continuation c v)
 
-(define-structure cps-promise v1 v2 v? v)
+(define-structure cps-promise v1 v2 x v? v)
 
 ;;; Variables
 
@@ -1754,6 +1754,22 @@
 					(argument-continuation-xs v2)))
 	   ((call-continuation? v2)
 	    (make-call-continuation (first vs) (second vs)))
+	   ((map-closure-continuation? v2)
+	    (make-map-closure-continuation
+	     (first vs)
+	     (second vs)
+	     (third vs)
+	     (map-closure-continuation-xs v2)
+	     (list->vector
+	      (sublist vs 3 (+ (length (map-closure-continuation-vs1 v2)) 3)))
+	     (list->vector
+	      (sublist vs
+		       (+ (length (map-closure-continuation-vs1 v2)) 3)
+		       (+ (length (map-closure-continuation-vs1 v2))
+			  (length (map-closure-continuation-vs2 v2))
+			  3)))))
+	   ((promise-continuation? v2)
+	    (make-promise-continuation (first vs) (second vs)))
 	   (else (fuck-up)))))
 	(cps-call
 	 (make-map-closure-continuation
@@ -1803,8 +1819,7 @@
 		   (map-vector
 		    ;; needs work: To handle the case where the closure values
 		    ;;             are promises.
-		    (lambda (x v)
-		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
+		    (lambda (x v) (make-cps-promise v1 x v #f #f))
 		    (list->vector (nonrecursive-closure-variables v2))
 		    (nonrecursive-closure-values v2))
 		   (nonrecursive-closure-variable v2)
@@ -1840,8 +1855,7 @@
 		   (map-vector
 		    ;; needs work: To handle the case where the closure values
 		    ;;             are promises.
-		    (lambda (x v)
-		     (make-cps-promise v1 (vlad-cons (make-name x) v) #f #f))
+		    (lambda (x v) (make-cps-promise v1 x v #f #f))
 		    (list->vector (recursive-closure-variables v2))
 		    (recursive-closure-values v2))
 		   (recursive-closure-procedure-variables v2)
@@ -1886,9 +1900,35 @@
 		   ;; This gives the continuation an anonymous name.
 		   (vlad-cons (make-name #f) (call-continuation-c v2))))
 	((map-closure-continuation? v2)
-	 (panic "Cannot (yet) call map-closure on a map-closure continuation"))
+	 (cps-call
+	  (make-map-closure-continuation
+	   ;; This gives the callee value an anonymous name.
+	   c
+	   v1
+	   v2
+	   ;; This gives the v1, v2, vs1, and vs2 values anonymous
+	   ;; names. This is correct for v1 and v2.
+	   ;; needs work: I'm not sure whether xs should be passed
+	   ;; for some portion of vs1 and/or vs2.
+	   (map-n (lambda (i) #f)
+		  (+ (length (map-closure-continuation-vs1 v2))
+		     (length (map-closure-continuation-vs2 v2))
+		     2))
+	   (cons (map-closure-continuation-v1 v2)
+		 (cons (map-closure-continuation-v2 v2)
+		       (append (map-closure-continuation-vs1 v2)
+			       (map-closure-continuation-vs2 v2))))
+	   '())
+	  v1
+	  ;; This gives the continuation an anonymous name.
+	  (vlad-cons (make-name #f) (map-closure-continuation-c v2))))
 	((promise-continuation? v2)
-	 (panic "Cannot (yet) call map-closure on a promise continuation"))
+	 (cps-call (make-map-closure-continuation
+		    ;; This gives the promise value an anonymous name.
+		    c v1 v2 '(#f) (list (promise-continuation-v v2)) '())
+		   v1
+		   ;; This gives the continuation an anonymous name.
+		   (vlad-cons (make-name #f) (promise-continuation-c v2))))
 	(else (run-time-error
 	       "Invalid argument to map-closure" (vlad-cons v1 v2))))))
      (else (cps-call-continuation
@@ -1942,7 +1982,8 @@
 	     (cps-call-continuation c (cps-promise-v v))
 	     (cps-call (make-promise-continuation c v)
 		       (cps-promise-v1 v)
-		       (cps-promise-v2 v)))
+		       (vlad-cons (make-name (cps-promise-x v))
+				  (cps-promise-v2 v))))
 	 (cps-call-continuation c v))))
    ((name-expression? e)
     (cps-call-continuation
