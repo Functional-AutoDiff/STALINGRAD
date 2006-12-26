@@ -105,7 +105,7 @@
 
 (define-structure promise-continuation c v)
 
-(define-structure cps-promise v1 v2 x v? v)
+(define-structure cps-promise v1 x v2 v? v)
 
 ;;; Variables
 
