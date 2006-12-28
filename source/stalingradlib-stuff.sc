@@ -347,6 +347,7 @@
 (define *output-procedure-names?* #f)
 (define *i-output-procedure-names* #f)
 (define *new-subset?* #f)
+(define *simple-subset?* #f)
 (define *num-subset-times* 10)
 (define *subset-times* '())
 (define *subset-category-times* '())
@@ -6511,9 +6512,9 @@
  (output-procedure-name-after "aesthetic-reduce-l6-depth~%")
  (if (eq? *l6* #f)
      v
-     (let outer ((limit (- *l6* 1)) (v-old v))
+     (let outer ((limit (- *l6* 1)) (v v))
       (if (<= limit 1)
-	  v-old
+	  v
 	  (let ((v-new
 		 (let inner ((path (path-of-depth-greater-than-k
 				    limit pair-depth v))
@@ -6527,9 +6528,9 @@
 		       (inner (path-of-depth-greater-than-k
 			       limit pair-depth v-new)
 			      v-new))))))
-	   (if (abstract-value=? v-new v-old)
+	   (if (abstract-value=? v-new v)
 	       (outer (- limit 1) v-new)
-	       v-old))))))
+	       v))))))
 
 (define (bundle-depth path) (count-if (lambda (u-or-v) (bundle? u-or-v)) path))
 
@@ -6744,22 +6745,6 @@
 	  (some (lambda (u2) (and (branching-value? u2)
 				  (branching-value-match? u1 u2)))
 		v2))
-;;;	 ((nonrecursive-closure? u1)
-;;;	  (some (lambda (u2)
-;;;		 (and (nonrecursive-closure? u2)
-;;;		      (nonrecursive-closure-match? u1 u2)))
-;;;		v2))
-;;;	 ((recursive-closure? u1)
-;;;	  (some (lambda (u2)
-;;;		 (and (recursive-closure? u2)
-;;;		      (recursive-closure-match? u1 u2)))
-;;;		v2))
-;;;	 ;; needs work: do I need to do anything with tags?
-;;;	 ((tagged-pair? u1)
-;;;	  (some (lambda (u2)
-;;;		 (and (tagged-pair? u2)
-;;;		      (equal? (tagged-pair-tags u1) (tagged-pair-tags u2))))
-;;;		v2))
 	 (else (panic (format #f "Not a known proto-abstract value: ~s" u1)))))
   v1))
 
@@ -6895,20 +6880,69 @@
    (when (and trace-this? *subset-trace?*) (format #t "result=~s)~%" result))
    result)))
 
+(define (abstract-value-subset?-new v1 v2)
+ (output-procedure-name-after "abstract-value-subset?-new~%")
+ (let loop? ((v1 v1) (v2 v2) (cs '()) (v1-context '()) (v2-context '()))
+  (cond
+   ((null? v1) #t)
+   ((null? v2) #f)
+   ((eq? v1 v2))
+   ((up? v1) (loop? (list-ref v1-context (up-index v1))
+		    v2
+		    cs
+		    (rest* v1-context (+ 1 (up-index v1)))
+		    v2-context))
+   ((up? v2) (loop? v1
+		    (list-ref v2-context (up-index v2))
+		    cs
+		    v1-context
+		    (rest* v2-context (+ 1 (up-index v2)))))
+   ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
+   (else
+    (let ((cs (cons (cons v1 v2) cs))
+	  (v1-context (cons v1 v1-context))
+	  (v2-context (cons v2 v2-context))
+	  (us1-branching (remove-if atomic-proto-abstract-value? v1))
+	  (us2-branching (remove-if atomic-proto-abstract-value? v2)))
+     (and
+      (possible-abstract-value-subset? v1 v2)
+      (every
+       (lambda (u1)
+	(cond
+	 ((memq u1 v2) #t)
+	 ((branching-value? u1)
+	  (let* ((vs1 (branching-value-values u1))
+		 (vs2s-matching
+		  (map (lambda (u2) (branching-value-values-matching u1 u2))
+		       (remove-if-not (lambda (u2)
+				       (branching-value-match? u1 u2))
+				      us2-branching))))
+	   (some (lambda (vs2)
+		  (every (lambda (v1 v2)
+			  (loop? v1 v2 cs v1-context v2-context))
+			 vs1 vs2))
+		 vs2s-matching)))
+	  ((reverse-tagged-value? u1)
+	   (panic (string-append "abstract-value-subset? not defined "
+				 " (yet) for reverse-tagged-values!")))
+	  (else #f)))
+	us1-branching)))))))
+
 (define (abstract-value-subset? v1 v2)
  (output-procedure-name-after "abstract-value-subset?~%")
- (or (eq? v1 v2)
-     (and (possible-abstract-value-subset? v1 v2)
-	  (if *new-cyclicize?*
-	      (let* ((result (cyclicize-abstract-value2 v1 '() '()))
-		     (v1c (first result))
-		     (result
-		      (cyclicize-abstract-value2 v2 '() (second result)))
-		     (v2c (first result)))
-	       (abstract-value-subset?-cyclic v1c v2c))
-	      (let* ((v1c (cyclicize-abstract-value v1))
-		     (v2c (cyclicize-abstract-value v2)))
-	       (abstract-value-subset?-cyclic v1c v2c))))))
+ (or (and *simple-subset?* (abstract-value-subset?-new v1 v2))
+     (or (eq? v1 v2)
+	 (and (possible-abstract-value-subset? v1 v2)
+	      (if *new-cyclicize?*
+		  (let* ((result (cyclicize-abstract-value2 v1 '() '()))
+			 (v1c (first result))
+			 (result
+			  (cyclicize-abstract-value2 v2 '() (second result)))
+			 (v2c (first result)))
+		   (abstract-value-subset?-cyclic v1c v2c))
+		  (let* ((v1c (cyclicize-abstract-value v1))
+			 (v2c (cyclicize-abstract-value v2)))
+		   (abstract-value-subset?-cyclic v1c v2c)))))))
 
 ;;; \Subset?
 
