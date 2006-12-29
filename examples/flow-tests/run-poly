@@ -79,7 +79,7 @@ endif
 set OPTS1 = "-no-warn -widen-last -no-apply-multiply"
 set OPTS2 = "-new-widen -new-l4-depth"
 set OPTS3 = "-aesthetic -expression-equality-using-structural"
-set OPTS4 = ""
+set OPTS4 = "-simple-subset"
 
 echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
 $L1opt $L2opt $L3opt $L4opt $L5opt $L6opt $L7opt $L8opt \

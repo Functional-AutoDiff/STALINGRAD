@@ -8,7 +8,7 @@ set OUTFILE=${EXAMPLE}-precise-`date +"%m%d%y"`-${NUM}.txt
 set OPTS1 = "-no-warn -widen-last -no-apply-multiply"
 set OPTS2 = "-new-widen -new-l4-depth"
 set OPTS3 = "-expression-equality-using-structural"
-set OPTS4 = ""
+set OPTS4 = "-simple-subset"
 
 echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
 $OPTS1 $OPTS2 $OPTS3 $OPTS4 \
