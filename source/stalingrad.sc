@@ -154,6 +154,7 @@
 		   output-procedure-names-after?
 		   (i-output-procedure-names "iteration" integer-argument #f)))
 		 (at-most-one ("new-subset" new-subset?))
+		 (at-most-one ("simple-subset" simple-subset?))
 		 (at-most-one ("paranoid-widen" paranoid-widen?))
 		 (at-most-one ("paranoid-update-range" paranoid-update-range?))
 		 (at-most-one ("paranoid-update" paranoid-update?))
@@ -223,6 +224,7 @@
   (set! *output-procedure-names?* output-procedure-names-after?)
   (set! *i-output-procedure-names* i-output-procedure-names))
  (set! *new-subset?* new-subset?)
+ (set! *simple-subset?* simple-subset?)
  (set! *paranoid-widen?* paranoid-widen?)
  (set! *paranoid-update-range?* paranoid-update-range?)
  (set! *paranoid-update?* paranoid-update?)
