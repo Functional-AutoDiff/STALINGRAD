@@ -344,10 +344,12 @@
 (define *test?* #f)
 (define *checkpoint-at?* #f)
 (define *checkpoint-iteration* #f)
+(define *easy-double?* #f)
 (define *output-procedure-names?* #f)
 (define *i-output-procedure-names* #f)
 (define *new-subset?* #f)
 (define *simple-subset?* #f)
+(define *only-abstract-real?* #f)
 (define *num-subset-times* 10)
 (define *subset-times* '())
 (define *subset-category-times* '())
@@ -4126,120 +4128,7 @@
 
 ;;; Instrumentation
 
-(define (instrument-reset)
- (set! *num-calls-abstract-value-union* 0)
- (set! *num-paths-looked-at* 0)
- (set! *total-size-paths-looked-at* 0)
- (set! *num-calls-limit-depth-to* 0)
- (set! *num-calls-reduce-depth!* 0)
- (set! *num-calls-abstract-value-subset-loop?* 0)
- (set! *num-calls-free-variables* 0)
- ;; update--part 1
- (set! *num-abstract-environment-bindings* 0)
- (set! *num-calls-abstract-value-in-matching-abstract-environment-hit* 0)
- (set! *num-calls-abstract-value-in-matching-abstract-environment-miss* 0)
- (set! *num-calls-multiply-out-nonrecursive-closure* 0)
- (set! *num-nonrecursive-closures-multiplied-out* 0)
- (set! *num-calls-multiply-out-recursive-closure* 0)
- (set! *num-recursive-closures-multiplied-out* 0)
- ;; update--part 2
- (set! *num-calls-abstract-analysis-union* 0)
- (set! *num-abstract-expression-bindings-in-analysis-unions* 0)
- (set! *num-calls-create-abstract-analysis* 0)
- (set! *time-in-widen* 0)
- (set! *time-in-l2* 0)
- (set! *time-in-l3* 0)
- (set! *time-in-l4* 0)
- (set! *time-in-l5* 0)
- (set! *time-in-generic-union* 0)
- (set! *time-in-match-us* 0)
- (set! *time-in-union-us* 0)
- (set! *time-in-loop* 0))
-
-(define (instrument-report)
- (format #t "*num-calls-abstract-value-union*=~s~%"
-	 *num-calls-abstract-value-union*)
- (format #t "*num-paths-looked-at*=~s~%" *num-paths-looked-at*)
- (format #t "*total-size-paths-looked-at*=~s~%" *total-size-paths-looked-at*)
- (format #t "*num-calls-limit-depth-to*=~s~%" *num-calls-limit-depth-to*)
- (format #t "*num-calls-reduce-depth!*=~s~%" *num-calls-reduce-depth!*)
- (format #t "*num-calls-abstract-value-subset*=~s~%"
-	 *num-calls-abstract-value-subset*)
- (format #t "*num-calls-abstract-value-subset-loop?*=~s~%"
-	 *num-calls-abstract-value-subset-loop?*)
- (format #t "*num-calls-free-variables*=~s~%" *num-calls-free-variables*)
- ;; update--part 1
- (format #t "*num-abstract-environment-bindings*=~s~%"
-	 *num-abstract-environment-bindings*)
- (format
-  #t
-  "*num-calls-abstract-value-in-matching-abstract-environment-hit*=~s~%"
-  *num-calls-abstract-value-in-matching-abstract-environment-hit*)
- (format
-  #t
-  "*num-calls-abstract-value-in-matching-abstract-environment-miss*=~s~%"
-  *num-calls-abstract-value-in-matching-abstract-environment-miss*)
- (format #t "*num-calls-multiply-out-nonrecursive-closure*=~s~%"
-	 *num-calls-multiply-out-nonrecursive-closure*)
- (format #t "*num-nonrecursive-closures-multiplied-out*=~s~%"
-	 *num-nonrecursive-closures-multiplied-out*)
- (format #t "*num-calls-multiply-out-recursive-closure*=~s~%"
-	 *num-calls-multiply-out-recursive-closure*)
- (format #t "*num-recursive-closures-multiplied-out*=~s~%"
-	 *num-recursive-closures-multiplied-out*)
- ;; update--part 2
- (format #t "*num-calls-abstract-analysis-union*=~s~%"
-	 *num-calls-abstract-analysis-union*)
- (format #t "*num-abstract-expression-bindings-in-analysis-unions*=~s~%"
-	 *num-abstract-expression-bindings-in-analysis-unions*)
- (format #t "*num-calls-create-abstract-analysis*=~s~%"
-	 *num-calls-create-abstract-analysis*))
-
-(define (collect-time-in-buckets bucket thunk)
- (let ((i (positionq bucket *bucket-names*)))
-  (if (eq? #f i)
-      (thunk)
-      (begin
-       (set! *bucket-stack* (cons i *bucket-stack*))
-       (let* ((start (clock-sample))
-	      (result (thunk))
-	      (end (clock-sample))
-	      (time-elapsed (- end start)))
-	(set! *bucket-stack* (rest *bucket-stack*))
-	(when (not (null? *bucket-stack*))
-	 (let ((j (first *bucket-stack*)))
-	  (vector-set!
-	   *time-buckets* j (- (vector-ref *time-buckets* j) time-elapsed))))
-	(vector-set!
-	 *time-buckets* i (+ (vector-ref *time-buckets* i) time-elapsed))
-	result)))))
-
 (define (report-bucket-times)
- (let ((total-time (- (clock-sample) *start-time*))
-       (bucket-time
-	(reduce-vector
-	 + (map-vector (lambda (x) (if (positive? x) x 0)) *time-buckets*) 0)))
-  (format #t "Total number of iterations: ~s~%" *num-updates*)
-  (format #t "Total time since start: ~a~%"
-	  (number->string-of-length-and-precision total-time 16 2))
-  (format #t "Total time in all buckets: ~a~%"
-	  (number->string-of-length-and-precision bucket-time 16 2))
-  (for-each
-   (lambda (bucket-name bucket calls)
-    (format
-     #t "  time in ~s=~a (~a% total) (~s calls)~%"
-     bucket-name
-     (number->string-of-length-and-precision bucket 16 2)
-     (if (and (positive? bucket) (positive? total-time))
-	 (number->string-of-length-and-precision
-	  (* 100 (/ bucket total-time)) 6 2)
-	 #f)
-     calls))
-   *bucket-names*
-   (vector->list *time-buckets*)
-   (vector->list *call-buckets*))))
-
-(define (report-bucket-times2)
  (let ((total-time (- (clock-sample) *start-time*))
        (bucket-time
 	(reduce-vector
@@ -4276,75 +4165,6 @@
 (define *misses-lambda* 0)
 (define *misses-application* 0)
 (define *misses-letrec* 0)
-
-(define (update-hits! e)
- (set! *alpha-match-cache-hits* (+ *alpha-match-cache-hits* 1))
- (cond ((constant-expression? e) (set! *hits-constant* (+ *hits-constant* 1)))
-       ((variable-access-expression? e)
-	(set! *hits-variable* (+ *hits-variable* 1)))
-       ((lambda-expression? e) (set! *hits-lambda* (+ *hits-lambda* 1)))
-       ((application? e) (set! *hits-application* (+ *hits-application* 1)))
-       ((letrec-expression? e) (set! *hits-letrec* (+ *hits-letrec* 1)))
-       (else (panic "Invalid expression!"))))
-
-(define (update-misses! e)
- (set! *alpha-match-cache-misses* (+ *alpha-match-cache-misses* 1))
- (cond ((constant-expression? e)
-	(set! *misses-constant* (+ *misses-constant* 1)))
-       ((variable-access-expression? e)
-	(set! *misses-variable* (+ *misses-variable* 1)))
-       ((lambda-expression? e) (set! *misses-lambda* (+ *misses-lambda* 1)))
-       ((application? e)
-	(set! *misses-application* (+ *misses-application* 1)))
-       ((letrec-expression? e) (set! *misses-letrec* (+ *misses-letrec* 1)))
-       (else (panic "Invalid expression!"))))
-
-(define (reset-cache-performance)
- (set! *alpha-match-cache-hits* 0)
- (set! *hits-constant* 0)
- (set! *hits-variable* 0)
- (set! *hits-lambda* 0)
- (set! *hits-application* 0)
- (set! *hits-letrec* 0)
- (set! *alpha-match-cache-misses* 0)
- (set! *misses-constant* 0)
- (set! *misses-variable* 0)
- (set! *misses-lambda* 0)
- (set! *misses-application* 0)
- (set! *misses-letrec* 0))
-
-(define (report-cache-performance)
- (let ((total-calls (+ *alpha-match-cache-hits* *alpha-match-cache-misses*))
-       (total-constant (+ *hits-constant* *misses-constant*))
-       (total-variable (+ *hits-variable* *misses-variable*))
-       (total-lambda (+ *hits-lambda* *misses-lambda*))
-       (total-application (+ *hits-application* *misses-application*))
-       (total-letrec (+ *hits-letrec* *misses-letrec*))
-       (div (lambda (x y) (if (zero? y) #f (/ x y)))))
-  (format #t "Total alpha-match calls: ~s~%" total-calls)
-  (format #t "Total alpha-match hit/miss     = ~s/~s (~s/~s)~%"
-	  *alpha-match-cache-hits* *alpha-match-cache-misses*
-	  (div *alpha-match-cache-hits* total-calls)
-	  (div *alpha-match-cache-misses* total-calls))
-  (format #t "  constant-expression hit/miss = ~s/~s (~s/~s)~%"
-	  *hits-constant* *misses-constant*
-	  (div *hits-constant* total-constant)
-	  (div *misses-constant* total-constant))
-  (format #t "  variable-access   hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-variable* *misses-variable*
-	  (div *hits-variable* total-variable)
-	  (div *misses-variable* total-variable))
-  (format #t "  lambda-expression hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-lambda* *misses-lambda*
-	  (div *hits-lambda* total-lambda) (div *misses-lambda* total-lambda))
-  (format #t "  application hit/miss         = ~s/~s (~s/~s)~%"
-	  *hits-application* *misses-application*
-	  (div *hits-application* total-application)
-	  (div *misses-application* total-application))
-  (format #t "  letrec-expression hit/miss   = ~s/~s (~s/~s)~%"
-	  *hits-letrec* *misses-letrec*
-	  (div *hits-letrec* total-letrec)
-	  (div *misses-letrec* total-letrec))))
 
 ;;; \Instrumentation
 
@@ -4427,276 +4247,21 @@
 	  (expression-eqv? (cons-expression-cdr e1)
 			   (cons-expression-cdr e2)))))
 
-;;;(define *time-true* 0)
-;;;(define *time-false* 0)
-
 (define (expression=? e1 e2)
  (output-procedure-name-after "expression=?~%")
  (or (and *expression-equality-using-identity?* (eq? e1 e2))
      (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
      (and *expression-equality-using-alpha?*
 	  (panic "Not yet implemented!"))))
-;;; (let*
-;;;   ((time-start (clock-sample))
-;;;    (result
-;;;     (or (and *expression-equality-using-identity?* (eq? e1 e2))
-;;; 	(and *expression-equality-using-structural?*
-;;; 	     (expression-eqv? e1 e2))
-;;; 	(and *expression-equality-using-alpha?*
-;;; 	     (panic "Not yet implemented!"))))
-;;;    (time (- (clock-sample) time-start))
-;;;    (i (positionq 'expression=? *bucket-names*)))
-;;;  (vector-set! *time-buckets* i (+ (vector-ref *time-buckets* i) time))
-;;;  (vector-set! *call-buckets* i (+ (vector-ref *call-buckets* i) 1))
-;;;  result)
 
-(define-structure expression-cache-entry expression result)
-
-(define (compute-alpha-match e1 e2)
+(define (alpha-match e1 e2)
  (cond
   ((and (variable-access-expression? e1) (variable-access-expression? e2))
    (list (make-alpha-binding (variable-access-expression-variable e1)
 			     (variable-access-expression-variable e2))))
   ((and (lambda-expression? e1) (lambda-expression? e2))
-   (let ((bs (alpha-match-memoized (lambda-expression-body e1)
-				   (lambda-expression-body e2)))
-	 (b (make-alpha-binding (lambda-expression-variable e1)
-				(lambda-expression-variable e2))))
-    (if (or (eq? bs #f)
-	    (some (lambda (b)
-		   (or (and (variable=? (alpha-binding-variable1 b)
-					(lambda-expression-variable e1))
-			    (not
-			     (variable=? (alpha-binding-variable2 b)
-					 (lambda-expression-variable e2))))
-		       (and (not (variable=? (alpha-binding-variable1 b)
-					     (lambda-expression-variable e1)))
-			    (variable=? (alpha-binding-variable2 b)
-					(lambda-expression-variable e2)))))
-		  bs))
-	#f
-	(remove-if (lambda (b)
-		    (and (variable=? (alpha-binding-variable1 b)
-				     (lambda-expression-variable e1))
-			 (variable=? (alpha-binding-variable2 b)
-				     (lambda-expression-variable e2))))
-		   bs))))
-  ((and (application? e1) (application? e2))
-   (merge-bindings
-    (alpha-match-memoized (application-callee e1)
-			  (application-callee e2))
-    (alpha-match-memoized (application-argument e1)
-			  (application-argument e2))))
-  ((and (letrec-expression? e1)
-	(letrec-expression? e2)
-	(= (length (letrec-expression-procedure-variables e1))
-	   (length (letrec-expression-procedure-variables e2))))
-   (let loop ((xs1 (letrec-expression-procedure-variables e1))
-	      (xs2 (letrec-expression-procedure-variables e2))
-	      (bs
-	       (merge-bindings
-		(reduce
-		 merge-bindings
-		 (map
-		  (lambda (x1 x2 e1 e2)
-		   (let ((bs (alpha-match-memoized e1 e2)))
-		    (if (or (eq? bs #f)
-			    (some (lambda (b)
-				   (or
-				    (and (variable=?
-					  (alpha-binding-variable1 b) x1)
-					 (not
-					  (variable=?
-					   (alpha-binding-variable2 b) x2)))
-				    (and (not
-					  (variable=?
-					   (alpha-binding-variable1 b) x1))
-					 (variable=?
-					  (alpha-binding-variable2 b) x2))))
-				  bs))
-			#f
-			(remove-if
-			 (lambda (b)
-			  (and (variable=? (alpha-binding-variable1 b) x1)
-			       (variable=? (alpha-binding-variable2 b) x2)))
-			 bs))))
-		  (letrec-expression-argument-variables e1)
-		  (letrec-expression-argument-variables e2)
-		  (letrec-expression-bodies e1)
-		  (letrec-expression-bodies e2))
-		 '())
-		(alpha-match-memoized (letrec-expression-body e1)
-				      (letrec-expression-body e2)))))
-    (cond ((null? xs1) bs)
-	  ((or (eq? bs #f)
-	       (some (lambda (b)
-		      (or (and (variable=? (alpha-binding-variable1 b)
-					   (first xs1))
-			       (not (variable=? (alpha-binding-variable2 b)
-						(first xs2))))
-			  (and (not (variable=? (alpha-binding-variable1 b)
-						(first xs1)))
-			       (variable=? (alpha-binding-variable2 b)
-					   (first xs2)))))
-		     bs))
-	   #f)
-	  (else (loop
-		 (rest xs1)
-		 (rest xs2)
-		 (remove-if
-		  (lambda (b)
-		   (and (variable=? (alpha-binding-variable1 b) (first xs1))
-			(variable=? (alpha-binding-variable2 b) (first xs2))))
-		  bs))))))
-  ;; needs work: do tags need to be equal?
-  ((and (cons-expression? e1)
-	(cons-expression? e2)
-	(equal? (cons-expression-tags e1) (cons-expression-tags e2)))
-   (merge-bindings
-    (alpha-match-memoized (cons-expression-car e1) (cons-expression-car e2))
-    (alpha-match-memoized (cons-expression-cdr e1) (cons-expression-cdr e2))))
-  (else #f)))
-
-(define alpha-match-memoized-old
- (let ((cache '()))
-  (define (cache-lookup e1 e2)
-   (let ((entry-e1
-	  (find-if
-	   (lambda (entry)
-	    (expression-eqv? (expression-cache-entry-expression entry) e1))
-	   cache)))
-    (if (not (eq? #f entry-e1))
-	(let ((entry-e2
-	       (find-if
-		(lambda (entry)
-		 (expression-eqv?
-		  (expression-cache-entry-expression entry) e2))
-		(expression-cache-entry-result entry-e1))))
-	 (if (not (eq? #f entry-e2))
-	     entry-e2
-	     #f))
-	#f)))
-  (define (cache-result! e1 e2 result)
-   (let ((entry-e1
-	  (find-if
-	   (lambda (entry)
-	    (expression-eqv? (expression-cache-entry-expression entry) e1))
-	   cache)))
-    (if (not (eq? #f entry-e1))
-	(let ((entry-e2
-	       (find-if
-		(lambda (entry)
-		 (expression-eqv?
-		  (expression-cache-entry-expression entry) e2))
-		(expression-cache-entry-result entry-e1))))
-	 (if (not (eq? #f entry-e2))
-	     (set-expression-cache-entry-result! entry-e2 result)
-	     (set-expression-cache-entry-result!
-	      entry-e1
-	      (cons (make-expression-cache-entry e2 result)
-		    (expression-cache-entry-result entry-e1)))))
-	(set! cache
-	      (cons
-	       (make-expression-cache-entry
-		e1 (list (make-expression-cache-entry e2 result)))
-	       cache)))))
-  (lambda (e1 e2)
-   (let ((entry (cache-lookup e1 e2)))
-    (if (not (eq? #f entry))
-	(begin
-	 (update-hits! e1)
-	 (expression-cache-entry-result entry))
-	(let ((result (compute-alpha-match e1 e2)))
-	 (update-misses! e1)
-	 (cache-result! e1 e2 result)
-	 (cache-result! e2 e1 result)
-	 result))))))
-
-(define (expression-type-index e)
- (cond ((constant-expression? e) 0)
-       ((variable-access-expression? e) 1)
-       ((lambda-expression? e) 2)
-       ((application? e) 3)
-       ((letrec-expression? e) 4)
-       ((cons-expression? e) 5)
-       (else (panic "Invalid expression!"))))
-
-(define (swap-alpha-bindings bs)
- (if (eq? #f bs)
-     #f
-     (map (lambda (b) (make-alpha-binding (alpha-binding-variable2 b)
-					  (alpha-binding-variable1 b)))
-	  bs)))
-
-(define alpha-match-memoized
- (let ((cache (make-vector 6 '())))
-  ;; an implicit assumption is that e1 and e2 must be of same type
-  (define (cache-lookup e1 e2)
-   (let* ((type-e1 (expression-type-index e1))
-	  (entry-e1
-	   (find-if
-	    (lambda (entry)
-	     (expression-eqv? (expression-cache-entry-expression entry) e1))
-	    (vector-ref cache type-e1))))
-    (if (not (eq? #f entry-e1))
-	(let ((entry-e2
-	       (find-if
-		(lambda (entry)
-		 (expression-eqv?
-		  (expression-cache-entry-expression entry) e2))
-		(expression-cache-entry-result entry-e1))))
-	 (if (not (eq? #f entry-e2))
-	     entry-e2
-	     #f))
-	#f)))
-  (define (cache-result! e1 e2 result)
-   (let* ((type-e1 (expression-type-index e1))
-	  (entry-e1
-	   (find-if
-	    (lambda (entry)
-	     (expression-eqv? (expression-cache-entry-expression entry) e1))
-	    (vector-ref cache type-e1))))
-    (if (not (eq? #f entry-e1))
-	(let ((entry-e2
-	       (find-if
-		(lambda (entry)
-		 (expression-eqv?
-		  (expression-cache-entry-expression entry) e2))
-		(expression-cache-entry-result entry-e1))))
-	 (if (not (eq? #f entry-e2))
-	     (set-expression-cache-entry-result! entry-e2 result)
-	     (set-expression-cache-entry-result!
-	      entry-e1
-	      (cons (make-expression-cache-entry e2 result)
-		    (expression-cache-entry-result entry-e1)))))
-	(vector-set! cache
-		     type-e1
-		     (cons
-		      (make-expression-cache-entry
-		       e1 (list (make-expression-cache-entry e2 result)))
-		      (vector-ref cache type-e1))))))
-  (lambda (e1 e2)
-   (if (not (= (expression-type-index e1) (expression-type-index e2)))
-       #f
-       (let ((entry (cache-lookup e1 e2)))
-	(if (not (eq? #f entry))
-	    (begin
-	     (update-hits! e1)
-	     (expression-cache-entry-result entry))
-	    (let ((result (compute-alpha-match e1 e2)))
-	     (update-misses! e1)
-	     (cache-result! e1 e2 result)
-	     (cache-result! e2 e1 (swap-alpha-bindings result))
-	     result)))))))
-
-(define (alpha-match-not-memoized e1 e2)
- (cond
-  ((and (variable-access-expression? e1) (variable-access-expression? e2))
-   (list (make-alpha-binding (variable-access-expression-variable e1)
-			     (variable-access-expression-variable e2))))
-  ((and (lambda-expression? e1) (lambda-expression? e2))
-   (let ((bs (alpha-match-not-memoized (lambda-expression-body e1)
-				       (lambda-expression-body e2)))
+   (let ((bs (alpha-match (lambda-expression-body e1)
+			  (lambda-expression-body e2)))
 	 (b (make-alpha-binding (lambda-expression-variable e1)
 				(lambda-expression-variable e2))))
     (if (or (eq? bs #f)
@@ -4718,11 +4283,10 @@
 				     (lambda-expression-variable e2))))
 		   bs))))
   ((and (application? e1) (application? e2))
-   (merge-bindings
-    (alpha-match-not-memoized (application-callee e1)
-			      (application-callee e2))
-    (alpha-match-not-memoized (application-argument e1)
-			      (application-argument e2))))
+   (merge-bindings (alpha-match (application-callee e1)
+				(application-callee e2))
+		   (alpha-match (application-argument e1)
+				(application-argument e2))))
   ((and (letrec-expression? e1)
 	(letrec-expression? e2)
 	(= (length (letrec-expression-procedure-variables e1))
@@ -4735,7 +4299,7 @@
 		 merge-bindings
 		 (map
 		  (lambda (x1 x2 e1 e2)
-		   (let ((bs (alpha-match-not-memoized e1 e2)))
+		   (let ((bs (alpha-match e1 e2)))
 		    (if (or (eq? bs #f)
 			    (some (lambda (b)
 				   (or (and (variable=?
@@ -4760,8 +4324,8 @@
 		  (letrec-expression-bodies e1)
 		  (letrec-expression-bodies e2))
 		 '())
-		(alpha-match-not-memoized (letrec-expression-body e1)
-					  (letrec-expression-body e2)))))
+		(alpha-match (letrec-expression-body e1)
+			     (letrec-expression-body e2)))))
     (cond ((null? xs1) bs)
 	  ((or (eq? bs #f)
 	       (some (lambda (b)
@@ -4787,109 +4351,19 @@
   ((and (cons-expression? e1)
 	(cons-expression? e2)
 	(equal? (cons-expression-tags e1) (cons-expression-tags e2)))
-   (merge-bindings (alpha-match-not-memoized (cons-expression-car e1)
-					     (cons-expression-car e2))
-		   (alpha-match-not-memoized (cons-expression-cdr e1)
-					     (cons-expression-cdr e2))))
+   (merge-bindings (alpha-match (cons-expression-car e1)
+				(cons-expression-car e2))
+		   (alpha-match (cons-expression-cdr e1)
+				(cons-expression-cdr e2))))
   (else #f)))
 
-(define (alpha-match e1 e2)
- (if *memoize-alpha-matching?*
-     (alpha-match-memoized e1 e2)
-     (alpha-match-not-memoized e1 e2)))
-
-(define (nonrecursive-closure-alpha-bindings-not-memoized u1 u2)
+(define (nonrecursive-closure-alpha-bindings u1 u2)
  (alpha-match (new-lambda-expression (nonrecursive-closure-variable u1)
 				     (nonrecursive-closure-body u1))
 	      (new-lambda-expression (nonrecursive-closure-variable u2)
 				     (nonrecursive-closure-body u2))))
 
-(define nonrecursive-closure-alpha-bindings-memoized
- ;; cache: expression -> variable -> expression -> variable -> bindings
- (let ((cache '()))
-  (define (lookup-in-cache x1 e1 x2 e2)
-   ;; match e1
-   (let ((result (find-if (lambda (p) (eq? (car p) e1)) cache)))
-    (if (not (eq? #f result))
-	;; match x1
-	(let ((result (find-if (lambda (p) (eq? (car p) x1)) (cdr result))))
-	 (if (not (eq? #f result))
-	     ;; match e2
-	     (let ((result (find-if (lambda (p) (eq? (car p) e2))
-				    (cdr result))))
-	      (if (not (eq? #f result))
-		  ;; match x2
-		  (let ((result (find-if (lambda (p) (eq? (car p) x2))
-					 (cdr result))))
-		   (if (not (eq? #f result))
-		       result
-		       #f))
-		  #f))
-	     #f))
-	#f)))
-  (define (create-cache-entry result . &xs)
-   (if (null? &xs)
-       result
-       (list (cons (first &xs) (apply create-cache-entry result (rest &xs))))))
-  (define (store-in-cache! x1 e1 x2 e2 result)
-   (let ((result-e1 (find-if (lambda (p) (eq? (car p) e1)) cache)))
-    (if (not (eq? #f result-e1))
-	(let ((result-x1 (find-if (lambda (p) (eq? (car p) x1))
-				  (cdr result-e1))))
-	 (if (not (eq? #f result-x1))
-	     (let ((result-e2 (find-if (lambda (p) (eq? (car p) e2))
-				       (cdr result-x1))))
-	      (if (not (eq? #f result-e2))
-		  (let ((result-x2 (find-if (lambda (p) (eq? (car p) x2))
-					    (cdr result-e2))))
-		   (if (not (eq? #f result-x2))
-		       (set-cdr! result-x2 result)
-		       (set-cdr! result-e2
-				 (append (create-cache-entry result x2)
-					 (cdr result-e2)))))
-		  (set-cdr! result-x1
-			    (append (create-cache-entry result e2 x2)
-				    (cdr result-x1)))))
-	     (set-cdr! result-e1
-		       (append (create-cache-entry result x1 e2 x2)
-			       (cdr result-e1)))))
-	(set! cache (append (create-cache-entry result e1 x1 e2 x2) cache)))))
-  (lambda (u1 u2)
-   (let* ((x1 (nonrecursive-closure-variable u1))
-	  (e1 (nonrecursive-closure-body u1))
-	  (x2 (nonrecursive-closure-variable u2))
-	  (e2 (nonrecursive-closure-body u2))
-	  (result (lookup-in-cache x1 e1 x2 e2)))
-    (if (eq? #f result)
-	(let ((result
-	       (alpha-match
-		(new-lambda-expression (nonrecursive-closure-variable u1)
-				       (nonrecursive-closure-body u1))
-		(new-lambda-expression (nonrecursive-closure-variable u2)
-				       (nonrecursive-closure-body u2)))))
-	 (store-in-cache! x1 e1 x2 e2 result)
-	 (store-in-cache! x2 e2 x1 e1 (swap-alpha-bindings result))
-	 result)
-	(cdr result))))))
-
-(define (nonrecursive-closure-alpha-bindings u1 u2)
- (if *memoize-nonrecursive-alpha-matching?*
-     (nonrecursive-closure-alpha-bindings-memoized u1 u2)
-     (nonrecursive-closure-alpha-bindings-not-memoized u1 u2)))
-
 (define (recursive-closure-alpha-bindings u1 u2)
- (define (make-letrec-expression-from-recursive-closure u)
-  (new-letrec-expression
-   (vector->list (recursive-closure-procedure-variables u))
-   (vector->list (recursive-closure-argument-variables u))
-   (vector->list (recursive-closure-bodies u))
-   (new-variable-access-expression
-    (vector-ref (recursive-closure-procedure-variables u)
-		(recursive-closure-index u)))))
- (alpha-match (make-letrec-expression-from-recursive-closure u1)
-	      (make-letrec-expression-from-recursive-closure u2)))
-
-(define (recursive-closure-alpha-bindings-memoized u1 u2)
  (define (make-letrec-expression-from-recursive-closure u)
   (new-letrec-expression
    (vector->list (recursive-closure-procedure-variables u))
@@ -4975,48 +4449,6 @@
 (define (cyclicize-abstract-value v)
  (output-procedure-name-after "cyclicize-abstract-value~%")
  (cyclicize-abstract-value-internal v '()))
-
-(define (cyclicize-proto-abstract-value2 u vs vs-memoized)
- (output-procedure-name-after "cyclicize-proto-abstract-value2~%")
- (cond ((null? u) (list u vs-memoized))
-       ((eq? u #t) (list u vs-memoized))
-       ((eq? u #f) (list u vs-memoized))
-       ((real? u) (list u vs-memoized))
-       ((eq? u 'real) (list u vs-memoized))
-       ((primitive-procedure? u) (list u vs-memoized))
-       ((branching-value? u)
-	(let loop ((u-vs (branching-value-values u))
-		   (u-vs-new '())
-		   (vs-memoized vs-memoized))
-	 (if (null? u-vs)
-	     (list (make-branching-value-with-new-values u (reverse u-vs-new))
-		   vs-memoized)
-	     (let ((result
-		    (cyclicize-abstract-value2 (first u-vs) vs vs-memoized)))
-	      (loop (rest u-vs)
-		    (cons (first result) u-vs-new)
-		    (second result))))))
-       (else (fuck-up))))
-
-(define (cyclicize-abstract-value2 v vs vs-memoized)
- (output-procedure-name-after "cyclicize-abstract-value2~%")
- (cond ((up? v) (list (list-ref vs (up-index v)) vs-memoized))
-       ((null? v) (list v vs-memoized))
-       ((assq v vs-memoized) (list (cdr (assq v vs-memoized)) vs-memoized))
-       (else (let ((v1 (cons #f #f)))
-	      (let loop ((us v) (v2 v1) (vs-memoized vs-memoized))
-	       (let* ((result (cyclicize-proto-abstract-value2
-			       (first us) (cons v1 vs) vs-memoized))
-		      (u (first result))
-		      (vs-memoized (second result)))
-		(set-car! v2 u)
-		(cond ((null? (rest us))
-		       (set-cdr! v2 '())
-		       (if (every-eq? v v1)
-			   (list v (cons (cons v v) vs-memoized))
-			   (list v1 (cons (cons v v1) vs-memoized))))
-		      (else (set-cdr! v2 (cons #f #f))
-			    (loop (rest us) (cdr v2) vs-memoized)))))))))
 
 ;;; Uncyclicization of (Proto) Abstact Values
 
@@ -6933,16 +6365,9 @@
  (or (and *simple-subset?* (abstract-value-subset?-new v1 v2))
      (or (eq? v1 v2)
 	 (and (possible-abstract-value-subset? v1 v2)
-	      (if *new-cyclicize?*
-		  (let* ((result (cyclicize-abstract-value2 v1 '() '()))
-			 (v1c (first result))
-			 (result
-			  (cyclicize-abstract-value2 v2 '() (second result)))
-			 (v2c (first result)))
-		   (abstract-value-subset?-cyclic v1c v2c))
-		  (let* ((v1c (cyclicize-abstract-value v1))
-			 (v2c (cyclicize-abstract-value v2)))
-		   (abstract-value-subset?-cyclic v1c v2c)))))))
+	      (let* ((v1c (cyclicize-abstract-value v1))
+		     (v2c (cyclicize-abstract-value v2)))
+	       (abstract-value-subset?-cyclic v1c v2c))))))
 
 ;;; \Subset?
 
@@ -7268,6 +6693,7 @@
  (output-procedure-name-after "vlad-value->abstract-value~%")
  (cond ((null? v) (list v))
        ((boolean? v) (list v))
+       ((and (abstract-real? v) *only-abstract-real?*) '(real))
        ((abstract-real? v) (list v))
        ((primitive-procedure? v) (list v))
        ((branching-value? v)
@@ -8228,9 +7654,7 @@
 	     (loop bs-prime bs))))))))
 ;;;    (format #t "*** time-true =  ~s~%*** time-false = ~s ~%"
 ;;;	    *time-true* *time-false*)
-  (if *quiet?*
-      (report-bucket-times2)
-      (report-bucket-times))
+  (report-bucket-times)
   result))
 
 ;;; needs work: do we need to do more than just this?
@@ -8721,27 +8145,37 @@
 			(compile-time-warning "Potentially invalid bundle")))
 	((abstract-vlad-pair? v-perturbation tags)
 	 (let ((vs-above (cons v-perturbation vs-above)))
-	  (reduce (lambda (vs1 vs2)
-		   (cond ((and (= (length vs1) (length vs))
-			       (= (length vs2) (length vs)))
-			  (map abstract-value-union-without-unroll vs1 vs2))
-			 ((= (length vs1) (length vs)) vs1)
-			 ((= (length vs2) (length vs)) vs2)
-			 (else '())))
-		  (map (lambda (u)
-			(cons
-			 (abstract-bundle (first vs)
-					  (abstract-vlad-car-u u tags)
-					  vs-above
-					  cs)
-			 (abstract-bundle-list (rest vs)
-					       (abstract-vlad-cdr-u u tags)
-					       tags
-					       vs-above
-					       cs)))
-		       (remove-if-not (lambda (u) (vlad-pair? u tags))
-				      v-perturbation))
-		  '())))
+	  (reduce
+	   (lambda (vs1 vs2)
+	    (cond ((and (= (length vs1) (length vs))
+			(= (length vs2) (length vs)))
+		   (map (lambda (v1 v2)
+			 (cond
+			  ((and (up? v1) (up? v2) (= (up-index v1)
+						     (up-index v2)))
+			   v1)
+			  ((or (up? v1) (up? v2))
+			   (panic "This case can't (yet) be handled"))
+			  (else (abstract-value-union-without-unroll v1 v2))))
+			vs1
+			vs2))
+		   ((= (length vs1) (length vs)) vs1)
+		   ((= (length vs2) (length vs)) vs2)
+		   (else '())))
+	    (map (lambda (u)
+		  (cons
+		   (abstract-bundle (first vs)
+				    (abstract-vlad-car-u u tags)
+				    vs-above
+				    cs)
+		   (abstract-bundle-list (rest vs)
+					 (abstract-vlad-cdr-u u tags)
+					 tags
+					 vs-above
+					 cs)))
+		 (remove-if-not (lambda (u) (vlad-pair? u tags))
+				v-perturbation))
+	    '())))
 	(else
 	 (compile-time-warning "Mismatch--not a pair" vs v-perturbation))))
  (define (abstract-bundle v v-perturbation vs cs)
@@ -8814,6 +8248,7 @@
 					      (nonrecursive-closure-body u))))
 		   (x (lambda-expression-variable e))
 		   (xs (free-variables e))
+		   ;; here I am
 		   (vs (abstract-bundle-list (abstract-base-values-u u)
 					     v-perturbation
 					     (nonrecursive-closure-tags u)
@@ -9499,7 +8934,7 @@
     (cond ((null? object) object)
 	  ((boolean? object) object)
 	  ((char? object) `(character ,(char->integer object)))
-	  ((and (number? object) (exact? object)) object)
+	  ((and (number? object) (or (exact? object) *easy-double?*)) object)
 	  ((and (number? object) (inexact? object))
 	   `(double ,(double-part object 0)
 		    ,(double-part object 1)
@@ -10017,6 +9452,8 @@
 	   (else nan))
      (/ x1 x2)))
 
+(define (read-real) (panic "read-real has not (yet) been implemented"))
+
 (define (unary f s) f)
 
 (define (unary-predicate f s) (lambda (x) (if (f x) vlad-true vlad-false)))
@@ -10444,6 +9881,15 @@
       (cons (*j x2)
 	    (lambda ((sensitivity y))
 	     (cons '() (cons (zero x1) (sensitivity y)))))))))
+ ;;  (define-primitive-procedure 'read-real
+ ;;   (lambda () (panic "Concrete version of primitive not (yet) implemented"))
+ ;;   (lambda () '(real))
+ ;;   ;; is this right???
+ ;;   '(lambda ((forward ignore)) (bundle (read-real) (read-real)))
+ ;;   ;; is this right???
+ ;;   '(lambda ((reverse ignore))
+ ;;     (cons (*j (read-real))
+ ;; 	  (lambda ((sensitivity y)) (cons '() (sensitivity y))))))
  (define-primitive-procedure 'write
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write")
