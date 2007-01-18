@@ -974,27 +974,27 @@ tar-f3: ${TARGETS-f3}
 
 f3-1.log:
 	echo started >f3-1.log
-	unbuff >f3-1.log run-poly forward-f3 1 1 1 1 1 1 6 1 3
+	unbuff >f3-1.log run-poly forward-3 1 1 1 1 1 1 6 1 1
 	echo finished >>f3-1.log
 
 f3-2.log:
 	echo started >f3-2.log
-	unbuff >f3-2.log run-poly forward-f3 1 8 1 1 1 1 6 1 3
+	unbuff >f3-2.log run-poly forward-3 1 8 1 1 1 1 6 1 1
 	echo finished >f3-2.log
 
 f3-3.log:
 	echo started >f3-3.log
-	unbuff >f3-3.log run-poly forward-f3 1 16 1 1 1 1 6 1 3
+	unbuff >f3-3.log run-poly forward-3 1 16 1 1 1 1 6 1 1
 	echo finished >f3-3.log
 
 f3-4.log:
 	echo started >f3-4.log
-	unbuff >f3-4.log run-poly forward-f3 1 32 1 1 1 1 6 1 3
+	unbuff >f3-4.log run-poly forward-3 1 32 1 1 1 1 6 1 1
 	echo finished >f3-4.log
 
 f3-p.log:
 	echo started >f3-p.log
-	unbuff >>f3-p.log run-precise forward-f3 1
+	unbuff >>f3-p.log run-precise forward-3 1
 	echo finished >f3-p.log
 
 f4a: tar-f4a ${TARGETS-f4a}

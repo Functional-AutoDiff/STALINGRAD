@@ -1,0 +1,8 @@
+(define ((map-n f) n)
+ (letrec ((loop (lambda (n c)
+                 (if (zero? n) c (loop (- n 1) (cons (f (- n 1)) c))))))
+  (loop n '())))
+
+(define (sqr x) (* x x))
+
+((map-n sqr) 4)
