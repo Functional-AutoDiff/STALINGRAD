@@ -1,0 +1,16 @@
+#!/bin/tcsh
+
+if ($#argv != 2) then
+  echo "usage: run-all test-name number-of-processors-to-use"
+  exit -1
+endif
+
+mkdir $1
+cd $1
+ln -s ../*.vlad .
+ln -s ../run-p* .
+ln -s ../all.makefile .
+cp ../comp .
+ln -s ~/bin/`architecture-path`/stalingrad .
+
+make -s -j $2 -f all.makefile all

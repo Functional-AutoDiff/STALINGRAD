@@ -126,8 +126,7 @@
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
 		 (at-most-one
 		  ("only-initialized-flows" only-initialized-flows?)
-		  ("only-updated-bindings" only-updated-bindings?)
-		  ("only-updated-bindings2" only-updated-bindings2?))
+		  ("only-updated-bindings" only-updated-bindings?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
@@ -139,44 +138,21 @@
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
 		 (at-most-one
-		  ("memoize-alpha-matching" memoize-alpha-matching?))
-		 (at-most-one ("memoize-nonrecursive-alpha-matching"
-			       memoize-nonrecursive-alpha-matching?))
-		 (at-most-one
-		  ("bucket-set" bucket-set?
-				(bucket-set "number" integer-argument 0)))
-		 (at-most-one ("test" test?))
-		 (at-most-one
 		  ("checkpoint-at" checkpoint-at?
 				   (i "iteration" integer-argument #f)))
-		 (at-most-one
-		  ("output-procedure-names-after"
-		   output-procedure-names-after?
-		   (i-output-procedure-names "iteration" integer-argument #f)))
-		 (at-most-one ("new-subset" new-subset?))
-		 (at-most-one ("simple-subset" simple-subset?))
-		 (at-most-one ("paranoid-widen" paranoid-widen?))
-		 (at-most-one ("paranoid-update-range" paranoid-update-range?))
-		 (at-most-one ("paranoid-update" paranoid-update?))
+		 (at-most-one ("checkpoint-doubles-imprecisely"
+			       checkpoint-doubles-imprecisely?))
 		 (at-most-one ("no-fast-letrec" no-fast-letrec?))
 		 (at-most-one ("no-fast-cons" no-fast-cons?))
 		 (at-most-one ("no-fast-apply" no-fast-apply?))
 		 (at-most-one ("no-fast-apply-prime" no-fast-apply-prime?))
 		 (at-most-one ("quiet" quiet?))
-		 (at-most-one ("new-cyclicize" new-cyclicize?))
 		 (at-most-one ("no-apply-multiply" no-apply-multiply?))
-		 (at-most-one ("new-widen" new-widen?))
-		 (at-most-one ("new-remove" new-remove?))
-		 (at-most-one ("new-l4-depth" new-l4-depth?))
+		 (at-most-one ("parse-abstract" parse-abstract?))
 		 (at-most-one ("picky" picky?))
 		 (at-most-one ("imprec-unroll" imprec-unroll?))
-		 (at-most-one ("old-add-cols" old-add-cols?))
 		 (at-most-one ("aesthetic" aesthetic?))
-		 (at-most-one ("output-at-iterations" output-at-iterations?))
-		 (at-most-one ("output-whole-analysis" output-whole-analysis?))
-		 (at-most-one ("widen-last" widen-last?))
-		 (at-most-one ("machine-style" machine-style?))
-		 (at-most-one ("report-all-times" report-all-times?))
+		 (at-most-one ("less-memory-output" less-memory-output?))
 		 (at-most-one ("dont-output-result" dont-output-result?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -207,50 +183,23 @@
 	expression-equality-using-structural?)
   (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
  (when no-warn? (set! *warn?* #f))
- (set! *memoize-alpha-matching?* memoize-alpha-matching?)
- (set! *memoize-nonrecursive-alpha-matching?*
-       memoize-nonrecursive-alpha-matching?)
- (when bucket-set?
-  (set! *bucket-names*
-	(case bucket-set
-	 ((0) '(expression=?))
-	 (else (panic "undefined bucket set!"))))
-  (set! *time-buckets* (make-vector (length *bucket-names*) 0.)))
- (set! *test?* test?)
  (when checkpoint-at?
   (set! *checkpoint-at?* checkpoint-at?)
   (set! *checkpoint-iteration* i))
- (when output-procedure-names-after?
-  (set! *output-procedure-names?* output-procedure-names-after?)
-  (set! *i-output-procedure-names* i-output-procedure-names))
- (set! *new-subset?* new-subset?)
- (set! *simple-subset?* simple-subset?)
- (set! *paranoid-widen?* paranoid-widen?)
- (set! *paranoid-update-range?* paranoid-update-range?)
- (set! *paranoid-update?* paranoid-update?)
+ (set! *checkpoint-doubles-imprecisely?* checkpoint-doubles-imprecisely?)
  (set! *fast-letrec?* (not no-fast-letrec?))
  (set! *fast-cons?* (not no-fast-cons?))
  (set! *fast-apply?* (not no-fast-apply?))
  (set! *fast-apply-prime?* (not no-fast-apply-prime?))
  (set! *quiet?* quiet?)
- (set! *new-cyclicize?* new-cyclicize?)
  (set! *no-apply-multiply?* no-apply-multiply?)
- (set! *new-widen?* new-widen?)
- (set! *new-l4-depth?* new-l4-depth?)
+ (set! *parse-abstract?* parse-abstract?)
  (set! *picky?* picky?)
  (set! *imprec-no-unroll?* (not imprec-unroll?))
- (set! *correct-add-cols?* (not old-add-cols?))
  (set! *aesthetic-reduce-depth?* aesthetic?)
- (set! *output-at-iterations?* output-at-iterations?)
- (set! *output-whole-analysis?* output-whole-analysis?)
- (set! *output-iterations* '(288 297 354 398 424))
- (set! *widen-first?* (not widen-last?))
- (set! *machine-style?* machine-style?)
- (set! *report-all-times?* report-all-times?)
  (set! *track-flow-analysis?* track-flow-analysis?)
  (set! *only-initialized-flows?* only-initialized-flows?)
  (set! *only-updated-bindings?* only-updated-bindings?)
- (set! *only-updated-bindings2?* only-updated-bindings2?)
  (set! *include-prior-values?* (not exclude-prior-values?))
  (initialize-basis!)
  (set! *include-path*
@@ -280,7 +229,7 @@
 		    (first es)
 		    (expand-definitions (reverse ds) (first es)))))
 	(syntax-check-expression! e)
-	(let ((result (parse e)))
+	(let ((result (if *parse-abstract?* (parse-abstract e) (parse e))))
 	 (when undecorated?
 	  (pp (abstract->concrete (first result)))
 	  (newline))
@@ -288,8 +237,12 @@
 	  (flow-analysis?
 	   (let ((bs (flow-analysis (first result) (second result))))
 	    (when (not dont-output-result?)
-	     (pp (externalize-abstract-analysis bs)))
-	    (newline)))
+	     (if less-memory-output?
+		 (for-each (lambda (b)
+			    (pp (externalize-abstract-expression-binding b))
+			    (newline))
+			   bs)
+		 (begin (pp (externalize-abstract-analysis bs)) (newline))))))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)

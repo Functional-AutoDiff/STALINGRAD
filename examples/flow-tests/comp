@@ -1,0 +1,34 @@
+#! /bin/tcsh -f
+
+# comp should be copied into the directory containing the new run data
+
+if ($#argv != 1) then
+  echo "usage: comp testcase"
+  exit -1
+endif
+
+set OLD = test6
+
+set EXAMPLE = $1.tar.gz
+mkdir $1
+cd $1
+
+mkdir new
+mkdir old
+mkdir diffs
+
+cd new
+tar zxf ../../$EXAMPLE
+
+cd ../old
+tar zxf ../../../${OLD}/$EXAMPLE
+
+cd ..
+
+foreach f (new/*.txt)
+  set BASE = `echo $f:r:t | rev | cut -d\- -f3- | rev`
+  echo diff old/$BASE*.txt new/$BASE*.txt > diffs/$BASE.diff
+  grep -v "time" old/$BASE*.txt > old/tmp-$BASE.txt
+  grep -v "time" new/$BASE*.txt > new/tmp-$BASE.txt
+  diff old/tmp-$BASE.txt new/tmp-$BASE.txt > diffs/$BASE.diff
+end

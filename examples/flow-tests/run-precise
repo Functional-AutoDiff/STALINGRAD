@@ -5,10 +5,10 @@ set NUM = $2
 
 set OUTFILE=${EXAMPLE}-precise-`date +"%m%d%y"`-${NUM}.txt
 
-set OPTS1 = "-no-warn -widen-last -no-apply-multiply"
-set OPTS2 = "-new-widen -new-l4-depth"
+set OPTS1 = "-no-warn -no-apply-multiply"
+set OPTS2 = ""
 set OPTS3 = "-expression-equality-using-structural"
-set OPTS4 = "-simple-subset"
+set OPTS4 = ""
 
 echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
 $OPTS1 $OPTS2 $OPTS3 $OPTS4 \
