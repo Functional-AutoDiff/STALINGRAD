@@ -1,0 +1,10 @@
+(define (derivative-using-j* f)
+ (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+
+(define (derivative f) (derivative-using-j* f))
+
+(define ((marble f) w) (+ ((f 0) w) ((derivative (lambda (x) ((f x) w))) 0)))
+
+(define (dmarble f) (derivative (marble f)))
+
+((dmarble (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3)
