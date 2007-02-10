@@ -194,9 +194,7 @@
 ;;; may not contain free deBruin references because there are no enclosing
 ;;; abstract values.
 
-(define-structure abstract-environment-binding
- abstract-values
- abstract-value)
+(define-structure abstract-environment-binding abstract-values abstract-value)
 
 (define-structure abstract-expression-binding expression abstract-flow)
 
@@ -216,9 +214,23 @@
 
 (define *reverse-cache* '())
 
+(define *num-updates* 0)
+
+(define *lookup-misses* 0)
+
+(define *start-time* #f)
+
+(define *expression-list* '())
+
 ;;; Parameters
 
 (define *include-path* '())
+
+(define *church-booleans?* #f)
+
+(define *church-pairs?* #f)
+
+(define *letrec-as-y?* #f)
 
 (define *metered?* #f)
 
@@ -242,21 +254,15 @@
 
 (define *unabbreviate-recursive-closures?* #f)
 
-(define *pp?* #f)
-
-(define *letrec-as-y?* #f)
-
 (define *anal?* #t)
+
+(define *pp?* #f)
 
 (define *x* #f)
 
-(define *cache-transformed-expressions?* #f)
-
 (define *memoized?* #f)
 
-(define *church-booleans?* #f)
-
-(define *church-pairs?* #f)
+(define *cache-transformed-expressions?* #f)
 
 (define *l1* #f) ; maximum flow cardinality
 
@@ -279,33 +285,38 @@
 (define *track-flow-analysis?* #f)
 
 (define *only-initialized-flows?* #f)
+
 (define *only-updated-bindings?* #f)
 
 (define *include-prior-values?* #t)
 
 (define *warn?* #t)
+
 (define *expression-equality-using-identity?* #f)
+
 (define *expression-equality-using-structural?* #t)
+
 (define *expression-equality-using-alpha?* #f)
 
-;;; Instrumentation
-(define *num-updates* 0)
-(define *lookup-misses* 0)
-(define *start-time* #f)
-
 (define *fast-letrec?* #t)
+
 (define *fast-cons?* #t)
+
 (define *fast-apply?* #t)
+
 (define *fast-apply-prime?* #t)
 
 (define *quiet?* #f)
-(define *no-apply-multiply?* #f)
-(define *parse-abstract?* #f)
-(define *picky?* #f)
-(define *imprec-no-unroll?* #t)
-(define *aesthetic-reduce-depth?* #f)
 
-(define *expression-list* '())
+(define *no-apply-multiply?* #f)
+
+(define *parse-abstract?* #f)
+
+(define *picky?* #f)
+
+(define *imprec-no-unroll?* #t)
+
+(define *aesthetic-reduce-depth?* #f)
 
 ;;; Procedures
 

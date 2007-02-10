@@ -67,6 +67,8 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("church-booleans" church-booleans?))
+		 (at-most-one ("church-pairs" church-pairs?))
 		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one ("flow-analysis" flow-analysis?))
 		 (at-most-one ("undecorated" undecorated?))
@@ -93,44 +95,55 @@
 		 (at-most-one
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
+		 (at-most-one ("x" x? (x "variable" string-argument #f)))
+		 (at-most-one ("memoized" memoized?))
 		 (at-most-one ("cache-transformed-expressions"
 			       cache-transformed-expressions?))
-		 (at-most-one ("memoized" memoized?))
-		 (at-most-one ("church-booleans" church-booleans?))
-		 (at-most-one ("church-pairs" church-pairs?))
 		 (at-most-one
 		  ("l1" l1? (l1 "flow-size-limit" integer-argument #f)))
-		 (at-most-one
-		  ("l2" l2? (l2 "concrete-real-abstract-value-limit"
-				integer-argument #f)))
-		 (at-most-one
-		  ("l3" l3? (l3 "matching-closure-abstract-value-limit"
-				integer-argument #f)))
+		 (at-most-one ("l2"
+			       l2?
+			       (l2 "concrete-real-abstract-value-limit"
+				   integer-argument
+				   #f)))
+		 (at-most-one ("l3"
+			       l3?
+			       (l3 "matching-closure-abstract-value-limit"
+				   integer-argument
+				   #f)))
 		 (at-most-one
 		  ("l4"
 		   l4?
 		   (l4 "nonrec-closure-nesting-depth-limit"
-		       integer-argument #f)
+		       integer-argument
+		       #f)
 		   (l4-depth-measure "depth-measure" string-argument #f)))
-		 (at-most-one
-		  ("l5" l5? (l5 "matching-pair-abstract-value-limit"
-				integer-argument #f)))
-		 (at-most-one
-		  ("l6" l6?
-			(l6 "pair-nesting-depth-limit" integer-argument #f)))
-		 (at-most-one
-		  ("l7" l7? (l7 "matching-bundle-abstract-value-limit"
-				integer-argument #f)))
-		 (at-most-one
-		  ("l8" l8?
-			(l8 "bundle-nesting-depth-limit" integer-argument #f)))
+		 (at-most-one ("l5"
+			       l5?
+			       (l5 "matching-pair-abstract-value-limit"
+				   integer-argument
+				   #f)))
+		 (at-most-one ("l6"
+			       l6?
+			       (l6 "pair-nesting-depth-limit"
+				   integer-argument
+				   #f)))
+		 (at-most-one ("l7"
+			       l7?
+			       (l7 "matching-bundle-abstract-value-limit"
+				   integer-argument
+				   #f)))
+		 (at-most-one ("l8"
+			       l8?
+			       (l8 "bundle-nesting-depth-limit"
+				   integer-argument
+				   #f)))
 		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
 		 (at-most-one
 		  ("only-initialized-flows" only-initialized-flows?)
 		  ("only-updated-bindings" only-updated-bindings?))
 		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
 		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
-		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one ("no-warn" no-warn?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
@@ -148,8 +161,6 @@
 		 (at-most-one ("picky" picky?))
 		 (at-most-one ("imprec-unroll" imprec-unroll?))
 		 (at-most-one ("aesthetic" aesthetic?))
-		 (at-most-one ("less-memory-output" less-memory-output?))
-		 (at-most-one ("dont-output-result" dont-output-result?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -157,45 +168,11 @@
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (when (and church-booleans? (not church-pairs?))
   (panic "When you specify -church-booleans you must specify -church-pairs"))
- (set! *letrec-as-y?* letrec-as-y?)
- (set! *church-booleans?* church-booleans?)
- (set! *church-pairs?* church-pairs?)
- (when l1? (set! *l1* l1))
- (when l2? (set! *l2* l2))
- (when l3? (set! *l3* l3))
- (when l4?
-  (set! *l4* l4)
-  (set-l4-depth-measure-from-string! l4-depth-measure))
- (when l5? (set! *l5* l5))
- (when l6? (set! *l6* l6))
- (when l7? (set! *l7* l7))
- (when l8? (set! *l8* l8))
- (when (or expression-equality-using-identity?
-	   expression-equality-using-structural?
-	   expression-equality-using-alpha?)
-  (set! *expression-equality-using-identity?*
-	expression-equality-using-identity?)
-  (set! *expression-equality-using-structural?*
-	expression-equality-using-structural?)
-  (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
- (when no-warn? (set! *warn?* #f))
- (set! *fast-letrec?* (not no-fast-letrec?))
- (set! *fast-cons?* (not no-fast-cons?))
- (set! *fast-apply?* (not no-fast-apply?))
- (set! *fast-apply-prime?* (not no-fast-apply-prime?))
- (set! *quiet?* quiet?)
- (set! *no-apply-multiply?* no-apply-multiply?)
- (set! *parse-abstract?* parse-abstract?)
- (set! *picky?* picky?)
- (set! *imprec-no-unroll?* (not imprec-unroll?))
- (set! *aesthetic-reduce-depth?* aesthetic?)
- (set! *track-flow-analysis?* track-flow-analysis?)
- (set! *only-initialized-flows?* only-initialized-flows?)
- (set! *only-updated-bindings?* only-updated-bindings?)
- (set! *include-prior-values?* (not exclude-prior-values?))
- (initialize-basis!)
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *church-booleans?* church-booleans?)
+ (set! *church-pairs?* church-pairs?)
+ (set! *letrec-as-y?* letrec-as-y?)
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
@@ -211,8 +188,41 @@
  (set! *anal?* (not not-anal?))
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
- (set! *cache-transformed-expressions?* cache-transformed-expressions?)
  (set! *memoized?* memoized?)
+ (set! *cache-transformed-expressions?* cache-transformed-expressions?)
+ (set! *l1* l1)
+ (set! *l2* l2)
+ (set! *l3* l3)
+ (set! *l4* l4)
+ (when l4? (set-l4-depth-measure-from-string! l4-depth-measure))
+ (set! *l5* l5)
+ (set! *l6* l6)
+ (set! *l7* l7)
+ (set! *l8* l8)
+ (set! *track-flow-analysis?* track-flow-analysis?)
+ (set! *only-initialized-flows?* only-initialized-flows?)
+ (set! *only-updated-bindings?* only-updated-bindings?)
+ (set! *include-prior-values?* (not exclude-prior-values?))
+ (set! *warn?* #f)
+ (when (or expression-equality-using-identity?
+	   expression-equality-using-structural?
+	   expression-equality-using-alpha?)
+  (set! *expression-equality-using-identity?*
+	expression-equality-using-identity?)
+  (set! *expression-equality-using-structural?*
+	expression-equality-using-structural?)
+  (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
+ (set! *fast-letrec?* (not no-fast-letrec?))
+ (set! *fast-cons?* (not no-fast-cons?))
+ (set! *fast-apply?* (not no-fast-apply?))
+ (set! *fast-apply-prime?* (not no-fast-apply-prime?))
+ (set! *quiet?* quiet?)
+ (set! *no-apply-multiply?* no-apply-multiply?)
+ (set! *parse-abstract?* parse-abstract?)
+ (set! *picky?* picky?)
+ (set! *imprec-no-unroll?* (not imprec-unroll?))
+ (set! *aesthetic-reduce-depth?* aesthetic?)
+ (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -227,14 +237,10 @@
 	  (newline))
 	 (cond
 	  (flow-analysis?
-	   (let ((bs (flow-analysis (first result) (second result))))
-	    (when (not dont-output-result?)
-	     (if less-memory-output?
-		 (for-each (lambda (b)
-			    (pp (externalize-abstract-expression-binding b))
-			    (newline))
-			   bs)
-		 (begin (pp (externalize-abstract-analysis bs)) (newline))))))
+	   (pp
+	    (externalize-abstract-analysis
+	     (flow-analysis (first result) (second result))))
+	   (newline))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)
