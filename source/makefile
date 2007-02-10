@@ -325,6 +325,14 @@ error_no_error:
 #i686-Linux-2.6.15-1-k7-smp       $(INSTALLLIBA)/scxl.a\
 #i686-Linux-2.6.15-1-k7-smp       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#i686-Linux-2.6.18-3-k7 CC = gcc
+#i686-Linux-2.6.18-3-k7 CFLAGS = -O2 -DLINUX
+#i686-Linux-2.6.18-3-k7 SCCFLAGS =
+#i686-Linux-2.6.18-3-k7 SCCLDFLAGS =
+#i686-Linux-2.6.18-3-k7 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#i686-Linux-2.6.18-3-k7       $(INSTALLLIBA)/scxl.a\
+#i686-Linux-2.6.18-3-k7       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 # missing i386-FreeBSD-2.2-STABLE
 
 #alpha-OSF1-V3.2 CC = cc
@@ -412,8 +420,7 @@ publish: release
 
 # Compilation rules and dependencies
 # ----------------------------------
-stalingradlib = stalingradlib-stuff.o\
-		stalingradlib-double-c.o
+stalingradlib = stalingradlib-stuff.o
 
 stalingradlib-stuff.sch: stalingradlib-*.sc
 	sch stalingradlib-stuff stalingradlib-*.sc
@@ -422,10 +429,6 @@ stalingradlib-stuff.o: stalingradlib-stuff.sch c-externals.sc\
 stalingradlib-stuff.sc
 	scc -cc $(CC) $(SCCFLAGS) -c stalingradlib-stuff.sc
 	-rm -f stalingradlib-stuff.c
-
-stalingradlib-double-c.o: stalingradlib-double-c.c
-	$(CC) $(CFLAGS) -o stalingradlib-double-c.o\
-             -c stalingradlib-double-c.c
 
 stalingrad.sch: stalingrad.sc stalingradlib-*.sc
 	sch -main stalingrad stalingradlib-*.sc

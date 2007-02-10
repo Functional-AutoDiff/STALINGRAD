@@ -3,7 +3,8 @@
 ;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004 and 2005 Purdue University. All rights reserved.
+;;; Copyright 2004, 2005, 2006, and 2007 Purdue University. All rights
+;;; reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -137,11 +138,6 @@
 			       expression-equality-using-structural?)
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
-		 (at-most-one
-		  ("checkpoint-at" checkpoint-at?
-				   (i "iteration" integer-argument #f)))
-		 (at-most-one ("checkpoint-doubles-imprecisely"
-			       checkpoint-doubles-imprecisely?))
 		 (at-most-one ("no-fast-letrec" no-fast-letrec?))
 		 (at-most-one ("no-fast-cons" no-fast-cons?))
 		 (at-most-one ("no-fast-apply" no-fast-apply?))
@@ -183,10 +179,6 @@
 	expression-equality-using-structural?)
   (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
  (when no-warn? (set! *warn?* #f))
- (when checkpoint-at?
-  (set! *checkpoint-at?* checkpoint-at?)
-  (set! *checkpoint-iteration* i))
- (set! *checkpoint-doubles-imprecisely?* checkpoint-doubles-imprecisely?)
  (set! *fast-letrec?* (not no-fast-letrec?))
  (set! *fast-cons?* (not no-fast-cons?))
  (set! *fast-apply?* (not no-fast-apply?))

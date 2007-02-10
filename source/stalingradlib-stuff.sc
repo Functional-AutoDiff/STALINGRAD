@@ -3,7 +3,8 @@
 ;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004, 2005, and 2006 Purdue University. All rights reserved.
+;;; Copyright 2004, 2005, 2006, and 2007 Purdue University. All rights
+;;; reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -292,9 +293,6 @@
 (define *lookup-misses* 0)
 (define *start-time* #f)
 
-(define *checkpoint-at?* #f)
-(define *checkpoint-iteration* #f)
-(define *checkpoint-doubles-imprecisely?* #f)
 (define *fast-letrec?* #t)
 (define *fast-cons?* #t)
 (define *fast-apply?* #t)
@@ -5063,7 +5061,7 @@
 
 (define (limit-matching-branching-values-at-one-level
 	 v k target-branching-value? branching-value-match?
-	 pick-us-to-coalesce) 
+	 pick-us-to-coalesce)
  (let outer ((branching-uss (transitive-equivalence-classesp
 			     branching-value-match?
 			     (remove-if-not target-branching-value? v)))
@@ -6042,9 +6040,9 @@
 		      ;;   1. exists vs->v' in (bs-old e)--vs same as last
 		      ;;                                   iter
 		      ;;      - NOTE: we don't say exists vs->v' in (bs e)
-		       ;;      - This means that the same environment vs got
-		       ;;        evaluated last iteration as we're trying to
-		       ;;        evaluate now.
+		      ;;      - This means that the same environment vs got
+		      ;;        evaluated last iteration as we're trying to
+		      ;;        evaluate now.
 		      ;;   2. (bs e1) = (bs-old e1)
 		      ;;   3. (bs e2) = (bs-old e2)
 		      (let* ((e1 (cons-expression-car e))
@@ -6089,35 +6087,35 @@
 (define (update-abstract-analysis-domains bs bs-old)
  ;; bs is the abstract analysis from some iteration i of flow-analysis
  ;; bs-old is the abstract analysis from iteration i-1 of flow-analysis
-;; There are two ways in which an abstract environment binding b in an abstract
-;; flow for expression e can be introduced to the analysis:
-;;   1. via update-abstract-analysis-domains.
-;;      If this is how b was introduced, then the appropriate bindings were
-;;      also introduced for any subexpression of e at the same time as was b.
-;;   2. via introduce-imprecision-to-abstract-flow.
-;;        If this is the case, then it is possible that appropriate bindings
-;;      weren't introduced for subexpressions of e if e was an application,
-;;      letrec expression, or cons expression.  In this case, we must introduce
-;;      the appropriate bindings for subexpressions of e.
-;;        Let's consider possible cases under which this might happen:
-;;          An expression e which is a non-lambda expression with
-;;         subexpressions has an entry vs1 -> v1 in its flow.
-;;         It's children have appropriately derived entries in their flows.
-;;          There are two main ways that vs1 can be widened:
-;;           a. No violation of *l1*.  Just widen a value in vs1.
-;;           b. *l1* violated for e.  Size of flow reduced.  This produces a
-;;             new environment vs1'.
-;;          In case (a), this widening will happen in the corresponding
-;;         environment in the flow in the subexpression(s) of e. No issue here.
-;;          In case (b), this widening will likely not happen in the same way
-;;         (if at all) for the flow(s) belonging to the subexpression(s) of e.
-;;         Here is where we must be careful to create a corresponding entry in
-;;         each flow belonging to subexpressions of e.  bs-to-add is a
-;;         conservative approximation of this.
-;;  There is only one other reason that a new abstract environment binding
-;; needs added to an abstract flow--because the abstract flows of the
-;; subexpressions of an application are changed.  This is dealt with in the
-;; second argument of the abstract-analysis-union in the body of this let*.
+ ;; There are two ways in which an abstract environment binding b in an abstract
+ ;; flow for expression e can be introduced to the analysis:
+ ;;   1. via update-abstract-analysis-domains.
+ ;;      If this is how b was introduced, then the appropriate bindings were
+ ;;      also introduced for any subexpression of e at the same time as was b.
+ ;;   2. via introduce-imprecision-to-abstract-flow.
+ ;;        If this is the case, then it is possible that appropriate bindings
+ ;;      weren't introduced for subexpressions of e if e was an application,
+ ;;      letrec expression, or cons expression.  In this case, we must introduce
+ ;;      the appropriate bindings for subexpressions of e.
+ ;;        Let's consider possible cases under which this might happen:
+ ;;          An expression e which is a non-lambda expression with
+ ;;         subexpressions has an entry vs1 -> v1 in its flow.
+ ;;         It's children have appropriately derived entries in their flows.
+ ;;          There are two main ways that vs1 can be widened:
+ ;;           a. No violation of *l1*.  Just widen a value in vs1.
+ ;;           b. *l1* violated for e.  Size of flow reduced.  This produces a
+ ;;             new environment vs1'.
+ ;;          In case (a), this widening will happen in the corresponding
+ ;;         environment in the flow in the subexpression(s) of e. No issue here.
+ ;;          In case (b), this widening will likely not happen in the same way
+ ;;         (if at all) for the flow(s) belonging to the subexpression(s) of e.
+ ;;         Here is where we must be careful to create a corresponding entry in
+ ;;         each flow belonging to subexpressions of e.  bs-to-add is a
+ ;;         conservative approximation of this.
+ ;;  There is only one other reason that a new abstract environment binding
+ ;; needs added to an abstract flow--because the abstract flows of the
+ ;; subexpressions of an application are changed.  This is dealt with in the
+ ;; second argument of the abstract-analysis-union in the body of this let*.
  (let*
    ((bs-to-add
      (reduce
@@ -6390,10 +6388,6 @@
 	  (set! *num-updates* (+ *num-updates* 1))
 	  (set! *lookup-misses* 0)
 	  (when (not *quiet?*) (format #t "(Iteration ~s:~%" *num-updates*))
-	  (when (and *checkpoint-at?* (= *num-updates* *checkpoint-iteration*))
-	   (write-checkpoint-to-file
-	    (list bs bs-old)
-	    (format #f "checkpoint-i~s" *checkpoint-iteration*)))
 	  (let* ((bs-prime
 		  (if *quiet?*
 		      (update-abstract-analysis bs bs-old)
@@ -7336,336 +7330,6 @@
   (panic "Not an abstract analysis!"))
  (map externalize-abstract-expression-binding bs))
 
-;;; Serialization -- saving program state
-
-(define (serialize-expressions es)
- (map
-  (lambda (e)
-   (let loop ((e e))
-    (define (lookup e)
-     (let ((i (positionp expression=? e es))) (if i i (loop e))))
-    (cond ((constant-expression? e) e)
-	  ((variable-access-expression? e) e)
-	  ((lambda-expression? e)
-	   (make-lambda-expression
-	    (lambda-expression-free-variables e)
-	    (lambda-expression-free-variable-indices e)
-	    (lambda-expression-variable e)
-	    (lookup (lambda-expression-body e))))
-	  ((application? e)
-	   (make-application (lookup (application-callee e))
-			     (lookup (application-argument e))
-			     (application-free-variables e)))
-	  ((letrec-expression? e)
-	   (make-letrec-expression
-	    (letrec-expression-bodies-free-variables e)
-	    (letrec-expression-bodies-free-variable-indices e)
-	    (letrec-expression-body-free-variables e)
-	    (letrec-expression-body-free-variable-indices e)
-	    (letrec-expression-procedure-variables e)
-	    (letrec-expression-argument-variables e)
-	    (map lookup (letrec-expression-bodies e))
-	    (lookup (letrec-expression-body e))))
-	  ((cons-expression? e)
-	   (make-cons-expression (cons-expression-tags e)
-				 (lookup (cons-expression-car e))
-				 (lookup (cons-expression-cdr e))))
-	  (else (fuck-up)))))
-  es))
-
-(define (copy-expression e)
- (define (copy-list l) (map identity l))
- (define (copy-vector v) (if (eq? v #f) #f (map-vector identity v)))
- (cond ((integer? e) e)
-       ((constant-expression? e)
-	(make-constant-expression (constant-expression-value e)))
-       ((variable-access-expression? e)
-	(make-variable-access-expression
-	 (variable-access-expression-variable e)
-	 (variable-access-expression-index e)))
-       ((lambda-expression? e)
-	(make-lambda-expression
-	 (copy-list (lambda-expression-free-variables e))
-	 (copy-vector (lambda-expression-free-variable-indices e))
-	 (lambda-expression-variable e)
-	 (copy-expression (lambda-expression-body e))))
-       ((application? e)
-	(make-application (copy-expression (application-callee e))
-			  (copy-expression (application-argument e))
-			  (copy-list (application-free-variables e))))
-       ((letrec-expression? e)
-	(make-letrec-expression
-	 (copy-list (letrec-expression-bodies-free-variables e))
-	 (copy-vector (letrec-expression-bodies-free-variable-indices e))
-	 (copy-list (letrec-expression-body-free-variables e))
-	 (copy-vector (letrec-expression-body-free-variable-indices e))
-	 (copy-list (letrec-expression-procedure-variables e))
-	 (copy-list (letrec-expression-argument-variables e))
-	 (map copy-expression (letrec-expression-bodies e))
-	 (copy-expression (letrec-expression-body e))))
-       ((cons-expression? e)
-	(make-cons-expression (copy-list (cons-expression-tags e))
-			      (copy-expression (cons-expression-car e))
-			      (copy-expression (cons-expression-cdr e))))
-       (else (fuck-up))))
-
-(define (unserialize-expressions es)
- (let ((es (map copy-expression es)))
-  (for-each
-   (lambda (e)
-    (let loop ((e e))
-     (define (lookup i-or-e)
-      (if (integer? i-or-e) (list-ref es i-or-e) (loop i-or-e)))
-     (cond ((constant-expression? e) #f)
-	   ((variable-access-expression? e) #f)
-	   ((lambda-expression? e) (set-lambda-expression-body!
-				    e (lookup (lambda-expression-body e))))
-	   ((application? e)
-	    (set-application-callee! e (lookup (application-callee e)))
-	    (set-application-argument! e (lookup (application-argument e))))
-	   ((letrec-expression? e)
-	    (set-letrec-expression-bodies!
-	     e (map lookup (letrec-expression-bodies e)))
-	    (set-letrec-expression-body!
-	     e (lookup (letrec-expression-body e))))
-	   ((cons-expression? e)
-	    (set-cons-expression-car! e (lookup (cons-expression-car e)))
-	    (set-cons-expression-cdr! e (lookup (cons-expression-cdr e))))
-	   (else (fuck-up)))
-     e))
-   es)
-  es))
-
-(define (all-referenced-objects object)
- (let ((objects '(() #t #f))
-       (chars '())
-       (exacts '())
-       (inexacts '())
-       (symbols '())
-       (expressions '())
-       (primitives '())
-       (strings '())
-       (pairs '())
-       (vectors '()))
-  (let loop ((object object))
-   (let ((num-obj
-	  (reduce
-	   + (map length
-		  (list objects chars exacts inexacts symbols expressions
-			primitives strings pairs vectors))
-	   0)))
-    (cond ((null? object) '())
-	  ((boolean? object) '())
-	  ((char? object)
-	   (unless (memq object chars) (set! chars (cons object chars))))
-	  ((and (number? object) (exact? object))
-	   (unless (memq object exacts) (set! exacts (cons object exacts))))
-	  ((and (number? object) (inexact? object))
-	   (unless (memv object inexacts)
-	    (set! inexacts (cons object inexacts))))
-	  ((input-port? object) (set! objects (cons object objects)))
-	  ((output-port? object) (set! objects (cons object objects)))
-	  ((eof-object? object) (set! objects (cons object objects)))
-	  ((symbol? object)
-	   (unless (memq object symbols) (set! symbols (cons object symbols))))
-	  ((procedure? object) (set! objects (cons object objects)))
-	  ((expression? object) (unless (memq object expressions)
-				 (set! expressions (cons object expressions))))
-	  ((primitive-procedure? object)
-	   (unless (memq object primitives)
-	    (set! primitives (cons object primitives))))
-	  ((string? object)
-	   (unless (memq object strings) (set! strings (cons object strings))))
-	  ((pair? object)
-	   (unless (memq object pairs)
-	    (set! pairs (cons object pairs))
-	    (loop (car object))
-	    (loop (cdr object))))
-	  ((vector? object)
-	   (unless (memq object vectors)
-	    (set! vectors (cons object vectors))
-	    (for-each-vector loop object)))
-	  (else (panic "Can't determine subobjects of this object")))))
-  (list objects chars exacts inexacts symbols expressions
-	primitives strings pairs vectors object)))
-
-(define (serialize object es)
- (let* ((o-oss (all-referenced-objects object))
-	(o (last o-oss))
-	(oss (but-last o-oss))
-	(objects (append (reduce append oss '()) (list object)))
-	(num-objects (length objects))
-	(os-lengths (map length oss))
-	(os-offsets
-	 (let loop ((l (list 0)))
-	  (if (= (length l) (length os-lengths))
-	      (reverse l)
-	      (loop (cons (+ (first l) (list-ref os-lengths (- (length l) 1)))
-			  l)))))
-	(sanity-check (when (not (= (reduce + (but-last os-lengths) 0)
-				    (last os-offsets)))
-		       (panic "Wrong-o!"))))
-  (define (lookup o)
-   (let* ((category (cond ((or (null? o) (boolean? o)) 0)
-			  ((char? o) 1)
-			  ((and (number? o) (exact? o)) 2)
-			  ((and (number? o) (inexact? o)) 3)
-			  ((symbol? o) 4)
-			  ((expression? o) 5)
-			  ((primitive-procedure? o) 6)
-			  ((string? o) 7)
-			  ((pair? o) 8)
-			  ((vector? o) 9)
-			  (else 0)))
-	  (os (list-ref oss category))
-	  (offset (list-ref os-offsets category))
-	  (positionc (if (= category 3) positionv positionq))
-	  (result (+ (positionc o os) offset)))
-    (when (not (or (and (= category 3) (eqv? o (list-ref objects result)))
-		   (eq? o (list-ref objects result))))
-     (panic "Lookup mess-up"))
-    result))
-  (map-indexed
-   (lambda (object i)
-    (cond ((null? object) object)
-	  ((boolean? object) object)
-	  ((char? object) `(character ,(char->integer object)))
-	  ((and (number? object)
-		(or (exact? object) *checkpoint-doubles-imprecisely?*))
-	   object)
-	  ((and (number? object) (inexact? object))
-	   `(double ,(double-part object 0)
-		    ,(double-part object 1)
-		    ,(double-part object 2)
-		    ,(double-part object 3)))
-	  ((input-port? object) (panic "Can't serialize input ports"))
-	  ((output-port? object) (panic "Can't serialize output ports"))
-	  ((eof-object? object) '(eof))
-	  ((symbol? object) object)
-	  ((procedure? object) (panic "Can't serialize procedures"))
-	  ((expression? object)
-	   (let ((i (positionp expression=? object es)))
-	    `(expression ,(if i i object))))
-	  ((primitive-procedure? object)
-	   `(primitive-procedure ,(primitive-procedure-name object)))
-	  ((and (nonrecursive-closure? object)
-		(not (eq? #f
-			  (find-if
-			   (lambda (b)
-			    (abstract-value=? (list object)
-					      (vlad-value->abstract-value
-					       (primitive-procedure-forward
-						(value-binding-value b)))))
-			   *value-bindings*))))
-	   (let ((name (value-binding-variable
-			(find-if
-			 (lambda (b)
-			  (abstract-value=? (list object)
-					    (vlad-value->abstract-value
-					     (primitive-procedure-forward
-					      (value-binding-value b)))))
-			 *value-bindings*))))
-	    `(forward ,name)))
-	  ((string? object)
-	   `(string ,@(map char->integer (string->list object))))
-	  ((pair? object) `(pair ,(lookup (car object))
-				 ,(lookup (cdr object))))
-	  ((vector? object)
-	   `(vector ,@(vector->list
-		       (map-vector (lambda (object) (lookup object))
-				   object))))
-	  (else (panic "Can't serialize this object"))))
-   objects)))
-
-(define (eof)
- (call-with-output-file "/tmp/eof" (lambda (port) #f))
- (let ((eof-object
-	(call-with-input-file "/tmp/eof" (lambda (port) (read port)))))
-  (system "rm /tmp/eof")
-  eof-object))
-
-(define (unserialize serialized-objects es)
- (let ((new-objects
-	(map (lambda (serialized-object)
-	      (if (pair? serialized-object)
-		  (case (first serialized-object)
-		   ((character) (integer->char (second serialized-object)))
-		   ((double)
-		    (make-double (second serialized-object)
-				 (third serialized-object)
-				 (fourth serialized-object)
-				 (fifth serialized-object)))
-		   ((eof) (eof))
-		   ((string)
-		    (list->string
-		     (map integer->char (rest serialized-object))))
-		   ((expression)
-		    (if (integer? (second serialized-object))
-			(list-ref es (second serialized-object))
-			(second serialized-object)))
-		   ((primitive-procedure)
-		    (value-binding-value
-		     (find-if
-		      (lambda (b) (variable=? (value-binding-variable b)
-					      (second serialized-object)))
-		      *value-bindings*)))
-		   ((forward)
-		    (first
-		     (vlad-value->abstract-value
-		      (primitive-procedure-forward
-		       (value-binding-value
-			(find-if
-			 (lambda (b) (variable=? (value-binding-variable b)
-						 (second serialized-object)))
-			 *value-bindings*))))))
-		   ((pair) (cons #f #f))
-		   ((vector)
-		    (make-vector (length (rest serialized-object)) #f))
-		   (else (fuck-up)))
-		  serialized-object))
-	     serialized-objects)))
-  (for-each
-   (lambda (serialized-object new-object)
-    (cond
-     ((expression? new-object) '())
-     ((primitive-procedure? new-object) '())
-     ((and (nonrecursive-closure? new-object)
-	   (not (eq? #f (find-if
-			 (lambda (b)
-			  (abstract-value=? (list new-object)
-					    (vlad-value->abstract-value
-					     (primitive-procedure-forward
-					      (value-binding-value b)))))
-			 *value-bindings*))))
-      '())
-     ((pair? new-object)
-      (set-car! new-object (list-ref new-objects (second serialized-object)))
-      (set-cdr! new-object (list-ref new-objects (third serialized-object))))
-     ((vector? new-object)
-      (for-each-n
-       (lambda (i)
-	(vector-set!
-	 new-object i
-	 (list-ref new-objects (list-ref (rest serialized-object) i))))
-       (vector-length new-object)))))
-   serialized-objects new-objects)
-  (last new-objects)))
-
-(define (write-checkpoint-to-file object pathname)
- (let ((es (serialize-expressions *expression-list*))
-       (x (serialize object *expression-list*)))
-  (call-with-output-file (replace-extension pathname "checkpoint")
-   (lambda (port) (write (list es x) port) (newline port)))))
-
-(define (read-checkpoint-from-file pathname)
- (let* ((es-x (call-with-input-file (replace-extension pathname "checkpoint")
-	       read))
-	(es (unserialize-expressions (first es-x))))
-  (set! *expression-list* es)
-  (unserialize (second es-x) es)))
-
-;;; \Serialization
-
 ;;; end stuff that belongs to brownfis
 
 ;;; Primitives
@@ -8109,14 +7773,14 @@
       (cons (*j x2)
 	    (lambda ((sensitivity y))
 	     (cons '() (cons (zero x1) (sensitivity y)))))))))
-(define-primitive-procedure 'read-real
- (lambda () (panic "Concrete version of primitive not (yet) implemented"))
- (lambda (u) '(real))
- ;; is this right?
- '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
- ;; is this right?
- '(lambda ((reverse (ignore)))
-   (cons (*j (read-real))
+ (define-primitive-procedure 'read-real
+  (lambda () (panic "Concrete version of primitive not (yet) implemented"))
+  (lambda (u) '(real))
+  ;; is this right?
+  '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
+  ;; is this right?
+  '(lambda ((reverse (ignore)))
+    (cons (*j (read-real))
 	  (lambda ((sensitivity y)) (cons '() (sensitivity y))))))
  (define-primitive-procedure 'write
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
