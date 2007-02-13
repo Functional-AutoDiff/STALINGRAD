@@ -109,13 +109,14 @@
 			       (l3 "matching-closure-abstract-value-limit"
 				   integer-argument
 				   #f)))
-		 (at-most-one
-		  ("l4"
-		   l4?
-		   (l4 "nonrec-closure-nesting-depth-limit"
-		       integer-argument
-		       #f)
-		   (l4-depth-measure "depth-measure" string-argument #f)))
+		 (at-most-one ("l4"
+			       l4?
+			       (l4 "closure-nesting-depth-limit"
+				   integer-argument
+				   #f)))
+		 (at-most-one ("abstract-value" abstract-value?)
+			      ("matching-nonrecursive-closure"
+			       matching-nonrecursive-closure?))
 		 (at-most-one ("l5"
 			       l5?
 			       (l5 "matching-pair-abstract-value-limit"
@@ -147,11 +148,11 @@
 		 (at-most-one ("parse-abstract" parse-abstract?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
-  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
+  (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
-  (panic "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
+  (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (when (and church-booleans? (not church-pairs?))
-  (panic "When you specify -church-booleans you must specify -church-pairs"))
+  (compile-time-error "When you specify -church-booleans you must specify -church-pairs"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
  (set! *church-booleans?* church-booleans?)
@@ -177,7 +178,9 @@
  (set! *l2* l2)
  (set! *l3* l3)
  (set! *l4* l4)
- (when l4? (set-l4-depth-measure-from-string! l4-depth-measure))
+ (when abstract-value? (set! *depth-measure* abstract-value-depth))
+ (when matching-nonrecursive-closure?
+  (set! *depth-measure* matching-nonrecursive-closure-depth))
  (set! *l5* l5)
  (set! *l6* l6)
  (set! *l7* l7)
