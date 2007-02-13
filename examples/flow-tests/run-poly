@@ -18,58 +18,53 @@ if ($L1 > 0) then
   set L1opt = "-l1 $L1"
 else
   set L1opt = ""
-endif
+  endif
 
 if ($L2 > 0) then
   set L2opt = "-l2 $L2"
 else
   set L2opt = ""
-endif
-  
+  endif
+
 if ($L3 > 0) then
   set L3opt = "-l3 $L3"
 else
   set L3opt = ""
-endif
-  
+  endif
+
 if ($L4 > 0) then
   set L4opt = "-l4 $L4 matching-nonrecursive-closure"
 else
   set L4opt = ""
-endif
-  
+  endif
+
 if ($L5 > 0) then
   set L5opt = "-l5 $L5"
 else
   set L5opt = ""
-endif
-  
+  endif
+
 if ($L6 > 0) then
   set L6opt = "-l6 $L6"
 else
   set L6opt = ""
-endif
+  endif
 
 if ($L7 > 0) then
   set L7opt = "-l7 $L7"
 else
   set L7opt = ""
-endif
+  endif
 
 if ($L8 > 0) then
   set L8opt = "-l8 $L8"
 else
   set L8opt = ""
-endif
+  endif
 
-#set OPTS1 = "-quiet -no-apply-multiply"
-#set OPTS2 = ""
-#set OPTS3 = "-aesthetic -expression-equality-using-structural"
-#set OPTS4 = ""
-
-set OPTS1 = "-no-warn -no-apply-multiply"
+set OPTS1 = "-no-warn"
 set OPTS2 = ""
-set OPTS3 = "-aesthetic -expression-equality-using-structural"
+set OPTS3 = "-expression-equality-using-structural"
 set OPTS4 = ""
 
 echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\

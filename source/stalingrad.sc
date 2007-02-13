@@ -97,8 +97,6 @@
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one ("memoized" memoized?))
-		 (at-most-one ("cache-transformed-expressions"
-			       cache-transformed-expressions?))
 		 (at-most-one
 		  ("l1" l1? (l1 "flow-size-limit" integer-argument #f)))
 		 (at-most-one ("l2"
@@ -138,12 +136,6 @@
 			       (l8 "bundle-nesting-depth-limit"
 				   integer-argument
 				   #f)))
-		 (at-most-one ("track-flow-analysis" track-flow-analysis?))
-		 (at-most-one
-		  ("only-initialized-flows" only-initialized-flows?)
-		  ("only-updated-bindings" only-updated-bindings?))
-		 (at-most-one ("exclude-prior-values" exclude-prior-values?))
-		 (at-most-one ("bypass-expand-defs" bypass-expand-defs?))
 		 (at-most-one ("no-warn" no-warn?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
@@ -151,16 +143,8 @@
 			       expression-equality-using-structural?)
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
-		 (at-most-one ("no-fast-letrec" no-fast-letrec?))
-		 (at-most-one ("no-fast-cons" no-fast-cons?))
-		 (at-most-one ("no-fast-apply" no-fast-apply?))
-		 (at-most-one ("no-fast-apply-prime" no-fast-apply-prime?))
 		 (at-most-one ("quiet" quiet?))
-		 (at-most-one ("no-apply-multiply" no-apply-multiply?))
 		 (at-most-one ("parse-abstract" parse-abstract?))
-		 (at-most-one ("picky" picky?))
-		 (at-most-one ("imprec-unroll" imprec-unroll?))
-		 (at-most-one ("aesthetic" aesthetic?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (panic "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -189,7 +173,6 @@
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
  (set! *memoized?* memoized?)
- (set! *cache-transformed-expressions?* cache-transformed-expressions?)
  (set! *l1* l1)
  (set! *l2* l2)
  (set! *l3* l3)
@@ -199,37 +182,20 @@
  (set! *l6* l6)
  (set! *l7* l7)
  (set! *l8* l8)
- (set! *track-flow-analysis?* track-flow-analysis?)
- (set! *only-initialized-flows?* only-initialized-flows?)
- (set! *only-updated-bindings?* only-updated-bindings?)
- (set! *include-prior-values?* (not exclude-prior-values?))
  (set! *warn?* #f)
- (when (or expression-equality-using-identity?
-	   expression-equality-using-structural?
-	   expression-equality-using-alpha?)
-  (set! *expression-equality-using-identity?*
-	expression-equality-using-identity?)
-  (set! *expression-equality-using-structural?*
-	expression-equality-using-structural?)
-  (set! *expression-equality-using-alpha?* expression-equality-using-alpha?))
- (set! *fast-letrec?* (not no-fast-letrec?))
- (set! *fast-cons?* (not no-fast-cons?))
- (set! *fast-apply?* (not no-fast-apply?))
- (set! *fast-apply-prime?* (not no-fast-apply-prime?))
+ (when expression-equality-using-identity?
+  (set! *expression-equality* 'identity))
+ (when expression-equality-using-structural?
+  (set! *expression-equality* 'structural))
+ (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
  (set! *quiet?* quiet?)
- (set! *no-apply-multiply?* no-apply-multiply?)
  (set! *parse-abstract?* parse-abstract?)
- (set! *picky?* picky?)
- (set! *imprec-no-unroll?* (not imprec-unroll?))
- (set! *aesthetic-reduce-depth?* aesthetic?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
        (loop (rest es) (cons (first es) ds))
-       (let ((e (if bypass-expand-defs?
-		    (first es)
-		    (expand-definitions (reverse ds) (first es)))))
+       (let ((e (expand-definitions (reverse ds) (first es))))
 	(syntax-check-expression! e)
 	(let ((result (if *parse-abstract?* (parse-abstract e) (parse e))))
 	 (when undecorated?

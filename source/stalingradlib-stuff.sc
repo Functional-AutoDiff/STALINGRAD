@@ -142,8 +142,6 @@
 
 (define-structure tagged-pair tags car cdr)
 
-(define-structure forward-expression-cache-entry e e-forward)
-
 (define-structure forward-cache-entry primal? primal tangent? tangent forward)
 
 (define-structure reverse-cache-entry primal reverse)
@@ -208,8 +206,6 @@
 
 (define *trace-level* 0)
 
-(define *forward-expression-cache* '())
-
 (define *forward-cache* '())
 
 (define *reverse-cache* '())
@@ -262,8 +258,6 @@
 
 (define *memoized?* #f)
 
-(define *cache-transformed-expressions?* #f)
-
 (define *l1* #f) ; maximum flow cardinality
 
 (define *l2* #f) ; maximum number of concrete reals in an abstract value
@@ -282,41 +276,13 @@
 
 (define *l8* #f) ; bundle nesting depth limit
 
-(define *track-flow-analysis?* #f)
-
-(define *only-initialized-flows?* #f)
-
-(define *only-updated-bindings?* #f)
-
-(define *include-prior-values?* #t)
-
 (define *warn?* #t)
 
-(define *expression-equality-using-identity?* #f)
-
-(define *expression-equality-using-structural?* #t)
-
-(define *expression-equality-using-alpha?* #f)
-
-(define *fast-letrec?* #t)
-
-(define *fast-cons?* #t)
-
-(define *fast-apply?* #t)
-
-(define *fast-apply-prime?* #t)
+(define *expression-equality* 'structural)
 
 (define *quiet?* #f)
 
-(define *no-apply-multiply?* #f)
-
 (define *parse-abstract?* #f)
-
-(define *picky?* #f)
-
-(define *imprec-no-unroll?* #t)
-
-(define *aesthetic-reduce-depth?* #f)
 
 ;;; Procedures
 
@@ -2367,74 +2333,49 @@
 ;;; J*
 
 (define (forward-transform e)
- (let ((cache-entry (find-if (lambda (entry)
-			      (eq? (forward-expression-cache-entry-e entry) e))
-			     *forward-expression-cache*)))
-  (if (and *cache-transformed-expressions?* cache-entry)
-      (forward-expression-cache-entry-e-forward cache-entry)
-      (let* ((e-forward
-	      (cond ((variable-access-expression? e) (forwardify-access e))
-		    ((lambda-expression? e)
-		     (new-lambda-expression
-		      (forwardify (lambda-expression-variable e))
-		      (forward-transform (lambda-expression-body e))))
-		    ((application? e)
-		     (new-application
-		      (forward-transform (application-callee e))
-		      (forward-transform (application-argument e))))
-		    ((letrec-expression? e)
-		     (new-letrec-expression
-		      (map forwardify
-			   (letrec-expression-procedure-variables e))
-		      (map forwardify (letrec-expression-argument-variables e))
-		      (map forward-transform (letrec-expression-bodies e))
-		      (forward-transform (letrec-expression-body e))))
-		    ((cons-expression? e)
-		     (make-cons-expression
-		      (cons 'forward (cons-expression-tags e))
-		      (forward-transform (cons-expression-car e))
-		      (forward-transform (cons-expression-cdr e))))
-		    (else (fuck-up))))
-	     (expression-cache-entry
-	      (make-forward-expression-cache-entry e e-forward)))
-       (when *cache-transformed-expressions?*
-	(set! *forward-expression-cache*
-	      (cons expression-cache-entry *forward-expression-cache*)))
-       e-forward))))
+ (cond ((variable-access-expression? e) (forwardify-access e))
+       ((lambda-expression? e)
+	(new-lambda-expression (forwardify (lambda-expression-variable e))
+			       (forward-transform (lambda-expression-body e))))
+       ((application? e)
+	(new-application (forward-transform (application-callee e))
+			 (forward-transform (application-argument e))))
+       ((letrec-expression? e)
+	(new-letrec-expression
+	 (map forwardify (letrec-expression-procedure-variables e))
+	 (map forwardify (letrec-expression-argument-variables e))
+	 (map forward-transform (letrec-expression-bodies e))
+	 (forward-transform (letrec-expression-body e))))
+       ((cons-expression? e)
+	(make-cons-expression (cons 'forward (cons-expression-tags e))
+			      (forward-transform (cons-expression-car e))
+			      (forward-transform (cons-expression-cdr e))))
+       (else (fuck-up))))
 
 (define (forward-transform-inverse e)
- (let ((cache-entry
-	(find-if (lambda (entry)
-		  (eq? (forward-expression-cache-entry-e-forward entry) e))
-		 *forward-expression-cache*)))
-  (cond ((and *cache-transformed-expressions?* cache-entry)
-	 (forward-expression-cache-entry-e cache-entry))
-	(*cache-transformed-expressions?*
-	 (panic "Expression not found in cache...and SHOULD be!"))
-	((variable-access-expression? e) (unforwardify-access e))
-	((lambda-expression? e)
-	 (new-lambda-expression
-	  (unforwardify (lambda-expression-variable e))
-	  (forward-transform-inverse (lambda-expression-body e))))
-	((application? e)
-	 (new-application
-	  (forward-transform-inverse (application-callee e))
-	  (forward-transform-inverse (application-argument e))))
-	((letrec-expression? e)
-	 (new-letrec-expression
-	  (map unforwardify (letrec-expression-procedure-variables e))
-	  (map unforwardify (letrec-expression-argument-variables e))
-	  (map forward-transform-inverse (letrec-expression-bodies e))
-	  (forward-transform-inverse (letrec-expression-body e))))
-	((cons-expression? e)
-	 (unless (and (not (null? (cons-expression-tags e)))
-		      (eq? (first (cons-expression-tags e)) 'forward))
-	  (fuck-up))
-	 (make-cons-expression
-	  (rest (cons-expression-tags e))
-	  (forward-transform-inverse (cons-expression-car e))
-	  (forward-transform-inverse (cons-expression-cdr e))))
-	(else (fuck-up)))))
+ (cond
+  ((variable-access-expression? e) (unforwardify-access e))
+  ((lambda-expression? e)
+   (new-lambda-expression
+    (unforwardify (lambda-expression-variable e))
+    (forward-transform-inverse (lambda-expression-body e))))
+  ((application? e)
+   (new-application (forward-transform-inverse (application-callee e))
+		    (forward-transform-inverse (application-argument e))))
+  ((letrec-expression? e)
+   (new-letrec-expression
+    (map unforwardify (letrec-expression-procedure-variables e))
+    (map unforwardify (letrec-expression-argument-variables e))
+    (map forward-transform-inverse (letrec-expression-bodies e))
+    (forward-transform-inverse (letrec-expression-body e))))
+  ((cons-expression? e)
+   (unless (and (not (null? (cons-expression-tags e)))
+		(eq? (first (cons-expression-tags e)) 'forward))
+    (fuck-up))
+   (make-cons-expression (rest (cons-expression-tags e))
+			 (forward-transform-inverse (cons-expression-car e))
+			 (forward-transform-inverse (cons-expression-cdr e))))
+  (else (fuck-up))))
 
 (define (primal x-forward)
  (let ((forward-cache-entry
@@ -4053,26 +3994,25 @@
 ;;; Command-line Options
 
 (define (set-l4-depth-measure-from-string! s)
+ ;; needs work
  (cond ((string=? s "abstract-value")
 	(set! *depth-measure* abstract-value-depth))
        ((string=? s "matching-nonrecursive-closure")
 	(set! *depth-measure* matching-nonrecursive-closure-depth))
-       (else (panic "Not a valid depth measure!"))))
-
-;;; \Command-line Options
+       (else (panic "Not a valid depth measure"))))
 
 ;;; Error Handling
 
 (define (compile-time-warning message . us)
  (when *warn?*
-  ((if *pp?* pp write) message) (newline)
+  ((if *pp?* pp write) message)
+  (newline)
   (for-each
    (lambda (u)
     ((if *pp?* pp write) (externalize-proto-abstract-value u)) (newline))
    us))
+ ;; needs work
  '())
-
-;;; \Error Handling
 
 ;;; General
 
@@ -4088,10 +4028,7 @@
 	       (or (= i -1)
 		   (and (equalq? (vector-ref x i) (vector-ref y i))
 			(test (- i 1))))))))
-       ((string? x)
-	(and (string? y) (string=? x y)))
-       ((%record? x)
-	((%record-lookup-method x '%to-equal?) x y))
+       ((string? x) (and (string? y) (string=? x y)))
        (else (eqv? x y))))
 
 (define (make-list length fill) (map-n (lambda (i) fill) length))
@@ -4101,14 +4038,12 @@
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
 
 (define (remove-duplicates-circular-safe l)
- (when (not (list? l))
-  (format #t "l=") (pp (externalize-abstract-value l)) (newline)
-  (panic "Invalid argument for remove-duplicates-circular-safe"))
+ ;; needs work: inefficient
  (let loop ((i 0) (l l))
-  (cond ((= i (length l)) l)
-	((memp equalq? (list-ref l i) (sublist l 0 i))
-	 (loop i (list-remove l i)))
-	(else (loop (+ i 1) l)))))
+  (cond
+   ((= i (length l)) l)
+   ((memp equalq? (list-ref l i) (sublist l 0 i)) (loop i (list-remove l i)))
+   (else (loop (+ i 1) l)))))
 
 (define (every-eq? l1 l2)
  (or (eq? l1 l2) (and (= (length l1) (length l2)) (every eq? l1 l2))))
@@ -4117,11 +4052,10 @@
  ;; belongs in QobiScheme
  (remove-if (lambda (e) (some (lambda (e-prime) (<? e-prime e)) s)) s))
 
-;;; \General
-
 ;;; VLAD stuff
 
 (define (parse-abstract e-source)
+ ;; here I am
  (set! *value-bindings* '())
  (initialize-basis!)
  (let* ((e-ps (map (lambda (b)
@@ -4174,9 +4108,7 @@
        ((branching-value? v)
 	(list (make-branching-value-with-new-values
 	       v (map vlad-value->abstract-value (branching-value-values v)))))
-       (else (panic "Not a vlad value!"))))
-
-;;; \VLAD stuff
+       (else (fuck-up))))
 
 ;;; Expression Equivalence
 
@@ -4190,20 +4122,25 @@
 
 (define (expression-eqv? e1 e2)
  (or (eq? e1 e2)
-     (and (constant-expression? e1) (constant-expression? e2)
+     (and (constant-expression? e1)
+	  (constant-expression? e2)
 	  (eq? (constant-expression-value e1) (constant-expression-value e2)))
-     (and (variable-access-expression? e1)(variable-access-expression? e2)
+     (and (variable-access-expression? e1)
+	  (variable-access-expression? e2)
 	  (variable=? (variable-access-expression-variable e1)
 		      (variable-access-expression-variable e2)))
-     (and (lambda-expression? e1) (lambda-expression? e2)
+     (and (lambda-expression? e1)
+	  (lambda-expression? e2)
 	  (variable=? (lambda-expression-variable e1)
 		      (lambda-expression-variable e2))
 	  (expression-eqv? (lambda-expression-body e1)
 			   (lambda-expression-body e2)))
-     (and (application? e1) (application? e2)
+     (and (application? e1)
+	  (application? e2)
 	  (expression-eqv? (application-callee e1) (application-callee e2))
 	  (expression-eqv? (application-argument e1)(application-argument e2)))
-     (and (letrec-expression? e1) (letrec-expression? e2)
+     (and (letrec-expression? e1)
+	  (letrec-expression? e2)
 	  (= (length (letrec-expression-procedure-variables e1))
 	     (length (letrec-expression-procedure-variables e2)))
 	  (every variable=?
@@ -4220,173 +4157,17 @@
      (and (cons-expression? e1) (cons-expression? e2)
 	  ;; brownfis - to change, uncomment below
 	  ;; (equal? (cons-expression-tags e1) (cons-expression-tags e2))
-	  (expression-eqv? (cons-expression-car e1)
-			   (cons-expression-car e2))
+	  (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
 	  (expression-eqv? (cons-expression-cdr e1)
 			   (cons-expression-cdr e2)))))
 
 (define (expression=? e1 e2)
- (or (and *expression-equality-using-identity?* (eq? e1 e2))
-     (and *expression-equality-using-structural?* (expression-eqv? e1 e2))
-     (and *expression-equality-using-alpha?* (panic "Not yet implemented!"))))
-
-;;; Expression Alpha Equivalence
-;;;
-;;; This is only used to define value equivalence. alpha-match and
-;;; abstract-recursive-closure-alpha-bindings are the only procedures used
-;;; outside this section. The former is used for nonrecursive closures and the
-;;; later is used for recursive closures.
-
-(define (merge-binding b1 bs)
- (cond ((or (eq? bs #f)
-	    (some (lambda (b)
-		   (or (and (variable=? (alpha-binding-variable1 b)
-					(alpha-binding-variable1 b1))
-			    (not (variable=? (alpha-binding-variable2 b)
-					     (alpha-binding-variable2 b1))))
-		       (and (not (variable=? (alpha-binding-variable1 b)
-					     (alpha-binding-variable1 b1)))
-			    (variable=? (alpha-binding-variable2 b)
-					(alpha-binding-variable2 b1)))))
-		  bs))
-	#f)
-       ((some (lambda (b)
-	       (and (variable=? (alpha-binding-variable1 b)
-				(alpha-binding-variable1 b1))
-		    (variable=? (alpha-binding-variable2 b)
-				(alpha-binding-variable2 b1))))
-	      bs)
-	bs)
-       (else (cons b1 bs))))
-
-(define (merge-bindings bs1 bs2)
- (cond ((or (eq? bs1 #f) (eq? bs2 #f)) #f)
-       ((null? bs1) bs2)
-       (else (merge-bindings (rest bs1) (merge-binding (first bs1) bs2)))))
-
-(define (alpha-match e1 e2)
- (cond
-  ((and (variable-access-expression? e1) (variable-access-expression? e2))
-   (list (make-alpha-binding (variable-access-expression-variable e1)
-			     (variable-access-expression-variable e2))))
-  ((and (lambda-expression? e1) (lambda-expression? e2))
-   (let ((bs (alpha-match (lambda-expression-body e1)
-			  (lambda-expression-body e2)))
-	 (b (make-alpha-binding (lambda-expression-variable e1)
-				(lambda-expression-variable e2))))
-    (if (or (eq? bs #f)
-	    (some (lambda (b)
-		   (or (and (variable=? (alpha-binding-variable1 b)
-					(lambda-expression-variable e1))
-			    (not (variable=? (alpha-binding-variable2 b)
-					     (lambda-expression-variable e2))))
-		       (and (not (variable=? (alpha-binding-variable1 b)
-					     (lambda-expression-variable e1)))
-			    (variable=? (alpha-binding-variable2 b)
-					(lambda-expression-variable e2)))))
-		  bs))
-	#f
-	(remove-if (lambda (b)
-		    (and (variable=? (alpha-binding-variable1 b)
-				     (lambda-expression-variable e1))
-			 (variable=? (alpha-binding-variable2 b)
-				     (lambda-expression-variable e2))))
-		   bs))))
-  ((and (application? e1) (application? e2))
-   (merge-bindings (alpha-match (application-callee e1)
-				(application-callee e2))
-		   (alpha-match (application-argument e1)
-				(application-argument e2))))
-  ((and (letrec-expression? e1)
-	(letrec-expression? e2)
-	(= (length (letrec-expression-procedure-variables e1))
-	   (length (letrec-expression-procedure-variables e2))))
-   (let loop ((xs1 (letrec-expression-procedure-variables e1))
-	      (xs2 (letrec-expression-procedure-variables e2))
-	      (bs
-	       (merge-bindings
-		(reduce
-		 merge-bindings
-		 (map
-		  (lambda (x1 x2 e1 e2)
-		   (let ((bs (alpha-match e1 e2)))
-		    (if (or (eq? bs #f)
-			    (some (lambda (b)
-				   (or (and (variable=?
-					     (alpha-binding-variable1 b) x1)
-					    (not
-					     (variable=?
-					      (alpha-binding-variable2 b) x2)))
-				       (and (not
-					     (variable=?
-					      (alpha-binding-variable1 b) x1))
-					    (variable=?
-					     (alpha-binding-variable2 b) x2))))
-				  bs))
-			#f
-			(remove-if
-			 (lambda (b)
-			  (and (variable=? (alpha-binding-variable1 b) x1)
-			       (variable=? (alpha-binding-variable2 b) x2)))
-			 bs))))
-		  (letrec-expression-argument-variables e1)
-		  (letrec-expression-argument-variables e2)
-		  (letrec-expression-bodies e1)
-		  (letrec-expression-bodies e2))
-		 '())
-		(alpha-match (letrec-expression-body e1)
-			     (letrec-expression-body e2)))))
-    (cond ((null? xs1) bs)
-	  ((or (eq? bs #f)
-	       (some (lambda (b)
-		      (or (and (variable=? (alpha-binding-variable1 b)
-					   (first xs1))
-			       (not (variable=? (alpha-binding-variable2 b)
-						(first xs2))))
-			  (and (not (variable=? (alpha-binding-variable1 b)
-						(first xs1)))
-			       (variable=? (alpha-binding-variable2 b)
-					   (first xs2)))))
-		     bs))
-	   #f)
-	  (else (loop
-		 (rest xs1)
-		 (rest xs2)
-		 (remove-if
-		  (lambda (b)
-		   (and (variable=? (alpha-binding-variable1 b) (first xs1))
-			(variable=? (alpha-binding-variable2 b) (first xs2))))
-		  bs))))))
-  ((and (cons-expression? e1)
-	(cons-expression? e2)
-	(equal? (cons-expression-tags e1) (cons-expression-tags e2)))
-   (merge-bindings (alpha-match (cons-expression-car e1)
-				(cons-expression-car e2))
-		   (alpha-match (cons-expression-cdr e1)
-				(cons-expression-cdr e2))))
-  (else #f)))
-
-(define (nonrecursive-closure-alpha-bindings u1 u2)
- (alpha-match (new-lambda-expression (nonrecursive-closure-variable u1)
-				     (nonrecursive-closure-body u1))
-	      (new-lambda-expression (nonrecursive-closure-variable u2)
-				     (nonrecursive-closure-body u2))))
-
-(define (recursive-closure-alpha-bindings u1 u2)
- (define (make-letrec-expression-from-recursive-closure u)
-  (new-letrec-expression
-   (vector->list (recursive-closure-procedure-variables u))
-   (vector->list (recursive-closure-argument-variables u))
-   (vector->list (recursive-closure-bodies u))
-   (new-variable-access-expression
-    (vector-ref (recursive-closure-procedure-variables u)
-		(recursive-closure-index u)))))
- (alpha-match (make-letrec-expression-from-recursive-closure u1)
-	      (make-letrec-expression-from-recursive-closure u2)))
-
-;;; \Expression Alpha Equivalence
-
-;;; \Expression Equivalence
+ ((case *expression-equality*
+   ((identity) eq?)
+   ((structural) expression-eqv?)
+   ((alpha) (panic "Alpha equivalence is not (yet) implemented"))
+   (else (fuck-up)))
+  e1 e2))
 
 ;;; Real Procedures
 
@@ -4395,16 +4176,16 @@
 ;;; Closure Procedures
 
 (define (nonrecursive-closure-match? u1 u2)
- (or (and *expression-equality-using-alpha?*
-	  (panic "Matching not (yet) defined with alpha equivalence"))
+ (if (eq? *expression-equality* 'alpha)
+     (panic "Matching is not (yet) defined with alpha equivalence")
      (and (variable=? (nonrecursive-closure-variable u1)
 		      (nonrecursive-closure-variable u2))
 	  (expression=? (nonrecursive-closure-body u1)
 			(nonrecursive-closure-body u2)))))
 
 (define (nonrecursive-closure-values-matching u1 u2)
- (if *expression-equality-using-alpha?*
-     (panic "Matching not (yet) defined with alpha equivalence")
+ (if (eq? *expression-equality* 'alpha)
+     (panic "Matching is not (yet) defined with alpha equivalence")
      (nonrecursive-closure-values u2)))
 
 (define (new-nonrecursive-closure vs e)
@@ -4414,26 +4195,26 @@
   (list (make-nonrecursive-closure xs vs x e))))
 
 (define (recursive-closure-match? u1 u2)
- (or (and *expression-equality-using-alpha?*
-	  (panic "Alpha equivalence not (yet) implemented"))
+ (if (eq? *expression-equality* 'alpha)
+     (panic "Alpha equivalence is not (yet) implemented")
      (and (= (recursive-closure-index u1) (recursive-closure-index u2))
+	  (= (vector-length (recursive-closure-procedure-variables u1))
+	     (vector-length (recursive-closure-procedure-variables u2)))
 	  (= (vector-length (recursive-closure-argument-variables u1))
 	     (vector-length (recursive-closure-argument-variables u2)))
 	  (every-vector variable=?
-			(recursive-closure-argument-variables u1)
-			(recursive-closure-argument-variables u2))
-	  (= (vector-length (recursive-closure-procedure-variables u1))
-	     (vector-length (recursive-closure-procedure-variables u2)))
-	  (every-vector variable=?
 			(recursive-closure-procedure-variables u1)
 			(recursive-closure-procedure-variables u2))
+	  (every-vector variable=?
+			(recursive-closure-argument-variables u1)
+			(recursive-closure-argument-variables u2))
 	  (every-vector expression=?
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
 
 (define (recursive-closure-values-matching u1 u2)
- (if *expression-equality-using-alpha?*
-     (panic "Alpha equivalence not (yet) implemented")
+ (if (eq? *expression-equality* 'alpha)
+     (panic "Alpha equivalence is not (yet) implemented")
      (recursive-closure-values u2)))
 
 (define (new-recursive-closure xs vs xs-procedures xs-arguments es i)
@@ -4444,8 +4225,7 @@
 	     (recursive-closure-argument-variables v)
 	     (recursive-closure-bodies v)))
 
-(define (closure? u)
- (or (nonrecursive-closure? u) (recursive-closure? u)))
+(define (closure? u) (or (nonrecursive-closure? u) (recursive-closure? u)))
 
 (define (closure-variables u)
  (cond ((nonrecursive-closure? u) (nonrecursive-closure-variables u))
@@ -4458,8 +4238,7 @@
        (else (fuck-up))))
 
 (define (closure-match? u1 u2)
- (when (not (and (closure? u1) (closure? u2)))
-  (panic "u1 and u2 should both be closures!"))
+ (unless (and (closure? u1) (closure? u2)) (fuck-up))
  (cond ((and (nonrecursive-closure? u1) (nonrecursive-closure? u2))
 	(nonrecursive-closure-match? u1 u2))
        ((and (recursive-closure? u1) (recursive-closure? u2))
@@ -4469,33 +4248,29 @@
 (define (closure-values u)
  (cond ((nonrecursive-closure? u) (nonrecursive-closure-values u))
        ((recursive-closure? u) (recursive-closure-values u))
-       (else (panic "Not a closure!"))))
+       (else (fuck-up))))
 
 (define (closure-values-matching u1 u2)
  (cond ((and (nonrecursive-closure? u1) (nonrecursive-closure? u2))
 	(nonrecursive-closure-values-matching u1 u2))
        ((and (recursive-closure? u1) (recursive-closure? u2))
 	(recursive-closure-values-matching u1 u2))
-       (else (panic "u1 and u2 should be the same type of closure!"))))
+       (else (fuck-up))))
 
 (define (make-closure-with-new-values u vs)
  (cond ((nonrecursive-closure? u)
-	(make-nonrecursive-closure
-	 (nonrecursive-closure-variables u)
-	 vs
-	 (nonrecursive-closure-variable u)
-	 (nonrecursive-closure-body u)))
+	(make-nonrecursive-closure (nonrecursive-closure-variables u)
+				   vs
+				   (nonrecursive-closure-variable u)
+				   (nonrecursive-closure-body u)))
        ((recursive-closure? u)
-	(make-recursive-closure
-	 (recursive-closure-variables u)
-	 vs
-	 (recursive-closure-procedure-variables u)
-	 (recursive-closure-argument-variables u)
-	 (recursive-closure-bodies u)
-	 (recursive-closure-index u)))
-       (else (panic "Not a closure!"))))
-
-;;; \Closure Procedures
+	(make-recursive-closure (recursive-closure-variables u)
+				vs
+				(recursive-closure-procedure-variables u)
+				(recursive-closure-argument-variables u)
+				(recursive-closure-bodies u)
+				(recursive-closure-index u)))
+       (else (fuck-up))))
 
 ;;; Pair Procedures
 
@@ -4507,13 +4282,11 @@
 (define (make-tagged-pair-with-new-values u vs)
  (make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
 
-;;; \Pair Procedures
-
 ;;; Bundle Procedures
 
 (define (make-bundle-protected v1 v2)
  (when (or (up? v1) (up? v2))
-  (panic "Bundles with backlinks not (yet) supported!"))
+  (panic "Bundles with backlinks not (yet) implemented"))
  (make-bundle v1 v2))
 
 (define (bundle-match? u1 u2)
@@ -4526,8 +4299,6 @@
  ;; should we do a check here and preserve eq?-ness if possible?
  ;; protect here
  (make-bundle-protected (first vs) (second vs)))
-
-;;; \Bundle Procedures
 
 ;;; Branching Value Procedures
 
@@ -4557,16 +4328,13 @@
        ((bundle? u) (make-bundle-with-new-values u vs))
        (else (fuck-up))))
 
-;;; \Branching Value Procedures
-
 ;;; Abstract-Value Subset, Equivalence, Intersection?, and Union
 
 (define (empty-abstract-value) '())
 
 (define (atomic-proto-abstract-value? u)
  (or (null? u)
-     (eq? #t u)
-     (eq? #f u)
+     (boolean? u)
      (abstract-real? u)
      (primitive-procedure? u)
      (and (closure? u) (zero? (vector-length (closure-values u))))))
@@ -4575,26 +4343,23 @@
  ;; v1 and v2 should be abstract values which are not backlinks (UPs).
  (every
   (lambda (u1)
-   (cond ((null? u1) (some null? v2))
-	 ((eq? u1 #t) (some (lambda (u2) (eq? u2 #t)) v2))
-	 ((eq? u1 #f) (some (lambda (u2) (eq? u2 #f)) v2))
-	 ((real? u1)
-	  (some (lambda (u2)
-		 (or (and (real? u2) (= u1 u2)) (eq? u2 'real)))
-		v2))
-	 ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
-	 ((primitive-procedure? u1)
-	  (some (lambda (u2)
-		 (and (primitive-procedure? u2) (eq? u1 u2)))
-		v2))
-	 ((branching-value? u1)
-	  (some (lambda (u2) (and (branching-value? u2)
-				  (branching-value-match? u1 u2)))
-		v2))
-	 (else (panic (format #f "Not a known proto-abstract value: ~s" u1)))))
+   (cond
+    ((null? u1) (some null? v2))
+    ((boolean? u1) (some (lambda (u2) (eq? u2 u1)) v2))
+    ((real? u1)
+     (some (lambda (u2) (or (and (real? u2) (= u1 u2)) (eq? u2 'real))) v2))
+    ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
+    ((primitive-procedure? u1)
+     (some (lambda (u2) (and (primitive-procedure? u2) (eq? u2 u1))) v2))
+    ((branching-value? u1)
+     (some
+      (lambda (u2) (and (branching-value? u2) (branching-value-match? u1 u2)))
+      v2))
+    (else (fuck-up))))
   v1))
 
 (define (abstract-value-subset? v1 v2)
+ ;; here I am
  (let loop? ((v1 v1) (v2 v2) (cs '()) (v1-context '()) (v2-context '()))
   (cond
    ((null? v1) #t)
@@ -4642,15 +4407,14 @@
        us1-branching)))))))
 
 (define (abstract-value=? v1 v2)
- (or (eq? v1 v2) (and (abstract-value-subset? v1 v2)
-		      (abstract-value-subset? v2 v1))))
+ (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
 
 (define (nonempty-abstract-value-intersection? v1 v2)
  ;; It is insufficient to not recurse on branching values and conservatively
- ;;  estimate an intersection when v1 and v2 contain matching branching values.
- ;;  This is too loose an approximation.  For example, if we don't recurse,
- ;;  every closure resulting from a given lambda expression will potentially
- ;;  intersect.
+ ;; estimate an intersection when v1 and v2 contain matching branching values.
+ ;; This is too loose an approximation.  For example, if we don't recurse,
+ ;; every closure resulting from a given lambda expression will potentially
+ ;; intersect.
  ;; note: This is a conservative approximation.  When this returns #f, it is
  ;;       guaranteed to be #f.  However, this will sometimes return #t when the
  ;;       result is indeed #f.
@@ -4660,10 +4424,9 @@
       (lambda (u1)
        (cond
 	((null? u1) (some null? v2))
-	((or (eq? u1 #t) (eq? u1 #f)) (some (lambda (u2) (eq? u2 u1)) v2))
+	((boolean? u1) (some (lambda (u2) (eq? u2 u1)) v2))
 	((real? u1) (some (lambda (u2) (or (eq? u2 u1) (eq? u2 'real))) v2))
-	((eq? u1 'real)
-	 (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
+	((eq? u1 'real) (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
 	((primitive-procedure? u1) (some (lambda (u2) (eq? u2 u1)) v2))
 	((branching-value? u1)
 	 (some (lambda (u2)
@@ -4673,10 +4436,11 @@
 			    (branching-value-values u1)
 			    (branching-value-values-matching u1 u2))))
 	       v2))
-	(else (panic "Not a proto-abstract value!"))))
+	(else (fuck-up))))
       v1)))
 
 (define (unroll-once v vs-above)
+ ;; here I am
  (cond ((and (up? v) (= (up-index v) (- (length vs-above) 1)))
 	(let* ((vs-above (cons v vs-above))
 	       (make-up-if-needed
@@ -4695,34 +4459,31 @@
 		     (else (panic "Not (yet) implemented!"))))
 	      (last vs-above))))
        ((up? v) v)
-       (else
-	(let* ((vs-above (cons v vs-above))
-	       (unroll (lambda (v) (unroll-once v vs-above)))
-	       (result
-		(map
-		 (lambda (u)
-		  (cond ((or (null? u)
-			     (boolean? u)
-			     (abstract-real? u)
-			     (primitive-procedure? u))
-			 u)
-			((branching-value? u)
-			 (make-branching-value-with-new-values
-			  u (map unroll (branching-value-values u))))
-			(else (panic "Not (yet) implemented!"))))
-		 v)))
-	 (if (every-eq? v result) v result)))))
+       (else (let* ((vs-above (cons v vs-above))
+		    (unroll (lambda (v) (unroll-once v vs-above)))
+		    (result
+		     (map
+		      (lambda (u)
+		       (cond ((or (null? u)
+				  (boolean? u)
+				  (abstract-real? u)
+				  (primitive-procedure? u))
+			      u)
+			     ((branching-value? u)
+			      (make-branching-value-with-new-values
+			       u (map unroll (branching-value-values u))))
+			     (else (panic "Not (yet) implemented!"))))
+		      v)))
+	      (if (every-eq? v result) v result)))))
 
-(define (closed-proto-abstract-values v)
- (unroll-once v '()))
+(define (closed-proto-abstract-values v) (unroll-once v '()))
 
 (define (abstract-value-union v1 v2)
  (cond ((null? v1) v2)
        ((null? v2) v1)
        ((eq? v1 v2) v1)
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
-       ((or (up? v1) (up? v2))
-	(panic "Can't union a union type with a backlink!"))
+       ((or (up? v1) (up? v2)) (fuck-up))
        (else (remove-duplicates-circular-safe
 	      (append (closed-proto-abstract-values v1)
 		      (closed-proto-abstract-values v2))))))
@@ -4731,13 +4492,11 @@
  (if (or (up? v1) (up? v2))
      (if (and (up? v1) (up? v2) (= (up-index v1) (up-index v2)))
 	 v1
-	 (panic "Can't union a union type with a backlink!"))
+	 (fuck-up))
      (remove-duplicates-circular-safe (append v1 v2))))
 
-(define (imprec-value-union v1 v2)
- (if *imprec-no-unroll?*
-     (abstract-value-union-without-unroll v1 v2)
-     (abstract-value-union v1 v2)))
+;; needs work: rename
+(define (imprec-value-union v1 v2) (abstract-value-union-without-unroll v1 v2))
 
 ;;; Abstract-Environment Subset, Equivalence, Intersection?, and Union
 
@@ -4768,9 +4527,7 @@
  (map-vector abstract-value-union-without-unroll vs1 vs2))
 
 (define (imprec-environment-union vs1 vs2)
- (if *imprec-no-unroll?*
-     (abstract-environment-union-without-unroll vs1 vs2)
-     (abstract-environment-union vs1 vs2)))
+ (abstract-environment-union-without-unroll vs1 vs2))
 
 ;;; Abstract-Flow Equivalence and Union
 
@@ -5009,10 +4766,6 @@
   (list v-new additions-new)))
 
 ;;; \Widen->General
-
-;;; Widen->Flows
-
-;;; \Widen->Flows
 
 ;;; Widen->Matching Values
 
@@ -5440,11 +5193,6 @@
  (or (not *l4*)
      (eq? (path-of-depth-greater-than-k *l4* *depth-measure* v) #f)))
 
-(define (l4-met?-careful v)
- (or (not *l4*)
-     (eq? (path-of-depth-greater-than-k *l4* matching-closure-depth-careful v)
-	  #f)))
-
 (define (l5-met? v)
  (or (not *l5*)
      (not (some-abstract-value?
@@ -5482,7 +5230,6 @@
   (and (l2-met? v)
        (l3-met? v)
        (l4-met? v)
-       (or (not *picky?*) (l4-met?-careful v))
        (l5-met? v)
        (l6-met? v)
        (l7-met? v)))
@@ -5500,9 +5247,7 @@
 	      (v3b (limit-matching-bundles v3a))
 	      (v4a (limit-l4-depth v3b))
 	      (v5a (limit-l6-depth v4a))
-	      (v5b (if *aesthetic-reduce-depth?*
-		       (aesthetic-reduce-l6-depth v5a)
-		       v5a))
+	      (v5b (aesthetic-reduce-l6-depth v5a))
 	      (v6a (limit-matching-closures v5b))
 	      (v7a (limit-matching-pairs v6a))
 	      (v7b (limit-matching-bundles v7a))
@@ -5717,7 +5462,6 @@
 (define (initial-abstract-analysis e bs)
  (let ((vs (list->vector
 	    (map (lambda (x)
-		  ;; here I am
 		  (vlad-value->abstract-value
 		   (value-binding-value
 		    (find-if
@@ -5846,9 +5590,7 @@
 	 (abstract-value-in-matching-abstract-environment e vs bs))))
   (reduce
    abstract-value-union
-   (map
-    (lambda (u1)
-     (if *no-apply-multiply?*
+   (map (lambda (u1)
 	 (cond ((eq? v2 (empty-abstract-value)) (empty-abstract-value))
 	       ((primitive-procedure? u1)
 		(reduce abstract-value-union
@@ -5859,50 +5601,21 @@
 	       ((closure? u1)
 		(abstract-apply-closure-to-v lookup-in-analysis u1 v2))
 	       (else (compile-time-warning
-		      "Application callee not a procedure: " u1)))
-	 (reduce
-	  abstract-value-union
-	  (map
-	   (lambda (u2)
-	    (cond ((primitive-procedure? u1)
-		   ((primitive-procedure-abstract-procedure u1) u2))
-		  ((closure? u1)
-		   (abstract-apply-closure-to-u lookup-in-analysis u1 u2))
-		  (else (compile-time-warning
-			 "Application callee not a procedure: " u1))))
-	   (closed-proto-abstract-values v2))
-	  (empty-abstract-value))))
-    (closed-proto-abstract-values v1))
+		      "Application callee not a procedure: " u1))))
+	(closed-proto-abstract-values v1))
    (empty-abstract-value))))
 
 (define (abstract-apply-prime v1 v2)
- (if *no-apply-multiply?*
-     (reduce
-      abstract-analysis-union
-      (map
-       (lambda (u1)
+ (reduce
+  abstract-analysis-union
+  (map (lambda (u1)
 	(cond ((eq? v2 (empty-abstract-value)) (empty-abstract-analysis))
 	      ((primitive-procedure? u1) (empty-abstract-analysis))
-	      ((closure? u1) (abstract-apply-closure-to-v
-			      abstract-analysis-rooted-at u1 v2))
+	      ((closure? u1)
+	       (abstract-apply-closure-to-v abstract-analysis-rooted-at u1 v2))
 	      (else (empty-abstract-analysis))))
        (closed-proto-abstract-values v1))
-      (empty-abstract-analysis))
-     (reduce
-      abstract-analysis-union
-      (map
-       (lambda (u1)
-	(reduce
-	 abstract-analysis-union
-	 (map (lambda (u2)
-	       (cond ((primitive-procedure? u1) (empty-abstract-analysis))
-		     ((closure? u1) (abstract-apply-closure-to-u
-				     abstract-analysis-rooted-at u1 u2))
-		     (else (empty-abstract-analysis))))
-	      (closed-proto-abstract-values v2))
-	 (empty-abstract-analysis)))
-       (closed-proto-abstract-values v1))
-      (empty-abstract-analysis))))
+  (empty-abstract-analysis)))
 
 ;;; add-new-mappings-to-abstract-flow acts as a sort of abstract flow union--
 ;;; one that ensures that elements of bs-new are added in a monotonic manner.
@@ -5983,7 +5696,6 @@
 		       ;;        u = <sigma,xs,es',i> =>
 		       ;;                       (bs es'[i]) = (bs-old es'[i])
 		       (if (and
-			    *fast-apply?*
 			    (mapping-with-vs-in-flow?
 			     vs (expression-abstract-flow3 e bs-old))
 			    (bs-unchanged-for-e? e1)
@@ -6025,8 +5737,7 @@
 		       ;;        evaluated last iteration as we're trying to
 		       ;;        evaluate now.
 		       ;;   2. (bs e-body) = (bs-old e-body)
-		       (if (and *fast-letrec?*
-				(mapping-with-vs-in-flow?
+		       (if (and (mapping-with-vs-in-flow?
 				 vs (expression-abstract-flow3 e bs-old))
 				(bs-unchanged-for-e? e-body))
 			   v
@@ -6060,8 +5771,7 @@
 			     (e2 (cons-expression-cdr e))
 			     (xs1 (free-variables e1))
 			     (xs2 (free-variables e2)))
-		       (if (and *fast-cons?*
-				(mapping-with-vs-in-flow?
+		       (if (and (mapping-with-vs-in-flow?
 				 vs (expression-abstract-flow3 e bs-old))
 				(bs-unchanged-for-e? e1)
 				(bs-unchanged-for-e? e2))
@@ -6079,18 +5789,12 @@
 				 (make-tagged-pair
 				  (cons-expression-tags e) v-car v-cdr)))))))
 		     (else (fuck-up)))))
-		 (if *include-prior-values?*
-		     (cond ((eq? v-new v) b2)
-			   ((abstract-value-subset? v-new v) b2)
-			   ((abstract-value-subset? v v-new)
-			    (make-abstract-environment-binding vs v-new))
-			   (else (make-abstract-environment-binding
-				  vs (abstract-value-union v v-new))))
-;;;		     (if (or (eq? v-new v) (abstract-value-subset? v-new v))
-;;;			 b2
-;;;			 (make-abstract-environment-binding
-;;;			  vs (abstract-value-union v v-new)))
-		     (make-abstract-environment-binding vs v-new))))
+		 (cond ((eq? v-new v) b2)
+		       ((abstract-value-subset? v-new v) b2)
+		       ((abstract-value-subset? v v-new)
+			(make-abstract-environment-binding vs v-new))
+		       (else (make-abstract-environment-binding
+			      vs (abstract-value-union v v-new))))))
 	       bs-e)))
 	   (if (every-eq? result bs-e) bs-e result))))))
    bs)))
@@ -6219,8 +5923,7 @@
 	       ;;   2. (bs e1) = (bs-old e1) AND
 	       ;;   3. (bs e2) = (bs-old e2)
 	       (if (or (null? bs)
-		       (and *fast-apply-prime?*
-			    (bs-unchanged-for-e? e1)
+		       (and (bs-unchanged-for-e? e1)
 			    (bs-unchanged-for-e? e2)))
 		   (empty-abstract-analysis)
 		   (reduce
@@ -6443,18 +6146,7 @@
 	     (format #t "# of proto-abstract-values updated: ~s~%"
 		     (analysis-size bs-updated))
 	     (format #t "# of proto-abstract-value in analysis: ~s~%"
-		     (analysis-size bs-prime))
-	     (when *track-flow-analysis?*
-	      (pp (externalize-abstract-analysis
-		   (cond
-		    (*only-initialized-flows?*
-		     (remove-if
-		      (lambda (b)
-		       (null? (abstract-expression-binding-abstract-flow b)))
-		      bs-prime))
-		    (*only-updated-bindings?* bs-updated)
-		    (else bs-prime))))
-	      (newline))))
+		     (analysis-size bs-prime))))
 	   (let ((done? (if *quiet?*
 			    (abstract-analysis=? bs bs-prime)
 			    (time

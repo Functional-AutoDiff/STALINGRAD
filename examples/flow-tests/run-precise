@@ -1,11 +1,11 @@
-#!/bin/tcsh
+#!/bin/tcsh -f
 
 set EXAMPLE = $1
 set NUM = $2
 
 set OUTFILE=${EXAMPLE}-precise-`date +"%m%d%y"`-${NUM}.txt
 
-set OPTS1 = "-no-warn -no-apply-multiply"
+set OPTS1 = "-no-warn"
 set OPTS2 = ""
 set OPTS3 = "-expression-equality-using-structural"
 set OPTS4 = ""
