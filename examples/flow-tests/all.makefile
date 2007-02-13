@@ -80,22 +80,22 @@ TARGETS-ef3 = ef3-1.log\
           ef3-3.log\
           ef3-4.log\
           ef3-5.log\
-          ef3-6.log\
-          ef3-p.log
+          ef3-6.log
+#         ef3-p.log
 
 TARGETS-ef4 = ef4-1.log\
           ef4-2.log\
           ef4-3.log\
           ef4-4.log\
-          ef4-5.log\
-          ef4-p.log
+          ef4-5.log
+#         ef4-p.log
 
 TARGETS-ef4a = ef4a-1.log\
           ef4a-2.log\
           ef4a-3.log\
           ef4a-4.log\
-          ef4a-5.log\
-          ef4a-p.log
+          ef4a-5.log
+#         ef4a-p.log
 
 TARGETS-ef5 = ef5-1.log\
           ef5-2.log\
@@ -237,15 +237,15 @@ TARGETS-f5a = f5a-1.log\
           f5a-2.log\
           f5a-3.log\
           f5a-4.log\
-          f5a-5.log\
-          f5a-p.log
+          f5a-5.log
+#         f5a-p.log
 
 TARGETS-f5b = f5b-1.log\
           f5b-2.log\
           f5b-3.log\
           f5b-4.log\
-          f5b-5.log\
-          f5b-p.log
+          f5b-5.log
+#         f5b-p.log
 
 TARGETS-f5c = f5c-1.log\
           f5c-2.log\
@@ -321,7 +321,7 @@ clean:
 fact: tar-fact
 
 tar-fact: ${TARGETS-fact}
-	tar zcf fact.tar.gz factorial-*.txt
+	tar zcf fact.tgz factorial-*.txt
 	rm fact-?.log
 	rm factorial-*.txt
 
@@ -348,7 +348,7 @@ fact-p.log:
 eo: tar-eo
 
 tar-eo: ${TARGETS-eo}
-	tar zcf eo.tar.gz even-odd-*.txt
+	tar zcf eo.tgz even-odd-*.txt
 	rm eo-?.log
 	rm even-odd-*.txt
 
@@ -375,7 +375,7 @@ eo-p.log:
 m1: tar-m1
 
 tar-m1: ${TARGETS-m1}
-	tar zcf m1.tar.gz matrix1-*.txt
+	tar zcf m1.tgz matrix1-*.txt
 	rm m1-?.log
 	rm matrix1-*.txt
 
@@ -407,7 +407,7 @@ m1-p.log:
 m2: tar-m2
 
 tar-m2: ${TARGETS-m2}
-	tar zcf m2.tar.gz matrix2-*.txt
+	tar zcf m2.tgz matrix2-*.txt
 	rm m2-?.log
 	rm matrix2-*.txt
 
@@ -439,7 +439,7 @@ m2-p.log:
 s: tar-s
 
 tar-s: ${TARGETS-s}
-	tar zcf s.tar.gz saddle-*.txt
+	tar zcf s.tgz saddle-*.txt
 	rm s-?.log
 	rm saddle-*.txt
 
@@ -451,273 +451,273 @@ s-1.log:
 mb: tar-mb
 
 tar-mb: ${TARGETS-mb}
-	tar zcf mb.tar.gz mb-?.tar.gz
+	tar zcf mb.tgz mb-?.tgz
 	rm mb-?.log
-	rm mb-?.tar.gz
+	rm mb-?.tgz
 
 mb-1.log:
 	echo started >mb-1.log
 	run-poly marble 1 1 1 1 1 1 6 1 2
-	tar zcf mb-1.tar.gz marble-poly-1-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-1.tgz marble-poly-1-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-1-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-1.log
 
 mb-2.log:
 	echo started >mb-2.log
 	run-poly marble 1 8 1 1 1 1 6 1 2
-	tar zcf mb-2.tar.gz marble-poly-8-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-2.tgz marble-poly-8-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-8-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-2.log
 
 mb-3.log:
 	echo started >mb-3.log
 	run-poly marble 1 16 1 1 1 1 6 1 2
-	tar zcf mb-3.tar.gz marble-poly-16-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-3.tgz marble-poly-16-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-16-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-3.log
 
 mb-4.log:
 	echo started >mb-4.log
 	run-poly marble 1 24 1 1 1 1 6 1 2
-	tar zcf mb-4.tar.gz marble-poly-24-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-4.tgz marble-poly-24-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-24-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-4.log
 
 mb-5.log:
 	echo started >mb-5.log
 	run-poly marble 1 32 1 1 1 1 6 1 2
-	tar zcf mb-5.tar.gz marble-poly-32-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-5.tgz marble-poly-32-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-32-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-5.log
 
 mb-6.log:
 	echo started >mb-6.log
 	run-poly marble 1 48 1 1 1 1 6 1 2
-	tar zcf mb-6.tar.gz marble-poly-48-1-1-1-1-6-1-2*-1.txt
+	tar zcf mb-6.tgz marble-poly-48-1-1-1-1-6-1-2*-1.txt
 	rm marble-poly-48-1-1-1-1-6-1-2*-1.txt
 	echo finished >>mb-6.log
 
 mb-p.log:
 	echo started >mb-p.log
 	run-precise marble 1
-	tar zcf mb-p.tar.gz marble-precise-*-1.txt
+	tar zcf mb-p.tgz marble-precise-*-1.txt
 	rm marble-precise-*-1.txt
 	echo finished >>mb-p.log
 
 ps1: tar-ps1
 
 tar-ps1: ${TARGETS-ps1}
-	tar zcf ps1.tar.gz ps1-?.tar.gz
+	tar zcf ps1.tgz ps1-?.tgz
 	rm ps1-?.log
-	rm ps1-?.tar.gz
+	rm ps1-?.tgz
 
 ps1-1.log:
 	echo started >ps1-1.log
 	run-poly pre-saddle-1 1 1 1 1 1 1 6 1 2
-	tar zcf ps1-1.tar.gz pre-saddle-1-poly-1-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1-1.tgz pre-saddle-1-poly-1-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1-poly-1-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1-1.log
 
 ps1-2.log:
 	echo started >ps1-2.log
 	run-poly pre-saddle-1 1 8 1 1 1 1 6 1 2
-	tar zcf ps1-2.tar.gz pre-saddle-1-poly-8-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1-2.tgz pre-saddle-1-poly-8-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1-poly-8-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1-2.log
 
 ps1-3.log:
 	echo started >ps1-3.log
 	run-poly pre-saddle-1 1 16 1 1 1 1 6 1 2
-	tar zcf ps1-3.tar.gz pre-saddle-1-poly-16-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1-3.tgz pre-saddle-1-poly-16-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1-poly-16-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1-3.log
 
 ps1-4.log:
 	echo started >ps1-4.log
 	run-poly pre-saddle-1 1 32 1 1 1 1 6 1 2
-	tar zcf ps1-4.tar.gz pre-saddle-1-poly-32-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1-4.tgz pre-saddle-1-poly-32-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1-poly-32-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1-4.log
 
 ps1-5.log:
 	echo started >ps1-5.log
 	run-poly pre-saddle-1 1 48 1 1 1 1 6 1 2
-	tar zcf ps1-5.tar.gz pre-saddle-1-poly-48-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1-5.tgz pre-saddle-1-poly-48-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1-poly-48-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1-5.log
 
 ps1-p.log:
 	echo started >ps1-p.log
 	run-precise pre-saddle-1 1
-	tar zcf ps1-1.tar.gz pre-saddle-1-precise-*-1.txt
+	tar zcf ps1-1.tgz pre-saddle-1-precise-*-1.txt
 	rm pre-saddle-1-precise-*-1.txt
 	echo finished >>ps1-p.log
 
 ps1a: tar-ps1a
 
 tar-ps1a: ${TARGETS-ps1a}
-	tar zcf ps1a.tar.gz ps1a-?.tar.gz
+	tar zcf ps1a.tgz ps1a-?.tgz
 	rm ps1a-?.log
-	rm ps1a-?.tar.gz
+	rm ps1a-?.tgz
 
 ps1a-1.log:
 	echo started >ps1a-1.log
 	run-poly-a pre-saddle-1a 1 1 1 1 1 1 6 1 2
-	tar zcf ps1a-1.tar.gz pre-saddle-1a-poly-1-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1a-1.tgz pre-saddle-1a-poly-1-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1a-poly-1-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1a-1.log
 
 ps1a-2.log:
 	echo started >ps1a-2.log
 	run-poly-a pre-saddle-1a 1 8 1 1 1 1 6 1 2
-	tar zcf ps1a-2.tar.gz pre-saddle-1a-poly-8-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1a-2.tgz pre-saddle-1a-poly-8-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1a-poly-8-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1a-2.log
 
 ps1a-3.log:
 	echo started >ps1a-3.log
 	run-poly-a pre-saddle-1a 1 16 1 1 1 1 6 1 2
-	tar zcf ps1a-3.tar.gz pre-saddle-1a-poly-16-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1a-3.tgz pre-saddle-1a-poly-16-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1a-poly-16-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1a-3.log
 
 ps1a-4.log:
 	echo started >ps1a-4.log
 	run-poly-a pre-saddle-1a 1 32 1 1 1 1 6 1 2
-	tar zcf ps1a-4.tar.gz pre-saddle-1a-poly-32-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1a-4.tgz pre-saddle-1a-poly-32-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1a-poly-32-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1a-4.log
 
 ps1a-5.log:
 	echo started >ps1a-5.log
 	run-poly-a pre-saddle-1a 1 48 1 1 1 1 6 1 2
-	tar zcf ps1a-5.tar.gz pre-saddle-1a-poly-48-1-1-1-1-6-1-2*-1.txt
+	tar zcf ps1a-5.tgz pre-saddle-1a-poly-48-1-1-1-1-6-1-2*-1.txt
 	rm pre-saddle-1a-poly-48-1-1-1-1-6-1-2*-1.txt
 	echo finished >>ps1a-5.log
 
 ps1a-p.log:
 	echo started >ps1a-p.log
 	run-precise-a pre-saddle-1a 1
-	tar zcf ps1a-p.tar.gz pre-saddle-1a-precise-*-1.txt
+	tar zcf ps1a-p.tgz pre-saddle-1a-precise-*-1.txt
 	rm pre-saddle-1a-precise-*-1.txt
 	echo finished >>ps1a-p.log
 
 s2: tar-s2
 
 tar-s2: ${TARGETS-s2}
-	tar zcf s2.tar.gz s2-?.tar.gz
+	tar zcf s2.tgz s2-?.tgz
 	rm s2-?.log
-	rm s2-?.tar.gz
+	rm s2-?.tgz
 
 s2-1.log:
 	echo started >s2-1.log
 	run-poly saddle2 1 1 1 1 1 1 6 1 2
-	tar zcf s2-1.tar.gz saddle2-poly-1-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-1.tgz saddle2-poly-1-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-1-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-1.log
 
 s2-2.log:
 	echo started >s2-2.log
 	run-poly saddle2 1 8 1 1 1 1 6 1 2
-	tar zcf s2-2.tar.gz saddle2-poly-8-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-2.tgz saddle2-poly-8-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-8-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-2.log
 
 s2-3.log:
 	echo started >s2-3.log
 	run-poly saddle2 1 16 1 1 1 1 6 1 2
-	tar zcf s2-3.tar.gz saddle2-poly-16-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-3.tgz saddle2-poly-16-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-16-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-3.log
 
 s2-4.log:
 	echo started >s2-4.log
 	run-poly saddle2 1 24 1 1 1 1 6 1 2
-	tar zcf s2-4.tar.gz saddle2-poly-24-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-4.tgz saddle2-poly-24-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-24-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-4.log
 
 s2-5.log:
 	echo started >s2-5.log
 	run-poly saddle2 1 32 1 1 1 1 6 1 2
-	tar zcf s2-5.tar.gz saddle2-poly-32-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-5.tgz saddle2-poly-32-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-32-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-5.log
 
 s2-6.log:
 	echo started >s2-6.log
 	run-poly saddle2 1 48 1 1 1 1 6 1 2
-	tar zcf s2-6.tar.gz saddle2-poly-48-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2-6.tgz saddle2-poly-48-1-1-1-1-6-1-2*-1.txt
 	rm saddle2-poly-48-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2-6.log
 
 s2-p.log:
 	echo started >s2-p.log
 	run-precise saddle2 1
-	tar zcf s2-p.tar.gz saddle2-precise-*-1.txt
+	tar zcf s2-p.tgz saddle2-precise-*-1.txt
 	rm saddle2-precise-*-1.txt
 	echo finished >>s2-p.log
 
 s2a: tar-s2a
 
 tar-s2a: ${TARGETS-s2a}
-	tar zcf s2a.tar.gz s2a-?.tar.gz
+	tar zcf s2a.tgz s2a-?.tgz
 	rm s2a-?.log
-	rm s2a-?.tar.gz
+	rm s2a-?.tgz
 
 s2a-1.log:
 	echo started >s2a-1.log
 	run-poly saddle2a 1 1 1 1 1 1 6 1 2
-	tar zcf s2a-1.tar.gz saddle2a-poly-1-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-1.tgz saddle2a-poly-1-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-1-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-1.log
 
 s2a-2.log:
 	echo started >s2a-2.log
 	run-poly saddle2a 1 8 1 1 1 1 6 1 2
-	tar zcf s2a-2.tar.gz saddle2a-poly-8-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-2.tgz saddle2a-poly-8-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-8-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-2.log
 
 s2a-3.log:
 	echo started >s2a-3.log
 	run-poly saddle2a 1 16 1 1 1 1 6 1 2
-	tar zcf s2a-3.tar.gz saddle2a-poly-16-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-3.tgz saddle2a-poly-16-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-16-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-3.log
 
 s2a-4.log:
 	echo started >s2a-4.log
 	run-poly saddle2a 1 24 1 1 1 1 6 1 2
-	tar zcf s2a-4.tar.gz saddle2a-poly-24-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-4.tgz saddle2a-poly-24-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-24-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-4.log
 
 s2a-5.log:
 	echo started >s2a-5.log
 	run-poly saddle2a 1 32 1 1 1 1 6 1 2
-	tar zcf s2a-5.tar.gz saddle2a-poly-32-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-5.tgz saddle2a-poly-32-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-32-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-5.log
 
 s2a-6.log:
 	echo started >s2a-6.log
 	run-poly saddle2a 1 48 1 1 1 1 6 1 2
-	tar zcf s2a-6.tar.gz saddle2a-poly-48-1-1-1-1-6-1-2*-1.txt
+	tar zcf s2a-6.tgz saddle2a-poly-48-1-1-1-1-6-1-2*-1.txt
 	rm saddle2a-poly-48-1-1-1-1-6-1-2*-1.txt
 	echo finished >>s2a-6.log
 
 s2a-p.log:
 	echo started >s2a-p.log
 	run-precise saddle2a 1
-	tar zcf s2a-p.tar.gz saddle2a-precise-*-1.txt
+	tar zcf s2a-p.tgz saddle2a-precise-*-1.txt
 	rm saddle2a-precise-*-1.txt
 	echo finished >>s2a-p.log
 
 ef1: tar-ef1
 
 tar-ef1: ${TARGETS-ef1}
-	tar zcf ef1.tar.gz example-forward-1-*.txt
+	tar zcf ef1.tgz example-forward-1-*.txt
 	rm ef1-?.log
 	rm example-forward-1-*.txt
 
@@ -754,7 +754,7 @@ ef1-p.log:
 ef2: tar-ef2
 
 tar-ef2: ${TARGETS-ef2}
-	tar zcf ef2.tar.gz example-forward-2-*.txt
+	tar zcf ef2.tgz example-forward-2-*.txt
 	rm ef2-?.log
 	rm example-forward-2-*.txt
 
@@ -796,7 +796,7 @@ ef2-p.log:
 ef3: tar-ef3
 
 tar-ef3: ${TARGETS-ef3}
-	tar zcf ef3.tar.gz example-forward-3-*.txt
+	tar zcf ef3.tgz example-forward-3-*.txt
 	rm ef3-?.log
 	rm example-forward-3-*.txt
 
@@ -838,7 +838,7 @@ ef3-p.log:
 ef4: tar-ef4
 
 tar-ef4: ${TARGETS-ef4}
-	tar zcf ef4.tar.gz example-forward-4-*.txt
+	tar zcf ef4.tgz example-forward-4-*.txt
 	rm ef4-?.log
 	rm example-forward-4-*.txt
 
@@ -875,7 +875,7 @@ ef4-p.log:
 ef4a: tar-ef4a
 
 tar-ef4a: ${TARGETS-ef4a}
-	tar zcf ef4a.tar.gz example-forward-4a-*.txt
+	tar zcf ef4a.tgz example-forward-4a-*.txt
 	rm ef4a-?.log
 	rm example-forward-4a-*.txt
 
@@ -912,7 +912,7 @@ ef4a-p.log:
 ef5: tar-ef5
 
 tar-ef5: ${TARGETS-ef5}
-	tar zcf ef5.tar.gz example-forward-5-*.txt
+	tar zcf ef5.tgz example-forward-5-*.txt
 	rm ef5-?.log
 	rm example-forward-5-*.txt
 
@@ -954,7 +954,7 @@ ef5-p.log:
 ef6: tar-ef6
 
 tar-ef6: ${TARGETS-ef6}
-	tar zcf ef6.tar.gz example-forward-6-*.txt
+	tar zcf ef6.tgz example-forward-6-*.txt
 	rm ef6-?.log
 	rm example-forward-6-*.txt
 
@@ -996,7 +996,7 @@ ef6-p.log:
 ef6a: tar-ef6a
 
 tar-ef6a: ${TARGETS-ef6a}
-	tar zcf ef6a.tar.gz example-forward-6a-*.txt
+	tar zcf ef6a.tgz example-forward-6a-*.txt
 	rm ef6a-?.log
 	rm example-forward-6a-*.txt
 
@@ -1038,7 +1038,7 @@ ef6a-p.log:
 ef7: tar-ef7
 
 tar-ef7: ${TARGETS-ef7}
-	tar zcf ef7.tar.gz example-forward-7-*.txt
+	tar zcf ef7.tgz example-forward-7-*.txt
 	rm ef7-?.log
 	rm example-forward-7-*.txt
 
@@ -1080,7 +1080,7 @@ ef7-p.log:
 ef8: tar-ef8
 
 tar-ef8: ${TARGETS-ef8}
-	tar zcf ef8.tar.gz example-forward-8-*.txt
+	tar zcf ef8.tgz example-forward-8-*.txt
 	rm ef8-?.log
 	rm example-forward-8-*.txt
 
@@ -1102,7 +1102,7 @@ ef8-p.log:
 ef8a: tar-ef8a
 
 tar-ef8a: ${TARGETS-ef8a}
-	tar zcf ef8a.tar.gz example-forward-8a-*.txt
+	tar zcf ef8a.tgz example-forward-8a-*.txt
 	rm ef8a-?.log
 	rm example-forward-8a-*.txt
 
@@ -1124,7 +1124,7 @@ ef8a-p.log:
 ef8b: tar-ef8b
 
 tar-ef8b: ${TARGETS-ef8b}
-	tar zcf ef8b.tar.gz example-forward-8b-*.txt
+	tar zcf ef8b.tgz example-forward-8b-*.txt
 	rm ef8b-?.log
 	rm example-forward-8b-*.txt
 
@@ -1146,7 +1146,7 @@ ef8b-p.log:
 f1: tar-f1
 
 tar-f1: ${TARGETS-f1}
-	tar zcf f1.tar.gz forward-1-*.txt
+	tar zcf f1.tgz forward-1-*.txt
 	rm f1-?.log
 	rm forward-1-*.txt
 
@@ -1178,7 +1178,7 @@ f1-p.log:
 f2a: tar-f2a
 
 tar-f2a: ${TARGETS-f2a}
-	tar zcf f2a.tar.gz forward-2a-*.txt
+	tar zcf f2a.tgz forward-2a-*.txt
 	rm f2a-?.log
 	rm forward-2a-*.txt
 
@@ -1200,7 +1200,7 @@ f2a-p.log:
 f2b: tar-f2b
 
 tar-f2b: ${TARGETS-f2b}
-	tar zcf f2b.tar.gz forward-2b-*.txt
+	tar zcf f2b.tgz forward-2b-*.txt
 	rm f2b-?.log
 	rm forward-2b-*.txt
 
@@ -1232,7 +1232,7 @@ f2b-p.log:
 f2c: tar-f2c
 
 tar-f2c: ${TARGETS-f2c}
-	tar zcf f2c.tar.gz forward-2c-*.txt
+	tar zcf f2c.tgz forward-2c-*.txt
 	rm f2c-?.log
 	rm forward-2c-*.txt
 
@@ -1254,7 +1254,7 @@ f2c-p.log:
 f2d: tar-f2d
 
 tar-f2d: ${TARGETS-f2d}
-	tar zcf f2d.tar.gz forward-2d-*.txt
+	tar zcf f2d.tgz forward-2d-*.txt
 	rm f2d-?.log
 	rm forward-2d-*.txt
 
@@ -1286,7 +1286,7 @@ f2d-p.log:
 f3: tar-f3
 
 tar-f3: ${TARGETS-f3}
-	tar zcf f3.tar.gz forward-3-*.txt
+	tar zcf f3.tgz forward-3-*.txt
 	rm f3-?.log
 	rm forward-3-*.txt
 
@@ -1318,7 +1318,7 @@ f3-p.log:
 f4a: tar-f4a
 
 tar-f4a: ${TARGETS-f4a}
-	tar zcf f4a.tar.gz forward-4a-*.txt
+	tar zcf f4a.tgz forward-4a-*.txt
 	rm f4a-?.log
 	rm forward-4a-*.txt
 
@@ -1345,7 +1345,7 @@ f4a-p.log:
 f4b: tar-f4b
 
 tar-f4b: ${TARGETS-f4b}
-	tar zcf f4b.tar.gz forward-4b-*.txt
+	tar zcf f4b.tgz forward-4b-*.txt
 	rm f4b-?.log
 	rm forward-4b-*.txt
 
@@ -1372,7 +1372,7 @@ f4b-p.log:
 f4c: tar-f4c
 
 tar-f4c: ${TARGETS-f4c}
-	tar zcf f4c.tar.gz forward-4c-*.txt
+	tar zcf f4c.tgz forward-4c-*.txt
 	rm f4c-?.log
 	rm forward-4c-*.txt
 
@@ -1399,7 +1399,7 @@ f4c-p.log:
 f4d: tar-f4d
 
 tar-f4d: ${TARGETS-f4d}
-	tar zcf f4d.tar.gz forward-4d-*.txt
+	tar zcf f4d.tgz forward-4d-*.txt
 	rm f4d-?.log
 	rm forward-4d-*.txt
 
@@ -1436,7 +1436,7 @@ f4d-p.log:
 f4e: tar-f4e
 
 tar-f4e: ${TARGETS-f4e}
-	tar zcf f4e.tar.gz forward-4e-*.txt
+	tar zcf f4e.tgz forward-4e-*.txt
 	rm f4e-?.log
 	rm forward-4e-*.txt
 
@@ -1473,7 +1473,7 @@ f4e-p.log:
 f4f: tar-f4f
 
 tar-f4f: ${TARGETS-f4f}
-	tar zcf f4f.tar.gz forward-4f-*.txt
+	tar zcf f4f.tgz forward-4f-*.txt
 	rm f4f-?.log
 	rm forward-4f-*.txt
 
@@ -1510,7 +1510,7 @@ f4f-p.log:
 f4g: tar-f4g
 
 tar-f4g: ${TARGETS-f4g}
-	tar zcf f4g.tar.gz forward-4g-*.txt
+	tar zcf f4g.tgz forward-4g-*.txt
 	rm f4g-?.log
 	rm forward-4g-*.txt
 
@@ -1552,7 +1552,7 @@ f4g-p.log:
 f4h: tar-f4h
 
 tar-f4h: ${TARGETS-f4h}
-	tar zcf f4h.tar.gz forward-4h-*.txt
+	tar zcf f4h.tgz forward-4h-*.txt
 	rm f4h-?.log
 	rm forward-4h-*.txt
 
@@ -1594,7 +1594,7 @@ f4h-p.log:
 f4i: tar-f4i
 
 tar-f4i: ${TARGETS-f4i}
-	tar zcf f4i.tar.gz forward-4i-*.txt
+	tar zcf f4i.tgz forward-4i-*.txt
 	rm f4i-?.log
 	rm forward-4i-*.txt
 
@@ -1636,7 +1636,7 @@ f4i-p.log:
 f5a: tar-f5a
 
 tar-f5a: ${TARGETS-f5a}
-	tar zcf f5a.tar.gz forward-5a-*.txt
+	tar zcf f5a.tgz forward-5a-*.txt
 	rm f5a-?.log
 	rm forward-5a-*.txt
 
@@ -1673,7 +1673,7 @@ f5a-p.log:
 f5b: tar-f5b
 
 tar-f5b: ${TARGETS-f5b}
-	tar zcf f5b.tar.gz forward-5b-*.txt
+	tar zcf f5b.tgz forward-5b-*.txt
 	rm f5b-?.log
 	rm forward-5b-*.txt
 
@@ -1710,7 +1710,7 @@ f5b-p.log:
 f5c: tar-f5c
 
 tar-f5c: ${TARGETS-f5c}
-	tar zcf f5c.tar.gz forward-5c-*.txt
+	tar zcf f5c.tgz forward-5c-*.txt
 	rm f5c-?.log
 	rm forward-5c-*.txt
 
@@ -1747,7 +1747,7 @@ f5c-p.log:
 f5d: tar-f5d
 
 tar-f5d: ${TARGETS-f5d}
-	tar zcf f5d.tar.gz forward-5d-*.txt
+	tar zcf f5d.tgz forward-5d-*.txt
 	rm f5d-?.log
 	rm forward-5d-*.txt
 
