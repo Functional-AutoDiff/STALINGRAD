@@ -33,7 +33,7 @@ else
   endif
 
 if ($L4 > 0) then
-  set L4opt = "-l4 $L4 matching-nonrecursive-closure"
+  set L4opt = "-l4 $L4 -matching-nonrecursive-closure"
 else
   set L4opt = ""
   endif
