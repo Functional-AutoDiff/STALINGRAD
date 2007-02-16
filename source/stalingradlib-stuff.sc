@@ -6124,16 +6124,12 @@
 	     ;;   in any of the updated abstract enivoronment bindings.
 	     ;; needs work
 	     (unless (eq? b-violating-l8 #f)
-	      ;; debugging
-	      ;;(format #t "Bundle nesting depth limit of ~s exceeded~%" *l8*)
-	      (format #t "Bundle nesting depth limit of ~s exceeded!~%" *l8*)
+	      (format #t "Bundle nesting depth limit of ~s exceeded~%" *l8*)
 	      (pp (externalize-abstract-expression-binding b-violating-l8))
 	      (newline)
 	      (pp (externalize-abstract-analysis bs-updated)) (newline)
 	      (pp (externalize-abstract-analysis bs-prime)) (newline)
-	      ;; debugging
-	      ;;(internal-error "Terminating because of error")
-	      (panic "Terminating b/c of error"))
+	      (internal-error "Terminating because of error"))
 	     (format #t "# flows updated: ~s~%" (length bs-updated))
 	     (format #t "# of proto-abstract-values updated: ~s~%"
 		     (analysis-size bs-updated))
@@ -7286,23 +7282,13 @@
 	  ,(externalize-abstract-value (reverse-tagged-value-primal u))))
        (else (internal-error "Not a proto-abstract-value" u))))
 
-(define (debugging-externalize-abstract-value v)
+(define (externalize-abstract-value v)
  (cond ((up? v) `(up ,(up-index v)))
        ((list? v)
 	(cond ((null? v) `(bottom))
 	      ((null? (rest v)) (externalize-proto-abstract-value (first v)))
 	      (else `(union ,@(map externalize-proto-abstract-value v)))))
        (else (internal-error "Not an abstract value" v))))
-
-(define (externalize-abstract-value v)
- (cond
-  ((up? v) v)
-  ((list? v)
-   (cond
-    ((null? v) '#())
-    ((null? (rest v)) (externalize-proto-abstract-value (first v)))
-    (else (list->vector `(union ,(map externalize-proto-abstract-value v))))))
-  (else (internal-error "Not an abstract value" v))))
 
 (define (externalize-abstract-environment xs vs)
  (unless (and (vector? vs)
