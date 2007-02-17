@@ -7,7 +7,7 @@ if ($#argv != 1) then
   exit -1
   endif
 
-set OLD = test6
+set OLD = qobi5
 
 set EXAMPLE = $1.tgz
 mkdir $1
