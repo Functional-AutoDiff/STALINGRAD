@@ -4002,37 +4002,23 @@
 ;;; General
 
 (define (equalq? x y)
- (cond ((eq? x y) #t)
-       ((pair? x)
-	(and (pair? y) (equalq? (car x) (car y)) (equalq? (cdr x) (cdr y))))
-       ((vector? x)
-	(let ((lx (vector-length x)))
-	 (and (vector? y)
-	      (= (vector-length y) lx)
-	      (let test ((i (- lx 1)))
-	       (or (= i -1)
-		   (and (equalq? (vector-ref x i) (vector-ref y i))
-			(test (- i 1))))))))
-       ((string? x) (and (string? y) (string=? x y)))
-       (else (eqv? x y))))
+ ;; This is a version of equal? that checks for eq? (by way of eqv?).
+ (or (eqv? x y)
+     (and (pair? x)
+	  (pair? y)
+	  (equalq? (car x) (car y))
+	  (equalq? (cdr x) (cdr y)))
+     (and (vector? x)
+	  (vector? y)
+	  (= (vector-length x) (vector-length y))
+	  (every-vector equalq? x y))
+     (and (string? x) (string? y) (string=? x y))))
 
 (define (make-list length fill) (map-n (lambda (i) fill) length))
 
 (define (replaceq x x-prime l) (list-replace l (positionq x l) x-prime))
 
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
-
-(define (remove-duplicates-circular-safe l)
- (unless (list? l)
-  (internal-error
-   "Invalid argument for remove-duplicates-circular-safe"
-   (externalize-abstract-value l)))
- ;; needs work: inefficient
- (let loop ((i 0) (l l))
-  (cond
-   ((= i (length l)) l)
-   ((memp equalq? (list-ref l i) (sublist l 0 i)) (loop i (list-remove l i)))
-   (else (loop (+ i 1) l)))))
 
 (define (every-eq? l1 l2)
  (or (eq? l1 l2) (and (= (length l1) (length l2)) (every eq? l1 l2))))
@@ -4090,14 +4076,10 @@
 	(loop (vlad-cdr pfrs '())))))))
 
 (define (vlad-value->abstract-value v)
- (cond ((null? v) (list v))
-       ((boolean? v) (list v))
-       ((abstract-real? v) (list v))
-       ((primitive-procedure? v) (list v))
-       ((branching-value? v)
-	(list (make-branching-value-with-new-values
-	       v (map vlad-value->abstract-value (branching-value-values v)))))
-       (else (internal-error "Not a vlad value"))))
+ (if (atomic-proto-abstract-value? v)
+     (list v)
+     (list (make-branching-value-with-new-values
+	    v (map vlad-value->abstract-value (branching-value-values v))))))
 
 ;;; Expression Equivalence
 
@@ -4172,11 +4154,6 @@
 	  (expression=? (nonrecursive-closure-body u1)
 			(nonrecursive-closure-body u2)))))
 
-(define (nonrecursive-closure-values-matching u1 u2)
- (if (eq? *expression-equality* 'alpha)
-     (unimplemented "Matching with alpha equivalence")
-     (nonrecursive-closure-values u2)))
-
 (define (new-nonrecursive-closure vs e)
  (let ((xs (free-variables e))
        (x (lambda-expression-variable e))
@@ -4201,11 +4178,6 @@
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
 
-(define (recursive-closure-values-matching u1 u2)
- (if (eq? *expression-equality* 'alpha)
-     (unimplemented "Alpha equivalence")
-     (recursive-closure-values u2)))
-
 (define (new-recursive-closure xs vs xs-procedures xs-arguments es i)
  (list (make-recursive-closure xs vs xs-procedures xs-arguments es i)))
 
@@ -4217,37 +4189,16 @@
 (define (closure-match? u1 u2)
  (unless (and (closure? u1) (closure? u2))
   (internal-error "u1 and u2 should both be closures"))
- (cond ((and (nonrecursive-closure? u1) (nonrecursive-closure? u2))
-	(nonrecursive-closure-match? u1 u2))
-       ((and (recursive-closure? u1) (recursive-closure? u2))
-	(recursive-closure-match? u1 u2))
-       (else #f)))
+ (or (and (nonrecursive-closure? u1)
+	  (nonrecursive-closure? u2)
+	  (nonrecursive-closure-match? u1 u2))
+     (and (recursive-closure? u1)
+	  (recursive-closure? u2)
+	  (recursive-closure-match? u1 u2))))
 
 (define (closure-values u)
  (cond ((nonrecursive-closure? u) (nonrecursive-closure-values u))
        ((recursive-closure? u) (recursive-closure-values u))
-       (else (internal-error "Not a closure"))))
-
-(define (closure-values-matching u1 u2)
- (cond ((and (nonrecursive-closure? u1) (nonrecursive-closure? u2))
-	(nonrecursive-closure-values-matching u1 u2))
-       ((and (recursive-closure? u1) (recursive-closure? u2))
-	(recursive-closure-values-matching u1 u2))
-       (else (internal-error "u1 and u2 should be the same type of closure"))))
-
-(define (make-closure-with-new-values u vs)
- (cond ((nonrecursive-closure? u)
-	(make-nonrecursive-closure (nonrecursive-closure-variables u)
-				   vs
-				   (nonrecursive-closure-variable u)
-				   (nonrecursive-closure-body u)))
-       ((recursive-closure? u)
-	(make-recursive-closure (recursive-closure-variables u)
-				vs
-				(recursive-closure-procedure-variables u)
-				(recursive-closure-argument-variables u)
-				(recursive-closure-bodies u)
-				(recursive-closure-index u)))
        (else (internal-error "Not a closure"))))
 
 ;;; Pair Procedures
@@ -4255,27 +4206,13 @@
 (define (tagged-pair-match? u1 u2)
  (equal? (tagged-pair-tags u1) (tagged-pair-tags u2)))
 
-(define (tagged-pair-values u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
-
-(define (make-tagged-pair-with-new-values u vs)
- (make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
-
 ;;; Bundle Procedures
 
 (define (make-bundle-protected v1 v2)
  (when (or (up? v1) (up? v2)) (unimplemented "Bundles with backlinks"))
  (make-bundle v1 v2))
 
-(define (bundle-match? u1 u2)
- ;; do we really want to check for non-bundle u1, u2?
- (and (bundle? u1) (bundle? u2)))
-
-(define (bundle-values u) (list (bundle-primal u) (bundle-tangent u)))
-
-(define (make-bundle-with-new-values u vs)
- ;; should we do a check here and preserve eq?-ness if possible?
- ;; protect here
- (make-bundle-protected (first vs) (second vs)))
+(define (bundle-match? u1 u2) #t)
 
 ;;; Reverse Tagged Value Procedures
 
@@ -4285,30 +4222,34 @@
 
 ;;; Branching Value Procedures
 
-(define (branching-value? u) (or (closure? u) (tagged-pair? u) (bundle? u)))
-
 (define (branching-value-match? u1 u2)
- (cond ((and (closure? u1) (closure? u2)) (closure-match? u1 u2))
-       ((and (tagged-pair? u1) (tagged-pair? u2)) (tagged-pair-match? u1 u2))
-       ((and (bundle? u1) (bundle? u2)) (bundle-match? u1 u2))
-       (else #f)))
+ (or (and (closure? u1) (closure? u2) (closure-match? u1 u2))
+     (and (tagged-pair? u1) (tagged-pair? u2) (tagged-pair-match? u1 u2))
+     (and (bundle? u1) (bundle? u2) (bundle-match? u1 u2))))
 
 (define (branching-value-values u)
  (cond ((closure? u) (vector->list (closure-values u)))
-       ((tagged-pair? u) (tagged-pair-values u))
-       ((bundle? u) (bundle-values u))
+       ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
+       ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
        (else (internal-error))))
-
-(define (branching-value-values-matching u1 u2)
- (if (and (closure? u1) (closure? u2))
-     (vector->list (closure-values-matching u1 u2))
-     (branching-value-values u2)))
 
 (define (make-branching-value-with-new-values u vs)
  (cond ((every-eq? vs (branching-value-values u)) u)
-       ((closure? u) (make-closure-with-new-values u (list->vector vs)))
-       ((tagged-pair? u) (make-tagged-pair-with-new-values u vs))
-       ((bundle? u) (make-bundle-with-new-values u vs))
+       ((nonrecursive-closure? u)
+	(make-nonrecursive-closure (nonrecursive-closure-variables u)
+				   (list->vector vs)
+				   (nonrecursive-closure-variable u)
+				   (nonrecursive-closure-body u)))
+       ((recursive-closure? u)
+	(make-recursive-closure (recursive-closure-variables u)
+				(list->vector vs)
+				(recursive-closure-procedure-variables u)
+				(recursive-closure-argument-variables u)
+				(recursive-closure-bodies u)
+				(recursive-closure-index u)))
+       ((tagged-pair? u)
+	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
+       ((bundle? u) (make-bundle-protected (first vs) (second vs)))
        (else (internal-error))))
 
 ;;; Abstract-Value Subset, Equivalence, Intersection?, and Union
@@ -4316,77 +4257,44 @@
 (define (empty-abstract-value) '())
 
 (define (atomic-proto-abstract-value? u)
- (or (null? u)
-     (boolean? u)
-     (abstract-real? u)
-     (primitive-procedure? u)
-     (and (closure? u) (zero? (vector-length (closure-values u))))))
-
-(define (possible-abstract-value-subset? v1 v2)
- ;; v1 and v2 should be abstract values which are not backlinks (UPs).
- (every
-  (lambda (u1)
-   (cond
-    ((null? u1) (some null? v2))
-    ((boolean? u1) (some (lambda (u2) (eq? u2 u1)) v2))
-    ((real? u1)
-     (some (lambda (u2) (or (and (real? u2) (= u1 u2)) (eq? u2 'real))) v2))
-    ((eq? u1 'real) (some (lambda (u2) (eq? u2 'real)) v2))
-    ((primitive-procedure? u1)
-     (some (lambda (u2) (and (primitive-procedure? u2) (eq? u2 u1))) v2))
-    ((branching-value? u1)
-     (some
-      (lambda (u2) (and (branching-value? u2) (branching-value-match? u1 u2)))
-      v2))
-    (else (internal-error "Not a known proto-abstract value" u1))))
-  v1))
+ (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
 
 (define (abstract-value-subset? v1 v2)
- ;; here I am
- (let loop? ((v1 v1) (v2 v2) (cs '()) (v1-context '()) (v2-context '()))
-  (cond
-   ((null? v1) #t)
-   ((null? v2) #f)
-   ((eq? v1 v2))
-   ((up? v1) (loop? (list-ref v1-context (up-index v1))
-		    v2
-		    cs
-		    (rest* v1-context (+ (up-index v1) 1))
-		    v2-context))
-   ((up? v2) (loop? v1
-		    (list-ref v2-context (up-index v2))
-		    cs
-		    v1-context
-		    (rest* v2-context (+ (up-index v2) 1))))
-   ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
-   (else
-    (let ((cs (cons (cons v1 v2) cs))
-	  (v1-context (cons v1 v1-context))
-	  (v2-context (cons v2 v2-context))
-	  (us1-branching (remove-if atomic-proto-abstract-value? v1))
-	  (us2-branching (remove-if atomic-proto-abstract-value? v2)))
-     (and
-      (possible-abstract-value-subset? v1 v2)
-      (every
-       (lambda (u1)
-	(cond
-	 ((memq u1 v2) #t)
-	 ((branching-value? u1)
-	  (let* ((vs1 (branching-value-values u1))
-		 (vs2s-matching
-		  (map (lambda (u2) (branching-value-values-matching u1 u2))
-		       (remove-if-not (lambda (u2)
-				       (branching-value-match? u1 u2))
-				      us2-branching))))
-	   (some (lambda (vs2)
-		  (every (lambda (v1 v2)
-			  (loop? v1 v2 cs v1-context v2-context))
-			 vs1 vs2))
-		 vs2s-matching)))
-	 ((reverse-tagged-value? u1)
-	  (unimplemented "abstract-value-subset? for reverse-tagged-values"))
-	 (else #f)))
-       us1-branching)))))))
+ (let loop? ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
+  (cond ((up? v1)
+	 (loop? (list-ref vs1-above (up-index v1))
+		v2
+		cs
+		(rest* vs1-above (+ (up-index v1) 1))
+		vs2-above))
+	((up? v2)
+	 (loop? v1
+		(list-ref vs2-above (up-index v2))
+		cs
+		vs1-above
+		(rest* vs2-above (+ (up-index v2) 1))))
+	((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
+	(else (every (lambda (u1)
+		      (some (lambda (u2)
+			     (or (and (null? u1) (null? u2))
+				 (and (boolean? u1) (boolean? u2) (eq? u1 u2))
+				 (and (eq? u1 'real) (eq? u2 'real))
+				 (and (real? u1) (eq? u2 'real))
+				 (and (real? u1) (real? u2) (= u1 u2))
+				 (and (primitive-procedure? u1)
+				      (primitive-procedure? u2)
+				      (eq? u1 u2))
+				 (and (branching-value-match? u1 u2)
+				      (every (lambda (v1a v2a)
+					      (loop? v1a
+						     v2a
+						     (cons (cons v1 v2) cs)
+						     (cons v1 vs1-above)
+						     (cons v2 vs2-above)))
+					     (branching-value-values u1)
+					     (branching-value-values u2)))))
+			    v2))
+		     v1)))))
 
 (define (abstract-value=? v1 v2)
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
@@ -4402,63 +4310,80 @@
  ;;       result is indeed #f.
  (or (up? v1)
      (up? v2)
-     (some
-      (lambda (u1)
-       (cond
-	((null? u1) (some null? v2))
-	((boolean? u1) (some (lambda (u2) (eq? u2 u1)) v2))
-	((real? u1) (some (lambda (u2) (or (eq? u2 u1) (eq? u2 'real))) v2))
-	((eq? u1 'real) (some (lambda (u2) (or (real? u2) (eq? u2 'real))) v2))
-	((primitive-procedure? u1) (some (lambda (u2) (eq? u2 u1)) v2))
-	((branching-value? u1)
-	 (some (lambda (u2)
-		(and (branching-value? u2)
-		     (branching-value-match? u1 u2)
-		     (every nonempty-abstract-value-intersection?
-			    (branching-value-values u1)
-			    (branching-value-values-matching u1 u2))))
-	       v2))
-	(else (internal-error "Not a proto-abstract value"))))
-      v1)))
+     (some (lambda (u1)
+	    (some (lambda (u2)
+		   (or (and (null? u1) (null? u2))
+		       (and (boolean? u1) (boolean? u2) (eq? u1 u2))
+		       (and (eq? u1 'real) (eq? u2 'real))
+		       (and (eq? u1 'real) (real? u2))
+		       (and (real? u1) (eq? u2 'real))
+		       ;; debugging: = -~-> eq?
+		       (and (real? u1) (real? u2) (eq? u1 u2))
+		       (and (primitive-procedure? u1)
+			    (primitive-procedure? u2)
+			    (eq? u1 u2))
+		       (and (branching-value-match? u1 u2)
+			    (every nonempty-abstract-value-intersection?
+				   (branching-value-values u1)
+				   (branching-value-values u2)))))
+		  v2))
+	   v1)))
 
-(define (unroll-once v vs-above)
+(define (debugging1-closed-proto-abstract-values v)
  ;; here I am
- (cond ((and (up? v) (= (up-index v) (- (length vs-above) 1)))
-	(let* ((vs-above (cons v vs-above))
-	       (make-up-if-needed
-		(lambda (v) (if (memq v vs-above)
+ (let loop ((v v) (vs-above '()))
+  (if (up? v)
+      (if (= (up-index v) (- (length vs-above) 1))
+	  (let ((vs-above (cons v vs-above)))
+	   (map (lambda (u)
+		 (if (atomic-proto-abstract-value? u)
+		     u
+		     (make-branching-value-with-new-values
+		      u
+		      (map (lambda (v)
+			    (if (memq v vs-above)
 				(make-up (positionq v vs-above))
-				v))))
-	 (map (lambda (u)
-	       (cond ((or (null? u)
-			  (boolean? u)
-			  (abstract-real? u)
-			  (primitive-procedure? u))
-		      u)
-		     ((branching-value? u)
-		      (make-branching-value-with-new-values
-		       u (map make-up-if-needed (branching-value-values u))))
-		     (else (unimplemented))))
-	      (last vs-above))))
-       ((up? v) v)
-       (else (let* ((vs-above (cons v vs-above))
-		    (unroll (lambda (v) (unroll-once v vs-above)))
-		    (result
-		     (map
-		      (lambda (u)
-		       (cond ((or (null? u)
-				  (boolean? u)
-				  (abstract-real? u)
-				  (primitive-procedure? u))
-			      u)
-			     ((branching-value? u)
-			      (make-branching-value-with-new-values
-			       u (map unroll (branching-value-values u))))
-			     (else (unimplemented))))
-		      v)))
-	      (if (every-eq? v result) v result)))))
+				v))
+			   (branching-value-values u)))))
+		(last vs-above)))
+	  v)
+      (let ((v1 (map (lambda (u)
+		      (if (atomic-proto-abstract-value? u)
+			  u
+			  (make-branching-value-with-new-values
+			   u
+			   (map (lambda (v1) (loop v1 (cons v vs-above)))
+				(branching-value-values u)))))
+		     v)))
+       (if (every-eq? v v1) v v1)))))
 
-(define (closed-proto-abstract-values v) (unroll-once v '()))
+(define (debugging2-closed-proto-abstract-values v)
+ (let loop ((v v) (vs-above '()))
+  (if (up? v)
+      (if (= (up-index v) (- (length vs-above) 1)) (last vs-above) v)
+      (let ((v1 (map (lambda (u)
+		      (if (atomic-proto-abstract-value? u)
+			  u
+			  (make-branching-value-with-new-values
+			   u
+			   (map (lambda (v1) (loop v1 (cons v vs-above)))
+				(branching-value-values u)))))
+		     v)))
+       (if (every-eq? v v1) v v1)))))
+
+(define (closed-proto-abstract-values v)
+ (unless (abstract-value=? (debugging1-closed-proto-abstract-values v)
+			   (debugging2-closed-proto-abstract-values v))
+  (pp (externalize-abstract-value v))
+  (newline)
+  (pp (externalize-abstract-value
+       (debugging1-closed-proto-abstract-values v)))
+  (newline)
+  (pp (externalize-abstract-value
+       (debugging2-closed-proto-abstract-values v)))
+  (newline)
+  (internal-error))
+ (debugging1-closed-proto-abstract-values v))
 
 (define (abstract-value-union v1 v2)
  (cond ((null? v1) v2)
@@ -4467,28 +4392,38 @@
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
-       (else (remove-duplicates-circular-safe
+       ;; remove-duplicatesp is just an optimization. Can do a better
+       ;; optimization by removing proto abstract values that are subsets of
+       ;; other proto abstract values.
+       (else (remove-duplicatesp
+	      equalq?
 	      (append (closed-proto-abstract-values v1)
 		      (closed-proto-abstract-values v2))))))
 
 (define (abstract-value-union-without-unroll v1 v2)
- (if (or (up? v1) (up? v2))
-     (if (and (up? v1) (up? v2) (= (up-index v1) (up-index v2)))
-	 v1
-	 (internal-error "Can't union a union type with a backlink"))
-     (remove-duplicates-circular-safe (append v1 v2))))
+ (cond ((null? v1) v2)
+       ((null? v2) v1)
+       ((eq? v1 v2) v1)
+       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+       ((or (up? v1) (up? v2))
+	(internal-error "Can't union a union type with a backlink"))
+       ;; remove-duplicatesp is just an optimization. Can do a better
+       ;; optimization by removing proto abstract values that are subsets of
+       ;; other proto abstract values.
+       (else (remove-duplicatesp equalq? (append v1 v2)))))
 
-;; needs work: rename
-(define (imprec-value-union v1 v2) (abstract-value-union-without-unroll v1 v2))
+;;; needs work: why do we sometimes call abstract-value-union-without-unroll
+;;;             and sometimes call imprecise-abstract-value-union
 
-;;; begin needs work
+(define (imprecise-abstract-value-union v1 v2)
+ (abstract-value-union-without-unroll v1 v2))
 
 ;;; Abstract-Environment Subset, Equivalence, Intersection?, and Union
 
 (define (restrict-environment vs xs xs-new)
  (list->vector
-  (map (lambda (x) (vector-ref vs (position-if (lambda (y) (variable=? x y))
-					       xs)))
+  (map (lambda (x-new)
+	(vector-ref vs (position-if (lambda (x) (variable=? x x-new)) xs)))
        xs-new)))
 
 (define (abstract-environment-subset? vs1 vs2)
@@ -4508,11 +4443,8 @@
 (define (abstract-environment-union vs1 vs2)
  (map-vector abstract-value-union vs1 vs2))
 
-(define (abstract-environment-union-without-unroll vs1 vs2)
- (map-vector abstract-value-union-without-unroll vs1 vs2))
-
-(define (imprec-environment-union vs1 vs2)
- (abstract-environment-union-without-unroll vs1 vs2))
+(define (imprecise-abstract-environment-union vs1 vs2)
+ (map-vector imprecise-abstract-value-union vs1 vs2))
 
 ;;; Abstract-Flow Equivalence and Union
 
@@ -4525,6 +4457,7 @@
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
  (or
+  ;; needs work: why do we do this optimization here but not elsewhere?
   (eq? bs1 bs2)
   (set-equalp?
    (lambda (b1 b2)
@@ -4537,6 +4470,7 @@
    bs2)))
 
 (define (abstract-flow-union bs1 bs2)
+ ;; here I am
  ;; This is one place where imprecision can be introduced.
  (if (null? bs1)
      bs2
@@ -4570,7 +4504,8 @@
 
 (define (create-abstract-analysis e vs v)
  (unless (= (vector-length vs) (length (free-variables e)))
-  (internal-error "xs and vs should be of same length"))
+  (internal-error
+   "vs and (length (free-variables e)) should be of same length"))
  (list (make-abstract-expression-binding e (create-abstract-flow vs v))))
 
 (define (abstract-analysis=? bs1 bs2)
@@ -4586,6 +4521,7 @@
   bs2))
 
 (define (abstract-analysis-union bs1 bs2)
+ ;; here I am
  (if (null? bs1)
      bs2
      (let* ((b1 (first bs1))
@@ -4604,21 +4540,16 @@
 	   (abstract-analysis-union (rest bs1) bs2-new))
 	  (cons (first bs1) (abstract-analysis-union (rest bs1) bs2))))))
 
+;;; begin needs work
+
 ;;; Widen
 
 ;;; Widen->General
 
 (define (some-proto-abstract-value?-internal p u u-context)
- (cond ((or (null? u)
-	    (boolean? u)
-	    (abstract-real? u)
-	    (primitive-procedure? u))
-	#f)
-       ((branching-value? u)
-	(some (lambda (v) (some-abstract-value?-internal p v u-context))
-	      (branching-value-values u)))
-       (else (internal-error "Not a handled proto-abstract-value"
-			     (externalize-proto-abstract-value u)))))
+ (and (not (atomic-proto-abstract-value? u))
+      (some (lambda (v) (some-abstract-value?-internal p v u-context))
+	    (branching-value-values u))))
 
 (define (some-abstract-value?-internal p v v-context)
  (cond ((p v v-context) #t)
@@ -4641,26 +4572,20 @@
        (if (null? us)
 	   (let ((us-new (reverse us-new))) (if (every-eq? v us-new) v us-new))
 	   (let ((u (first us)))
-	    (cond ((or (null? u)
-		       (boolean? u)
-		       (abstract-real? u)
-		       (primitive-procedure? u))
-		   (loop (rest us) (cons u us-new)))
-		  ((branching-value? u)
-		   (let ((u-context (cons v v-context)))
-		    (loop (rest us)
-			  (cons (make-branching-value-with-new-values
-				 u (map (lambda (v)
-					 (process-nodes-in-abstract-value-tree
-					  f v u-context))
-					(branching-value-values u)))
-				us-new))))
-		  (else (internal-error "Not a proto-abstract-value")))))))))
+	    (if (atomic-proto-abstract-value? u)
+		(loop (rest us) (cons u us-new))
+		(let ((u-context (cons v v-context)))
+		 (loop (rest us)
+		       (cons (make-branching-value-with-new-values
+			      u (map (lambda (v)
+				      (process-nodes-in-abstract-value-tree
+				       f v u-context))
+				     (branching-value-values u)))
+			     us-new))))))))))
 
 (define (remove-duplicate-proto-abstract-values v)
  (process-nodes-in-abstract-value-tree
-  (lambda (v v-context) (remove-duplicates-circular-safe v))
-  v '()))
+  (lambda (v v-context) (remove-duplicatesp equalq? v)) v '()))
 
 (define (free-up? v v-context)
  (and (up? v) (>= (up-index v) (length v-context))))
@@ -4673,16 +4598,12 @@
  (make-up (+ index (length up-context))))
 
 (define (proto-process-free-ups-internal f u u-context)
- (cond ((or (null? u)
-	    (boolean? u)
-	    (abstract-real? u)
-	    (primitive-procedure? u))
-	u)
-       ((branching-value? u)
-	(make-branching-value-with-new-values
-	 u (map (lambda (v) (process-free-ups-internal f v u-context))
-		(branching-value-values u))))
-       (else (internal-error))))
+ (if (atomic-proto-abstract-value? u)
+     u
+     (make-branching-value-with-new-values
+      u
+      (map (lambda (v) (process-free-ups-internal f v u-context))
+	   (branching-value-values u)))))
 
 (define (process-free-ups-internal f v v-context)
  (cond ((free-up? v v-context) (f v v-context))
@@ -4691,8 +4612,7 @@
 		   (proto-process-free-ups-internal f u (cons v v-context)))
 		  v))))
 
-(define (proto-process-free-ups f u)
- (proto-process-free-ups-internal f u '()))
+(define (proto-process-free-ups f u) (proto-process-free-ups-internal f u '()))
 
 (define (process-free-ups f v) (process-free-ups-internal f v '()))
 
@@ -4744,7 +4664,8 @@
 	(paranoid
 	 (when (some up? vs-to-add)
 	  (internal-error "No additions should be UPs...should they?")))
-	(v-new (remove-duplicates-circular-safe
+	(v-new (remove-duplicatesp
+		equalq?
 		(reduce append
 			(cons v (map decrement-free-ups vs-to-add))
 			'())))
@@ -4806,9 +4727,9 @@
        ((up? v1) (list v1 (create-addition (up-index v1) (list v2))))
        ((up? v2) (list v2 (create-addition (up-index v2) (list v1))))
        ;; needs work: There can still be duplicate proto-abstract values
-       ;;             leftover after remove-duplicates-circular-safe; however,
+       ;;             leftover after remove-duplicatesp; however,
        ;;             really removing all duplicates is much more work.
-       (else (list (remove-duplicates-circular-safe (append v1 v2)) '()))))
+       (else (list (remove-duplicatesp equalq? (append v1 v2)) '()))))
 
 (define (limit-matching-branching-values-at-one-level
 	 v k target-branching-value? branching-value-match?
@@ -4831,7 +4752,7 @@
 		(u1 (first u1-u2))
 		(u2 (second u1-u2)))
 	  (let inner ((vs1 (branching-value-values u1))
-		      (vs2 (branching-value-values-matching u1 u2))
+		      (vs2 (branching-value-values u2))
 		      (vs '())
 		      (additions additions))
 	   (if (null? vs1)
@@ -4866,35 +4787,30 @@
 	    (v-new (first v-additions))
 	    (additions (second v-additions))
 	    (changed? (not (eq? v-new v))))
-      (cond ((and (null? additions) (up? v-new)) (list v-new '()))
-	    ((null? additions)
-	     ;; recursively widen each abstract value below v-new
-	     (let outer ((us v-new) (us-new '()) (additions '()))
-	      (if (null? us)
-		  (let ((us-new (reverse us-new)))
-		   (if (null? additions)
-		       (if (every-eq? us-new v) (list v '()) (list us-new '()))
-		       (let* ((v-additions
-			       (move-values-up-tree us-new additions))
-			      (v-new (first v-additions))
-			      (additions-new (second v-additions)))
-			(if (null? additions-new)
-			    (limit-matching-branching-values-over-tree-internal
-			     limit-at-one-level v-new)
-			    v-additions))))
-		  (let ((u (first us)))
-		   (cond
-		    ((or (null? u)
-			 (boolean? u)
-			 (abstract-real? u)
-			 (primitive-procedure? u))
-		     (outer (rest us) (cons u us-new) additions))
-		    ((branching-value? u)
-		     (let inner ((vs (branching-value-values u))
-				 (vs-new '())
-				 (additions additions))
-		      (if
-		       (null? vs)
+      (cond
+       ((and (null? additions) (up? v-new)) (list v-new '()))
+       ((null? additions)
+	;; recursively widen each abstract value below v-new
+	(let outer ((us v-new) (us-new '()) (additions '()))
+	 (if (null? us)
+	     (let ((us-new (reverse us-new)))
+	      (if (null? additions)
+		  (if (every-eq? us-new v) (list v '()) (list us-new '()))
+		  (let* ((v-additions
+			  (move-values-up-tree us-new additions))
+			 (v-new (first v-additions))
+			 (additions-new (second v-additions)))
+		   (if (null? additions-new)
+		       (limit-matching-branching-values-over-tree-internal
+			limit-at-one-level v-new)
+		       v-additions))))
+	     (let ((u (first us)))
+	      (if (atomic-proto-abstract-value? u)
+		  (outer (rest us) (cons u us-new) additions)
+		  (let inner ((vs (branching-value-values u))
+			      (vs-new '())
+			      (additions additions))
+		   (if (null? vs)
 		       (let ((u-new (make-branching-value-with-new-values
 				     u (reverse vs-new))))
 			(outer (rest us)
@@ -4906,12 +4822,11 @@
 			    limit-at-one-level (first vs)))
 			  (v-new (first v-additions))
 			  (additions-new (second v-additions)))
-			(inner (rest vs)
-			       (cons v-new vs-new)
-			       (merge-additions additions additions-new))))))
-		    (else (unimplemented)))))))
-	    (else
-	     (let* ((v-additions (move-values-up-tree v-new additions))
+			(inner
+			 (rest vs)
+			 (cons v-new vs-new)
+			 (merge-additions additions additions-new))))))))))
+       (else (let* ((v-additions (move-values-up-tree v-new additions))
 		    (v-new (first v-additions))
 		    (additions-new (second v-additions)))
 	      (if (null? additions-new)
@@ -5042,24 +4957,13 @@
 		  (if (eq? #f result)
 		      (inner (rest vs))
 		      result)))))
-	   (cond ((or (null? u)
-		      (boolean? u)
-		      (abstract-real? u)
-		      (primitive-procedure? u))
-		  (if (> (depth (add-to-path u)) k)
-		      (add-to-path u)
-		      #f))
-		 ((branching-value? u)
-		  (let inner ((vs (branching-value-values u)))
-		   (if (null? vs)
-		       (if (> (depth (add-to-path u)) k)
-			   (add-to-path u)
-			   #f)
-		       (let ((result (loop (first vs) (add-to-path u))))
-			(if (eq? #f result)
-			    (inner (rest vs))
-			    result)))))
-		 (else (unimplemented)))))))))
+	   (if (atomic-proto-abstract-value? u)
+	       (if (> (depth (add-to-path u)) k) (add-to-path u) #f)
+	       (let inner ((vs (branching-value-values u)))
+		(if (null? vs)
+		    (if (> (depth (add-to-path u)) k) (add-to-path u) #f)
+		    (let ((result (loop (first vs) (add-to-path u))))
+		     (if (eq? #f result) (inner (rest vs)) result)))))))))))
 
 (define (get-values-to-merge k depth path)
  ;; not quite general: path needs to be of form [] | [v u] ++ path
@@ -5277,19 +5181,20 @@
  (let ((x-bar (abstract-environment-binding-abstract-values b))
        (y-bar0 (abstract-environment-binding-abstract-value b)))
   (let loop ((y-bar y-bar0) (bs bs0))
-   (cond ((null? bs)
-	  (if (eq? y-bar y-bar0)
-	      b
-	      (make-abstract-environment-binding x-bar y-bar)))
-	 ((nonempty-abstract-environment-intersection?
-	   x-bar (abstract-environment-binding-abstract-values (first bs)))
-	  (let ((yi-bar (abstract-environment-binding-abstract-value
-			 (first bs)))
-		(i (positionq (first bs) bs0)))
-	   (if (abstract-value-subset? yi-bar y-bar)
-	       (loop y-bar (rest bs))
-	       (loop (imprec-value-union y-bar yi-bar) (rest bs)))))
-	 (else (loop y-bar (rest bs)))))))
+   (cond
+    ((null? bs)
+     (if (eq? y-bar y-bar0)
+	 b
+	 (make-abstract-environment-binding x-bar y-bar)))
+    ((nonempty-abstract-environment-intersection?
+      x-bar (abstract-environment-binding-abstract-values (first bs)))
+     (let ((yi-bar (abstract-environment-binding-abstract-value
+		    (first bs)))
+	   (i (positionq (first bs) bs0)))
+      (if (abstract-value-subset? yi-bar y-bar)
+	  (loop y-bar (rest bs))
+	  (loop (imprecise-abstract-value-union y-bar yi-bar) (rest bs)))))
+    (else (loop y-bar (rest bs)))))))
 
 (define (introduce-imprecision-to-abstract-mapping-in-flow i bs bs-old)
  (if (memq (list-ref bs i) bs-old)
@@ -5338,8 +5243,8 @@
 	       (v2 (abstract-environment-binding-abstract-value b2)))
 	 (cons (make-abstract-mapping-safe-to-add
 		(make-abstract-environment-binding
-		 (imprec-environment-union vs1 vs2)
-		 (imprec-value-union v1 v2))
+		 (imprecise-abstract-environment-union vs1 vs2)
+		 (imprecise-abstract-value-union v1 v2))
 		bs-rest)
 	       bs-rest)))))
 
@@ -6030,16 +5935,16 @@
 (define (abstract-value-size v)
  (if (up? v)
      (list 0 0)
-     (let inner
-       ((vs-to-explore
-	 (reduce
-	  append
-	  (map (lambda (u)
-		(if (branching-value? u) (branching-value-values u) '()))
-	       v)
-	  '()))
-	(num-vs 1)
-	(num-us (length v)))
+     (let inner ((vs-to-explore
+		  (reduce append
+			  (map (lambda (u)
+				(if (atomic-proto-abstract-value? u)
+				    '()
+				    (branching-value-values u)))
+			       v)
+			  '()))
+		 (num-vs 1)
+		 (num-us (length v)))
       (if (null? vs-to-explore)
 	  (list num-vs num-us)
 	  (let ((result (abstract-value-size (first vs-to-explore))))
