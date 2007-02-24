@@ -1,4 +1,4 @@
-#! /bin/tcsh -f
+#!/bin/tcsh -f
 
 # comp should be copied into the directory containing the new run data
 

@@ -1,4 +1,4 @@
-#!/bin/tcsh
+#!/bin/tcsh -f
 
 set EXAMPLE = $1
 set NUM = $2
