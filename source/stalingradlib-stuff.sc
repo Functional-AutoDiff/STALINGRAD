@@ -4317,8 +4317,7 @@
 		       (and (eq? u1 'real) (eq? u2 'real))
 		       (and (eq? u1 'real) (real? u2))
 		       (and (real? u1) (eq? u2 'real))
-		       ;; debugging: = -~-> eq?
-		       (and (real? u1) (real? u2) (eq? u1 u2))
+		       (and (real? u1) (real? u2) (= u1 u2))
 		       (and (primitive-procedure? u1)
 			    (primitive-procedure? u2)
 			    (eq? u1 u2))
@@ -4329,7 +4328,7 @@
 		  v2))
 	   v1)))
 
-(define (debugging1-closed-proto-abstract-values v)
+(define (closed-proto-abstract-values v)
  ;; here I am
  (let loop ((v v) (vs-above '()))
   (if (up? v)
@@ -4356,34 +4355,6 @@
 				(branching-value-values u)))))
 		     v)))
        (if (every-eq? v v1) v v1)))))
-
-(define (debugging2-closed-proto-abstract-values v)
- (let loop ((v v) (vs-above '()))
-  (if (up? v)
-      (if (= (up-index v) (- (length vs-above) 1)) (last vs-above) v)
-      (let ((v1 (map (lambda (u)
-		      (if (atomic-proto-abstract-value? u)
-			  u
-			  (make-branching-value-with-new-values
-			   u
-			   (map (lambda (v1) (loop v1 (cons v vs-above)))
-				(branching-value-values u)))))
-		     v)))
-       (if (every-eq? v v1) v v1)))))
-
-(define (closed-proto-abstract-values v)
- (unless (abstract-value=? (debugging1-closed-proto-abstract-values v)
-			   (debugging2-closed-proto-abstract-values v))
-  (pp (externalize-abstract-value v))
-  (newline)
-  (pp (externalize-abstract-value
-       (debugging1-closed-proto-abstract-values v)))
-  (newline)
-  (pp (externalize-abstract-value
-       (debugging2-closed-proto-abstract-values v)))
-  (newline)
-  (internal-error))
- (debugging1-closed-proto-abstract-values v))
 
 (define (abstract-value-union v1 v2)
  (cond ((null? v1) v2)
