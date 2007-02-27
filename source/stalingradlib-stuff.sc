@@ -4328,23 +4328,30 @@
 		  v2))
 	   v1)))
 
-(define (closed-proto-abstract-values v)
- ;; here I am
- (let loop ((v v) (vs-above '()))
+(define (closed-proto-abstract-values v-top) ;debugging: top
+ (let loop ((v v-top) (vs-above '()))
   (if (up? v)
       (if (= (up-index v) (- (length vs-above) 1))
-	  (let ((vs-above (cons v vs-above)))
-	   (map (lambda (u)
-		 (if (atomic-proto-abstract-value? u)
+	  (map (lambda (u)
+		(if (atomic-proto-abstract-value? u)
+		    u
+		    (make-branching-value-with-new-values
 		     u
-		     (make-branching-value-with-new-values
-		      u
-		      (map (lambda (v)
-			    (if (memq v vs-above)
-				(make-up (positionq v vs-above))
-				v))
-			   (branching-value-values u)))))
-		(last vs-above)))
+		     (map (lambda (v-debugging)
+			   (when (and (eq? v-debugging v)
+				      (not (zero? (up-index v))))
+			    (pp (externalize-abstract-value v-top))
+			    (newline)
+			    (pp (map externalize-abstract-value vs-above))
+			    (newline)
+			    (pp (externalize-abstract-value v-debugging))
+			    (newline)
+			    (panic "bingo"))
+			   (if (memq v-debugging vs-above)
+			       (make-up (+ (positionq v-debugging vs-above) 1))
+			       v-debugging))
+			  (branching-value-values u)))))
+	       (last vs-above))
 	  v)
       (let ((v1 (map (lambda (u)
 		      (if (atomic-proto-abstract-value? u)
