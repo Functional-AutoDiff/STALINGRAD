@@ -280,6 +280,8 @@
 
 (define *expression-equality* 'structural)
 
+(define *method-for-removing-redundant-proto-abstract-values* 'structural)
+
 (define *quiet?* #f)
 
 (define *parse-abstract?* #f)
@@ -806,7 +808,7 @@
 	 (else (internal-error))))
        (else (internal-error))))
 
-(define (variable=? x1 x2) (equalq? x1 x2))
+(define (variable=? x1 x2) (equal? x1 x2))
 
 (define (variable-base x)
  (if (and (list? x) (eq? (first x) 'alpha)) (variable-base (second x)) x))
@@ -4002,7 +4004,9 @@
 ;;; General
 
 (define (equalq? x y)
- ;; This is a version of equal? that checks for eq? (by way of eqv?).
+ ;; This is a version of equal? that checks for eq? (by way of eqv?). This is
+ ;; used solely to allow application to circular structures, which arises only
+ ;; in the case of primitive procedures.
  (or (eqv? x y)
      (and (pair? x)
 	  (pair? y)
@@ -4021,6 +4025,7 @@
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
 
 (define (every-eq? l1 l2)
+ ;; This eq? is just an optimization.
  (or (eq? l1 l2) (and (= (length l1) (length l2)) (every eq? l1 l2))))
 
 (define (minimal-elements <? s)
@@ -4075,12 +4080,6 @@
 	(set-primitive-procedure-reverse! p p-r)
 	(loop (vlad-cdr pfrs '())))))))
 
-(define (vlad-value->abstract-value v)
- (if (atomic-proto-abstract-value? v)
-     (list v)
-     (list (make-branching-value-with-new-values
-	    v (map vlad-value->abstract-value (branching-value-values v))))))
-
 ;;; Expression Equivalence
 
 (define (expression? x)
@@ -4133,6 +4132,12 @@
 			   (cons-expression-cdr e2)))))
 
 (define (expression=? e1 e2)
+ ;; Two expressions are equal if they yield equal values in all possible
+ ;; environments. (The notion of expression equality depends on the notion of
+ ;; value equality.) Expression equality is undecidable. (It is semidecidable
+ ;; since a lone environment can witness disequality and environments are
+ ;; recursively enumerable. This selects among a hierarchy of more precise
+ ;; conservative approximation alternatives. A #t result is precise.
  ((case *expression-equality*
    ((identity) eq?)
    ((structural) expression-eqv?)
@@ -4148,7 +4153,7 @@
 
 (define (nonrecursive-closure-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
-     (unimplemented "Matching with alpha equivalence")
+     (unimplemented "Alpha equivalence")
      (and (variable=? (nonrecursive-closure-variable u1)
 		      (nonrecursive-closure-variable u2))
 	  (expression=? (nonrecursive-closure-body u1)
@@ -4252,62 +4257,179 @@
        ((bundle? u) (make-bundle-protected (first vs) (second vs)))
        (else (internal-error))))
 
-;;; Abstract-Value Subset, Equivalence, Intersection?, and Union
+;;; Abstract Values
 
 (define (empty-abstract-value) '())
 
 (define (atomic-proto-abstract-value? u)
  (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
 
+(define (vlad-value->abstract-value v)
+ (if (atomic-proto-abstract-value? v)
+     (list v)
+     (list (make-branching-value-with-new-values
+	    v (map vlad-value->abstract-value (branching-value-values v))))))
+
+(define (remove-redundant-proto-abstract-values v)
+ ;; This does not affect the extension of the abstract value but can yield
+ ;; a smaller representation. Thus this is just an optimization. Since
+ ;; (proto) abstract value subset and equality is undecidable, can only
+ ;; conservatively approximate this. This selects among a hierarchy of more
+ ;; precise conservative approximation alternatives.
+ ;; Using a conservative approximation is sound since proto abstract values are
+ ;; removed only when the predicate returns #t which is a precise result for
+ ;; all of the approximations.
+ (remove-duplicatesp
+  (case *method-for-removing-redundant-proto-abstract-values*
+   ((identity) eq?)
+   ((structural) equalq?)
+   ((equality) proto-abstract-value=?)
+   ((subset) proto-abstract-value-subset?)
+   (else (internal-error)))
+  v))
+
+;;; (Proto-)Abstract-Value Subset, Equality, Intersection?, and Union
+
+;;; One (proto) abstract value is a subset of another if the extension of the
+;;; former is a subset of the extension of the latter. Two (proto) abstract
+;;; values are equal if their extensions are equal. (These notions are
+;;; dependent on the notion of value equality.) (Proto) abstract value subset
+;;; and equality is undecidable (by reduction from context-free-grammar
+;;; equivalence). (It is semidecidable since a lone element in the extension
+;;; of the left argument that is not in the extension of the right argument
+;;; witnesses nonsubset and the extension of an abstract value is recursively
+;;; enumerable.) We conservatively approximate these. A #t result is precise.
+;;; The lone cause of imprecision is illustrated by the following example.
+;;; Let v1={box({0,1})} and v2={box({0}),box({1})}. v1 is a subset of v2. Yet
+;;; the procedure checks whether for every u1 in v1 there is some u2 in v2
+;;; such that u1 is a subset of v2. This does not hold in this example because
+;;; there is no single u2 which box({0,1}) is a subset of. One can get more
+;;; precision by multiplying out v1. In this case, multiplying out v1 to
+;;; {box({0}),box({1})} whould allow every u1 to have a single u2 for which u1
+;;; is a subset of u2. Thus in this case, multiplying out would yield a
+;;; precise result. In principle, one only need multiply out v1. But if v1 has
+;;; recursion, there is no bound on the amount of multiplying out that may be
+;;; needed.
+
+(define (proto-abstract-value-subset?-internal u1 u2 cs vs1-above vs2-above)
+ (or (and (null? u1) (null? u2))
+     (and (boolean? u1) (boolean? u2) (eq? u1 u2))
+     (and (eq? u1 'real) (eq? u2 'real))
+     (and (real? u1) (eq? u2 'real))
+     (and (real? u1) (real? u2) (= u1 u2))
+     (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
+     (and (branching-value-match? u1 u2)
+	  (every
+	   (lambda (v1 v2)
+	    (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above))
+	   (branching-value-values u1)
+	   (branching-value-values u2)))))
+
+(define (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above)
+ (cond
+  ((up? v1)
+   (abstract-value-subset?-internal (list-ref vs1-above (up-index v1))
+				    v2
+				    cs
+				    (rest* vs1-above (+ (up-index v1) 1))
+				    vs2-above))
+  ((up? v2)
+   (abstract-value-subset?-internal v1
+				    (list-ref vs2-above (up-index v2))
+				    cs
+				    vs1-above
+				    (rest* vs2-above (+ (up-index v2) 1))))
+  ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
+  (else (every (lambda (u1)
+		(some (lambda (u2)
+		       (proto-abstract-value-subset?-internal
+			u1
+			u2
+			(cons (cons v1 v2) cs)
+			(cons v1 vs1-above)
+			(cons v2 vs2-above)))
+		      v2))
+	       v1))))
+
+(define (proto-abstract-value-subset? u1 u2)
+ (proto-abstract-value-subset?-internal u1 u2 '() '() '()))
+
 (define (abstract-value-subset? v1 v2)
- (let loop? ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
-  (cond ((up? v1)
-	 (loop? (list-ref vs1-above (up-index v1))
-		v2
-		cs
-		(rest* vs1-above (+ (up-index v1) 1))
-		vs2-above))
-	((up? v2)
-	 (loop? v1
-		(list-ref vs2-above (up-index v2))
-		cs
-		vs1-above
-		(rest* vs2-above (+ (up-index v2) 1))))
-	((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
-	(else (every (lambda (u1)
-		      (some (lambda (u2)
-			     (or (and (null? u1) (null? u2))
-				 (and (boolean? u1) (boolean? u2) (eq? u1 u2))
-				 (and (eq? u1 'real) (eq? u2 'real))
-				 (and (real? u1) (eq? u2 'real))
-				 (and (real? u1) (real? u2) (= u1 u2))
-				 (and (primitive-procedure? u1)
-				      (primitive-procedure? u2)
-				      (eq? u1 u2))
-				 (and (branching-value-match? u1 u2)
-				      (every (lambda (v1a v2a)
-					      (loop? v1a
-						     v2a
-						     (cons (cons v1 v2) cs)
-						     (cons v1 vs1-above)
-						     (cons v2 vs2-above)))
-					     (branching-value-values u1)
-					     (branching-value-values u2)))))
-			    v2))
-		     v1)))))
+ (abstract-value-subset?-internal v1 v2 '() '() '()))
+
+(define (proto-abstract-value=? u1 u2)
+ (and (proto-abstract-value-subset? u1 u2)
+      (proto-abstract-value-subset? u2 u1)))
 
 (define (abstract-value=? v1 v2)
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
 
-(define (nonempty-abstract-value-intersection? v1 v2)
- ;; It is insufficient to not recurse on branching values and conservatively
- ;; estimate an intersection when v1 and v2 contain matching branching values.
- ;; This is too loose an approximation.  For example, if we don't recurse,
- ;; every closure resulting from a given lambda expression will potentially
- ;; intersect.
- ;; note: This is a conservative approximation.  When this returns #f, it is
- ;;       guaranteed to be #f.  However, this will sometimes return #t when the
- ;;       result is indeed #f.
+;;; Two (proto) abstract values are nondisjoint if their extensions are
+;;; nondisjoint. (This notion depends on the notion of value equality.)
+;;; Determining whether two (proto) abstract values are nondisjoint is
+;;; undecidable  (by reduction from nonempty interesection of two context-free
+;;; grammars). (It is semidecidable since a lone element in the extension of
+;;; of both arguments witnesses nondisjointness and the extension of an
+;;; abstract value is recursively enumerable.) We conservatively approximate
+;;; this. A #f result is precise.
+
+(define (proto-abstract-value-nondisjoint?-internal
+	 u1 u2 cs vs1-above vs2-above)
+ (or (and (null? u1) (null? u2))
+     (and (boolean? u1) (boolean? u2) (eq? u1 u2))
+     (and (eq? u1 'real) (eq? u2 'real))
+     (and (eq? u1 'real) (real? u2))
+     (and (real? u1) (eq? u2 'real))
+     (and (real? u1) (real? u2) (= u1 u2))
+     (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
+     (and (branching-value-match? u1 u2)
+	  (every (lambda (v1 v2)
+		  (abstract-value-nondisjoint?-internal
+		   v1 v2 cs vs1-above vs2-above))
+		 (branching-value-values u1)
+		 (branching-value-values u2)))))
+
+(define (abstract-value-nondisjoint?-internal v1 v2 cs vs1-above vs2-above)
+ (cond ((up? v1)
+	(abstract-value-nondisjoint?-internal
+	 (list-ref vs1-above (up-index v1))
+	 v2
+	 cs
+	 (rest* vs1-above (+ (up-index v1) 1))
+	 vs2-above))
+       ((up? v2)
+	(abstract-value-nondisjoint?-internal
+	 v1
+	 (list-ref vs2-above (up-index v2))
+	 cs
+	 vs1-above
+	 (rest* vs2-above (+ (up-index v2) 1))))
+       ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #f)
+       (else (some (lambda (u1)
+		    (some (lambda (u2)
+			   (proto-abstract-value-nondisjoint?-internal
+			    u1
+			    u2
+			    (cons (cons v1 v2) cs)
+			    (cons v1 vs1-above)
+			    (cons v2 vs2-above)))
+			  v2))
+		   v1))))
+
+(define (proto-abstract-value-nondisjoint? u1 u2)
+ (proto-abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
+
+(define (debugging-abstract-value-nondisjoint? v1 v2)
+ ;; needs work: to handle ups like subset/equality
+ ;; Two abstract values have a nonempty intersection if their extensions have
+ ;; a nonempty intersection. (This notion depends on the notion of value
+ ;; equality.) I believe that determining whether two abstract values have a
+ ;; nonempty intersection is undecidable. We conservatively approximate this.
+ ;; A #f result is precise.
+ ;; An even more conservative approximation would not recurse on branching
+ ;; values. But this would be too conservative an approximation because every
+ ;; pair of abstract closures resulting from a given lambda expression would
+ ;; have a nonempty intersection.
  (or (up? v1)
      (up? v2)
      (some (lambda (u1)
@@ -4322,14 +4444,25 @@
 			    (primitive-procedure? u2)
 			    (eq? u1 u2))
 		       (and (branching-value-match? u1 u2)
-			    (every nonempty-abstract-value-intersection?
+			    (every debugging-abstract-value-nondisjoint?
 				   (branching-value-values u1)
 				   (branching-value-values u2)))))
 		  v2))
 	   v1)))
 
-(define (closed-proto-abstract-values v-top) ;debugging: top
- (let loop ((v v-top) (vs-above '()))
+(define (abstract-value-nondisjoint? v1 v2)
+ (let ((p1? (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
+       (p2? (debugging-abstract-value-nondisjoint? v1 v2)))
+  (unless (eq? p1? p2?)
+   (pp (externalize-abstract-value v1))
+   (newline)
+   (pp (externalize-abstract-value v2))
+   (newline)
+   (panic (format #f "bingo ~s ~s" p1? p2?)))
+  p1?))
+
+(define (closed-proto-abstract-values v)
+ (let loop ((v v) (vs-above '()))
   (if (up? v)
       (if (= (up-index v) (- (length vs-above) 1))
 	  (map (lambda (u)
@@ -4337,19 +4470,10 @@
 		    u
 		    (make-branching-value-with-new-values
 		     u
-		     (map (lambda (v-debugging)
-			   (when (and (eq? v-debugging v)
-				      (not (zero? (up-index v))))
-			    (pp (externalize-abstract-value v-top))
-			    (newline)
-			    (pp (map externalize-abstract-value vs-above))
-			    (newline)
-			    (pp (externalize-abstract-value v-debugging))
-			    (newline)
-			    (panic "bingo"))
-			   (if (memq v-debugging vs-above)
-			       (make-up (+ (positionq v-debugging vs-above) 1))
-			       v-debugging))
+		     (map (lambda (v)
+			   (if (memq v vs-above)
+			       (make-up (+ (positionq v vs-above) 1))
+			       v))
 			  (branching-value-values u)))))
 	       (last vs-above))
 	  v)
@@ -4364,31 +4488,29 @@
        (if (every-eq? v v1) v v1)))))
 
 (define (abstract-value-union v1 v2)
+ ;; This cannot introduce imprecision.
  (cond ((null? v1) v2)
        ((null? v2) v1)
        ((eq? v1 v2) v1)
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
-       ;; remove-duplicatesp is just an optimization. Can do a better
-       ;; optimization by removing proto abstract values that are subsets of
-       ;; other proto abstract values.
-       (else (remove-duplicatesp
-	      equalq?
+       (else (remove-redundant-proto-abstract-values
 	      (append (closed-proto-abstract-values v1)
 		      (closed-proto-abstract-values v2))))))
 
 (define (abstract-value-union-without-unroll v1 v2)
+ ;; This can introduce imprecision, as illustrated by the following example:
+ ;; {(),pair(0,^0)} U {(),pair(1,^0)} would yield
+ ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
+ ;; extension even though it is not in the extension of either argument.
  (cond ((null? v1) v2)
        ((null? v2) v1)
        ((eq? v1 v2) v1)
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
-       ;; remove-duplicatesp is just an optimization. Can do a better
-       ;; optimization by removing proto abstract values that are subsets of
-       ;; other proto abstract values.
-       (else (remove-duplicatesp equalq? (append v1 v2)))))
+       (else (remove-redundant-proto-abstract-values (append v1 v2)))))
 
 ;;; needs work: why do we sometimes call abstract-value-union-without-unroll
 ;;;             and sometimes call imprecise-abstract-value-union
@@ -4408,6 +4530,16 @@
  (every-vector abstract-value-subset? vs1 vs2))
 
 (define (abstract-environment-proper-subset? vs1 vs2)
+ ;; needs work: This is not a sound predicate. If it returns #t then it means
+ ;;             that the second conjunct is imprecise. If it returns #f then
+ ;;             it means that the first conjunct could be imprecise. We thus
+ ;;             need to eliminate this predicate. It is used in two places.
+ ;;             One is abstract-value-in-matching-abstract-environment. I
+ ;;             believe that that could (and should) be replaced with
+ ;;             abstract-environment-subset?. The other is
+ ;;             introduce-imprecision-to-abstract-mapping-in-flow. I have not
+ ;;             reviewed that code yet so I do not know what can or need be
+ ;;             done there.
  (and (abstract-environment-subset? vs1 vs2)
       (not (abstract-environment-subset? vs2 vs1))))
 
@@ -4415,8 +4547,8 @@
  (and (abstract-environment-subset? vs1 vs2)
       (abstract-environment-subset? vs2 vs1)))
 
-(define (nonempty-abstract-environment-intersection? vs1 vs2)
- (every-vector nonempty-abstract-value-intersection? vs1 vs2))
+(define (abstract-environment-nondisjoint? vs1 vs2)
+ (every-vector abstract-value-nondisjoint? vs1 vs2))
 
 (define (abstract-environment-union vs1 vs2)
  (map-vector abstract-value-union vs1 vs2))
@@ -4433,10 +4565,10 @@
 
 (define (abstract-flow=? bs1 bs2)
  ;; Only used for fixpoint convergence check.
- ;; needs work: Can make O(n) instead of O(n^2).
  (or
   ;; needs work: why do we do this optimization here but not elsewhere?
   (eq? bs1 bs2)
+  ;; needs work: Can make O(n) instead of O(n^2).
   (set-equalp?
    (lambda (b1 b2)
     (and (abstract-environment=?
@@ -4563,7 +4695,7 @@
 
 (define (remove-duplicate-proto-abstract-values v)
  (process-nodes-in-abstract-value-tree
-  (lambda (v v-context) (remove-duplicatesp equalq? v)) v '()))
+  (lambda (v v-context) (remove-redundant-proto-abstract-values v)) v '()))
 
 (define (free-up? v v-context)
  (and (up? v) (>= (up-index v) (length v-context))))
@@ -4642,8 +4774,7 @@
 	(paranoid
 	 (when (some up? vs-to-add)
 	  (internal-error "No additions should be UPs...should they?")))
-	(v-new (remove-duplicatesp
-		equalq?
+	(v-new (remove-redundant-proto-abstract-values
 		(reduce append
 			(cons v (map decrement-free-ups vs-to-add))
 			'())))
@@ -4695,19 +4826,17 @@
  ;; assumed: v1 and v2 share the same context.  In other words, all
  ;;          free-up-reference-levels which are the same refer to the same
  ;;          values.
- (cond ((and (up? v1) (up? v2))
-	(cond ((> (up-index v1) (up-index v2))
-	       (list v1 (create-addition (up-index v1) (list v2))))
-	      ((< (up-index v1) (up-index v2))
-	       (list v2 (create-addition (up-index v2) (list v1))))
-	      (else			; (= (up-index v1) (up-index v2))
-	       (list v1 '()))))
-       ((up? v1) (list v1 (create-addition (up-index v1) (list v2))))
-       ((up? v2) (list v2 (create-addition (up-index v2) (list v1))))
-       ;; needs work: There can still be duplicate proto-abstract values
-       ;;             leftover after remove-duplicatesp; however,
-       ;;             really removing all duplicates is much more work.
-       (else (list (remove-duplicatesp equalq? (append v1 v2)) '()))))
+ (cond
+  ((and (up? v1) (up? v2))
+   (cond ((> (up-index v1) (up-index v2))
+	  (list v1 (create-addition (up-index v1) (list v2))))
+	 ((< (up-index v1) (up-index v2))
+	  (list v2 (create-addition (up-index v2) (list v1))))
+	 (else				; (= (up-index v1) (up-index v2))
+	  (list v1 '()))))
+  ((up? v1) (list v1 (create-addition (up-index v1) (list v2))))
+  ((up? v2) (list v2 (create-addition (up-index v2) (list v1))))
+  (else (list (remove-redundant-proto-abstract-values (append v1 v2)) '()))))
 
 (define (limit-matching-branching-values-at-one-level
 	 v k target-branching-value? branching-value-match?
@@ -4878,7 +5007,7 @@
 	(+ 1 (abstract-value-depth (rest path))))
        (else (abstract-value-depth (rest path)))))
 
-;;; needs work: This is the nonrecursive depth measue that's been used, but it
+;;; needs work: This is the nonrecursive depth measure that's been used, but it
 ;;;             isn't quite ideal--ideally we would use
 ;;;             matching-closure-depth-careful.  One would have to look closely
 ;;;             at the depth-limiting code (limit-l4-depth and so on) to ensure
@@ -5164,10 +5293,10 @@
      (if (eq? y-bar y-bar0)
 	 b
 	 (make-abstract-environment-binding x-bar y-bar)))
-    ((nonempty-abstract-environment-intersection?
+    ;; needs work: to check that imprecision is sound
+    ((abstract-environment-nondisjoint?
       x-bar (abstract-environment-binding-abstract-values (first bs)))
-     (let ((yi-bar (abstract-environment-binding-abstract-value
-		    (first bs)))
+     (let ((yi-bar (abstract-environment-binding-abstract-value (first bs)))
 	   (i (positionq (first bs) bs0)))
       (if (abstract-value-subset? yi-bar y-bar)
 	  (loop y-bar (rest bs))
