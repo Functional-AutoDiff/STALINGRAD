@@ -4420,6 +4420,9 @@
  (proto-abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
 
 (define (debugging-abstract-value-nondisjoint? v1 v2)
+ (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
+
+(define (abstract-value-nondisjoint? v1 v2)
  ;; needs work: to handle ups like subset/equality
  ;; Two abstract values have a nonempty intersection if their extensions have
  ;; a nonempty intersection. (This notion depends on the notion of value
@@ -4444,22 +4447,11 @@
 			    (primitive-procedure? u2)
 			    (eq? u1 u2))
 		       (and (branching-value-match? u1 u2)
-			    (every debugging-abstract-value-nondisjoint?
+			    (every abstract-value-nondisjoint?
 				   (branching-value-values u1)
 				   (branching-value-values u2)))))
 		  v2))
 	   v1)))
-
-(define (abstract-value-nondisjoint? v1 v2)
- (let ((p1? (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
-       (p2? (debugging-abstract-value-nondisjoint? v1 v2)))
-  (unless (eq? p1? p2?)
-   (pp (externalize-abstract-value v1))
-   (newline)
-   (pp (externalize-abstract-value v2))
-   (newline)
-   (panic (format #f "bingo ~s ~s" p1? p2?)))
-  p1?))
 
 (define (closed-proto-abstract-values v)
  (let loop ((v v) (vs-above '()))
