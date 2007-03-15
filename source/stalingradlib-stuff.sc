@@ -4927,6 +4927,8 @@
 
 ;;; Depth
 
+(define (abstract-value-depth path) 'debugging)
+
 ;;; A path is an alternating list of abstract values and proto abstract values.
 ;;; The first element of the list is the root and the last element is a leaf.
 ;;; The first element is an abstract value and the last element is either an
@@ -4934,14 +4936,6 @@
 ;;; children, an empty abstract value, or an up. Each proto abstract value is
 ;;; a member of the preceeding abstract value and each abstract value is a
 ;;; member of the branching values of the preceeding proto abstract value.
-
-(define (abstract-value-depth path)
- (cond ((null? path) 0)
-       ((and (list? (first path))
-	     ;; () makes list? true, so guard against it
-	     (not (null? (first path))))
-	(+ 1 (abstract-value-depth (rest path))))
-       (else (abstract-value-depth (rest path)))))
 
 ;;; needs work: This is the nonrecursive depth measure that's been used, but it
 ;;;             isn't quite ideal--ideally we would use
@@ -5077,29 +5071,6 @@
 	   (loop (path-of-depth-greater-than-k *l6* pair-depth v-new)
 		 v-new))))))
 
-(define (aesthetic-reduce-matching-pair-depth v)
- (if (eq? *l6* #f)
-     v
-     (let outer ((limit (- *l6* 1)) (v v))
-      (if (< limit 1)
-	  v
-	  (let ((v-new
-		 (let inner ((path (path-of-depth-greater-than-k
-				    limit pair-depth v))
-			     (v v))
-		  (if (eq? path #f)
-		      v
-		      (let* ((va-vb (get-values-to-merge
-				     limit pair-depth path))
-			     (v-new (reduce-depth
-				     path (first va-vb) (second va-vb))))
-		       (inner (path-of-depth-greater-than-k
-			       limit pair-depth v-new)
-			      v-new))))))
-	   (if (abstract-value=? v-new v)
-	       (outer (- limit 1) v-new)
-	       v))))))
-
 ;;; Syntactic Constraints
 
 (define (l1-met? bs) (or (not *l1*) (<= (length bs) *l1*)))
@@ -5155,7 +5126,7 @@
  (define (syntactic-constraints-met? v)
   (and
    (l2-met? v) (l3-met? v) (l4-met? v) (l5-met? v) (l6-met? v) (l7-met? v)))
- (let loop ((v v))
+ (let loop ((v (remove-redundant-proto-abstract-values* v)))
   (if (syntactic-constraints-met? v)
       v
       (loop
@@ -5168,13 +5139,11 @@
 	  (limit-matching-bundles
 	   (limit-matching-pairs
 	    (limit-matching-closures
-	     (aesthetic-reduce-matching-pair-depth
-	      (limit-matching-pair-depth
-	       (limit-matching-closure-depth
-		(limit-matching-bundles
-		 (limit-matching-pairs
-		  (limit-matching-closures
-		   (remove-redundant-proto-abstract-values* v)))))))))))))))))
+	     (limit-matching-pair-depth
+	      (limit-matching-closure-depth
+	       (limit-matching-bundles
+		(limit-matching-pairs
+		 (limit-matching-closures v)))))))))))))))
 
 ;;; begin needs work
 
