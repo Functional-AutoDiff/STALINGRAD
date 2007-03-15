@@ -4219,28 +4219,27 @@
 (define (tagged-pair-match? u1 u2)
  (equal? (tagged-pair-tags u1) (tagged-pair-tags u2)))
 
-;;; Abstract Branching Values
-;;; needs work: "branching" should be called "aggregate"
+;;; Abstract Aggregate Values
 
 (define (scalar-proto-abstract-value? u)
  (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
 
-(define (branching-value-match? u1 u2)
+(define (aggregate-value-match? u1 u2)
  (or (and (closure? u1) (closure? u2) (closure-match? u1 u2))
-     (and (tagged-pair? u1) (tagged-pair? u2) (tagged-pair-match? u1 u2))
-     (and (bundle? u1) (bundle? u2) (bundle-match? u1 u2))))
+     (and (bundle? u1) (bundle? u2) (bundle-match? u1 u2))
+     (and (tagged-pair? u1) (tagged-pair? u2) (tagged-pair-match? u1 u2))))
 
-(define (branching-value-values u)
+(define (aggregate-value-values u)
  (cond ((closure? u) (vector->list (closure-values u)))
-       ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
        ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
+       ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
        (else (internal-error))))
 
-(define (make-branching-value-with-new-values u vs)
+(define (make-aggregate-value-with-new-values u vs)
  ;; performance optimization
  ;; needs work: To check that no vs is empty-abstract-value.
  ;; needs work: To check that there are the correct number of vs.
- (cond ((every-eq? vs (branching-value-values u)) u)
+ (cond ((every-eq? vs (aggregate-value-values u)) u)
        ((nonrecursive-closure? u)
 	(make-nonrecursive-closure (nonrecursive-closure-variables u)
 				   (list->vector vs)
@@ -4253,12 +4252,12 @@
 				(recursive-closure-argument-variables u)
 				(recursive-closure-bodies u)
 				(recursive-closure-index u)))
-       ((tagged-pair? u)
-	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
        ((bundle? u)
 	(when (or (up? (first vs)) (up? (second vs)))
 	 (unimplemented "Bundles with backlinks"))
 	(make-bundle (first vs) (second vs)))
+       ((tagged-pair? u)
+	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
        (else (internal-error))))
 
 ;;; Abstract Values
@@ -4272,8 +4271,8 @@
 (define (vlad-value->abstract-value v)
  (if (scalar-proto-abstract-value? v)
      (list v)
-     (list (make-branching-value-with-new-values
-	    v (map vlad-value->abstract-value (branching-value-values v))))))
+     (list (make-aggregate-value-with-new-values
+	    v (map vlad-value->abstract-value (aggregate-value-values v))))))
 
 (define (remove-redundant-proto-abstract-values v)
  ;; This does not affect the extension of the abstract value but can yield
@@ -4326,12 +4325,12 @@
      (and (real? u1) (eq? u2 'real))
      (and (real? u1) (real? u2) (= u1 u2))
      (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
-     (and (branching-value-match? u1 u2)
+     (and (aggregate-value-match? u1 u2)
 	  (every
 	   (lambda (v1 v2)
 	    (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above))
-	   (branching-value-values u1)
-	   (branching-value-values u2)))))
+	   (aggregate-value-values u1)
+	   (aggregate-value-values u2)))))
 
 (define (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above)
  (cond
@@ -4393,12 +4392,12 @@
      (and (real? u1) (eq? u2 'real))
      (and (real? u1) (real? u2) (= u1 u2))
      (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
-     (and (branching-value-match? u1 u2)
+     (and (aggregate-value-match? u1 u2)
 	  (every (lambda (v1 v2)
 		  (abstract-value-nondisjoint?-internal
 		   v1 v2 cs vs1-above vs2-above))
-		 (branching-value-values u1)
-		 (branching-value-values u2)))))
+		 (aggregate-value-values u1)
+		 (aggregate-value-values u2)))))
 
 (define (abstract-value-nondisjoint?-internal v1 v2 cs vs1-above vs2-above)
  (cond ((up? v1)
@@ -4446,10 +4445,10 @@
 		       (and (primitive-procedure? u1)
 			    (primitive-procedure? u2)
 			    (eq? u1 u2))
-		       (and (branching-value-match? u1 u2)
+		       (and (aggregate-value-match? u1 u2)
 			    (every abstract-value-nondisjoint?
-				   (branching-value-values u1)
-				   (branching-value-values u2)))))
+				   (aggregate-value-values u1)
+				   (aggregate-value-values u2)))))
 		  v2))
 	   v1)))
 
@@ -4460,22 +4459,22 @@
 	  (map (lambda (u)
 		(if (scalar-proto-abstract-value? u)
 		    u
-		    (make-branching-value-with-new-values
+		    (make-aggregate-value-with-new-values
 		     u
 		     (map (lambda (v)
 			   (if (memq v vs-above)
 			       (make-up (+ (positionq v vs-above) 1))
 			       v))
-			  (branching-value-values u)))))
+			  (aggregate-value-values u)))))
 	       (last vs-above))
 	  v)
       (let ((v1 (map (lambda (u)
 		      (if (scalar-proto-abstract-value? u)
 			  u
-			  (make-branching-value-with-new-values
+			  (make-aggregate-value-with-new-values
 			   u
 			   (map (lambda (v1) (loop v1 (cons v vs-above)))
-				(branching-value-values u)))))
+				(aggregate-value-values u)))))
 		     v)))
        ;; performance optimization
        (if (every-eq? v v1) v v1)))))
@@ -4523,20 +4522,6 @@
 
 (define (abstract-environment-subset? vs1 vs2)
  (every-vector abstract-value-subset? vs1 vs2))
-
-(define (abstract-environment-proper-subset? vs1 vs2)
- ;; needs work: This is not a sound predicate. If it returns #t then it means
- ;;             that the second conjunct is imprecise. If it returns #f then
- ;;             it means that the first conjunct could be imprecise. We thus
- ;;             need to eliminate this predicate. It is used in two places.
- ;;             One is abstract-value-in-matching-abstract-environment. I
- ;;             believe that that could (and should) be replaced with
- ;;             abstract-environment-subset?. The other is
- ;;             introduce-imprecision-to-abstract-mapping-in-flow. I have not
- ;;             reviewed that code yet so I do not know what can or need be
- ;;             done there.
- (and (abstract-environment-subset? vs1 vs2)
-      (not (abstract-environment-subset? vs2 vs1))))
 
 (define (abstract-environment=? vs1 vs2)
  (and (abstract-environment-subset? vs1 vs2)
@@ -4646,7 +4631,7 @@
 (define (some-proto-abstract-value?-internal p u vs-above)
  (and (not (scalar-proto-abstract-value? u))
       (some (lambda (v) (some-abstract-value?-internal p v vs-above))
-	    (branching-value-values u))))
+	    (aggregate-value-values u))))
 
 (define (some-abstract-value?-internal p v vs-above)
  (or (p v vs-above)
@@ -4667,10 +4652,10 @@
       (map (lambda (u)
 	    (if (scalar-proto-abstract-value? u)
 		u
-		(make-branching-value-with-new-values
+		(make-aggregate-value-with-new-values
 		 u
 		 (map (lambda (v1) (loop v1 (cons v vs-above)))
-		      (branching-value-values u)))))
+		      (aggregate-value-values u)))))
 	   (f v vs-above)))))
 
 (define (remove-redundant-proto-abstract-values* v)
@@ -4694,10 +4679,10 @@
  ;; needs work: candidate for removal
  (if (scalar-proto-abstract-value? u)
      u
-     (make-branching-value-with-new-values
+     (make-aggregate-value-with-new-values
       u
       (map (lambda (v) (abstract-value-process-free-ups-internal f v vs-above))
-	   (branching-value-values u)))))
+	   (aggregate-value-values u)))))
 
 (define (abstract-value-process-free-ups-internal f v vs-above)
  ;; needs work: candidate for removal
@@ -4737,7 +4722,7 @@
 
 (define (move-values-up-tree v additions)
  ;; returns: (list v additions)
- ;; needs work: I don't understand this.
+ ;; needs work: rename "tree"
  ;; needs work: candidate for removal
  (when (null? additions)
   (internal-error "Shouldn't we NOT do this if (null? additions)?"))
@@ -4786,105 +4771,75 @@
    (pick-recursive-closures-to-coalesce us))
   (else (internal-error "us must be a list of {non,}recursive-closures"))))
 
-(define (pick-pairs-to-coalesce us) (sublist us 0 2))
-
 (define (pick-bundles-to-coalesce us) (sublist us 0 2))
 
-(define (merge-additions additions1 additions2)
- (cond ((null? additions1) additions2)
-       ((null? additions2) additions1)
-       (else (cons (append (first additions1) (first additions2))
-		   (merge-additions (rest additions1) (rest additions2))))))
+(define (pick-pairs-to-coalesce us) (sublist us 0 2))
 
-(define (union-for-widening v1 v2)
- ;; This assumes that v1 and v2 share the same context. In other words, all
- ;; free ups which are the same refer to the same abstract values.
- ;; returns: (list v additions)
- (cond ((and (up? v1) (up? v2))
-	(cond ((> (up-index v1) (up-index v2)) (create-v-additions v1 v2))
-	      ((< (up-index v1) (up-index v2)) (create-v-additions v2 v1))
-	      (else (list v1 '()))))
-       ((up? v1) (create-v-additions v1 v2))
-       ((up? v2) (create-v-additions v2 v1))
-       (else (list (abstract-value-union-without-unroll v1 v2) '()))))
+(define (unroll v vs-above)
+ (if (up? v)
+     (map (lambda (u)
+	   (if (atomic-proto-abstract-value? u)
+	       u
+	       (make-aggregate-value-with-new-values
+		u
+		(map (lambda (v)
+		      (if (memq v vs-above)
+			  (make-up (+ (positionq v vs-above) 1))
+			  v))
+		     (aggregate-value-values u)))))
+	  (list-ref vs-above (up-index v)))
+     v))
 
-(define (limit-matching-branching-values v
+(define (abstract-value-union-for-widening v1 v2 vs-above)
+ ;; This assumes that v1 and v2 share the same context.
+ (if (and (up? v1) (up? v2) (= (up-index v1) (up-index v2)))
+     v1
+     (remove-redundant-proto-abstract-values
+      (append (unroll v1 vs-above) (unroll v2 vs-above)))))
+
+(define (limit-matching-aggregate-values v
+					 vs-above
 					 k
-					 target-branching-value?
-					 branching-value-match?
+					 target-aggregate-value?
+					 match?
 					 pick-us-to-coalesce)
- ;; returns: (list v additions)
- (let ((v-additions-list
-	(map
-	 (lambda (us)
-	  (let loop ((us us) (additions '()))
-	   (if (<= (length us) k)
-	       (list us additions)
-	       (let* ((u1-u2 (pick-us-to-coalesce us))
-		      (v-additions-list
-		       (map union-for-widening
-			    (branching-value-values (first u1-u2))
-			    (branching-value-values (second u1-u2)))))
-		(loop
-		 (cons (make-branching-value-with-new-values
-			(first u1-u2) (map first v-additions-list))
-		       (removeq (second u1-u2) (removeq (first u1-u2) us)))
-		 (merge-additions
-		  additions
-		  (reduce
-		   merge-additions (map second v-additions-list) '())))))))
-	 (transitive-equivalence-classesp
-	  branching-value-match? (remove-if-not target-branching-value? v)))))
-  (list (append (remove-if target-branching-value? v)
-		(reduce append (map first v-additions-list) '()))
-	(reduce merge-additions (map second v-additions-list) '()))))
+ (when (up? v) (internal-error))
+ (append
+  (reduce
+   append
+   (map (lambda (us)
+	 (let loop ((us us))
+	  (if (<= (length us) k)
+	      us
+	      (let* ((u1-u2 (pick-us-to-coalesce us))
+		     (u1 (first u1-u2))
+		     (u2 (second u1-u2)))
+	       (loop (cons (make-aggregate-value-with-new-values
+			    u1
+			    (map (lambda (v1 v2)
+				  (abstract-value-union-for-widening
+				   v1 v2 (cons v vs-above)))
+				 (aggregate-value-values u1)
+				 (aggregate-value-values u2)))
+			   (removeq u2 (removeq u1 us))))))))
+	(transitive-equivalence-classesp
+	 match? (remove-if-not target-aggregate-value? v)))
+   '())
+  (remove-if target-aggregate-value? v)))
 
-(define (limit-matching-branching-values* limit v)
- (let ((v-additions
-	;; returns: (list v additions)
-	(let loop ((v v))
-	 (if (up? v)
-	     (list v '())
-	     (let ((v-additions (limit v)))
-	      (if (null? (second v-additions))
-		  (if (up? (first v-additions))
-		      (list (first v-additions) '())
-		      (let ((u-additions-list
-			     (map
-			      (lambda (u)
-			       (if (scalar-proto-abstract-value? u)
-				   (list u '())
-				   (let ((v-additions-list
-					  (map loop
-					       (branching-value-values u))))
-				    (list (make-branching-value-with-new-values
-					   u (map first v-additions-list))
-					  (reduce merge-additions
-						  (map second v-additions-list)
-						  '())))))
-			      (first v-additions))))
-		       (if (null? (reduce merge-additions
-					  (map second u-additions-list)
-					  '()))
-			   (list (map first u-additions-list) '())
-			   (let ((v-additions
-				  (move-values-up-tree
-				   (map first u-additions-list)
-				   (reduce merge-additions
-					   (map second u-additions-list)
-					   '()))))
-			    (if (null? (second v-additions))
-				(loop (first v-additions))
-				v-additions)))))
-		  (let ((v-additions
-			 (move-values-up-tree
-			  (first v-additions) (second v-additions))))
-		   (if (null? (second v-additions))
-		       (loop (first v-additions))
-		       v-additions))))))))
-  (unless (null? (second v-additions))
-   (internal-error "Some addition wasn't applied"))
-  (first v-additions)))
+(define (limit-matching-aggregate-values* limit v)
+ (let loop ((v v) (vs-above '()))
+  (if (up? v)
+      v
+      (limit (map (lambda (u)
+		   (if (atomic-proto-abstract-value? u)
+		       u
+		       (make-aggregate-value-with-new-values
+			u
+			(map (lambda (v1) (loop v1 (cons v vs-above)))
+			     (aggregate-value-values u)))))
+		  v)
+	     vs-above))))
 
 (define (limit-matching-reals v)
  ;; This assumes that there are no duplicate concrete reals within an abstract
@@ -4900,28 +4855,32 @@
 (define (limit-matching-closures v)
  (if (eq? *l3* #f)
      v
-     (limit-matching-branching-values*
-      (lambda (v)
-       (limit-matching-branching-values
-	v *l3* closure? closure-match? pick-closures-to-coalesce))
+     (limit-matching-aggregate-values*
+      (lambda (v vs-above)
+       (limit-matching-aggregate-values
+	v vs-above *l3* closure? closure-match? pick-closures-to-coalesce))
       v)))
 
 (define (limit-matching-pairs v)
  (if (eq? *l5* #f)
      v
-     (limit-matching-branching-values*
-      (lambda (v)
-       (limit-matching-branching-values
-	v *l5* tagged-pair? tagged-pair-match? pick-pairs-to-coalesce))
+     (limit-matching-aggregate-values*
+      (lambda (v vs-above)
+       (limit-matching-aggregate-values v
+					vs-above
+					*l5*
+					tagged-pair?
+					tagged-pair-match?
+					pick-pairs-to-coalesce))
       v)))
 
 (define (limit-matching-bundles v)
  (if (eq? *l7* #f)
      v
-     (limit-matching-branching-values*
-      (lambda (v)
-       (limit-matching-branching-values
-	v *l7* bundle? bundle-match? pick-bundles-to-coalesce))
+     (limit-matching-aggregate-values*
+      (lambda (v vs-above)
+       (limit-matching-aggregate-values
+	v vs-above *l7* bundle? bundle-match? pick-bundles-to-coalesce))
       v)))
 
 ;;; Depth
@@ -4929,10 +4888,10 @@
 ;;; A path is an alternating list of abstract values and proto abstract values.
 ;;; The first element of the list is the root and the last element is a leaf.
 ;;; The first element is an abstract value and the last element is either an
-;;; atomic proto abstract value, a branching proto abstract value that has no
+;;; atomic proto abstract value, an aggregate proto abstract value that has no
 ;;; children, an empty abstract value, or an up. Each proto abstract value is
 ;;; a member of the preceeding abstract value and each abstract value is a
-;;; member of the branching values of the preceeding proto abstract value.
+;;; member of the aggregate values of the preceeding proto abstract value.
 
 (define (depth match? type? path)
  (reduce max
@@ -4952,7 +4911,7 @@
 	       (if (> (depth match? type? (cons (first us) path)) k)
 		   (reverse (cons (first us) path))
 		   (middle (rest us)))
-	       (let inner ((vs (branching-value-values (first us))))
+	       (let inner ((vs (aggregate-value-values (first us))))
 		(if (null? vs)
 		    (middle (rest us))
 		    (let ((path (outer (first vs) (cons (first us) path))))
@@ -4983,11 +4942,11 @@
 		     (loop (rest (rest path)) (cons (first path) vs-above)))
 		    (v (replaceq
 			(second path)
-			(make-branching-value-with-new-values
+			(make-aggregate-value-with-new-values
 			 (second path)
 			 (replaceq (third path)
 				   (first v-additions)
-				   (branching-value-values (second path))))
+				   (aggregate-value-values (second path))))
 			(first path))))
 	      (if (null? (second v-additions))
 		  (list v '())
@@ -5081,20 +5040,14 @@
   (if (syntactic-constraints-met? v)
       v
       (loop
-       ;; For some reason, performance is enhanced (at least in some observed
-       ;;   cases) by calling limit-matching-{closures,pairs,bundles} both
-       ;;   before and after reducing the depth of the abstract value.
        (remove-redundant-proto-abstract-values*
 	(limit-matching-reals
 	 (remove-redundant-proto-abstract-values*
-	  (limit-matching-bundles
-	   (limit-matching-pairs
-	    (limit-matching-closures
-	     (limit-matching-pair-depth
-	      (limit-matching-closure-depth
-	       (limit-matching-bundles
-		(limit-matching-pairs
-		 (limit-matching-closures v)))))))))))))))
+	  (limit-matching-pair-depth
+	   (limit-matching-closure-depth
+	    (limit-matching-pairs
+	     (limit-matching-bundles
+	      (limit-matching-closures v))))))))))))
 
 ;;; here I am
 ;;;   flow-analysis

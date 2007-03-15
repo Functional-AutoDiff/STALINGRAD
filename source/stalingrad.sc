@@ -114,9 +114,10 @@
 			       (l4 "closure-nesting-depth-limit"
 				   integer-argument
 				   #f)))
-		 (at-most-one ("abstract-value" abstract-value?)
-			      ("matching-nonrecursive-closure"
-			       matching-nonrecursive-closure?))
+		 ;; needs work: to follow style guildines, should order as
+		 ;;             bundle, reverse tagged value, pair
+		 ;;             while doing that, should rename from l? to
+		 ;;             more descriptive names
 		 (at-most-one ("l5"
 			       l5?
 			       (l5 "matching-pair-abstract-value-limit"
@@ -178,9 +179,6 @@
  (set! *l2* l2)
  (set! *l3* l3)
  (set! *l4* l4)
- (when abstract-value? (set! *depth-measure* abstract-value-depth))
- (when matching-nonrecursive-closure?
-  (set! *depth-measure* matching-nonrecursive-closure-depth))
  (set! *l5* l5)
  (set! *l6* l6)
  (set! *l7* l7)
