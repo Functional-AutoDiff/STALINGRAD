@@ -146,26 +146,6 @@
 
 (define-structure reverse-cache-entry primal reverse)
 
-;;; We used to have abstract-environment slots for abstract closures (both
-;;; recursive and nonrecursive). But since all such abstract environments must
-;;; map precisely the free variables of the expression for nonrecursive
-;;; closures and the letrec recursive closure variables for recursive closures,
-;;; we take the environments simply to be a list of abstract values in the
-;;; canonial order of the free variables or letrec recursive closure variables
-;;; respectively. Note that the abstract values in the abstract closures need
-;;; not be closed, i.e. they may contain deBruin references to containing
-;;; abstract values.
-
-(define-structure abstract-nonrecursive-closure
- abstract-values
- expression)
-
-(define-structure abstract-recursive-closure
- abstract-values
- variables				;vector
- expressions				;vector
- index)
-
 ;;; A proto abstract value is
 ;;; - (),
 ;;; - #t,
@@ -265,8 +245,6 @@
 (define *l3* #f)			;matching closure abstract value limit
 
 (define *l4* #f)			;closure nesting depth limit
-
-(define *depth-measure* 'debugging)
 
 (define *l5* #f)			;matching pair abstract value limit
 
@@ -4147,11 +4125,11 @@
    (else (internal-error)))
   e1 e2))
 
-;;; Real Procedures
+;;; Abstract Reals
 
 (define (abstract-real? u) (or (real? u) (eq? u 'real)))
 
-;;; Closure Procedures
+;;; Abstract Closures
 
 (define (nonrecursive-closure-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
@@ -4161,11 +4139,14 @@
 	  (expression=? (nonrecursive-closure-body u1)
 			(nonrecursive-closure-body u2)))))
 
-(define (new-nonrecursive-closure vs e)
- (let ((xs (free-variables e))
-       (x (lambda-expression-variable e))
-       (e (lambda-expression-body e)))
-  (list (make-nonrecursive-closure xs vs x e))))
+(define (make-abstract-nonrecursive-closure vs e)
+ (if (some empty-abstract-value? vs)
+     (empty-abstract-value)
+     (list (make-nonrecursive-closure
+	    (free-variables e)
+	    vs
+	    (lambda-expression-variable e)
+	    (lambda-expression-body e)))))
 
 (define (recursive-closure-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
@@ -4185,8 +4166,10 @@
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
 
-(define (new-recursive-closure xs vs xs-procedures xs-arguments es i)
- (list (make-recursive-closure xs vs xs-procedures xs-arguments es i)))
+(define (make-abstract-recursive-closure xs vs xs-procedures xs-arguments es i)
+ (if (some empty-abstract-value? vs)
+     (empty-abstract-value)
+     (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))))
 
 (define (recursive-closure-procedure-lambda-expressions v)
  (map-vector new-lambda-expression
@@ -4208,26 +4191,39 @@
        ((recursive-closure? u) (recursive-closure-values u))
        (else (internal-error "Not a closure"))))
 
-;;; Pair Procedures
+;;; Abstract Bundles
+
+(define (make-abstract-bundle v1 v2)
+ (when (or (up? v1) (up? v2)) (unimplemented "Bundles with backlinks"))
+ (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
+     (empty-abstract-value)
+     (list (make-bundle v1 v2))))
+
+(define (bundle-match? u1 u2) #t)
+
+;;; Abstract Reverse Tagged Values
+
+(define (make-abstract-reverse-tagged-value v)
+ (when (up? v) (unimplemented "Reverse-tagged-values with backlinks"))
+ (if (empty-abstract-value? v)
+     (empty-abstract-value)
+     (list (make-reverse-tagged-value v))))
+
+;;; Abstract Tagged Pairs
+
+(define (make-abstract-tagged-pair tags v1 v2)
+ (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
+     (empty-abstract-value)
+     (list (make-tagged-pair tags v1 v2))))
 
 (define (tagged-pair-match? u1 u2)
  (equal? (tagged-pair-tags u1) (tagged-pair-tags u2)))
 
-;;; Bundle Procedures
+;;; Abstract Branching Values
+;;; needs work: "branching" should be called "aggregate"
 
-(define (make-bundle-protected v1 v2)
- (when (or (up? v1) (up? v2)) (unimplemented "Bundles with backlinks"))
- (make-bundle v1 v2))
-
-(define (bundle-match? u1 u2) #t)
-
-;;; Reverse Tagged Value Procedures
-
-(define (make-reverse-tagged-value-protected v)
- (when (up? v) (unimplemented "Reverse-tagged-values with backlinks"))
- (make-reverse-tagged-value v))
-
-;;; Branching Value Procedures
+(define (scalar-proto-abstract-value? u)
+ (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
 
 (define (branching-value-match? u1 u2)
  (or (and (closure? u1) (closure? u2) (closure-match? u1 u2))
@@ -4242,6 +4238,8 @@
 
 (define (make-branching-value-with-new-values u vs)
  ;; performance optimization
+ ;; needs work: To check that no vs is empty-abstract-value.
+ ;; needs work: To check that there are the correct number of vs.
  (cond ((every-eq? vs (branching-value-values u)) u)
        ((nonrecursive-closure? u)
 	(make-nonrecursive-closure (nonrecursive-closure-variables u)
@@ -4257,18 +4255,22 @@
 				(recursive-closure-index u)))
        ((tagged-pair? u)
 	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
-       ((bundle? u) (make-bundle-protected (first vs) (second vs)))
+       ((bundle? u)
+	(when (or (up? (first vs)) (up? (second vs)))
+	 (unimplemented "Bundles with backlinks"))
+	(make-bundle (first vs) (second vs)))
        (else (internal-error))))
 
 ;;; Abstract Values
 
 (define (empty-abstract-value) '())
 
-(define (atomic-proto-abstract-value? u)
- (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
+(define (empty-abstract-value? v) (null? v))
+
+(define (top) 'top)
 
 (define (vlad-value->abstract-value v)
- (if (atomic-proto-abstract-value? v)
+ (if (scalar-proto-abstract-value? v)
      (list v)
      (list (make-branching-value-with-new-values
 	    v (map vlad-value->abstract-value (branching-value-values v))))))
@@ -4456,7 +4458,7 @@
   (if (up? v)
       (if (= (up-index v) (- (length vs-above) 1))
 	  (map (lambda (u)
-		(if (atomic-proto-abstract-value? u)
+		(if (scalar-proto-abstract-value? u)
 		    u
 		    (make-branching-value-with-new-values
 		     u
@@ -4468,7 +4470,7 @@
 	       (last vs-above))
 	  v)
       (let ((v1 (map (lambda (u)
-		      (if (atomic-proto-abstract-value? u)
+		      (if (scalar-proto-abstract-value? u)
 			  u
 			  (make-branching-value-with-new-values
 			   u
@@ -4481,8 +4483,8 @@
 (define (abstract-value-union v1 v2)
  ;; This cannot introduce imprecision.
  ;; optimization
- (cond ((null? v1) v2)
-       ((null? v2) v1)
+ (cond ((empty-abstract-value? v1) v2)
+       ((empty-abstract-value? v2) v1)
        ((eq? v1 v2) v1)
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
@@ -4497,8 +4499,8 @@
  ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
  ;; extension even though it is not in the extension of either argument.
  ;; optimization
- (cond ((null? v1) v2)
-       ((null? v2) v1)
+ (cond ((empty-abstract-value? v1) v2)
+       ((empty-abstract-value? v2) v1)
        ((eq? v1 v2) v1)
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
@@ -4511,7 +4513,7 @@
 (define (imprecise-abstract-value-union v1 v2)
  (abstract-value-union-without-unroll v1 v2))
 
-;;; Abstract-Environment Subset, Equality, Disjointness, and Union
+;;; Abstract Environments
 
 (define (restrict-environment vs xs xs-new)
  (list->vector
@@ -4549,12 +4551,9 @@
 (define (imprecise-abstract-environment-union vs1 vs2)
  (map-vector imprecise-abstract-value-union vs1 vs2))
 
-;;; Abstract-Flow Equality and Union
+;;; Abstract Flows
 
 (define (empty-abstract-flow) '())
-
-(define (create-abstract-flow vs v)
- (list (make-abstract-environment-binding vs v)))
 
 (define (abstract-flow=? bs1 bs2)
  ;; Only used for fixpoint convergence check.
@@ -4595,7 +4594,7 @@
 		 (removeq b2 bs2)))
 	  (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
 
-;;; Abstract-Analysis Equality and Union
+;;; Abstract Analyses
 ;;; It's possible that the order of expressions in abstract analyses (for the
 ;;;   whole program) never changes.  There will be abstract analyses (lists of
 ;;;   abstract expression bindings) which result from the procedure
@@ -4605,11 +4604,12 @@
 
 (define (empty-abstract-analysis) '())
 
-(define (create-abstract-analysis e vs v)
+(define (make-abstract-analysis e vs)
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
    "vs and (length (free-variables e)) should be of same length"))
- (list (make-abstract-expression-binding e (create-abstract-flow vs v))))
+ (list (make-abstract-expression-binding
+	e (list (make-abstract-environment-binding vs (top))))))
 
 (define (abstract-analysis=? bs1 bs2)
  ;; Only used for fixpoint convergence check.
@@ -4644,7 +4644,7 @@
 ;;; General
 
 (define (some-proto-abstract-value?-internal p u vs-above)
- (and (not (atomic-proto-abstract-value? u))
+ (and (not (scalar-proto-abstract-value? u))
       (some (lambda (v) (some-abstract-value?-internal p v vs-above))
 	    (branching-value-values u))))
 
@@ -4665,7 +4665,7 @@
   (if (up? v)
       v
       (map (lambda (u)
-	    (if (atomic-proto-abstract-value? u)
+	    (if (scalar-proto-abstract-value? u)
 		u
 		(make-branching-value-with-new-values
 		 u
@@ -4692,7 +4692,7 @@
 
 (define (proto-abstract-value-process-free-ups-internal f u vs-above)
  ;; needs work: candidate for removal
- (if (atomic-proto-abstract-value? u)
+ (if (scalar-proto-abstract-value? u)
      u
      (make-branching-value-with-new-values
       u
@@ -4852,7 +4852,7 @@
 		      (let ((u-additions-list
 			     (map
 			      (lambda (u)
-			       (if (atomic-proto-abstract-value? u)
+			       (if (scalar-proto-abstract-value? u)
 				   (list u '())
 				   (let ((v-additions-list
 					  (map loop
@@ -4863,10 +4863,9 @@
 						  (map second v-additions-list)
 						  '())))))
 			      (first v-additions))))
-		       (if (null?
-			    (reduce merge-additions
-				    (map second u-additions-list)
-				    '()))
+		       (if (null? (reduce merge-additions
+					  (map second u-additions-list)
+					  '()))
 			   (list (map first u-additions-list) '())
 			   (let ((v-additions
 				  (move-values-up-tree
@@ -4927,10 +4926,6 @@
 
 ;;; Depth
 
-(define (abstract-value-depth path) 'debugging)
-
-(define (matching-nonrecursive-closure-depth path) 'debugging)
-
 ;;; A path is an alternating list of abstract values and proto abstract values.
 ;;; The first element of the list is the root and the last element is a leaf.
 ;;; The first element is an abstract value and the last element is either an
@@ -4948,12 +4943,12 @@
 
 (define (path-of-depth-greater-than-k k match? type? v)
  (let outer ((v v) (path '()))
-  (if (or (up? v) (null? v))
+  (if (or (up? v) (empty-abstract-value? v))
       (if (> (depth match? type? (cons v path)) k) (reverse (cons v path)) #f)
       (let middle ((us v))
        (if (null? us)
 	   #f
-	   (if (atomic-proto-abstract-value? (first us))
+	   (if (scalar-proto-abstract-value? (first us))
 	       (if (> (depth match? type? (cons (first us) path)) k)
 		   (reverse (cons (first us) path))
 		   (middle (rest us)))
@@ -5101,912 +5096,252 @@
 		(limit-matching-pairs
 		 (limit-matching-closures v)))))))))))))))
 
-;;; begin needs work
+;;; here I am
+;;;   flow-analysis
+;;;   top
 
-(define (remove-redundant-abstract-mappings bs)
- ;; An abstract mapping xi->yi in f=[x1->y1, ..., xn->yn] is redundant if
- ;;  there exists xj->yj in f such that:
- ;;   1. (subset? xi xj) AND
- ;;   2. (subset? yj yi)
- (let loop ((i 0) (bs bs))
-  (cond ((= i (length bs)) bs)
-	((some-n
-	  (lambda (j)
-	   (and (not (= i j))
-		(let ((bi (list-ref bs i))
-		      (bj (list-ref bs j)))
-		 (and (abstract-environment-subset?
-		       (abstract-environment-binding-abstract-values bi)
-		       (abstract-environment-binding-abstract-values bj))
-		      (abstract-value-subset?
-		       (abstract-environment-binding-abstract-value bj)
-		       (abstract-environment-binding-abstract-value bi))))))
-	  (length bs))
-	 (loop i (list-remove bs i)))
-	(else (loop (+ i 1) bs)))))
-
-(define (make-abstract-mapping-safe-to-add b bs0)
- ;; In order to add an abstract environment binding b = x0->y0 to an abstract
- ;;  flow bs0 = [x1->y1, ..., xn->yn] without reducing the extension of the
- ;;  abstract flow, we instead add the wider binding b' = x0->y, which
- ;;  satisfies the following conditions:
- ;;    1. (subset? y0 y)
- ;;    2. (forall i:xi intersects x0) (subset? yi y)
- ;;  The result of adding b' to bs0 will be wider than bs0.
- (let ((x-bar (abstract-environment-binding-abstract-values b))
-       (y-bar0 (abstract-environment-binding-abstract-value b)))
-  (let loop ((y-bar y-bar0) (bs bs0))
-   (cond
-    ((null? bs)
-     (if (eq? y-bar y-bar0)
-	 b
-	 (make-abstract-environment-binding x-bar y-bar)))
-    ;; needs work: to check that imprecision is sound
-    ((abstract-environment-nondisjoint?
-      x-bar (abstract-environment-binding-abstract-values (first bs)))
-     (let ((yi-bar (abstract-environment-binding-abstract-value (first bs)))
-	   (i (positionq (first bs) bs0)))
-      (if (abstract-value-subset? yi-bar y-bar)
-	  (loop y-bar (rest bs))
-	  (loop (imprecise-abstract-value-union y-bar yi-bar) (rest bs)))))
-    (else (loop y-bar (rest bs)))))))
-
-(define (introduce-imprecision-to-abstract-mapping-in-flow i bs bs-old)
- (if (memq (list-ref bs i) bs-old)
-     bs
-     (let* ((b (list-ref bs i))
-	    (all-vs-old
-	     (reduce
-	      append
-	      (map (lambda (b)
-		    (cons (abstract-environment-binding-abstract-value b)
-			  (vector->list
-			   (abstract-environment-binding-abstract-values b))))
-		   bs-old)
-	      '()))
-	    (widen-abstract-value
-	     (lambda (v) (if (memq v all-vs-old) v (widen-abstract-value v))))
-	    (vs (abstract-environment-binding-abstract-values b))
-	    (vs-new (map-vector widen-abstract-value vs))
-	    (v (abstract-environment-binding-abstract-value
-		(if (abstract-environment-proper-subset? vs vs-new)
-		    (make-abstract-mapping-safe-to-add
-		     (make-abstract-environment-binding
-		      vs-new (abstract-environment-binding-abstract-value b))
-		     bs)
-		    b)))
-	    (v-new (widen-abstract-value v)))
-      (list-replace bs
-		    (positionq b bs)
-		    (make-abstract-environment-binding vs-new v-new)))))
-
-(define (introduce-imprecision-by-restricting-abstract-function-size k bs)
- ;;    a. *Somehow* pick 2 flow elements b1 and b2 to replace with a new one.
- ;;    b. These two can be replaced with an abstract environment binding which
- ;;       maps Dom(b1) u Dom(b2) to a range AT LEAST as wide as
- ;;       Range(b1) u Range(b2).
- ;;    c. If still over the # of flow elements, repeat.
- (if (<= (length bs) k)
-     bs
-     (introduce-imprecision-by-restricting-abstract-function-size
-      k (let* ((b1 (first bs))
-	       (b2 (second bs))
-	       (bs-rest (rest (rest bs)))
-	       (vs1 (abstract-environment-binding-abstract-values b1))
-	       (v1 (abstract-environment-binding-abstract-value b1))
-	       (vs2 (abstract-environment-binding-abstract-values b2))
-	       (v2 (abstract-environment-binding-abstract-value b2)))
-	 (cons (make-abstract-mapping-safe-to-add
-		(make-abstract-environment-binding
-		 (imprecise-abstract-environment-union vs1 vs2)
-		 (imprecise-abstract-value-union v1 v2))
-		bs-rest)
-	       bs-rest)))))
-
-(define (introduce-imprecision-to-abstract-flow bs bs-old)
- ;; bs is the abstract flow from the current iteration
- ;; bs-old is the abstract flow from the previous iteration
- ;; If bs and bs-old are identical, there is no need to introduce imprecision.
- ;; (introduce-imprecision-to-abstract-mapping-in-flow checks individual
- ;;  abstract environment bindings to see if they need the imprecision
- ;;  introduction carried out on them.)
- (if (eq? bs bs-old)
-     bs
-     (let* ((bs-new
-	     (if (eq? #f *l1*)
-		 bs
-		 (introduce-imprecision-by-restricting-abstract-function-size
-		  *l1* bs)))
-	    (result
-	     ;; The remove-redundant-abstract-mappings in the starting value
-	     ;; for bs has, in the past, sometimes incited a slowdown.
-	     (let loop ((i 0) (bs (remove-redundant-abstract-mappings bs-new)))
-	      (if (= i (length bs))
-		  bs
-		  (loop (+ i 1)
-			(introduce-imprecision-to-abstract-mapping-in-flow
-			 i bs bs-old))))))
-      (remove-redundant-abstract-mappings result))))
-
-;;; Flow Analysis
+;;; Abstract Interpretation
 
 (define (lookup-expression-binding e bs)
  (find-if (lambda (b)
 	   (expression=? e (abstract-expression-binding-expression b)))
 	  bs))
 
-(define (expression-abstract-flow2 e bs)
- (let ((b (lookup-expression-binding e bs)))
-  (if (eq? b #f) #f (abstract-expression-binding-abstract-flow b))))
-
-(define (expression-abstract-flow3 e bs)
- (let ((b (lookup-expression-binding e bs)))
-  (if (eq? b #f) '() (abstract-expression-binding-abstract-flow b))))
-
-(define (mapping-with-vs-in-flow? vs bs)
- (some (lambda (b) (eq? (abstract-environment-binding-abstract-values b) vs))
-       bs))
-
-(define (abstract-analysis-rooted-at e vs)
- (let ((xs (free-variables e)))
-  (cond ((variable-access-expression? e)
-	 (create-abstract-analysis e vs (vector-ref vs 0)))
-	((lambda-expression? e)
-	 (create-abstract-analysis e vs (new-nonrecursive-closure vs e)))
-	((application? e)
-	 (let ((e1 (application-callee e))
-	       (e2 (application-argument e)))
-	  (abstract-analysis-union
-	   (create-abstract-analysis e vs (empty-abstract-value))
-	   (abstract-analysis-union
-	    (abstract-analysis-rooted-at
-	     e1 (restrict-environment vs xs (free-variables e1)))
-	    (abstract-analysis-rooted-at
-	     e2 (restrict-environment vs xs (free-variables e2)))))))
-	((letrec-expression? e)
-	 (abstract-analysis-union
-	  (create-abstract-analysis e vs (empty-abstract-value))
-	  (let ((vs-e
-		 (list->vector
-		  (map
-		   (lambda (x)
-		    (if (memp variable=?
-			      x
-			      (letrec-expression-procedure-variables e))
-			(new-recursive-closure
-			 (letrec-expression-recursive-closure-variables e)
-			 (list->vector
-			  (map
-			   (lambda (x) (vector-ref vs (positionp
-						       variable=? x xs)))
-			   (letrec-expression-recursive-closure-variables e)))
-			 (list->vector
-			  (letrec-expression-procedure-variables e))
-			 (list->vector
-			  (letrec-expression-argument-variables e))
-			 (list->vector (letrec-expression-bodies e))
-			 (positionp
-			  variable=?
-			  x
-			  (letrec-expression-procedure-variables e)))
-			(vector-ref vs (positionp variable=? x xs))))
-		   (free-variables (letrec-expression-body e))))))
-	   (abstract-analysis-rooted-at (letrec-expression-body e) vs-e))))
-	((cons-expression? e)
-	 (let ((e1 (cons-expression-car e))
-	       (e2 (cons-expression-cdr e)))
-	  (abstract-analysis-union
-	   (create-abstract-analysis e vs (empty-abstract-value))
-	   (abstract-analysis-union
-	    (abstract-analysis-rooted-at
-	     e1 (restrict-environment vs xs (free-variables e1)))
-	    (abstract-analysis-rooted-at
-	     e2 (restrict-environment vs xs (free-variables e2)))))))
-	(else (internal-error "Not a valid expression")))))
-
 (define (initial-abstract-analysis e bs)
- (let ((vs (list->vector
-	    (map (lambda (x)
-		  (vlad-value->abstract-value
-		   (value-binding-value
-		    (find-if
-		     (lambda (b) (variable=? x (value-binding-variable b)))
-		     bs))))
-		 (free-variables e)))))
-  (abstract-analysis-rooted-at e vs)))
+ (make-abstract-analysis
+  e
+  (map
+   (lambda (x)
+    (vlad-value->abstract-value
+     (value-binding-value
+      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
+   (free-variables e))))
 
-(define (abstract-value-in-matching-abstract-environment e vs bs)
- ;; vs is an abstract environment. bs is an abstract analysis. We want to find
- ;; an abstract value for e when e is evaluated in the abstract environment vs.
- ;; By corollary 1 we can choose any abstract-environment binding with a wider
- ;; abstract environment. We could compute the intersection of all such. Such
- ;; an intersection only depends on the narrowest such. We find the narrowest
- ;; such and pick the first arbitrarily since we lack the ability to intersect
- ;; abstract values. This will always choose an abstract-environment binding
- ;; with an equivalent abstract environment, if there is one, since it will be
- ;; the narrowest among the wider ones.
- (if (some-vector (lambda (v) (eq? v (empty-abstract-value))) vs)
-     (empty-abstract-value)
-     (let ((bs (minimal-elements
-		(lambda (b1 b2)
-		 (abstract-environment-proper-subset?
-		  (abstract-environment-binding-abstract-values b1)
-		  (abstract-environment-binding-abstract-values b2)))
-		(remove-if-not
-		 (lambda (b)
-		  (abstract-environment-subset?
-		   vs (abstract-environment-binding-abstract-values b)))
-		 (expression-abstract-flow3 e bs)))))
-      (if (null? bs)
-	  (begin (set! *lookup-misses* (+ *lookup-misses* 1))
-		 (empty-abstract-value))
-	  (abstract-environment-binding-abstract-value (first bs))))))
+(define (abstract-eval1 e vs bs) 'debugging)
 
-(define (abstract-apply-nonrecursive-closure-to-u p u1 u2)
- (let ((xs (nonrecursive-closure-variables u1)))
-  (p (nonrecursive-closure-body u1)
-     (list->vector
-      (map (lambda (x)
-	    (if (variable=? x (nonrecursive-closure-variable u1))
-		(list u2)
-		(vector-ref (nonrecursive-closure-values u1)
-			    (positionp variable=? x xs))))
-	   (free-variables (nonrecursive-closure-body u1)))))))
+(define (positionp-vector p x v)
+ (let loop ((i 0))
+  (cond ((>= i (vector-length v)) #f)
+	((p x (vector-ref v i)) i)
+	(else (loop (+ i 1))))))
 
-(define (abstract-apply-recursive-closure-to-u p u1 u2)
- (let ((e (vector-ref (recursive-closure-procedure-lambda-expressions u1)
-		      (recursive-closure-index u1)))
-       (xs-procedures
-	(vector->list (recursive-closure-procedure-variables u1)))
-       (x-argument (vector-ref (recursive-closure-argument-variables u1)
-			       (recursive-closure-index u1)))
-       (xs (recursive-closure-variables u1)))
-  (p (lambda-expression-body e)
-     (list->vector
-      (map (lambda (x)
-	    (cond
-	     ((variable=? x (lambda-expression-variable e)) (list u2))
-	     ((memp variable=? x xs-procedures)
-	      (new-recursive-closure
-	       (recursive-closure-variables u1)
-	       (recursive-closure-values u1)
-	       (recursive-closure-procedure-variables u1)
-	       (recursive-closure-argument-variables u1)
-	       (recursive-closure-bodies u1)
-	       (positionp variable=? x xs-procedures)))
-	     (else (vector-ref (recursive-closure-values u1)
-			       (positionp variable=? x xs)))))
-	   (free-variables (lambda-expression-body e)))))))
-
-(define (abstract-apply-closure-to-u p u1 u2)
- (cond ((nonrecursive-closure? u1)
-	(abstract-apply-nonrecursive-closure-to-u p u1 u2))
-       ((recursive-closure? u1)
-	(abstract-apply-recursive-closure-to-u p u1 u2))
-       (else (internal-error))))
-
-(define (abstract-apply-nonrecursive-closure-to-v p u1 v2)
- (let ((xs (nonrecursive-closure-variables u1)))
-  (p (nonrecursive-closure-body u1)
-     (list->vector
-      (map (lambda (x)
-	    (if (variable=? x (nonrecursive-closure-variable u1))
-		v2
-		(vector-ref (nonrecursive-closure-values u1)
-			    (positionp variable=? x xs))))
-	   (free-variables (nonrecursive-closure-body u1)))))))
-
-(define (abstract-apply-recursive-closure-to-v p u1 v2)
- (let ((e (vector-ref (recursive-closure-procedure-lambda-expressions u1)
-		      (recursive-closure-index u1)))
-       (xs-procedures
-	(vector->list (recursive-closure-procedure-variables u1)))
-       (x-argument (vector-ref (recursive-closure-argument-variables u1)
-			       (recursive-closure-index u1)))
-       (xs (recursive-closure-variables u1)))
-  (p (lambda-expression-body e)
-     (list->vector
-      (map (lambda (x)
-	    (cond
-	     ((variable=? x (lambda-expression-variable e)) v2)
-	     ((memp variable=? x xs-procedures)
-	      (new-recursive-closure
-	       (recursive-closure-variables u1)
-	       (recursive-closure-values u1)
-	       (recursive-closure-procedure-variables u1)
-	       (recursive-closure-argument-variables u1)
-	       (recursive-closure-bodies u1)
-	       (positionp variable=? x xs-procedures)))
-	     (else (vector-ref (recursive-closure-values u1)
-			       (positionp variable=? x xs)))))
-	   (free-variables (lambda-expression-body e)))))))
-
-(define (abstract-apply-closure-to-v p u1 v2)
- (cond ((nonrecursive-closure? u1)
-	(abstract-apply-nonrecursive-closure-to-v p u1 v2))
-       ((recursive-closure? u1)
-	(abstract-apply-recursive-closure-to-v p u1 v2))
-       (else (internal-error))))
+(define (abstract-apply-closure p u1 v2)
+ (cond
+  ((nonrecursive-closure? u1)
+   (p (nonrecursive-closure-body u1)
+      (list->vector
+       (map (lambda (x)
+	     (if (variable=? x (nonrecursive-closure-variable u1))
+		 v2
+		 (vector-ref
+		  (nonrecursive-closure-values u1)
+		  (positionp
+		   variable=? x (nonrecursive-closure-variables u1)))))
+	    (free-variables (nonrecursive-closure-body u1))))))
+  ((recursive-closure? u1)
+   (p (vector-ref (recursive-closure-bodies u1) (recursive-closure-index u1))
+      (list->vector
+       (map (lambda (x)
+	     (cond
+	      ((variable=?
+		x
+		(vector-ref (recursive-closure-argument-variables u1)
+			    (recursive-closure-index u1)))
+	       v2)
+	      ((some-vector (lambda (x1) (variable=? x x1))
+			    (recursive-closure-procedure-variables u1))
+	       (make-abstract-recursive-closure
+		(recursive-closure-variables u1)
+		(recursive-closure-values u1)
+		(recursive-closure-procedure-variables u1)
+		(recursive-closure-argument-variables u1)
+		(recursive-closure-bodies u1)
+		(positionp-vector
+		 variable=? x (recursive-closure-procedure-variables u1))))
+	      (else
+	       (vector-ref
+		(recursive-closure-values u1)
+		(positionp variable=? x (recursive-closure-variables u1))))))
+	    (free-variables (vector-ref (recursive-closure-bodies u1)
+					(recursive-closure-index u1)))))))
+  (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
- ;; bs is an analysis.
- (let ((lookup-in-analysis
-	(lambda (e vs)
-	 (abstract-value-in-matching-abstract-environment e vs bs))))
-  (reduce
-   abstract-value-union
-   (map (lambda (u1)
-	 (cond ((eq? v2 (empty-abstract-value)) (empty-abstract-value))
-	       ((primitive-procedure? u1)
-		(reduce abstract-value-union
-			(map (lambda (u2)
-			      ((primitive-procedure-abstract-procedure u1) u2))
-			     (closed-proto-abstract-values v2))
-			(empty-abstract-value)))
-	       ((closure? u1)
-		(abstract-apply-closure-to-v lookup-in-analysis u1 v2))
-	       (else (compile-time-warning
-		      "Application callee not a procedure: " u1))))
-	(closed-proto-abstract-values v1))
-   (empty-abstract-value))))
+ (reduce
+  abstract-value-union
+  (map
+   (lambda (u1)
+    (cond
+     ((primitive-procedure? u1)
+      (reduce abstract-value-union
+	      (map (lambda (u2)
+		    ((primitive-procedure-abstract-procedure u1) u2))
+		   (closed-proto-abstract-values v2))
+	      (empty-abstract-value)))
+     ((closure? u1)
+      (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs)) u1 v2))
+     (else (compile-time-warning "Target might not be a procedure" u1))))
+   (closed-proto-abstract-values v1))
+  (empty-abstract-value)))
+
+(define (abstract-eval e vs bs)
+ (let ((xs (free-variables e)))
+  (cond
+   ((variable-access-expression? e)
+    (vector-ref
+     vs (positionp variable=? (variable-access-expression-variable e) xs)))
+   ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e))
+   ((application? e)
+    (abstract-apply
+     (abstract-eval1
+      (application-callee e)
+      (restrict-environment vs xs (free-variables (application-callee e)))
+      bs)
+     (abstract-eval1
+      (application-argument e)
+      (restrict-environment vs xs (free-variables (application-argument e)))
+      bs)
+     bs))
+   ((letrec-expression? e)
+    (abstract-eval1
+     (letrec-expression-body e)
+     (list->vector
+      (map (lambda (x)
+	    (if (memp variable=? x (letrec-expression-procedure-variables e))
+		(make-abstract-recursive-closure
+		 (letrec-expression-recursive-closure-variables e)
+		 (restrict-environment
+		  vs xs (letrec-expression-recursive-closure-variables e))
+		 (list->vector (letrec-expression-procedure-variables e))
+		 (list->vector (letrec-expression-argument-variables e))
+		 (list->vector (letrec-expression-bodies e))
+		 (positionp
+		  variable=? x (letrec-expression-procedure-variables e)))
+		(vector-ref vs (positionp variable=? x xs))))
+	   (free-variables (letrec-expression-body e))))
+     bs))
+   ((cons-expression? e)
+    (make-abstract-tagged-pair
+     (cons-expression-tags e)
+     (abstract-eval1
+      (cons-expression-car e)
+      (restrict-environment vs xs (free-variables (cons-expression-car e)))
+      bs)
+     (abstract-eval1
+      (cons-expression-cdr e)
+      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
+      bs)))
+   (else (internal-error)))))
+
+(define (initial-analysis-ranges bs)
+ (map (lambda (b1)
+       (make-abstract-expression-binding
+	(abstract-expression-binding-expression b1)
+	(map (lambda (b2)
+	      (make-abstract-environment-binding
+	       (abstract-environment-binding-abstract-values b2) (top)))
+	     (abstract-expression-binding-abstract-flow b1))))
+      bs))
+
+(define (update-analysis-ranges bs)
+ (map (lambda (b1)
+       (make-abstract-expression-binding
+	(abstract-expression-binding-expression b1)
+	(map (lambda (b2)
+	      (make-abstract-environment-binding
+	       (abstract-environment-binding-abstract-values b2)
+	       (abstract-eval (abstract-expression-binding-expression b1)
+			      (abstract-environment-binding-abstract-values b2)
+			      bs)))
+	     (abstract-expression-binding-abstract-flow b1))))
+      bs))
+
+(define (update-analysis-ranges* bs)
+ (let loop ((bs (initial-analysis-ranges bs)))
+  (let ((bs1 (update-analysis-ranges bs)))
+   (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 (define (abstract-apply-prime v1 v2)
  (reduce
   abstract-analysis-union
-  (map (lambda (u1)
-	(cond ((eq? v2 (empty-abstract-value)) (empty-abstract-analysis))
-	      ((primitive-procedure? u1) (empty-abstract-analysis))
-	      ((closure? u1)
-	       (abstract-apply-closure-to-v abstract-analysis-rooted-at u1 v2))
-	      (else (empty-abstract-analysis))))
-       (closed-proto-abstract-values v1))
+  (map
+   (lambda (u1)
+    (cond ((primitive-procedure? u1) (empty-abstract-analysis))
+	  ((closure? u1)
+	   (abstract-apply-closure make-abstract-analysis u1 v2))
+	  (else (compile-time-warning "Target might not be a procedure" u1))))
+   (closed-proto-abstract-values v1))
   (empty-abstract-analysis)))
 
-;;; add-new-mappings-to-abstract-flow acts as a sort of abstract flow union--
-;;; one that ensures that elements of bs-new are added in a monotonic manner.
-(define (add-new-mappings-to-abstract-flow bs bs-new)
- (if (null? bs-new)
-     bs
-     (if (some (lambda (b1)
-		(abstract-environment-subset?
-		 (abstract-environment-binding-abstract-values (first bs-new))
-		 (abstract-environment-binding-abstract-values b1)))
-	       bs)
-	 ;; Given b1,
-	 ;; let b2       = (first bs-new)
-	 ;;     x1 -> y1 = b1
-	 ;;     x2 -> y2 = b2
-	 ;; Now if (subset? x2 x1), in order to add b1 monotonicly, we would
-	 ;; instead add b1' = x1 -> y1', such that (subset? y2 y1').
-	 ;; However, this would make b1' redundant, so we skip the whole
-	 ;; exercise and don't add b1.
-	 (add-new-mappings-to-abstract-flow bs (rest bs-new))
-	 (add-new-mappings-to-abstract-flow
-	  (cons (make-abstract-mapping-safe-to-add (first bs-new) bs) bs)
-	  (rest bs-new)))))
-
-(define (update-abstract-analysis-ranges bs bs-old)
- ;; bs is the abstract analysis from some iteration i of flow-analysis
- ;; bs-old is the abstract analysis from iteration i-1 of flow-analysis
- (let* ((bs-unchanged?
-	 (map (lambda (b)
-	       (let* ((e (abstract-expression-binding-expression b))
-		      (bs-e (abstract-expression-binding-abstract-flow b))
-		      (bs-old-e (expression-abstract-flow3 e bs-old)))
-		(cons e (or (eq? bs-e bs-old-e)
-			    ;; to catch cases where flow was simply recreated
-			    (set-equalq? bs-e bs-old-e)))))
-	      bs))
-	(bs-unchanged-for-e?
-	 (lambda (e) (let ((result (assp expression=? e bs-unchanged?)))
-		      (if result (cdr result) #f)))))
-  (map
-   (lambda (b)
-    (let* ((e (abstract-expression-binding-expression b))
-	   (xs (free-variables e)))
-     (if (or (variable-access-expression? e) (lambda-expression? e))
-	 b
-	 (make-abstract-expression-binding
-	  e
-	  (let*
-	    ((bs-e (abstract-expression-binding-abstract-flow b))
-	     (result
-	      (map
-	       (lambda (b2)
-		(let*
-		  ((vs (abstract-environment-binding-abstract-values b2))
-		   (v (abstract-environment-binding-abstract-value b2))
-		   (v-new
-		    (cond
-		     ((variable-access-expression? e) (internal-error))
-		     ((lambda-expression? e) (internal-error))
-		     ((application? e)
-		      ;; e: (e1 e2)
-		      (let* ((e1 (application-callee e))
-			     (e2 (application-argument e))
-			     (xs1 (free-variables e1))
-			     (xs2 (free-variables e2)))
-		       ;; e can be safely left unupdated if:
-		       ;;   1. exists vs->v' in (bs-old e)
-		       ;;      (basically, vs same as last iter)
-		       ;;      - NOTE: we don't say exists vs->v' in (bs e)
-		       ;;      - This means that the same environment vs got
-		       ;;        evaluated last iteration as we're trying to
-		       ;;        evaluate now.
-		       ;;   2. (bs e1) = (bs-old e1)
-		       ;;   3. (bs e2) = (bs-old e2)
-		       ;;   AND
-		       ;;   4. forall u in (bs e1 vs)
-		       ;;        u = <sigma,e'> => (bs e') = (bs-old e') AND
-		       ;;        u = <sigma,xs,es',i> =>
-		       ;;                       (bs es'[i]) = (bs-old es'[i])
-		       (if (and
-			    (mapping-with-vs-in-flow?
-			     vs (expression-abstract-flow3 e bs-old))
-			    (bs-unchanged-for-e? e1)
-			    (bs-unchanged-for-e? e2)
-			    (every
-			     (lambda (u)
-			      (cond
-			       ((nonrecursive-closure? u)
-				(bs-unchanged-for-e?
-				 (nonrecursive-closure-body u)))
-			       ((recursive-closure? u)
-				(bs-unchanged-for-e?
-				 (vector-ref (recursive-closure-bodies u)
-					     (recursive-closure-index u))))
-			       (else #t)))
-			     (abstract-value-in-matching-abstract-environment
-			      e1 (restrict-environment vs xs xs1) bs)))
-			   v
-			   (abstract-apply
-			    (abstract-value-in-matching-abstract-environment
-			     e1 (restrict-environment vs xs xs1) bs)
-			    (abstract-value-in-matching-abstract-environment
-			     e2 (restrict-environment vs xs xs2) bs)
-			    bs))))
-		     ((letrec-expression? e)
-		      ;; e: (letrec x1 = e1, ..., xn = en in e-body)
-		      (let ((es (letrec-expression-bodies e))
-			    (e-body (letrec-expression-body e))
-			    (xs1 (letrec-expression-procedure-variables e))
-			    (xs2 (letrec-expression-argument-variables e))
-			    (xs-closure
-			     (letrec-expression-recursive-closure-variables
-			      e)))
-		       ;; e can be safely left un-updated if:
-		       ;;   1. exists vs->v' in (bs-old e)
-		       ;;      (basically, vs same as last iter)
-		       ;;      - NOTE: we don't say exists vs->v' in (bs e)
-		       ;;      - This means that the same environment vs got
-		       ;;        evaluated last iteration as we're trying to
-		       ;;        evaluate now.
-		       ;;   2. (bs e-body) = (bs-old e-body)
-		       (if (and (mapping-with-vs-in-flow?
-				 vs (expression-abstract-flow3 e bs-old))
-				(bs-unchanged-for-e? e-body))
-			   v
-			   (abstract-value-in-matching-abstract-environment
-			    e-body
-			    (list->vector
-			     (map (lambda (x)
-				   (if (memp variable=? x xs1)
-				       (new-recursive-closure
-					xs-closure
-					(restrict-environment vs xs xs-closure)
-					(list->vector xs1)
-					(list->vector xs2)
-					(list->vector es)
-					(positionp variable=? x xs1))
-				       (vector-ref vs (positionq x xs))))
-				  (free-variables e-body)))
-			    bs))))
-		     ((cons-expression? e)
-		      ;; e: (cons e1 e2)
-		      ;; e can be safely left un-updated if:
-		      ;;   1. exists vs->v' in (bs-old e)--vs same as last
-		      ;;                                   iter
-		      ;;      - NOTE: we don't say exists vs->v' in (bs e)
-		      ;;      - This means that the same environment vs got
-		      ;;        evaluated last iteration as we're trying to
-		      ;;        evaluate now.
-		      ;;   2. (bs e1) = (bs-old e1)
-		      ;;   3. (bs e2) = (bs-old e2)
-		      (let* ((e1 (cons-expression-car e))
-			     (e2 (cons-expression-cdr e))
-			     (xs1 (free-variables e1))
-			     (xs2 (free-variables e2)))
-		       (if (and (mapping-with-vs-in-flow?
-				 vs (expression-abstract-flow3 e bs-old))
-				(bs-unchanged-for-e? e1)
-				(bs-unchanged-for-e? e2))
-			   v
-			   (let
-			     ((v-car
-			       (abstract-value-in-matching-abstract-environment
-				e1 (restrict-environment vs xs xs1) bs))
-			      (v-cdr
-			       (abstract-value-in-matching-abstract-environment
-				e2 (restrict-environment vs xs xs2) bs)))
-			    (if (or (null? v-car) (null? v-cdr))
-				(empty-abstract-value)
-				(list
-				 (make-tagged-pair
-				  (cons-expression-tags e) v-car v-cdr)))))))
-		     (else (internal-error)))))
-		 (cond ((eq? v-new v) b2)
-		       ((abstract-value-subset? v-new v) b2)
-		       ((abstract-value-subset? v v-new)
-			(make-abstract-environment-binding vs v-new))
-		       (else (make-abstract-environment-binding
-			      vs (abstract-value-union v v-new))))))
-	       bs-e)))
-	   (if (every-eq? result bs-e) bs-e result))))))
-   bs)))
-
-(define (update-abstract-analysis-domains bs bs-old)
- ;; bs is the abstract analysis from some iteration i of flow-analysis
- ;; bs-old is the abstract analysis from iteration i-1 of flow-analysis
- ;; There are two ways in which an abstract environment binding b in an abstract
- ;; flow for expression e can be introduced to the analysis:
- ;;   1. via update-abstract-analysis-domains.
- ;;      If this is how b was introduced, then the appropriate bindings were
- ;;      also introduced for any subexpression of e at the same time as was b.
- ;;   2. via introduce-imprecision-to-abstract-flow.
- ;;        If this is the case, then it is possible that appropriate bindings
- ;;      weren't introduced for subexpressions of e if e was an application,
- ;;      letrec expression, or cons expression.  In this case, we must introduce
- ;;      the appropriate bindings for subexpressions of e.
- ;;        Let's consider possible cases under which this might happen:
- ;;          An expression e which is a non-lambda expression with
- ;;         subexpressions has an entry vs1 -> v1 in its flow.
- ;;         It's children have appropriately derived entries in their flows.
- ;;          There are two main ways that vs1 can be widened:
- ;;           a. No violation of *l1*.  Just widen a value in vs1.
- ;;           b. *l1* violated for e.  Size of flow reduced.  This produces a
- ;;             new environment vs1'.
- ;;          In case (a), this widening will happen in the corresponding
- ;;         environment in the flow in the subexpression(s) of e. No issue here.
- ;;          In case (b), this widening will likely not happen in the same way
- ;;         (if at all) for the flow(s) belonging to the subexpression(s) of e.
- ;;         Here is where we must be careful to create a corresponding entry in
- ;;         each flow belonging to subexpressions of e.  bs-to-add is a
- ;;         conservative approximation of this.
- ;;  There is only one other reason that a new abstract environment binding
- ;; needs added to an abstract flow--because the abstract flows of the
- ;; subexpressions of an application are changed.  This is dealt with in the
- ;; second argument of the abstract-analysis-union in the body of this let*.
- (let*
-   ((bs-to-add
-     (reduce
-      abstract-analysis-union
-      (map
-       (lambda (b)
-	(let* ((e (abstract-expression-binding-expression b))
-	       (xs (free-variables e))
-	       (flow-old (expression-abstract-flow3 e bs-old)))
-	 ;; This is a conservative approximation; it almost certainly a large
-	 ;; overapproximation.
-	 (cond ((variable-access-expression? e) (empty-abstract-analysis))
-	       ((lambda-expression? e) (empty-abstract-analysis))
-	       ((application? e)
-		(let* ((e1 (application-callee e))
-		       (e2 (application-argument e))
-		       (xs1 (free-variables e1))
-		       (xs2 (free-variables e2)))
-		 (reduce
-		  abstract-analysis-union
-		  (map
-		   (lambda (b)
-		    (let ((vs (abstract-environment-binding-abstract-values
-			       b)))
-		     (if (mapping-with-vs-in-flow? vs flow-old)
-			 '()
-			 (abstract-analysis-union
-			  (abstract-analysis-rooted-at e vs)
-			  (abstract-apply-prime
-			   (abstract-value-in-matching-abstract-environment
-			    e1 (restrict-environment vs xs xs1) bs)
-			   (abstract-value-in-matching-abstract-environment
-			    e2 (restrict-environment vs xs xs2) bs))))))
-		   (abstract-expression-binding-abstract-flow b))
-		  (empty-abstract-analysis))))
-	       ((or (letrec-expression? e) (cons-expression? e))
-		(reduce
-		 abstract-analysis-union
-		 (map
-		  (lambda (b)
-		   (abstract-analysis-rooted-at
-		    e (abstract-environment-binding-abstract-values b)))
-		  (abstract-expression-binding-abstract-flow b))
-		 (empty-abstract-analysis)))
-	       (else (internal-error)))))
+(define (abstract-eval-prime e vs bs)
+ (let ((xs (free-variables e)))
+  (cond
+   ((variable-access-expression? e) (empty-abstract-analysis))
+   ((lambda-expression? e) (empty-abstract-analysis))
+   ((application? e)
+    (abstract-analysis-union
+     (abstract-analysis-union
+      (make-abstract-analysis
+       (application-callee e)
+       (restrict-environment vs xs (free-variables (application-callee e))))
+      (make-abstract-analysis
+       (application-argument e)
+       (restrict-environment vs xs (free-variables (application-argument e)))))
+     (abstract-apply-prime
+      (abstract-eval1
+       (application-callee e)
+       (restrict-environment vs xs (free-variables (application-callee e)))
        bs)
-      (empty-abstract-analysis)))
-    (bs-unchanged?
-     (map (lambda (b)
-	   (let* ((e (abstract-expression-binding-expression b))
-		  (bs-e (abstract-expression-binding-abstract-flow b))
-		  (bs-old-e (expression-abstract-flow3 e bs-old)))
-	    (cons e (or (eq? bs-e bs-old-e)
-			;; to catch cases where flow was simply recreated
-			(set-equalq? bs-e bs-old-e)))))
-	  bs))
-    (bs-unchanged-for-e?
-     (lambda (e)
-      (let ((result (assp expression=? e bs-unchanged?)))
-       (if result (cdr result) (internal-error "result not found"))))))
-  (abstract-analysis-union
-   bs-to-add
-   (reduce
-    abstract-analysis-union
-    (map
-     (lambda (b)
-      (let* ((e (abstract-expression-binding-expression b))
-	     (xs (free-variables e)))
-       (cond ((variable-access-expression? e) (empty-abstract-analysis))
-	     ((lambda-expression? e) (empty-abstract-analysis))
-	     ((application? e)
-	      ;; e: (e1 e2)
-	      (let* ((e1 (application-callee e))
-		     (e2 (application-argument e))
-		     (xs1 (free-variables e1))
-		     (xs2 (free-variables e2)))
-	       ;; No new mappings need to be added if:
-	       ;;   1. exists vs->v' in (bs-old e)--vs same as last iter
-	       ;;      - NOTE: we don't say exists vs->v' in (bs e)
-	       ;;      - This means that the same environment vs gets
-	       ;;        evaluated to form bs as we're trying to
-	       ;;        evaluate now.
-	       ;;      - A "column" (abstract environment binding, really)
-	       ;;        vs->v' can only be introduced by:
-	       ;;          a. update-abstract-analysis-domains
-	       ;;             - If this is the case, then e1 and e2 have had
-	       ;;               the appropriate columns added to them already.
-	       ;;          b. introduce-imprecision-to-abstract-flow
-	       ;;             - If this is the case, then e1 and e2 have NOT
-	       ;;                had the appropriate columns added to them.
-	       ;;   2. (bs e1) = (bs-old e1) AND
-	       ;;   3. (bs e2) = (bs-old e2)
-	       (if (or (null? bs)
-		       (and (bs-unchanged-for-e? e1)
-			    (bs-unchanged-for-e? e2)))
-		   (empty-abstract-analysis)
-		   (reduce
-		    abstract-analysis-union
-		    (map
-		     (lambda (b)
-		      (let ((vs (abstract-environment-binding-abstract-values
-				 b)))
-		       (abstract-apply-prime
-			(abstract-value-in-matching-abstract-environment
-			 e1 (restrict-environment vs xs xs1) bs)
-			(abstract-value-in-matching-abstract-environment
-			 e2 (restrict-environment vs xs xs2) bs))))
-		     (abstract-expression-binding-abstract-flow b))
-		    (empty-abstract-analysis)))))
-	     ((letrec-expression? e) (empty-abstract-analysis))
-	     ((cons-expression? e) (empty-abstract-analysis))
-	     (else (internal-error)))))
-     bs)
-    (empty-abstract-analysis)))))
+      (abstract-eval1
+       (application-argument e)
+       (restrict-environment vs xs (free-variables (application-argument e)))
+       bs))))
+   ((letrec-expression? e)
+    (make-abstract-analysis
+     (letrec-expression-body e)
+     (list->vector
+      (map (lambda (x)
+	    (if (memp variable=? x (letrec-expression-procedure-variables e))
+		(make-abstract-recursive-closure
+		 (letrec-expression-recursive-closure-variables e)
+		 (restrict-environment
+		  vs xs (letrec-expression-recursive-closure-variables e))
+		 (list->vector (letrec-expression-procedure-variables e))
+		 (list->vector (letrec-expression-argument-variables e))
+		 (list->vector (letrec-expression-bodies e))
+		 (positionp
+		  variable=? x (letrec-expression-procedure-variables e)))
+		(vector-ref vs (positionp variable=? x xs))))
+	   (free-variables (letrec-expression-body e))))))
+   ((cons-expression? e)
+    (abstract-analysis-union
+     (make-abstract-analysis
+      (cons-expression-car e)
+      (restrict-environment vs xs (free-variables (cons-expression-car e))))
+     (make-abstract-analysis
+      (cons-expression-cdr e)
+      (restrict-environment vs xs (free-variables (cons-expression-cdr e))))))
+   (else (internal-error)))))
 
-(define (update-abstract-analysis bs bs-old)
- ;; The abstract evaluator induces an abstract analysis. This updates the
- ;; abstract values of all of the abstract-environment bindings of all of the
- ;; abstract expression bindings in the abstract analysis. The updated abstract
- ;; value is calculated by abstract evaluation in the abstract environment of
- ;; the abstract-environment binding. Recursive calls to the abstract evaluator
- ;; are replaced with abstract-value-in-matching-abstract-environment.
- (let* ((bs1 (update-abstract-analysis-ranges bs bs-old))
-	(bs2 (update-abstract-analysis-domains bs bs-old))
-	;; abstract expression bindings whose expressions aren't yet entered in
-	;; *expression-list*
-	(bs-new-e (remove-if (lambda (b)
-			      (memp expression=?
-				    (abstract-expression-binding-expression b)
-				    *expression-list*))
-			     bs2))
-	(bs2 (remove-if (lambda (b) (memq b bs-new-e)) bs2))
-	(es-new (map abstract-expression-binding-expression bs-new-e)))
-  (unless (null? es-new)
-   (set! *expression-list* (append *expression-list* es-new)))
-  (append
-   ;; This whole map expression works to union bs1 and bs2 together while at
-   ;; the same time enforcing monotonicity of the update operation.
-   (map (lambda (b1)
-	 (let* ((e (abstract-expression-binding-expression b1))
-		(bs1 (abstract-expression-binding-abstract-flow b1))
-		(bs2 (expression-abstract-flow3 e bs2))
-		(bs-old (expression-abstract-flow3 e bs))
-		;; abstract environments are unchanged in bs1
-		;; abstract environments can only be "added" in bs2
-		;;   - those "added" can be either:
-		;;     1. truly distinct
-		;;     2. repeated copies of an old environment
-		;;   - for those fitting #1,
-		;;     add-new-mappings-to-abstract-flow
-		;;     ensures that the union of bs1 and bs2 is monotonic by
-		;;     adjusting the values environments map to.
-		;;   - those fitting #2 are discarded
-		(bs-new (add-new-mappings-to-abstract-flow bs1 bs2))
-		(bs-new2
-		 (introduce-imprecision-to-abstract-flow bs-new bs-old)))
-	  (make-abstract-expression-binding e bs-new2)))
-	bs1)
-   (map (lambda (b)
-	 (let* ((e (abstract-expression-binding-expression b))
-		(bs (abstract-expression-binding-abstract-flow b))
-		(bs-new (introduce-imprecision-to-abstract-flow
-			 bs (empty-abstract-flow))))
-	  (make-abstract-expression-binding e bs-new)))
-	bs-new-e))))
-
-;;; Informational Procedures
-
-(define (output-expression-statistics-for-analysis bs)
- (let ((num-expressions (length bs))
-       (num-constant-expressions
-	(count-if (lambda (b)
-		   (constant-expression?
-		    (abstract-expression-binding-expression b)))
-		  bs))
-       (num-variable-access-expressions
-	(count-if (lambda (b)
-		   (variable-access-expression?
-		    (abstract-expression-binding-expression b)))
-		  bs))
-       (num-lambda-expressions
-	(count-if (lambda (b)
-		   (lambda-expression?
-		    (abstract-expression-binding-expression b)))
-		  bs))
-       (num-applications
-	(count-if (lambda (b)
-		   (application? (abstract-expression-binding-expression b)))
-		  bs))
-       (num-letrec-expressions
-	(count-if (lambda (b)
-		   (letrec-expression?
-		    (abstract-expression-binding-expression b)))
-		  bs))
-       (num-cons-expressions
-	(count-if (lambda (b)
-		   (cons-expression?
-		    (abstract-expression-binding-expression b)))
-		  bs)))
-  (format #t "Number of expressions: ~s~%" num-expressions)
-  (format #t "  constant expressions: ~s~%"
-	  num-constant-expressions)
-  (format #t "  variable-access expressions: ~s~%"
-	  num-variable-access-expressions)
-  (format #t "  lambda expressions: ~s~%" num-lambda-expressions)
-  (format #t "  applications: ~s~%" num-applications)
-  (format #t "  letrec expressions: ~s~%" num-letrec-expressions)
-  (format #t "  cons expressions: ~s~%" num-cons-expressions)))
-
-(define (abstract-value-size v)
- (if (up? v)
-     (list 0 0)
-     (let inner ((vs-to-explore
-		  (reduce append
-			  (map (lambda (u)
-				(if (atomic-proto-abstract-value? u)
-				    '()
-				    (branching-value-values u)))
-			       v)
-			  '()))
-		 (num-vs 1)
-		 (num-us (length v)))
-      (if (null? vs-to-explore)
-	  (list num-vs num-us)
-	  (let ((result (abstract-value-size (first vs-to-explore))))
-	   (inner (rest vs-to-explore)
-		  (+ num-vs (first result))
-		  (+ num-us (second result))))))))
-
-(define (flow-size bs)
+(define (update-analysis-domains bs)
  (reduce
-  +
-  (map (lambda (b)
-	(+ (reduce-vector
-	    +
-	    (map-vector (lambda (v) (second (abstract-value-size v)))
-			(abstract-environment-binding-abstract-values b))
-	    0)
-	   (second (abstract-value-size
-		    (abstract-environment-binding-abstract-value b)))))
+  abstract-analysis-union
+  (map (lambda (b1)
+	(reduce abstract-analysis-union
+		(map (lambda (b2)
+		      (abstract-eval-prime
+		       (abstract-expression-binding-expression b1)
+		       (abstract-environment-binding-abstract-values b2)
+		       bs))
+		     (abstract-expression-binding-abstract-flow b1))
+		(empty-abstract-analysis)))
        bs)
-  0))
+  (empty-abstract-analysis)))
 
-(define (analysis-size bs)
- (reduce +
-	 (map (lambda (b)
-	       (flow-size (abstract-expression-binding-abstract-flow b)))
-	      bs)
-	 0))
-
-(define (flow-analysis e bs0)
- (set! *num-updates* 0)
- (set! *start-time* (clock-sample))
- (unless *quiet?* (pp (abstract->concrete e)) (newline))
- (let ((result
-	(let ((bs0 (initial-abstract-analysis e bs0)))
-	 (set! *expression-list*
-	       (map abstract-expression-binding-expression bs0))
-	 (let loop ((bs bs0)
-		    (bs-old (map (lambda (b)
-				  (make-abstract-expression-binding
-				   (abstract-expression-binding-expression b)
-				   (empty-abstract-flow)))
-				 bs0)))
-	  (when (and (not *quiet?*) (= *num-updates* 0))
-	   (pp (externalize-abstract-analysis bs)) (newline)
-	   (output-expression-statistics-for-analysis bs))
-	  (set! *num-updates* (+ *num-updates* 1))
-	  (set! *lookup-misses* 0)
-	  (unless *quiet?* (format #t "(Iteration ~s:~%" *num-updates*))
-	  (let* ((bs-prime
-		  (if *quiet?*
-		      (update-abstract-analysis bs bs-old)
-		      (time "update-time:~a~%"
-			    (lambda () (update-abstract-analysis bs bs-old)))))
-		 (total-time (- (clock-sample) *start-time*)))
-	   (unless *quiet?*
-	    (format #t "Total number of iterations: ~s~%" *num-updates*)
-	    (format #t "|bs| = ~s~%" (length bs-prime))
-	    (format #t "Total time since start: ~a~%"
-		    (number->string-of-length-and-precision total-time 16 2))
-	    (let* ((bs-updated
-		    (remove-if
-		     (lambda (b)
-		      (let ((e (abstract-expression-binding-expression b)))
-		       (eq? (expression-abstract-flow3 e bs)
-			    (abstract-expression-binding-abstract-flow b))))
-		     bs-prime))
-		   (l8-violated? (lambda (v) (not (l8-met? v))))
-		   (b-violating-l8
-		    (find-if
-		     (lambda (b)
-		      (some
-		       (lambda (b)
-			(or (some-vector
-			     l8-violated?
-			     (abstract-environment-binding-abstract-values b))
-			    (l8-violated?
-			     (abstract-environment-binding-abstract-value b))))
-		       (abstract-expression-binding-abstract-flow b)))
-		     bs-updated)))
-	     ;; Check to see if bundle nesting depth limit (*l8*) is violated
-	     ;;   in any of the updated abstract enivoronment bindings.
-	     ;; needs work
-	     (unless (eq? b-violating-l8 #f)
-	      (format #t "Bundle nesting depth limit of ~s exceeded~%" *l8*)
-	      (pp (externalize-abstract-expression-binding b-violating-l8))
-	      (newline)
-	      (pp (externalize-abstract-analysis bs-updated)) (newline)
-	      (pp (externalize-abstract-analysis bs-prime)) (newline)
-	      (internal-error "Terminating because of error"))
-	     (format #t "# flows updated: ~s~%" (length bs-updated))
-	     (format #t "# of proto-abstract-values updated: ~s~%"
-		     (analysis-size bs-updated))
-	     (format #t "# of proto-abstract-value in analysis: ~s~%"
-		     (analysis-size bs-prime))))
-	   (let ((done? (if *quiet?*
-			    (abstract-analysis=? bs bs-prime)
-			    (time
-			     "convergence-check-time:~a~%"
-			     (lambda () (abstract-analysis=? bs bs-prime))))))
-	    (unless *quiet?* (format #t "done?: ~s)~%" done?))
-	    (if done? bs (loop bs-prime bs))))))))
-  (format #t "# lookup misses in last iteration: ~s~%" *lookup-misses*)
-  (format #t "Analysis reached after ~s updates.~%" *num-updates*)
-  (format #t "Total time since start: ~a~%"
-	  (number->string-of-length-and-precision
-	   (- (clock-sample) *start-time*) 16 2))
-  result))
-
-;;; end needs work
+(define (flow-analysis e bs)
+ (let loop ((bs (update-analysis-ranges* (initial-abstract-analysis e bs))))
+  (let ((bs1 (update-analysis-ranges* (update-analysis-domains bs))))
+   (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 ;;; Abstract Basis
 
@@ -6043,7 +5378,7 @@
 		 ((reverse) abstract-*j-v)
 		 (else (internal-error)))
 		(loop (rest tags)))))
-	  (list (make-tagged-pair tags (first vs) (loop (rest vs))))))))
+	  (make-abstract-tagged-pair tags (first vs) (loop (rest vs)))))))
 
 (define (abstract-base-variables-v v)
  (when (and (list? v) (not (= (length v) 1)))
@@ -6092,17 +5427,16 @@
 	(abstract-listify (map abstract-zero-v (abstract-base-values-u u))
 			  (closure-tags u)))
        ((bundle? u)
-	(list (make-bundle-protected (abstract-zero-v (bundle-primal u))
-				     (abstract-zero-v (bundle-tangent u)))))
+	(make-abstract-bundle (abstract-zero-v (bundle-primal u))
+			      (abstract-zero-v (bundle-tangent u))))
        ((reverse-tagged-value? u)
-	(list (make-reverse-tagged-value-protected
-	       (abstract-zero-v (reverse-tagged-value-primal u)))))
+	(make-abstract-reverse-tagged-value
+	 (abstract-zero-v (reverse-tagged-value-primal u))))
        ((and (not *church-pairs?*) (tagged-pair? u))
-	(list
-	 (make-tagged-pair
-	  (tagged-pair-tags u)
-	  (abstract-zero-v (abstract-vlad-car-u u (tagged-pair-tags u)))
-	  (abstract-zero-v (abstract-vlad-cdr-u u (tagged-pair-tags u))))))
+	(make-abstract-tagged-pair
+	 (tagged-pair-tags u)
+	 (abstract-zero-v (abstract-vlad-car-u u (tagged-pair-tags u)))
+	 (abstract-zero-v (abstract-vlad-cdr-u u (tagged-pair-tags u)))))
        (else (internal-error))))
 
 ;;; Forward Mode
@@ -6142,19 +5476,14 @@
 		      *value-bindings*)))
 	     (if b
 		 (vlad-value->abstract-value (value-binding-value b))
-		 (let* ((e (forward-transform-inverse
-			    (new-lambda-expression
-			     (nonrecursive-closure-variable u-forward)
-			     (nonrecursive-closure-body u-forward))))
-			(x (lambda-expression-variable e))
-			(xs (free-variables e)))
-		  (list (make-nonrecursive-closure
-			 xs
-			 ;; We don't do add/remove-slots here.
-			 (map-vector abstract-primal-v
-				     (nonrecursive-closure-values u-forward))
-			 x
-			 (index x xs (lambda-expression-body e)))))))))
+		 (make-abstract-nonrecursive-closure
+		  ;; We don't do add/remove-slots here.
+		  (map-vector abstract-primal-v
+			      (nonrecursive-closure-values u-forward))
+		  (forward-transform-inverse
+		   (new-lambda-expression
+		    (nonrecursive-closure-variable u-forward)
+		    (nonrecursive-closure-body u-forward))))))))
        ((recursive-closure? u-forward)
 	(if (or (null? (recursive-closure-tags u-forward))
 		(not (eq? (first (recursive-closure-tags u-forward))
@@ -6184,20 +5513,15 @@
 			     (vector->list xs1)
 			     (map lambda-expression-variable es)
 			     (map lambda-expression-body es))))
-		  (list (make-recursive-closure
-			 xs
-			 ;; We don't do add/remove-slots here.
-			 (map-vector abstract-primal-v
-				     (recursive-closure-values u-forward))
-			 xs1
-			 (list->vector (map lambda-expression-variable es))
-			 (list->vector
-			  (map (lambda (e)
-				(index (lambda-expression-variable e)
-				       (append (vector->list xs1) xs)
-				       (lambda-expression-body e)))
-			       es))
-			 (recursive-closure-index u-forward))))))))
+		  (make-abstract-recursive-closure
+		   xs
+		   ;; We don't do add/remove-slots here.
+		   (map-vector abstract-primal-v
+			       (recursive-closure-values u-forward))
+		   xs1
+		   (list->vector (map lambda-expression-variable es))
+		   (list->vector (map lambda-expression-body es))
+		   (recursive-closure-index u-forward)))))))
        ((bundle? u-forward) (bundle-primal u-forward))
        ((reverse-tagged-value? u-forward)
 	(compile-time-warning
@@ -6207,10 +5531,10 @@
 		(not (eq? (first (tagged-pair-tags u-forward)) 'forward)))
 	    (compile-time-warning
 	     "Might attempt to take primal of a non-forward value" u-forward)
-	    (list (make-tagged-pair
-		   (rest (tagged-pair-tags u-forward))
-		   (abstract-primal-v (tagged-pair-car u-forward))
-		   (abstract-primal-v (tagged-pair-cdr u-forward))))))
+	    (make-abstract-tagged-pair
+	     (rest (tagged-pair-tags u-forward))
+	     (abstract-primal-v (tagged-pair-car u-forward))
+	     (abstract-primal-v (tagged-pair-cdr u-forward)))))
        (else (internal-error))))
 
 (define (abstract-tangent-v v)
@@ -6257,10 +5581,10 @@
 		(not (eq? (first (tagged-pair-tags u-forward)) 'forward)))
 	    (compile-time-warning
 	     "Might attempt to take tangent of a non-forward value" u-forward)
-	    (list (make-tagged-pair
-		   (rest (tagged-pair-tags u-forward))
-		   (abstract-tangent-v (tagged-pair-car u-forward))
-		   (abstract-tangent-v (tagged-pair-cdr u-forward))))))
+	    (make-abstract-tagged-pair
+	     (rest (tagged-pair-tags u-forward))
+	     (abstract-tangent-v (tagged-pair-car u-forward))
+	     (abstract-tangent-v (tagged-pair-cdr u-forward)))))
        (else (internal-error))))
 
 (define (abstract-tagged-null? tags u vs-above)
@@ -6447,13 +5771,13 @@
 	     (lambda (u-perturbation)
 	      (cond
 	       ((and (null? u) (null? u-perturbation))
-		(list (make-bundle (list u) (list u-perturbation))))
+		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (not *church-booleans?*)
 		     (vlad-boolean? u)
 		     (null? u-perturbation))
-		(list (make-bundle (list u) (list u-perturbation))))
+		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (abstract-real? u) (abstract-real? u-perturbation))
-		(list (make-bundle (list u) (list u-perturbation))))
+		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (primitive-procedure? u) (null? u-perturbation))
 		(vlad-value->abstract-value (primitive-procedure-forward u)))
 	       ((and
@@ -6473,6 +5797,8 @@
 		       (is (map (lambda (x) (positionp variable=? x xs1))
 				(nonrecursive-closure-variables u))))
 		 (map (lambda (vs)
+		       ;; needs work: should use
+		       ;;             make-abstract-nonrecursive-closure
 		       (make-nonrecursive-closure
 			xs
 			;; This should use a generalized add/remove-slots here.
@@ -6482,7 +5808,7 @@
 			      is
 			      (vector->list (nonrecursive-closure-values u))))
 			x
-			(index x xs (lambda-expression-body e))))
+			(lambda-expression-body e)))
 		      (abstract-bundle-list
 		       (abstract-base-values-u u)
 		       u-perturbation
@@ -6513,6 +5839,8 @@
 		       (is (map (lambda (x) (positionp variable=? x xs2))
 				(recursive-closure-variables u))))
 		 (map (lambda (vs)
+		       ;; needs work: should use
+		       ;;             make-abstract-recursive-closure
 		       (make-recursive-closure
 			xs
 			;; This should use a generalized add/remove-slots here.
@@ -6523,12 +5851,7 @@
 			      (vector->list (recursive-closure-values u))))
 			xs1
 			(list->vector (map lambda-expression-variable es))
-			(list->vector
-			 (map (lambda (e)
-			       (index (lambda-expression-variable e)
-				      (append (vector->list xs1) xs)
-				      (lambda-expression-body e)))
-			      es))
+			(list->vector (map lambda-expression-body es))
 			(recursive-closure-index u)))
 		      (abstract-bundle-list
 		       (abstract-base-values-u u)
@@ -6546,7 +5869,7 @@
 					   (bundle-tangent u-perturbation)
 					   (cons v-perturbation vs-above)
 					   (cons (cons v v-perturbation) cs)))
-		(list (make-bundle (list u) (list u-perturbation))))
+		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (reverse-tagged-value? u)
 		     (reverse-tagged-value? u-perturbation)
 		     (abstract-legitimate?
@@ -6554,7 +5877,7 @@
 		      (reverse-tagged-value-primal u-perturbation)
 		      (cons v-perturbation vs-above)
 		      (cons (cons v v-perturbation) cs)))
-		(list (make-bundle (list u) (list u-perturbation))))
+		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (not *church-pairs?*)
 		     (tagged-pair? u)
 		     (tagged-pair? u-perturbation)
@@ -6568,17 +5891,18 @@
 					   (tagged-pair-cdr u-perturbation)
 					   (cons v-perturbation vs-above)
 					   (cons (cons v v-perturbation) cs)))
-		(list (make-tagged-pair (cons 'forward (tagged-pair-tags u))
-					(abstract-bundle-internal
-					 (tagged-pair-car u)
-					 (tagged-pair-car u-perturbation)
-					 (cons v-perturbation vs-above)
-					 (cons (cons v v-perturbation) cs))
-					(abstract-bundle-internal
-					 (tagged-pair-cdr u)
-					 (tagged-pair-cdr u-perturbation)
-					 (cons v-perturbation vs-above)
-					 (cons (cons v v-perturbation) cs)))))
+		(make-abstract-tagged-pair
+		 (cons 'forward (tagged-pair-tags u))
+		 (abstract-bundle-internal
+		  (tagged-pair-car u)
+		  (tagged-pair-car u-perturbation)
+		  (cons v-perturbation vs-above)
+		  (cons (cons v v-perturbation) cs))
+		 (abstract-bundle-internal
+		  (tagged-pair-cdr u)
+		  (tagged-pair-cdr u-perturbation)
+		  (cons v-perturbation vs-above)
+		  (cons (cons v v-perturbation) cs))))
 	       (else (compile-time-warning
 		      "The arguments to bundle might be illegitimate"
 		      u
@@ -6792,8 +6116,9 @@
 (define (externalize-abstract-value v)
  (cond ((up? v) `(up ,(up-index v)))
        ((list? v)
-	(cond ((null? v) `(bottom))
-	      ((null? (rest v)) (externalize-proto-abstract-value (first v)))
+	(cond ((empty-abstract-value? v) '(bottom))
+	      ((empty-abstract-value? (rest v))
+	       (externalize-proto-abstract-value (first v)))
 	      (else `(union ,@(map externalize-proto-abstract-value v)))))
        (else (internal-error "Not an abstract value" v))))
 
