@@ -4808,46 +4808,45 @@
        ((up? v2) (create-v-additions v2 v1))
        (else (list (abstract-value-union-without-unroll v1 v2) '()))))
 
-(define (limit-matching-branching-values
-	 v k target-branching-value? branching-value-match?
-	 pick-us-to-coalesce)
+(define (limit-matching-branching-values v
+					 k
+					 target-branching-value?
+					 branching-value-match?
+					 pick-us-to-coalesce)
+ ;; returns: (list v additions)
  (let outer ((branching-uss (transitive-equivalence-classesp
 			     branching-value-match?
 			     (remove-if-not target-branching-value? v)))
 	     (us (remove-if target-branching-value? v))
 	     (additions '())
 	     (changed? #f))
-  (cond ((null? branching-uss)
-	 (if changed? (list us additions) (list v additions))) ; additions='()
-	((<= (length (first branching-uss)) k)
-	 (outer (rest branching-uss)
-		(append us (first branching-uss))
-		additions
-		changed?))
-	(else
-	 (let* ((u1-u2 (pick-us-to-coalesce (first branching-uss)))
-		(u1 (first u1-u2))
-		(u2 (second u1-u2)))
-	  (let inner ((vs1 (branching-value-values u1))
-		      (vs2 (branching-value-values u2))
-		      (vs '())
-		      (additions additions))
-	   (if (null? vs1)
-	       (let* ((u-new (make-branching-value-with-new-values
-			      u1 (reverse vs)))
-		      (branching-uss-new
-		       (cons
-			(cons u-new
+  (cond
+   ((null? branching-uss) (if changed? (list us additions) (list v additions)))
+   ((<= (length (first branching-uss)) k)
+    (outer (rest branching-uss)
+	   (append us (first branching-uss))
+	   additions
+	   changed?))
+   (else
+    (let* ((u1-u2 (pick-us-to-coalesce (first branching-uss)))
+	   (u1 (first u1-u2))
+	   (u2 (second u1-u2)))
+     (let inner ((vs1 (branching-value-values u1))
+		 (vs2 (branching-value-values u2))
+		 (vs '())
+		 (additions additions))
+      (if (null? vs1)
+	  (let* ((u-new (make-branching-value-with-new-values u1 (reverse vs)))
+		 (branching-uss-new
+		  (cons (cons u-new
 			      (removeq u2 (removeq u1 (first branching-uss))))
 			(rest branching-uss))))
-		(outer branching-uss-new us additions #t))
-	       (let ((v-additions
-		      (union-for-widening (first vs1) (first vs2))))
-		(inner (rest vs1)
-		       (rest vs2)
-		       (cons (first v-additions) vs)
-		       (merge-additions (second v-additions)
-					additions))))))))))
+	   (outer branching-uss-new us additions #t))
+	  (let ((v-additions (union-for-widening (first vs1) (first vs2))))
+	   (inner (rest vs1)
+		  (rest vs2)
+		  (cons (first v-additions) vs)
+		  (merge-additions additions (second v-additions)))))))))))
 
 (define (limit-matching-branching-values* limit v)
  (let ((v-additions
