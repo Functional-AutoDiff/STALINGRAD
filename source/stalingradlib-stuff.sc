@@ -4661,24 +4661,17 @@
 (define (some-abstract-value? p v) (some-abstract-value?-internal p v '()))
 
 (define (map-abstract-value f v)
- (let outer ((v v) (vs-above '()))
+ (let loop ((v v) (vs-above '()))
   (if (up? v)
       v
-      (let ((v-new (f v vs-above)))
-       (let loop ((us v-new) (us-new '()))
-	(if (null? us)
-	    (let ((us-new (reverse us-new)))
-	     ;; optimization
-	     (if (every-eq? v us-new) v us-new))
-	    (let ((u (first us)))
-	     (if (atomic-proto-abstract-value? u)
-		 (loop (rest us) (cons u us-new))
-		 (loop (rest us)
-		       (cons (make-branching-value-with-new-values
-			      u (map (lambda (v1)
-				      (outer v1 (cons v vs-above)))
-				     (branching-value-values u)))
-			     us-new))))))))))
+      (map (lambda (u)
+	    (if (atomic-proto-abstract-value? u)
+		u
+		(make-branching-value-with-new-values
+		 u
+		 (map (lambda (v1) (loop v1 (cons v vs-above)))
+		      (branching-value-values u)))))
+	   (f v vs-above)))))
 
 (define (remove-redundant-proto-abstract-values* v)
  (map-abstract-value
@@ -4815,17 +4808,16 @@
 		   (merge-additions (rest additions1) (rest additions2))))))
 
 (define (union-for-widening v1 v2)
- ;; assumed: v1 and v2 share the same context.  In other words, all
- ;;          free-up-reference-levels which are the same refer to the same
- ;;          values.
- (cond
-  ((and (up? v1) (up? v2))
-   (cond ((> (up-index v1) (up-index v2)) (create-v-additions v1 v2))
-	 ((< (up-index v1) (up-index v2)) (create-v-additions v2 v1))
-	 (else (list v1 '()))))
-  ((up? v1) (create-v-additions v1 v2))
-  ((up? v2) (create-v-additions v2 v1))
-  (else (list (remove-redundant-proto-abstract-values (append v1 v2)) '()))))
+ ;; This assumes that v1 and v2 share the same context. In other words, all
+ ;; free ups which are the same refer to the same abstract values.
+ ;; returns: (list v additions)
+ (cond ((and (up? v1) (up? v2))
+	(cond ((> (up-index v1) (up-index v2)) (create-v-additions v1 v2))
+	      ((< (up-index v1) (up-index v2)) (create-v-additions v2 v1))
+	      (else (list v1 '()))))
+       ((up? v1) (create-v-additions v1 v2))
+       ((up? v2) (create-v-additions v2 v1))
+       (else (list (abstract-value-union-without-unroll v1 v2) '()))))
 
 (define (limit-matching-branching-values
 	 v k target-branching-value? branching-value-match?
