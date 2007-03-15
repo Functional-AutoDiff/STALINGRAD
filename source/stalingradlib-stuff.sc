@@ -4818,15 +4818,11 @@
 			     branching-value-match?
 			     (remove-if-not target-branching-value? v)))
 	     (us (remove-if target-branching-value? v))
-	     (additions '())
-	     (changed? #f))
+	     (additions '()))
   (cond
-   ((null? branching-uss) (if changed? (list us additions) (list v additions)))
+   ((null? branching-uss) (list us additions))
    ((<= (length (first branching-uss)) k)
-    (outer (rest branching-uss)
-	   (append us (first branching-uss))
-	   additions
-	   changed?))
+    (outer (rest branching-uss) (append us (first branching-uss)) additions))
    (else
     (let* ((u1-u2 (pick-us-to-coalesce (first branching-uss)))
 	   (u1 (first u1-u2))
@@ -4841,7 +4837,7 @@
 		  (cons (cons u-new
 			      (removeq u2 (removeq u1 (first branching-uss))))
 			(rest branching-uss))))
-	   (outer branching-uss-new us additions #t))
+	   (outer branching-uss-new us additions))
 	  (let ((v-additions (union-for-widening (first vs1) (first vs2))))
 	   (inner (rest vs1)
 		  (rest vs2)
