@@ -4660,64 +4660,87 @@
 
 (define (some-abstract-value? p v) (some-abstract-value?-internal p v '()))
 
-(define (process-nodes-in-abstract-value-tree f v vs-above)
- (if (up? v)
-     v
-     (let ((v-new (f v vs-above)))
-      (let loop ((us v-new) (us-new '()))
-       (if (null? us)
-	   ;; optimization
-	   (let ((us-new (reverse us-new))) (if (every-eq? v us-new) v us-new))
-	   (let ((u (first us)))
-	    (if (atomic-proto-abstract-value? u)
-		(loop (rest us) (cons u us-new))
-		(loop (rest us)
-		      (cons (make-branching-value-with-new-values
-			     u (map (lambda (v1)
-				     (process-nodes-in-abstract-value-tree
-				      f v1 (cons v vs-above)))
-				    (branching-value-values u)))
-			    us-new)))))))))
+(define (map-abstract-value f v)
+ (let outer ((v v) (vs-above '()))
+  (if (up? v)
+      v
+      (let ((v-new (f v vs-above)))
+       (let loop ((us v-new) (us-new '()))
+	(if (null? us)
+	    (let ((us-new (reverse us-new)))
+	     ;; optimization
+	     (if (every-eq? v us-new) v us-new))
+	    (let ((u (first us)))
+	     (if (atomic-proto-abstract-value? u)
+		 (loop (rest us) (cons u us-new))
+		 (loop (rest us)
+		       (cons (make-branching-value-with-new-values
+			      u (map (lambda (v1)
+				      (outer v1 (cons v vs-above)))
+				     (branching-value-values u)))
+			     us-new))))))))))
 
-(define (remove-duplicate-proto-abstract-values v)
- (process-nodes-in-abstract-value-tree
-  (lambda (v vs-above) (remove-redundant-proto-abstract-values v)) v '()))
+(define (remove-redundant-proto-abstract-values* v)
+ (map-abstract-value
+  (lambda (v vs-above) (remove-redundant-proto-abstract-values v)) v))
 
 (define (free-up? v vs-above)
+ ;; needs work: candidate for removal
  (and (up? v) (>= (up-index v) (length vs-above))))
 
-(define (free-up-index up up-context)
- (let ((l (- (up-index up) (length up-context))))
-  (if (negative? l) #f l)))
+(define (free-up-index up vs-above)
+ ;; needs work: candidate for removal
+ (unless (free-up? up vs-above) (internal-error))
+ (- (up-index up) (length vs-above)))
 
-(define (make-free-up index up-context)
- (make-up (+ index (length up-context))))
+(define (make-free-up index vs-above)
+ ;; needs work: candidate for removal
+ (make-up (+ index (length vs-above))))
 
-(define (proto-process-free-ups-internal f u vs-above)
+(define (proto-abstract-value-process-free-ups-internal f u vs-above)
+ ;; needs work: candidate for removal
  (if (atomic-proto-abstract-value? u)
      u
      (make-branching-value-with-new-values
       u
-      (map (lambda (v) (process-free-ups-internal f v vs-above))
+      (map (lambda (v) (abstract-value-process-free-ups-internal f v vs-above))
 	   (branching-value-values u)))))
 
-(define (process-free-ups-internal f v vs-above)
+(define (abstract-value-process-free-ups-internal f v vs-above)
+ ;; needs work: candidate for removal
  (cond ((free-up? v vs-above) (f v vs-above))
        ((up? v) v)
        (else (map (lambda (u)
-		   (proto-process-free-ups-internal f u (cons v vs-above)))
+		   (proto-abstract-value-process-free-ups-internal
+		    f u (cons v vs-above)))
 		  v))))
 
-(define (proto-process-free-ups f u) (proto-process-free-ups-internal f u '()))
+(define (proto-abstract-value-process-free-ups f u)
+ ;; needs work: candidate for removal
+ (proto-abstract-value-process-free-ups-internal f u '()))
 
-(define (process-free-ups f v) (process-free-ups-internal f v '()))
+(define (abstract-value-process-free-ups f v)
+ ;; needs work: candidate for removal
+ (abstract-value-process-free-ups-internal f v '()))
 
-(define (decrement-free-ups-by k v)
- (process-free-ups (lambda (up vs-above) (make-up (- (up-index up) k))) v))
+(define (decrement-free-ups v)
+ ;; needs work: candidate for removal
+ (abstract-value-process-free-ups
+  (lambda (up vs-above) (make-up (- (up-index up) 1))) v))
 
-(define (decrement-free-ups v) (decrement-free-ups-by 1 v))
+;;; Many procedures below return (list v additions), a list of an abstract
+;;; value v and a list of additions. An addition is a set of abstract values.
+;;; The first set is to added to the parent abstract value of v, the second
+;;; set to the grandparent abstract value, and so on.
+;;; Each abstract value in the addition is treated as if it were a child
+;;; abstract value of the current abstract value.  This means that free
+;;; references (FREE-UP 0) refer to the current abstract value, (FREE-UP 1)
+;;; refer to the current abstract value's parent, and so on.
 
-(define (create-addition i vs) (append (make-list i '()) (list vs)))
+(define (create-v-additions up v)
+ ;; returns: (list v additions)
+ ;; needs work: candidate for removal
+ (list up (append (make-list (up-index up) '()) (list (list v)))))
 
 (define (move-additions-up v-new additions)
  ;; v-new is current v after any additions
@@ -4742,7 +4765,7 @@
 	      (append (map (lambda (v)
 			    (if (and (up? v) (= (up-index v) 0))
 				v-new
-				(process-free-ups
+				(abstract-value-process-free-ups
 				 (lambda (v vs-above)
 				  (if (= (free-up-index v vs-above) 0)
 				      (make-free-up i vs-above)
@@ -4785,22 +4808,11 @@
 
 (define (pick-bundles-to-coalesce us) (sublist us 0 2))
 
-(define (merge-additions vss1 vss2)
- ;; An addition is a list of sets of values, each set represented by a list.
- ;; The first element in the list is the set of values to be added into the
- ;;   "current" value, the second is those to be added to the current value's
- ;;   parent, and so on and so forth.
- ;; Each value in the addition is treated as if it were a child value of the
- ;;   current value.  This means that free references (FREE-UP 0) refer to the
- ;;   current value, (FREE-UP 1) refer to the current value's parent, and so on
- ;;   and so forth.
- (let ((l1 (length vss1))
-       (l2 (length vss2)))
-  (cond ((< l1 l2) (merge-additions (append vss1 (make-list (- l2 l1) '()))
-				    vss2))
-	((< l2 l1) (merge-additions vss1
-				    (append vss2 (make-list (- l1 l2) '()))))
-	(else (map append vss1 vss2)))))
+(define (merge-additions additions1 additions2)
+ (cond ((null? additions1) additions2)
+       ((null? additions2) additions1)
+       (else (cons (append (first additions1) (first additions2))
+		   (merge-additions (rest additions1) (rest additions2))))))
 
 (define (union-for-widening v1 v2)
  ;; assumed: v1 and v2 share the same context.  In other words, all
@@ -4808,17 +4820,14 @@
  ;;          values.
  (cond
   ((and (up? v1) (up? v2))
-   (cond ((> (up-index v1) (up-index v2))
-	  (list v1 (create-addition (up-index v1) (list v2))))
-	 ((< (up-index v1) (up-index v2))
-	  (list v2 (create-addition (up-index v2) (list v1))))
-	 (else				; (= (up-index v1) (up-index v2))
-	  (list v1 '()))))
-  ((up? v1) (list v1 (create-addition (up-index v1) (list v2))))
-  ((up? v2) (list v2 (create-addition (up-index v2) (list v1))))
+   (cond ((> (up-index v1) (up-index v2)) (create-v-additions v1 v2))
+	 ((< (up-index v1) (up-index v2)) (create-v-additions v2 v1))
+	 (else (list v1 '()))))
+  ((up? v1) (create-v-additions v1 v2))
+  ((up? v2) (create-v-additions v2 v1))
   (else (list (remove-redundant-proto-abstract-values (append v1 v2)) '()))))
 
-(define (limit-matching-branching-values-at-one-level
+(define (limit-matching-branching-values
 	 v k target-branching-value? branching-value-match?
 	 pick-us-to-coalesce)
  (let outer ((branching-uss (transitive-equivalence-classesp
@@ -4865,12 +4874,11 @@
 ;;;   additions for each of the child abstract values and then start to apply
 ;;;   them.
 
-(define (limit-matching-branching-values-over-tree-internal
-	 limit-at-one-level v)
+(define (limit-matching-branching-values*-internal limit v)
  ;; returns: (LIST value additions)
  (if (up? v)
      (list v '())
-     (let* ((v-additions (limit-at-one-level v))
+     (let* ((v-additions (limit v))
 	    (v-new (first v-additions))
 	    (additions (second v-additions))
 	    ;; optimization
@@ -4883,15 +4891,13 @@
 	 (if (null? us)
 	     (let ((us-new (reverse us-new)))
 	      (if (null? additions)
-		  ;; optimization
 		  (if (every-eq? us-new v) (list v '()) (list us-new '()))
 		  (let* ((v-additions
 			  (move-values-up-tree us-new additions))
 			 (v-new (first v-additions))
 			 (additions-new (second v-additions)))
 		   (if (null? additions-new)
-		       (limit-matching-branching-values-over-tree-internal
-			limit-at-one-level v-new)
+		       (limit-matching-branching-values*-internal limit v-new)
 		       v-additions))))
 	     (let ((u (first us)))
 	      (if (atomic-proto-abstract-value? u)
@@ -4907,8 +4913,8 @@
 			       additions))
 		       (let*
 			 ((v-additions
-			   (limit-matching-branching-values-over-tree-internal
-			    limit-at-one-level (first vs)))
+			   (limit-matching-branching-values*-internal
+			    limit (first vs)))
 			  (v-new (first v-additions))
 			  (additions-new (second v-additions)))
 			(inner
@@ -4919,63 +4925,52 @@
 		    (v-new (first v-additions))
 		    (additions-new (second v-additions)))
 	      (if (null? additions-new)
-		  (limit-matching-branching-values-over-tree-internal
-		   limit-at-one-level v-new)
+		  (limit-matching-branching-values*-internal limit v-new)
 		  v-additions)))))))
+
+(define (limit-matching-branching-values* limit v)
+ (let ((v-additions (limit-matching-branching-values*-internal limit v)))
+  (unless (null? (second v-additions))
+   (internal-error "Some addition wasn't applied"))
+  (first v-additions)))
 
 (define (limit-matching-reals v)
  ;; This assumes that there are no duplicate concrete reals within an abstract
  ;; value.
  (if (eq? *l2* #f)
      v
-     (process-nodes-in-abstract-value-tree
-      (lambda (v vs-above) (if (> (count-if abstract-real? v) *l2*)
-			       (cons 'real (remove-if abstract-real? v))
-			       v))
-      v
-      '())))
+     (map-abstract-value (lambda (v vs-above)
+			  (if (> (count-if abstract-real? v) *l2*)
+			      (cons 'real (remove-if abstract-real? v))
+			      v))
+			 v)))
 
 (define (limit-matching-closures v)
  (if (eq? *l3* #f)
      v
-     (let* ((limit-matching-closures-at-one-level
-	     (lambda (v)
-	      (limit-matching-branching-values-at-one-level
-	       v *l3* closure? closure-match?
-	       pick-closures-to-coalesce)))
-	    (result (limit-matching-branching-values-over-tree-internal
-		     limit-matching-closures-at-one-level v)))
-      (unless (null? (second result))
-       (internal-error "Some addition wasn't applied"))
-      (first result))))
+     (limit-matching-branching-values*
+      (lambda (v)
+       (limit-matching-branching-values
+	v *l3* closure? closure-match? pick-closures-to-coalesce))
+      v)))
 
 (define (limit-matching-pairs v)
  (if (eq? *l5* #f)
      v
-     (let* ((limit-matching-pairs-at-one-level
-	     (lambda (v)
-	      (limit-matching-branching-values-at-one-level
-	       v *l5* tagged-pair? tagged-pair-match?
-	       pick-pairs-to-coalesce)))
-	    (result (limit-matching-branching-values-over-tree-internal
-		     limit-matching-pairs-at-one-level v)))
-      (unless (null? (second result))
-       (internal-error "Some addition wasn't applied"))
-      (first result))))
+     (limit-matching-branching-values*
+      (lambda (v)
+       (limit-matching-branching-values
+	v *l5* tagged-pair? tagged-pair-match? pick-pairs-to-coalesce))
+      v)))
 
 (define (limit-matching-bundles v)
  (if (eq? *l7* #f)
      v
-     (let* ((limit-matching-bundles-at-one-level
-	     (lambda (v)
-	      (limit-matching-branching-values-at-one-level
-	       v *l7* bundle? bundle-match?
-	       pick-bundles-to-coalesce)))
-	    (result (limit-matching-branching-values-over-tree-internal
-		     limit-matching-bundles-at-one-level v)))
-      (unless (null? (second result))
-       (internal-error "Some addition wasn't applied"))
-      (first result))))
+     (limit-matching-branching-values*
+      (lambda (v)
+       (limit-matching-branching-values
+	v *l7* bundle? bundle-match? pick-bundles-to-coalesce))
+      v)))
 
 ;;; Depth
 
@@ -5073,8 +5068,8 @@
 	 (when (null? path) (internal-error))
 	 (let ((v (first path)))
 	  (if (eq? v v-add)
-	      (let ((index (positionq v-target vs-above)))
-	       (list (make-up index) (create-addition index (list v))))
+	      (create-v-additions
+	       (make-up (positionq v-target vs-above)) v)
 	      (let* ((v-and-additions
 		      (loop (rest (rest path)) (cons v vs-above)))
 		     (v-new (first v-and-additions))
@@ -5201,35 +5196,30 @@
 
 (define (widen-abstract-value v)
  (define (syntactic-constraints-met? v)
-  (and (l2-met? v)
-       (l3-met? v)
-       (l4-met? v)
-       (l5-met? v)
-       (l6-met? v)
-       (l7-met? v)))
- (let loop ((v v) (v-old 'old))
-  (when (eq? v v-old) (internal-error "widen-abstract-value infinite loop"))
+  (and
+   (l2-met? v) (l3-met? v) (l4-met? v) (l5-met? v) (l6-met? v) (l7-met? v)))
+ (let loop ((v v))
   (if (syntactic-constraints-met? v)
       v
       (loop
        ;; For some reason, performance is enhanced (at least in some observed
        ;;   cases) by calling limit-matching-{closures,pairs,bundles} both
        ;;   before and after reducing the depth of the abstract value.
-       (let* ((v1 (remove-duplicate-proto-abstract-values v))
-	      (v2a (limit-matching-closures v1))
-	      (v3a (limit-matching-pairs v2a))
-	      (v3b (limit-matching-bundles v3a))
-	      (v4a (limit-l4-depth v3b))
-	      (v5a (limit-l6-depth v4a))
-	      (v5b (aesthetic-reduce-l6-depth v5a))
-	      (v6a (limit-matching-closures v5b))
-	      (v7a (limit-matching-pairs v6a))
-	      (v7b (limit-matching-bundles v7a))
-	      (v8a (remove-duplicate-proto-abstract-values v7b))
-	      (v9a (limit-matching-reals v8a))
-	      (v10a (remove-duplicate-proto-abstract-values v9a)))
-	v10a)
-       v))))
+       (remove-redundant-proto-abstract-values*
+	(limit-matching-reals
+	 (remove-redundant-proto-abstract-values*
+	  (limit-matching-bundles
+	   (limit-matching-pairs
+	    (limit-matching-closures
+	     (aesthetic-reduce-l6-depth
+	      (limit-l6-depth
+	       (limit-l4-depth
+		(limit-matching-bundles
+		 (limit-matching-pairs
+		  (limit-matching-closures
+		   (remove-redundant-proto-abstract-values* v)))))))))))))))))
+
+;;; begin needs work
 
 (define (remove-redundant-abstract-mappings bs)
  ;; An abstract mapping xi->yi in f=[x1->y1, ..., xn->yn] is redundant if
