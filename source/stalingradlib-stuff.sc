@@ -4814,29 +4814,30 @@
 					 branching-value-match?
 					 pick-us-to-coalesce)
  ;; returns: (list v additions)
- (let loop ((branching-uss (transitive-equivalence-classesp
-			    branching-value-match?
-			    (remove-if-not target-branching-value? v)))
-	    (us (remove-if target-branching-value? v))
-	    (additions '()))
-  (cond
-   ((null? branching-uss) (list us additions))
-   ((<= (length (first branching-uss)) k)
-    (loop (rest branching-uss) (append us (first branching-uss)) additions))
-   (else
-    (let* ((u1-u2 (pick-us-to-coalesce (first branching-uss)))
-	   (v-additions-list (map union-for-widening
-				  (branching-value-values (first u1-u2))
-				  (branching-value-values (second u1-u2)))))
-     (loop (cons (cons (make-branching-value-with-new-values
+ (let ((v-additions-list
+	(map
+	 (lambda (us)
+	  (let loop ((us us) (additions '()))
+	   (if (<= (length us) k)
+	       (list us additions)
+	       (let* ((u1-u2 (pick-us-to-coalesce us))
+		      (v-additions-list
+		       (map union-for-widening
+			    (branching-value-values (first u1-u2))
+			    (branching-value-values (second u1-u2)))))
+		(loop
+		 (cons (make-branching-value-with-new-values
 			(first u1-u2) (map first v-additions-list))
-		       (removeq (second u1-u2)
-				(removeq (first u1-u2) (first branching-uss))))
-		 (rest branching-uss))
-	   us
-	   (merge-additions
-	    additions
-	    (reduce merge-additions (map second v-additions-list) '()))))))))
+		       (removeq (second u1-u2) (removeq (first u1-u2) us)))
+		 (merge-additions
+		  additions
+		  (reduce
+		   merge-additions (map second v-additions-list) '())))))))
+	 (transitive-equivalence-classesp
+	  branching-value-match? (remove-if-not target-branching-value? v)))))
+  (list (append (remove-if target-branching-value? v)
+		(reduce append (map first v-additions-list) '()))
+	(reduce merge-additions (map second v-additions-list) '()))))
 
 (define (limit-matching-branching-values* limit v)
  (let ((v-additions
