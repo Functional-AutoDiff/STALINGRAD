@@ -4849,68 +4849,50 @@
 		       (merge-additions (second v-additions)
 					additions))))))))))
 
-;;; We'll collect additions for pair of matching branching values at one level
-;;;   and then start to apply closures.
-;;; When there are no additions at the "top level", we'll collect all the
-;;;   additions for each of the child abstract values and then start to apply
-;;;   them.
-
-(define (limit-matching-branching-values*-internal limit v)
- ;; returns: (LIST value additions)
- (if (up? v)
-     (list v '())
-     (let* ((v-additions (limit v))
-	    (v-new (first v-additions))
-	    (additions (second v-additions))
-	    ;; optimization
-	    (changed? (not (eq? v-new v))))
-      (cond
-       ((and (null? additions) (up? v-new)) (list v-new '()))
-       ((null? additions)
-	;; recursively widen each abstract value below v-new
-	(let outer ((us v-new) (us-new '()) (additions '()))
-	 (if (null? us)
-	     (let ((us-new (reverse us-new)))
-	      (if (null? additions)
-		  (if (every-eq? us-new v) (list v '()) (list us-new '()))
-		  (let* ((v-additions
-			  (move-values-up-tree us-new additions))
-			 (v-new (first v-additions))
-			 (additions-new (second v-additions)))
-		   (if (null? additions-new)
-		       (limit-matching-branching-values*-internal limit v-new)
-		       v-additions))))
-	     (let ((u (first us)))
-	      (if (atomic-proto-abstract-value? u)
-		  (outer (rest us) (cons u us-new) additions)
-		  (let inner ((vs (branching-value-values u))
-			      (vs-new '())
-			      (additions additions))
-		   (if (null? vs)
-		       (let ((u-new (make-branching-value-with-new-values
-				     u (reverse vs-new))))
-			(outer (rest us)
-			       (cons u-new us-new)
-			       additions))
-		       (let*
-			 ((v-additions
-			   (limit-matching-branching-values*-internal
-			    limit (first vs)))
-			  (v-new (first v-additions))
-			  (additions-new (second v-additions)))
-			(inner
-			 (rest vs)
-			 (cons v-new vs-new)
-			 (merge-additions additions additions-new))))))))))
-       (else (let* ((v-additions (move-values-up-tree v-new additions))
-		    (v-new (first v-additions))
-		    (additions-new (second v-additions)))
-	      (if (null? additions-new)
-		  (limit-matching-branching-values*-internal limit v-new)
-		  v-additions)))))))
-
 (define (limit-matching-branching-values* limit v)
- (let ((v-additions (limit-matching-branching-values*-internal limit v)))
+ (let ((v-additions
+	;; returns: (list v additions)
+	(let loop ((v v))
+	 (if (up? v)
+	     (list v '())
+	     (let ((v-additions (limit v)))
+	      (if (null? (second v-additions))
+		  (if (up? (first v-additions))
+		      (list (first v-additions) '())
+		      (let ((u-additions-list
+			     (map
+			      (lambda (u)
+			       (if (atomic-proto-abstract-value? u)
+				   (list u '())
+				   (let ((v-additions-list
+					  (map loop
+					       (branching-value-values u))))
+				    (list (make-branching-value-with-new-values
+					   u (map first v-additions-list))
+					  (reduce merge-additions
+						  (map second v-additions-list)
+						  '())))))
+			      (first v-additions))))
+		       (if (null?
+			    (reduce merge-additions
+				    (map second u-additions-list)
+				    '()))
+			   (list (map first u-additions-list) '())
+			   (let ((v-additions
+				  (move-values-up-tree
+				   (map first u-additions-list)
+				   (reduce merge-additions
+					   (map second u-additions-list)
+					   '()))))
+			    (if (null? (second v-additions))
+				(loop (first v-additions))
+				v-additions)))))
+		  (let ((v-additions
+			 (move-values-up-tree
+			  (first v-additions) (second v-additions))))
+		   (if (null? (second v-additions))
+		       (loop (first v-additions))
+		       v-additions))))))))
   (unless (null? (second v-additions))
    (internal-error "Some addition wasn't applied"))
   (first v-additions)))
