@@ -266,7 +266,7 @@
 
 (define *l4* #f)			;closure nesting depth limit
 
-(define *depth-measure* matching-nonrecursive-closure-depth)
+(define *depth-measure* 'debugging)
 
 (define *l5* #f)			;matching pair abstract value limit
 
@@ -4929,6 +4929,8 @@
 
 (define (abstract-value-depth path) 'debugging)
 
+(define (matching-nonrecursive-closure-depth path) 'debugging)
+
 ;;; A path is an alternating list of abstract values and proto abstract values.
 ;;; The first element of the list is the root and the last element is a leaf.
 ;;; The first element is an abstract value and the last element is either an
@@ -4937,84 +4939,42 @@
 ;;; a member of the preceeding abstract value and each abstract value is a
 ;;; member of the branching values of the preceeding proto abstract value.
 
-;;; needs work: This is the nonrecursive depth measure that's been used, but it
-;;;             isn't quite ideal--ideally we would use
-;;;             matching-closure-depth-careful.  One would have to look closely
-;;;             at the depth-limiting code (limit-l4-depth and so on) to ensure
-;;;             that using matching-closure-depth-careful wouldn't break
-;;;             anything.
-(define (matching-nonrecursive-closure-depth path)
- ;; it is assumed that path starts with an abstract value
- (cond ((null? path) 0)
-       ((null? (rest path)) 0)
-       ((nonrecursive-closure? (second path))
-	(count-if (lambda (u-or-v)
-		   (and (nonrecursive-closure? u-or-v)
-			(nonrecursive-closure-match? u-or-v (second path))))
-		  (rest path)))
-       (else 0)))
+(define (depth match? type? path)
+ (reduce max
+	 (map length
+	      (transitive-equivalence-classesp
+	       match? (remove-if-not type? (every-other (rest path)))))
+	 0))
 
-(define (matching-closure-depth-careful path)
- ;; it is assumed that path starts with an abstract value
- (cond ((null? path) 0)
-       ((null? (rest path)) 0)
-       (else (reduce
-	      max
-	      (map length (transitive-equivalence-classesp
-			   closure-match? (remove-if-not closure? path)))
-	      minus-infinity))))
-
-(define (pair-depth path)
- (count-if (lambda (u-or-v) (tagged-pair? u-or-v)) path))
-
-(define (bundle-depth path) (count-if (lambda (u-or-v) (bundle? u-or-v)) path))
-
-(define (path-of-depth-greater-than-k k depth u-or-v)
- (let loop ((u-or-v u-or-v) (path '()))
-  (let ((add-to-path (lambda (u-or-v) (append path (list u-or-v)))))
-   (cond ((up? u-or-v) (if (> (depth path) k) path #f))
-	 ;; if u-or-v is an abstract value...
-	 ((and (list? u-or-v) (not (null? u-or-v)))
-	  (let inner ((us u-or-v))
-	   (if (null? us)
-	       (if (> (depth (add-to-path u-or-v)) k) (add-to-path u-or-v) #f)
-	       (let ((result (loop (first us) (add-to-path u-or-v))))
-		(if (eq? #f result)
-		    (inner (rest us))
-		    result)))))
-	 (else				; u-or-v is a proto-abstract value...
-	  (let ((u u-or-v))
-	   (define (do-branching-value vs)
-	    (let inner ((vs vs))
-	     (if (null? vs)
-		 (if (> (depth (add-to-path u)) k)
-		     (add-to-path u)
-		     #f)
-		 (let ((result (loop (first vs) (add-to-path u))))
-		  (if (eq? #f result)
-		      (inner (rest vs))
-		      result)))))
-	   (if (atomic-proto-abstract-value? u)
-	       (if (> (depth (add-to-path u)) k) (add-to-path u) #f)
-	       (let inner ((vs (branching-value-values u)))
+(define (path-of-depth-greater-than-k k match? type? v)
+ (let outer ((v v) (path '()))
+  (if (or (up? v) (null? v))
+      (if (> (depth match? type? (cons v path)) k) (reverse (cons v path)) #f)
+      (let middle ((us v))
+       (if (null? us)
+	   #f
+	   (if (atomic-proto-abstract-value? (first us))
+	       (if (> (depth match? type? (cons (first us) path)) k)
+		   (reverse (cons (first us) path))
+		   (middle (rest us)))
+	       (let inner ((vs (branching-value-values (first us))))
 		(if (null? vs)
-		    (if (> (depth (add-to-path u)) k) (add-to-path u) #f)
-		    (let ((result (loop (first vs) (add-to-path u))))
-		     (if (eq? #f result) (inner (rest vs)) result)))))))))))
+		    (middle (rest us))
+		    (let ((path (outer (first vs) (cons (first us) path))))
+		     (if (eq? path #f) (inner (rest vs)) path))))))))))
 
-(define (get-values-to-merge k depth path)
- ;; not quite general: path needs to be of form [] | [v u] ++ path
- (let loop ((i 0) (last-depth -1) (va #f) (vb #f))
-  (cond
-   ((not (or (eq? va #f) (eq? vb #f))) (list va vb))
-   ((> (* 2 i) (length path)) (internal-error))
-   (else
-    (let ((d (depth (sublist path 0 (* 2 i)))))
-     (cond ((and (= d k) (> d last-depth))
-	    (loop (+ i 1) d (list-ref path (* 2 (- i 1))) vb))
-	   ((and (= d (+ k 1)) (= last-depth k))
-	    (loop (+ i 1) d va (list-ref path (* 2 (- i 1)))))
-	   (else (loop (+ i 1) d va vb))))))))
+(define (pick-values-to-merge match? type? path)
+ (let* ((classes (transitive-equivalence-classesp
+		  match? (remove-if-not type? (every-other (rest path)))))
+	(k (reduce max (map length classes) 0))
+	(positions
+	 (sort (map (lambda (u) (positionq u path))
+		    (find-if (lambda (us) (= (length us) k)) classes))
+	       >
+	       identity)))
+  ;; v1 must be closer to the root than v2
+  (list (list-ref path (- (second positions) 1))
+	(list-ref path (- (first positions) 1)))))
 
 (define (reduce-depth path v1 v2)
  ;; v1 must be closer to the root than v2
@@ -5044,32 +5004,25 @@
 (define (limit-matching-closure-depth v)
  (if (eq? *l4* #f)
      v
-     (let loop ((v v) (v-new '()))
-      (if (null? v)
-	  (let ((v-new (reverse v-new)))
-	   (if every-eq? v-new v) v v-new)
-	  (let ((path (path-of-depth-greater-than-k
-		       *l4* *depth-measure* (list (first v)))))
-	   (if (eq? path #f)
-	       (loop (rest v)
-		     (if (memp equalq? (first v) v-new)
-			 v-new
-			 (cons (first v) v-new)))
-	       (let* ((va-vb (get-values-to-merge *l4* *depth-measure* path))
-		      (v-tmp
-		       (reduce-depth path (first va-vb) (second va-vb))))
-		(loop (append v-tmp (rest v)) v-new))))))))
+     (let loop ((v v))
+      (let ((path
+	     (path-of-depth-greater-than-k *l4* closure-match? closure? v)))
+       (if (eq? path #f)
+	   v
+	   (let ((v1-v2 (pick-values-to-merge closure-match? closure? path)))
+	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 (define (limit-matching-pair-depth v)
  (if (eq? *l6* #f)
      v
-     (let loop ((path (path-of-depth-greater-than-k *l6* pair-depth v)) (v v))
-      (if (eq? path #f)
-	  v
-	  (let* ((va-vb (get-values-to-merge *l6* pair-depth path))
-		 (v-new (reduce-depth path (first va-vb) (second va-vb))))
-	   (loop (path-of-depth-greater-than-k *l6* pair-depth v-new)
-		 v-new))))))
+     (let loop ((v v))
+      (let ((path (path-of-depth-greater-than-k
+		   *l6* tagged-pair-match? tagged-pair? v)))
+       (if (eq? path #f)
+	   v
+	   (let ((v1-v2
+		  (pick-values-to-merge tagged-pair-match? tagged-pair? path)))
+	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 ;;; Syntactic Constraints
 
@@ -5094,7 +5047,7 @@
 
 (define (l4-met? v)
  (or (not *l4*)
-     (eq? (path-of-depth-greater-than-k *l4* *depth-measure* v) #f)))
+     (eq? (path-of-depth-greater-than-k *l4* closure-match? closure? v) #f)))
 
 (define (l5-met? v)
  (or (not *l5*)
@@ -5107,7 +5060,9 @@
 	   v))))
 
 (define (l6-met? v)
- (or (not *l6*) (eq? (path-of-depth-greater-than-k *l6* pair-depth v) #f)))
+ (or (not *l6*)
+     (eq? (path-of-depth-greater-than-k *l6* tagged-pair-match? tagged-pair? v)
+	  #f)))
 
 (define (l7-met? v)
  (or (not *l7*)
@@ -5120,7 +5075,8 @@
 	   v))))
 
 (define (l8-met? v)
- (or (not *l8*) (eq? (path-of-depth-greater-than-k *l8* bundle-depth v) #f)))
+ (or (not *l8*)
+     (eq? (path-of-depth-greater-than-k *l8* bundle-match? bundle? v) #f)))
 
 (define (widen-abstract-value v)
  (define (syntactic-constraints-met? v)
