@@ -4020,7 +4020,7 @@
 
 (define (make-list length fill) (map-n (lambda (i) fill) length))
 
-(define (replaceq x x-prime l) (list-replace l (positionq x l) x-prime))
+(define (replaceq x x-prime l) (map (lambda (e) (if (eq? e x) x-prime e)) l))
 
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
 
@@ -4927,6 +4927,14 @@
 
 ;;; Depth
 
+;;; A path is an alternating list of abstract values and proto abstract values.
+;;; The first element of the list is the root and the last element is a leaf.
+;;; The first element is an abstract value and the last element is either an
+;;; atomic proto abstract value, a branching proto abstract value that has no
+;;; children, an empty abstract value, or an up. Each proto abstract value is
+;;; a member of the preceeding abstract value and each abstract value is a
+;;; member of the branching values of the preceeding proto abstract value.
+
 (define (abstract-value-depth path)
  (cond ((null? path) 0)
        ((and (list? (first path))
@@ -5014,32 +5022,32 @@
 	    (loop (+ i 1) d va (list-ref path (* 2 (- i 1)))))
 	   (else (loop (+ i 1) d va vb))))))))
 
-(define (reduce-depth path v-target v-add)
- ;; path = [] | [v u] ++ path
- (let ((result
+(define (reduce-depth path v1 v2)
+ ;; v1 must be closer to the root than v2
+ (let ((v-additions
 	(let loop ((path path) (vs-above '()))
 	 (when (null? path) (internal-error))
-	 (let ((v (first path)))
-	  (if (eq? v v-add)
-	      (create-v-additions
-	       (make-up (positionq v-target vs-above)) v)
-	      (let* ((v-and-additions
-		      (loop (rest (rest path)) (cons v vs-above)))
-		     (v-new (first v-and-additions))
-		     (additions (second v-and-additions))
-		     (u (second path))
-		     (v-down (third path))
-		     (u-new (make-branching-value-with-new-values
-			     u (map (lambda (v) (if (eq? v v-down) v-new v))
-				    (branching-value-values u)))))
-	       (if (null? additions)
-		   (list (replaceq u u-new v) '())
-		   (move-values-up-tree (replaceq u u-new v) additions))))))))
-  (unless (null? (second result))
-   (internal-error "Addition(s) not processed in reduce-depth"))
-  (first result)))
+	 (if (eq? (first path) v2)
+	     (create-v-additions
+	      (make-up (positionq v1 vs-above)) (first path))
+	     (let* ((v-additions
+		     (loop (rest (rest path)) (cons (first path) vs-above)))
+		    (v (replaceq
+			(second path)
+			(make-branching-value-with-new-values
+			 (second path)
+			 (replaceq (third path)
+				   (first v-additions)
+				   (branching-value-values (second path))))
+			(first path))))
+	      (if (null? (second v-additions))
+		  (list v '())
+		  (move-values-up-tree v (second v-additions))))))))
+  (unless (null? (second v-additions))
+   (internal-error "Some addition wasn't applied"))
+  (first v-additions)))
 
-(define (limit-l4-depth v)
+(define (limit-matching-closure-depth v)
  (if (eq? *l4* #f)
      v
      (let loop ((v v) (v-new '()))
@@ -5058,7 +5066,7 @@
 		       (reduce-depth path (first va-vb) (second va-vb))))
 		(loop (append v-tmp (rest v)) v-new))))))))
 
-(define (limit-l6-depth v)
+(define (limit-matching-pair-depth v)
  (if (eq? *l6* #f)
      v
      (let loop ((path (path-of-depth-greater-than-k *l6* pair-depth v)) (v v))
@@ -5069,7 +5077,7 @@
 	   (loop (path-of-depth-greater-than-k *l6* pair-depth v-new)
 		 v-new))))))
 
-(define (aesthetic-reduce-l6-depth v)
+(define (aesthetic-reduce-matching-pair-depth v)
  (if (eq? *l6* #f)
      v
      (let outer ((limit (- *l6* 1)) (v v))
@@ -5099,18 +5107,18 @@
 (define (l2-met? v)
  (or (not *l2*)
      (not (some-abstract-value?
-	   (lambda (v vs) (if (up? v) #f (> (count-if abstract-real? v) *l2*)))
+	   (lambda (v vs-above)
+	    (and (not (up? v)) (> (count-if abstract-real? v) *l2*)))
 	   v))))
 
 (define (l3-met? v)
  (or (not *l3*)
      (not (some-abstract-value?
-	   (lambda (v vs)
-	    (if (up? v)
-		#f
-		(some (lambda (us) (> (length us) *l3*))
-		      (transitive-equivalence-classesp
-		       closure-match? (remove-if-not closure? v)))))
+	   (lambda (v vs-above)
+	    (and (not (up? v))
+		 (some (lambda (us) (> (length us) *l3*))
+		       (transitive-equivalence-classesp
+			closure-match? (remove-if-not closure? v)))))
 	   v))))
 
 (define (l4-met? v)
@@ -5120,32 +5128,28 @@
 (define (l5-met? v)
  (or (not *l5*)
      (not (some-abstract-value?
-	   (lambda (v vs)
-	    (if (up? v)
-		#f
-		(some (lambda (us) (> (length us) *l5*))
-		      (transitive-equivalence-classesp
-		       tagged-pair-match? (remove-if-not tagged-pair? v)))))
+	   (lambda (v vs-above)
+	    (and (not (up? v))
+		 (some (lambda (us) (> (length us) *l5*))
+		       (transitive-equivalence-classesp
+			tagged-pair-match? (remove-if-not tagged-pair? v)))))
 	   v))))
 
 (define (l6-met? v)
- (or (not *l6*)
-     (eq? (path-of-depth-greater-than-k *l6* pair-depth v) #f)))
+ (or (not *l6*) (eq? (path-of-depth-greater-than-k *l6* pair-depth v) #f)))
 
 (define (l7-met? v)
  (or (not *l7*)
      (not (some-abstract-value?
-	   (lambda (v vs)
-	    (if (up? v)
-		#f
-		(some (lambda (us) (> (length us) *l7*))
-		      (transitive-equivalence-classesp
-		       bundle-match? (remove-if-not bundle? v)))))
+	   (lambda (v vs-above)
+	    (and (not (up? v))
+		 (some (lambda (us) (> (length us) *l7*))
+		       (transitive-equivalence-classesp
+			bundle-match? (remove-if-not bundle? v)))))
 	   v))))
 
 (define (l8-met? v)
- (or (not *l8*)
-     (eq? (path-of-depth-greater-than-k *l8* bundle-depth v) #f)))
+ (or (not *l8*) (eq? (path-of-depth-greater-than-k *l8* bundle-depth v) #f)))
 
 (define (widen-abstract-value v)
  (define (syntactic-constraints-met? v)
@@ -5164,9 +5168,9 @@
 	  (limit-matching-bundles
 	   (limit-matching-pairs
 	    (limit-matching-closures
-	     (aesthetic-reduce-l6-depth
-	      (limit-l6-depth
-	       (limit-l4-depth
+	     (aesthetic-reduce-matching-pair-depth
+	      (limit-matching-pair-depth
+	       (limit-matching-closure-depth
 		(limit-matching-bundles
 		 (limit-matching-pairs
 		  (limit-matching-closures
