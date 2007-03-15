@@ -4814,35 +4814,29 @@
 					 branching-value-match?
 					 pick-us-to-coalesce)
  ;; returns: (list v additions)
- (let outer ((branching-uss (transitive-equivalence-classesp
-			     branching-value-match?
-			     (remove-if-not target-branching-value? v)))
-	     (us (remove-if target-branching-value? v))
-	     (additions '()))
+ (let loop ((branching-uss (transitive-equivalence-classesp
+			    branching-value-match?
+			    (remove-if-not target-branching-value? v)))
+	    (us (remove-if target-branching-value? v))
+	    (additions '()))
   (cond
    ((null? branching-uss) (list us additions))
    ((<= (length (first branching-uss)) k)
-    (outer (rest branching-uss) (append us (first branching-uss)) additions))
+    (loop (rest branching-uss) (append us (first branching-uss)) additions))
    (else
     (let* ((u1-u2 (pick-us-to-coalesce (first branching-uss)))
-	   (u1 (first u1-u2))
-	   (u2 (second u1-u2)))
-     (let inner ((vs1 (branching-value-values u1))
-		 (vs2 (branching-value-values u2))
-		 (vs '())
-		 (additions additions))
-      (if (null? vs1)
-	  (let* ((u-new (make-branching-value-with-new-values u1 (reverse vs)))
-		 (branching-uss-new
-		  (cons (cons u-new
-			      (removeq u2 (removeq u1 (first branching-uss))))
-			(rest branching-uss))))
-	   (outer branching-uss-new us additions))
-	  (let ((v-additions (union-for-widening (first vs1) (first vs2))))
-	   (inner (rest vs1)
-		  (rest vs2)
-		  (cons (first v-additions) vs)
-		  (merge-additions additions (second v-additions)))))))))))
+	   (v-additions-list (map union-for-widening
+				  (branching-value-values (first u1-u2))
+				  (branching-value-values (second u1-u2)))))
+     (loop (cons (cons (make-branching-value-with-new-values
+			(first u1-u2) (map first v-additions-list))
+		       (removeq (second u1-u2)
+				(removeq (first u1-u2) (first branching-uss))))
+		 (rest branching-uss))
+	   us
+	   (merge-additions
+	    additions
+	    (reduce merge-additions (map second v-additions-list) '()))))))))
 
 (define (limit-matching-branching-values* limit v)
  (let ((v-additions
