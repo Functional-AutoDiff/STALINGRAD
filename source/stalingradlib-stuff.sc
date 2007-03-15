@@ -4735,53 +4735,42 @@
  ;; needs work: candidate for removal
  (list up (append (make-list (up-index up) '()) (list (list v)))))
 
-(define (move-additions-up v-new additions)
- ;; v-new is current v after any additions
- ;; This assumes that all additions are to values above v-new.
- ;; i is the post move-up free-up-index of the value to which the current set
- ;;   of additions is to be added.
- (let loop ((vss additions) (i 0))
-  (if (= (length vss) i)
-      vss
-      (let* ((vs (list-ref vss i))
-	     (add-in-v-new?
-	      (some
-	       (lambda (v)
-		(and (not (and (up? v) (= (up-index v) 0)))
-		     (some-abstract-value?
-		      (lambda (v vs-above)
-		       (and (free-up? v vs-above)
-			    (= (free-up-index v vs-above) 0)))
-		      v)))
-	       vs))
-	     (vs-new
-	      (append (map (lambda (v)
-			    (if (and (up? v) (= (up-index v) 0))
-				v-new
-				(abstract-value-process-free-ups
-				 (lambda (v vs-above)
-				  (if (= (free-up-index v vs-above) 0)
-				      (make-free-up i vs-above)
-				      (make-up (- (up-index v) 1))))
-				 v)))
-			   vs)
-		      (if add-in-v-new? (list v-new) '()))))
-       (loop (list-replace vss i vs-new) (+ i 1))))))
-
 (define (move-values-up-tree v additions)
- ;; returns (LIST value additions)
+ ;; returns: (list v additions)
+ ;; needs work: I don't understand this.
+ ;; needs work: candidate for removal
  (when (null? additions)
   (internal-error "Shouldn't we NOT do this if (null? additions)?"))
- (let* ((vs-to-add (first additions))
-	(paranoid
-	 (when (some up? vs-to-add)
-	  (internal-error "No additions should be UPs...should they?")))
-	(v-new (remove-redundant-proto-abstract-values
-		(reduce append
-			(cons v (map decrement-free-ups vs-to-add))
-			'())))
-	(additions-new (move-additions-up v-new (rest additions))))
-  (list v-new additions-new)))
+ (when (some up? (first additions))
+  (internal-error "No additions should be UPs...should they?"))
+ (let ((v-new
+	(remove-redundant-proto-abstract-values
+	 (append
+	  v (reduce append (map decrement-free-ups (first additions)) '())))))
+  (list v-new
+	(map-indexed
+	 (lambda (vs i)
+	  (append (map (lambda (v)
+			(if (and (up? v) (zero? (up-index v)))
+			    v-new
+			    (abstract-value-process-free-ups
+			     (lambda (v vs-above)
+			      (if (zero? (free-up-index v vs-above))
+				  (make-free-up i vs-above)
+				  (make-up (- (up-index v) 1))))
+			     v)))
+		       vs)
+		  (if (some (lambda (v)
+			     (and (or (not (up? v)) (not (zero? (up-index v))))
+				  (some-abstract-value?
+				   (lambda (v vs-above)
+				    (and (free-up? v vs-above)
+					 (zero? (free-up-index v vs-above))))
+				   v)))
+			    vs)
+		      (list v-new)
+		      '())))
+	 (rest additions)))))
 
 ;;; Matching Values
 
