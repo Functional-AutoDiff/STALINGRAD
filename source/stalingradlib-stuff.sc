@@ -4002,13 +4002,16 @@
 
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
 
-(define (every-eq? l1 l2)
- ;; optimization
- (or (eq? l1 l2) (and (= (length l1) (length l2)) (every eq? l1 l2))))
-
 (define (minimal-elements <? s)
  ;; belongs in QobiScheme
  (remove-if (lambda (e) (some (lambda (e-prime) (<? e-prime e)) s)) s))
+
+(define (positionp-vector p x v)
+ ;; belongs in QobiScheme
+ (let loop ((i 0))
+  (cond ((>= i (vector-length v)) #f)
+	((p x (vector-ref v i)) i)
+	(else (loop (+ i 1))))))
 
 ;;; VLAD stuff
 
@@ -4060,18 +4063,8 @@
 
 ;;; Expression Equality
 
-(define (expression? x)
- (or (constant-expression? x)
-     (variable-access-expression? x)
-     (lambda-expression? x)
-     (application? x)
-     (letrec-expression? x)
-     (cons-expression? x)))
-
 (define (expression-eqv? e1 e2)
- ;; optimization
- (or (eq? e1 e2)
-     (and (constant-expression? e1)
+ (or (and (constant-expression? e1)
 	  (constant-expression? e2)
 	  (equal? (constant-expression-value e1)
 		  (constant-expression-value e2)))
@@ -4105,8 +4098,7 @@
 	  (expression-eqv? (letrec-expression-body e1)
 			   (letrec-expression-body e2)))
      (and (cons-expression? e1) (cons-expression? e2)
-	  ;; brownfis - to change, uncomment below
-	  ;; (equal? (cons-expression-tags e1) (cons-expression-tags e2))
+	  (equal? (cons-expression-tags e1) (cons-expression-tags e2))
 	  (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
 	  (expression-eqv? (cons-expression-cdr e1)
 			   (cons-expression-cdr e2)))))
@@ -4172,6 +4164,7 @@
      (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))))
 
 (define (recursive-closure-procedure-lambda-expressions v)
+ ;; This is only used in externalize-proto-abstract-value.
  (map-vector new-lambda-expression
 	     (recursive-closure-argument-variables v)
 	     (recursive-closure-bodies v)))
@@ -4209,6 +4202,8 @@
      (empty-abstract-value)
      (list (make-reverse-tagged-value v))))
 
+(define (reverse-tagged-value-match? u1 u2) #t)
+
 ;;; Abstract Tagged Pairs
 
 (define (make-abstract-tagged-pair tags v1 v2)
@@ -4227,20 +4222,19 @@
 (define (aggregate-value-match? u1 u2)
  (or (and (closure? u1) (closure? u2) (closure-match? u1 u2))
      (and (bundle? u1) (bundle? u2) (bundle-match? u1 u2))
+     ;; needs work: reverse tagged values
      (and (tagged-pair? u1) (tagged-pair? u2) (tagged-pair-match? u1 u2))))
 
 (define (aggregate-value-values u)
  (cond ((closure? u) (vector->list (closure-values u)))
        ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
+       ;; needs work: reverse tagged values
        ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
        (else (internal-error))))
 
 (define (make-aggregate-value-with-new-values u vs)
- ;; performance optimization
  ;; needs work: To check that no vs is empty-abstract-value.
- ;; needs work: To check that there are the correct number of vs.
- (cond ((every-eq? vs (aggregate-value-values u)) u)
-       ((nonrecursive-closure? u)
+ (cond ((nonrecursive-closure? u)
 	(make-nonrecursive-closure (nonrecursive-closure-variables u)
 				   (list->vector vs)
 				   (nonrecursive-closure-variable u)
@@ -4256,6 +4250,7 @@
 	(when (or (up? (first vs)) (up? (second vs)))
 	 (unimplemented "Bundles with backlinks"))
 	(make-bundle (first vs) (second vs)))
+       ;; needs work: reverse tagged values
        ((tagged-pair? u)
 	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
        (else (internal-error))))
@@ -4264,9 +4259,12 @@
 
 (define (empty-abstract-value) '())
 
+;;; needs work: To check for recursive values that can't terminate.
 (define (empty-abstract-value? v) (null? v))
 
 (define (top) 'top)
+
+(define (top? v) (eq? v 'top))
 
 (define (vlad-value->abstract-value v)
  (if (scalar-proto-abstract-value? v)
@@ -4430,27 +4428,7 @@
  (proto-abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
 
 (define (abstract-value-nondisjoint? v1 v2)
- ;; performance optimization
- ;; This is an imprecise version. A #f result is precise.
- (or (up? v1)
-     (up? v2)
-     (some (lambda (u1)
-	    (some (lambda (u2)
-		   (or (and (null? u1) (null? u2))
-		       (and (boolean? u1) (boolean? u2) (eq? u1 u2))
-		       (and (eq? u1 'real) (eq? u2 'real))
-		       (and (eq? u1 'real) (real? u2))
-		       (and (real? u1) (eq? u2 'real))
-		       (and (real? u1) (real? u2) (= u1 u2))
-		       (and (primitive-procedure? u1)
-			    (primitive-procedure? u2)
-			    (eq? u1 u2))
-		       (and (aggregate-value-match? u1 u2)
-			    (every abstract-value-nondisjoint?
-				   (aggregate-value-values u1)
-				   (aggregate-value-values u2)))))
-		  v2))
-	   v1)))
+ (abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
 
 (define (closed-proto-abstract-values v)
  (let loop ((v v) (vs-above '()))
@@ -4468,16 +4446,14 @@
 			  (aggregate-value-values u)))))
 	       (last vs-above))
 	  v)
-      (let ((v1 (map (lambda (u)
-		      (if (scalar-proto-abstract-value? u)
-			  u
-			  (make-aggregate-value-with-new-values
-			   u
-			   (map (lambda (v1) (loop v1 (cons v vs-above)))
-				(aggregate-value-values u)))))
-		     v)))
-       ;; performance optimization
-       (if (every-eq? v v1) v v1)))))
+      (map (lambda (u)
+	    (if (scalar-proto-abstract-value? u)
+		u
+		(make-aggregate-value-with-new-values
+		 u
+		 (map (lambda (v1) (loop v1 (cons v vs-above)))
+		      (aggregate-value-values u)))))
+	   v))))
 
 (define (abstract-value-union v1 v2)
  ;; This cannot introduce imprecision.
@@ -4509,9 +4485,6 @@
 ;;; needs work: why do we sometimes call abstract-value-union-without-unroll
 ;;;             and sometimes call imprecise-abstract-value-union
 
-(define (imprecise-abstract-value-union v1 v2)
- (abstract-value-union-without-unroll v1 v2))
-
 ;;; Abstract Environments
 
 (define (restrict-environment vs xs xs-new)
@@ -4531,53 +4504,69 @@
  (every-vector abstract-value-nondisjoint? vs1 vs2))
 
 (define (abstract-environment-union vs1 vs2)
+ ;; This can introduce imprecision by forming the environment of the unions
+ ;; instead of the union of the environments.
  (map-vector abstract-value-union vs1 vs2))
 
-(define (imprecise-abstract-environment-union vs1 vs2)
- (map-vector imprecise-abstract-value-union vs1 vs2))
+(define (disjoint-cover vss)
+ ;; This can introduce imprecision.
+ (let loop ((vss vss))
+  (let ((vs1 (find-if
+	      (lambda (vs1)
+	       (some (lambda (vs2)
+		      (and (not (eq? vs1 vs2))
+			   (abstract-environment-nondisjoint? vs1 vs2)))
+		     vss))
+	      vss)))
+   (if vs1
+       (let ((vs2 (find-if (lambda (vs2)
+			    (and (not (eq? vs1 vs2))
+				 (abstract-environment-nondisjoint? vs1 vs2)))
+			   vss)))
+	(loop (cons (abstract-environment-union vs1 vs2)
+		    (removeq vs2 (removeq vs1 vss)))))
+       vss))))
 
 ;;; Abstract Flows
 
-(define (empty-abstract-flow) '())
-
 (define (abstract-flow=? bs1 bs2)
+ ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
- (or
-  ;; optimization
-  (eq? bs1 bs2)
-  ;; needs work: Can make O(n) instead of O(n^2).
-  (set-equalp?
-   (lambda (b1 b2)
-    (and (abstract-environment=?
-	  (abstract-environment-binding-abstract-values b1)
-	  (abstract-environment-binding-abstract-values b2))
-	 (abstract-value=? (abstract-environment-binding-abstract-value b1)
-			   (abstract-environment-binding-abstract-value b2))))
-   bs1
-   bs2)))
+ ;; needs work: Can make O(n) instead of O(n^2).
+ (set-equalp?
+  (lambda (b1 b2)
+   (and (abstract-environment=?
+	 (abstract-environment-binding-abstract-values b1)
+	 (abstract-environment-binding-abstract-values b2))
+	(abstract-value=? (abstract-environment-binding-abstract-value b1)
+			  (abstract-environment-binding-abstract-value b2))))
+  bs1
+  bs2))
 
-(define (abstract-flow-union bs1 bs2)
- ;; This is one place where imprecision can be introduced.
- ;; needs work: I wrote the above comment a while ago and now don't remember
- ;;             how imprecision is introduced. I need to refresh my memory.
- (if (null? bs1)
-     bs2
-     (let ((b2 (find-if
-		(lambda (b2)
-		 (abstract-environment=?
-		  (abstract-environment-binding-abstract-values (first bs1))
-		  (abstract-environment-binding-abstract-values b2)))
-		bs2)))
-      (if b2
-	  (abstract-flow-union
-	   (rest bs1)
-	   (cons (make-abstract-environment-binding
-		  (abstract-environment-binding-abstract-values b2)
-		  (abstract-value-union
-		   (abstract-environment-binding-abstract-value (first bs1))
-		   (abstract-environment-binding-abstract-value b2)))
-		 (removeq b2 bs2)))
-	  (cons (first bs1) (abstract-flow-union (rest bs1) bs2))))))
+(define (abstract-flow-union bs1 bs2) (append bs1 bs2))
+
+(define (subsumes? b1 b2)
+ ;; This is a conservative approximation. A #t result is precise.
+ (and (abstract-environment-subset?
+       (abstract-environment-binding-abstract-values b2)
+       (abstract-environment-binding-abstract-values b1))
+      (abstract-value-subset?
+       (abstract-environment-binding-abstract-value b1)
+       (abstract-environment-binding-abstract-value b2))))
+
+(define (remove-subsumed-abstract-environment-bindings bs)
+ ;; The meaning of a flow is unchanged if subsumed bindings are removed. The
+ ;; fact that subsumption is approximated only means that some subsumed
+ ;; bindings are not removed.
+ (let loop ((bs bs) (bs1 '()))
+  (if (null? bs)
+      bs1
+      (loop
+       (rest bs)
+       (if (some (lambda (b1) (subsumes? b1 (first bs))) bs1)
+	   bs1
+	   (cons (first bs)
+		 (remove-if (lambda (b1) (subsumes? (first bs) b1)) bs1)))))))
 
 ;;; Abstract Analyses
 ;;; It's possible that the order of expressions in abstract analyses (for the
@@ -4597,6 +4586,7 @@
 	e (list (make-abstract-environment-binding vs (top))))))
 
 (define (abstract-analysis=? bs1 bs2)
+ ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
  (set-equalp?
@@ -4608,21 +4598,26 @@
   bs1
   bs2))
 
+(define (lookup-expression-binding e bs)
+ (find-if (lambda (b)
+	   (expression=? e (abstract-expression-binding-expression b)))
+	  bs))
+
 (define (abstract-analysis-union bs1 bs2)
  (if (null? bs1)
      bs2
      (let ((b2 (lookup-expression-binding
 		(abstract-expression-binding-expression (first bs1)) bs2)))
-      (if b2
-	  (abstract-analysis-union
-	   (rest bs1)
+      (abstract-analysis-union
+       (rest bs1)
+       (if b2
 	   (cons (make-abstract-expression-binding
 		  (abstract-expression-binding-expression (first bs1))
 		  (abstract-flow-union
 		   (abstract-expression-binding-abstract-flow (first bs1))
 		   (abstract-expression-binding-abstract-flow b2)))
-		 (removeq b2 bs2)))
-	  (cons (first bs1) (abstract-analysis-union (rest bs1) bs2))))))
+		 (removeq b2 bs2))
+	   (cons (first bs1) bs2))))))
 
 ;;; Widen
 
@@ -4773,6 +4768,7 @@
 
 (define (pick-bundles-to-coalesce us) (sublist us 0 2))
 
+;; needs work: rename to "tagged pair"
 (define (pick-pairs-to-coalesce us) (sublist us 0 2))
 
 (define (unroll v vs-above)
@@ -4861,6 +4857,7 @@
 	v vs-above *l3* closure? closure-match? pick-closures-to-coalesce))
       v)))
 
+;; needs work: rename to "tagged pair"
 (define (limit-matching-pairs v)
  (if (eq? *l5* #f)
      v
@@ -4966,6 +4963,7 @@
 	   (let ((v1-v2 (pick-values-to-merge closure-match? closure? path)))
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
+;; needs work: rename to "tagged pair"
 (define (limit-matching-pair-depth v)
  (if (eq? *l6* #f)
      v
@@ -5049,16 +5047,7 @@
 	     (limit-matching-bundles
 	      (limit-matching-closures v))))))))))))
 
-;;; here I am
-;;;   flow-analysis
-;;;   top
-
 ;;; Abstract Interpretation
-
-(define (lookup-expression-binding e bs)
- (find-if (lambda (b)
-	   (expression=? e (abstract-expression-binding-expression b)))
-	  bs))
 
 (define (initial-abstract-analysis e bs)
  (make-abstract-analysis
@@ -5070,13 +5059,21 @@
       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
    (free-variables e))))
 
-(define (abstract-eval1 e vs bs) 'debugging)
-
-(define (positionp-vector p x v)
- (let loop ((i 0))
-  (cond ((>= i (vector-length v)) #f)
-	((p x (vector-ref v i)) i)
-	(else (loop (+ i 1))))))
+(define (abstract-eval1 e vs bs)
+ ;; This is a conservative approximation because abstract-environment-subset?
+ ;; is and might return top when a matching binding exists. It always returns
+ ;; an abstract value whose extension contains the actual value of the
+ ;; expression and is thus always sound.
+ (let ((b (lookup-expression-binding e bs)))
+  (if b
+      ;; Because the domains of a flow are disjoint there can be only one.
+      (let ((b (find-if (lambda (b)
+			 (abstract-environment-subset?
+			  vs
+			  (abstract-environment-binding-abstract-values b)))
+			(abstract-expression-binding-abstract-flow b))))
+       (if b (abstract-environment-binding-abstract-value b) (top)))
+      (top))))
 
 (define (abstract-apply-closure p u1 v2)
  (cond
@@ -5422,6 +5419,7 @@
 	     "Might attempt to take primal of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
+		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -5445,6 +5443,7 @@
 	     "Might attempt to take primal of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
+		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -5516,6 +5515,7 @@
 	    (compile-time-warning
 	     "Might attempt to take tangent of a non-forward value" u-forward)
 	    (if (some (lambda (b)
+		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
