@@ -97,47 +97,31 @@
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one ("memoized" memoized?))
+		 (at-most-one ("flow-size-limit"
+			       flow-size-limit?
+			       (flow-size-limit "n" integer-argument #f)))
+		 (at-most-one ("real-limit"
+			       real-limit?
+			       (real-limit "n" integer-argument #f)))
+		 (at-most-one ("closure-limit"
+			       closure-limit?
+			       (closure-limit "n" integer-argument #f)))
+		 (at-most-one ("closure-depth-limit"
+			       closure-depth-limit?
+			       (closure-depth-limit "n" integer-argument #f)))
+		 (at-most-one ("bundle-limit"
+			       bundle-limit?
+			       (bundle-limit "n" integer-argument #f)))
+		 (at-most-one ("bundle-depth-limit"
+			       bundle-depth-limit?
+			       (bundle-depth-limit "n" integer-argument #f)))
+		 (at-most-one ("tagged-pair-limit"
+			       tagged-pair-limit?
+			       (tagged-pair-limit "n" integer-argument #f)))
 		 (at-most-one
-		  ("l1" l1? (l1 "flow-size-limit" integer-argument #f)))
-		 (at-most-one ("l2"
-			       l2?
-			       (l2 "concrete-real-abstract-value-limit"
-				   integer-argument
-				   #f)))
-		 (at-most-one ("l3"
-			       l3?
-			       (l3 "matching-closure-abstract-value-limit"
-				   integer-argument
-				   #f)))
-		 (at-most-one ("l4"
-			       l4?
-			       (l4 "closure-nesting-depth-limit"
-				   integer-argument
-				   #f)))
-		 ;; needs work: to follow style guildines, should order as
-		 ;;             bundle, reverse tagged value, pair
-		 ;;             while doing that, should rename from l? to
-		 ;;             more descriptive names
-		 (at-most-one ("l5"
-			       l5?
-			       (l5 "matching-pair-abstract-value-limit"
-				   integer-argument
-				   #f)))
-		 (at-most-one ("l6"
-			       l6?
-			       (l6 "pair-nesting-depth-limit"
-				   integer-argument
-				   #f)))
-		 (at-most-one ("l7"
-			       l7?
-			       (l7 "matching-bundle-abstract-value-limit"
-				   integer-argument
-				   #f)))
-		 (at-most-one ("l8"
-			       l8?
-			       (l8 "bundle-nesting-depth-limit"
-				   integer-argument
-				   #f)))
+		  ("tagged-pair-depth-limit"
+		   tagged-pair-depth-limit?
+		   (tagged-pair-depth-limit "n" integer-argument #f)))
 		 (at-most-one ("no-warn" no-warn?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
@@ -175,14 +159,14 @@
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
  (set! *memoized?* memoized?)
- (set! *l1* l1)
- (set! *l2* l2)
- (set! *l3* l3)
- (set! *l4* l4)
- (set! *l5* l5)
- (set! *l6* l6)
- (set! *l7* l7)
- (set! *l8* l8)
+ (set! *flow-size-limit* flow-size-limit)
+ (set! *real-limit* real-limit)
+ (set! *closure-limit* closure-limit)
+ (set! *closure-depth-limit* closure-depth-limit)
+ (set! *bundle-limit* bundle-limit)
+ (set! *bundle-depth-limit* bundle-depth-limit)
+ (set! *tagged-pair-limit* tagged-pair-limit)
+ (set! *tagged-pair-depth-limit* tagged-pair-depth-limit)
  (set! *warn?* #f)
  (when expression-equality-using-identity?
   (set! *expression-equality* 'identity))

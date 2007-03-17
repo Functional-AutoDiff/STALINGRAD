@@ -4430,7 +4430,7 @@
  (proto-abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
 
 (define (abstract-value-nondisjoint? v1 v2)
- (abstract-value-nondisjoint?-internal u1 u2 '() '() '()))
+ (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
 
 (define (closed-proto-abstract-values v)
  (let loop ((v v) (vs-above '()))
@@ -4737,7 +4737,7 @@
 (define (unroll v vs-above)
  (if (up? v)
      (map (lambda (u)
-	   (if (atomic-proto-abstract-value? u)
+	   (if (scalar-proto-abstract-value? u)
 	       u
 	       (make-aggregate-value-with-new-values
 		u
@@ -4790,7 +4790,7 @@
   (if (up? v)
       v
       (limit (map (lambda (u)
-		   (if (atomic-proto-abstract-value? u)
+		   (if (scalar-proto-abstract-value? u)
 		       u
 		       (make-aggregate-value-with-new-values
 			u
@@ -4853,8 +4853,8 @@
 
 ;;; A path is an alternating list of abstract values and proto abstract values.
 ;;; The first element of the list is the root and the last element is a leaf.
-;;; The first element is an abstract value and the last element is either an
-;;; atomic proto abstract value, an aggregate proto abstract value that has no
+;;; The first element is an abstract value and the last element is either a
+;;; scalar proto abstract value, an aggregate proto abstract value that has no
 ;;; children, an empty abstract value, or an up. Each proto abstract value is
 ;;; a member of the preceeding abstract value and each abstract value is a
 ;;; member of the aggregate values of the preceeding proto abstract value.
