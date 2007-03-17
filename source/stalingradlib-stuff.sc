@@ -153,28 +153,30 @@
 ;;; - a real,
 ;;; - real,
 ;;; - a primitive procedure,
-;;; - a nonrecursive closure, or
-;;; - a recursive closure.
+;;; - a nonrecursive closure,
+;;; - a recursive closure,
+;;; - a bundle, or
+;;; - a tagged pair.
 
 ;;; An abstract value is a list of proto abstract values or an up.
 
 (define-structure up index)
 
-;;; An abstract flow is a list of abstract-environment bindings. All of the
-;;; abstract environments in the abstract-environment bindings of a given
-;;; abstract flow must map the same set of variables, namely precisely the
-;;; free variables in the abstract expresssion binding that contains that
-;;; abstract flow. Thus we represent the abstract environment in an
-;;; abstract-environment binding as a list of abstract values in the canonical
-;;; order of the free variables. Note that both the abstract values in the
-;;; abstract environment of an abstract-environment binding as well as the
-;;; abstract value in an abstract-environment binding must be closed, i.e. they
-;;; may not contain free deBruin references because there are no enclosing
-;;; abstract values.
+;;; A flow is a list of environment bindings. An analysis is a list of
+;;; expression bindings. All of the environments in the environment bindings of
+;;; a given flow must map the same set of variables, namely precisely the free
+;;; variables in the expression binding that contains that flow. Thus we
+;;; represent the environment in an environment binding as a list of values in
+;;; the canonical order of the free variables.
 
-(define-structure abstract-environment-binding abstract-values abstract-value)
+;;; Note that both the abstract values in the abstract environment of an
+;;; abstract environment binding as well as the abstract value in an
+;;; abstract environment binding must be closed, i.e. they may not contain
+;;; free deBruin references because there are no enclosing abstract values.
 
-(define-structure abstract-expression-binding expression abstract-flow)
+(define-structure environment-binding values value)
+
+(define-structure expression-binding expression flow)
 
 ;;; Variables
 
@@ -238,21 +240,21 @@
 
 (define *memoized?* #f)
 
-(define *l1* #f)			;flow size limit
+(define *flow-size-limit* #f)
 
-(define *l2* #f)			;concrete real abstract value limit
+(define *real-limit* #f)
 
-(define *l3* #f)			;matching closure abstract value limit
+(define *closure-limit* #f)
 
-(define *l4* #f)			;closure nesting depth limit
+(define *closure-depth-limit* #f)
 
-(define *l5* #f)			;matching pair abstract value limit
+(define *bundle-limit* #f)
 
-(define *l6* #f)			;pair nesting depth limit
+(define *bundle-depth-limit* #f)
 
-(define *l7* #f)			;matching bundle abstract value limit
+(define *tagged-pair-limit* #f)
 
-(define *l8* #f)			;bundle nesting depth limit
+(define *tagged-pair-depth-limit* #f)
 
 (define *warn?* #t)
 
@@ -4508,51 +4510,28 @@
  ;; instead of the union of the environments.
  (map-vector abstract-value-union vs1 vs2))
 
-(define (disjoint-cover vss)
- ;; This can introduce imprecision.
- (let loop ((vss vss))
-  (let ((vs1 (find-if
-	      (lambda (vs1)
-	       (some (lambda (vs2)
-		      (and (not (eq? vs1 vs2))
-			   (abstract-environment-nondisjoint? vs1 vs2)))
-		     vss))
-	      vss)))
-   (if vs1
-       (let ((vs2 (find-if (lambda (vs2)
-			    (and (not (eq? vs1 vs2))
-				 (abstract-environment-nondisjoint? vs1 vs2)))
-			   vss)))
-	(loop (cons (abstract-environment-union vs1 vs2)
-		    (removeq vs2 (removeq vs1 vss)))))
-       vss))))
-
 ;;; Abstract Flows
 
 (define (abstract-flow=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp?
-  (lambda (b1 b2)
-   (and (abstract-environment=?
-	 (abstract-environment-binding-abstract-values b1)
-	 (abstract-environment-binding-abstract-values b2))
-	(abstract-value=? (abstract-environment-binding-abstract-value b1)
-			  (abstract-environment-binding-abstract-value b2))))
-  bs1
-  bs2))
+ (set-equalp? (lambda (b1 b2)
+	       (and (abstract-environment=? (environment-binding-values b1)
+					    (environment-binding-values b2))
+		    (abstract-value=? (environment-binding-value b1)
+				      (environment-binding-value b2))))
+	      bs1
+	      bs2))
 
 (define (abstract-flow-union bs1 bs2) (append bs1 bs2))
 
 (define (subsumes? b1 b2)
  ;; This is a conservative approximation. A #t result is precise.
- (and (abstract-environment-subset?
-       (abstract-environment-binding-abstract-values b2)
-       (abstract-environment-binding-abstract-values b1))
-      (abstract-value-subset?
-       (abstract-environment-binding-abstract-value b1)
-       (abstract-environment-binding-abstract-value b2))))
+ (and (abstract-environment-subset? (environment-binding-values b2)
+				    (environment-binding-values b1))
+      (abstract-value-subset? (environment-binding-value b1)
+			      (environment-binding-value b2))))
 
 (define (remove-subsumed-abstract-environment-bindings bs)
  ;; The meaning of a flow is unchanged if subsumed bindings are removed. The
@@ -4582,40 +4561,35 @@
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
    "vs and (length (free-variables e)) should be of same length"))
- (list (make-abstract-expression-binding
-	e (list (make-abstract-environment-binding vs (top))))))
+ (list (make-expression-binding e (list (make-environment-binding vs (top))))))
 
 (define (abstract-analysis=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp?
-  (lambda (b1 b2)
-   (and (expression=? (abstract-expression-binding-expression b1)
-		      (abstract-expression-binding-expression b2))
-	(abstract-flow=? (abstract-expression-binding-abstract-flow b1)
-			 (abstract-expression-binding-abstract-flow b2))))
-  bs1
-  bs2))
+ (set-equalp? (lambda (b1 b2)
+	       (and (expression=? (expression-binding-expression b1)
+				  (expression-binding-expression b2))
+		    (abstract-flow=? (expression-binding-flow b1)
+				     (expression-binding-flow b2))))
+	      bs1
+	      bs2))
 
 (define (lookup-expression-binding e bs)
- (find-if (lambda (b)
-	   (expression=? e (abstract-expression-binding-expression b)))
-	  bs))
+ (find-if (lambda (b) (expression=? e (expression-binding-expression b))) bs))
 
 (define (abstract-analysis-union bs1 bs2)
  (if (null? bs1)
      bs2
      (let ((b2 (lookup-expression-binding
-		(abstract-expression-binding-expression (first bs1)) bs2)))
+		(expression-binding-expression (first bs1)) bs2)))
       (abstract-analysis-union
        (rest bs1)
        (if b2
-	   (cons (make-abstract-expression-binding
-		  (abstract-expression-binding-expression (first bs1))
-		  (abstract-flow-union
-		   (abstract-expression-binding-abstract-flow (first bs1))
-		   (abstract-expression-binding-abstract-flow b2)))
+	   (cons (make-expression-binding
+		  (expression-binding-expression (first bs1))
+		  (abstract-flow-union (expression-binding-flow (first bs1))
+				       (expression-binding-flow b2)))
 		 (removeq b2 bs2))
 	   (cons (first bs1) bs2))))))
 
@@ -4754,22 +4728,11 @@
 
 ;;; Matching Values
 
-(define (pick-nonrecursive-closures-to-coalesce us) (sublist us 0 2))
-
-(define (pick-recursive-closures-to-coalesce us) (sublist us 0 2))
-
-(define (pick-closures-to-coalesce us)
- (cond
-  ((every nonrecursive-closure? us)
-   (pick-nonrecursive-closures-to-coalesce us))
-  ((every recursive-closure? us)
-   (pick-recursive-closures-to-coalesce us))
-  (else (internal-error "us must be a list of {non,}recursive-closures"))))
+(define (pick-closures-to-coalesce us) (sublist us 0 2))
 
 (define (pick-bundles-to-coalesce us) (sublist us 0 2))
 
-;; needs work: rename to "tagged pair"
-(define (pick-pairs-to-coalesce us) (sublist us 0 2))
+(define (pick-tagged-pairs-to-coalesce us) (sublist us 0 2))
 
 (define (unroll v vs-above)
  (if (up? v)
@@ -4793,37 +4756,36 @@
      (remove-redundant-proto-abstract-values
       (append (unroll v1 vs-above) (unroll v2 vs-above)))))
 
-(define (limit-matching-aggregate-values v
-					 vs-above
-					 k
-					 target-aggregate-value?
-					 match?
-					 pick-us-to-coalesce)
+(define (limit-aggregate-values v
+				vs-above
+				k
+				target-aggregate-value?
+				match?
+				pick-us-to-coalesce)
  (when (up? v) (internal-error))
  (append
-  (reduce
-   append
-   (map (lambda (us)
-	 (let loop ((us us))
-	  (if (<= (length us) k)
-	      us
-	      (let* ((u1-u2 (pick-us-to-coalesce us))
-		     (u1 (first u1-u2))
-		     (u2 (second u1-u2)))
-	       (loop (cons (make-aggregate-value-with-new-values
-			    u1
-			    (map (lambda (v1 v2)
-				  (abstract-value-union-for-widening
-				   v1 v2 (cons v vs-above)))
-				 (aggregate-value-values u1)
-				 (aggregate-value-values u2)))
-			   (removeq u2 (removeq u1 us))))))))
-	(transitive-equivalence-classesp
-	 match? (remove-if-not target-aggregate-value? v)))
-   '())
+  (reduce append
+	  (map (lambda (us)
+		(let loop ((us us))
+		 (if (<= (length us) k)
+		     us
+		     (let* ((u1-u2 (pick-us-to-coalesce us))
+			    (u1 (first u1-u2))
+			    (u2 (second u1-u2)))
+		      (loop (cons (make-aggregate-value-with-new-values
+				   u1
+				   (map (lambda (v1 v2)
+					 (abstract-value-union-for-widening
+					  v1 v2 (cons v vs-above)))
+					(aggregate-value-values u1)
+					(aggregate-value-values u2)))
+				  (removeq u2 (removeq u1 us))))))))
+	       (transitive-equivalence-classesp
+		match? (remove-if-not target-aggregate-value? v)))
+	  '())
   (remove-if target-aggregate-value? v)))
 
-(define (limit-matching-aggregate-values* limit v)
+(define (limit-aggregate-values* limit v)
  (let loop ((v v) (vs-above '()))
   (if (up? v)
       v
@@ -4837,47 +4799,54 @@
 		  v)
 	     vs-above))))
 
-(define (limit-matching-reals v)
+(define (limit-reals v)
  ;; This assumes that there are no duplicate concrete reals within an abstract
  ;; value.
- (if (eq? *l2* #f)
+ (if (eq? *real-limit* #f)
      v
      (map-abstract-value (lambda (v vs-above)
-			  (if (> (count-if abstract-real? v) *l2*)
+			  (if (> (count-if abstract-real? v) *real-limit*)
 			      (cons 'real (remove-if abstract-real? v))
 			      v))
 			 v)))
 
-(define (limit-matching-closures v)
- (if (eq? *l3* #f)
+(define (limit-closures v)
+ (if (eq? *closure-limit* #f)
      v
-     (limit-matching-aggregate-values*
+     (limit-aggregate-values*
       (lambda (v vs-above)
-       (limit-matching-aggregate-values
-	v vs-above *l3* closure? closure-match? pick-closures-to-coalesce))
+       (limit-aggregate-values v
+			       vs-above
+			       *closure-limit*
+			       closure?
+			       closure-match?
+			       pick-closures-to-coalesce))
       v)))
 
-;; needs work: rename to "tagged pair"
-(define (limit-matching-pairs v)
- (if (eq? *l5* #f)
+(define (limit-bundles v)
+ (if (eq? *bundle-limit* #f)
      v
-     (limit-matching-aggregate-values*
+     (limit-aggregate-values*
       (lambda (v vs-above)
-       (limit-matching-aggregate-values v
-					vs-above
-					*l5*
-					tagged-pair?
-					tagged-pair-match?
-					pick-pairs-to-coalesce))
+       (limit-aggregate-values v
+			       vs-above
+			       *bundle-limit*
+			       bundle?
+			       bundle-match?
+			       pick-bundles-to-coalesce))
       v)))
 
-(define (limit-matching-bundles v)
- (if (eq? *l7* #f)
+(define (limit-tagged-pairs v)
+ (if (eq? *tagged-pair-limit* #f)
      v
-     (limit-matching-aggregate-values*
+     (limit-aggregate-values*
       (lambda (v vs-above)
-       (limit-matching-aggregate-values
-	v vs-above *l7* bundle? bundle-match? pick-bundles-to-coalesce))
+       (limit-aggregate-values v
+			       vs-above
+			       *tagged-pair-limit*
+			       tagged-pair?
+			       tagged-pair-match?
+			       pick-tagged-pairs-to-coalesce))
       v)))
 
 ;;; Depth
@@ -4914,7 +4883,7 @@
 		    (let ((path (outer (first vs) (cons (first us) path))))
 		     (if (eq? path #f) (inner (rest vs)) path))))))))))
 
-(define (pick-values-to-merge match? type? path)
+(define (pick-values-to-coalesce match? type? path)
  (let* ((classes (transitive-equivalence-classesp
 		  match? (remove-if-not type? (every-other (rest path)))))
 	(k (reduce max (map length classes) 0))
@@ -4952,104 +4921,180 @@
    (internal-error "Some addition wasn't applied"))
   (first v-additions)))
 
-(define (limit-matching-closure-depth v)
- (if (eq? *l4* #f)
-     v
-     (let loop ((v v))
-      (let ((path
-	     (path-of-depth-greater-than-k *l4* closure-match? closure? v)))
-       (if (eq? path #f)
-	   v
-	   (let ((v1-v2 (pick-values-to-merge closure-match? closure? path)))
-	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
-
-;; needs work: rename to "tagged pair"
-(define (limit-matching-pair-depth v)
- (if (eq? *l6* #f)
+(define (limit-closure-depth v)
+ (if (eq? *closure-depth-limit* #f)
      v
      (let loop ((v v))
       (let ((path (path-of-depth-greater-than-k
-		   *l6* tagged-pair-match? tagged-pair? v)))
+		   *closure-depth-limit* closure-match? closure? v)))
        (if (eq? path #f)
 	   v
 	   (let ((v1-v2
-		  (pick-values-to-merge tagged-pair-match? tagged-pair? path)))
+		  (pick-values-to-coalesce closure-match? closure? path)))
+	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
+
+(define (limit-tagged-pair-depth v)
+ (if (eq? *tagged-pair-depth-limit* #f)
+     v
+     (let loop ((v v))
+      (let ((path
+	     (path-of-depth-greater-than-k
+	      *tagged-pair-depth-limit* tagged-pair-match? tagged-pair? v)))
+       (if (eq? path #f)
+	   v
+	   (let ((v1-v2 (pick-values-to-coalesce
+			 tagged-pair-match? tagged-pair? path)))
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 ;;; Syntactic Constraints
 
-(define (l1-met? bs) (or (not *l1*) (<= (length bs) *l1*)))
+(define (flow-size-limit-met? bs/vss)
+ (or (not *flow-size-limit*) (<= (length bs/vss) *flow-size-limit*)))
 
-(define (l2-met? v)
- (or (not *l2*)
+(define (real-limit-met? v)
+ (or (not *real-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (up? v)) (> (count-if abstract-real? v) *l2*)))
+	    (and (not (up? v)) (> (count-if abstract-real? v) *real-limit*)))
 	   v))))
 
-(define (l3-met? v)
- (or (not *l3*)
+(define (closure-limit-met? v)
+ (or (not *closure-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
 	    (and (not (up? v))
-		 (some (lambda (us) (> (length us) *l3*))
+		 (some (lambda (us) (> (length us) *closure-limit*))
 		       (transitive-equivalence-classesp
 			closure-match? (remove-if-not closure? v)))))
 	   v))))
 
-(define (l4-met? v)
- (or (not *l4*)
-     (eq? (path-of-depth-greater-than-k *l4* closure-match? closure? v) #f)))
-
-(define (l5-met? v)
- (or (not *l5*)
-     (not (some-abstract-value?
-	   (lambda (v vs-above)
-	    (and (not (up? v))
-		 (some (lambda (us) (> (length us) *l5*))
-		       (transitive-equivalence-classesp
-			tagged-pair-match? (remove-if-not tagged-pair? v)))))
-	   v))))
-
-(define (l6-met? v)
- (or (not *l6*)
-     (eq? (path-of-depth-greater-than-k *l6* tagged-pair-match? tagged-pair? v)
+(define (closure-depth-limit-met? v)
+ (or (not *closure-depth-limit*)
+     (eq? (path-of-depth-greater-than-k
+	   *closure-depth-limit* closure-match? closure? v)
 	  #f)))
 
-(define (l7-met? v)
- (or (not *l7*)
+(define (bundle-limit-met? v)
+ (or (not *bundle-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
 	    (and (not (up? v))
-		 (some (lambda (us) (> (length us) *l7*))
+		 (some (lambda (us) (> (length us) *bundle-limit*))
 		       (transitive-equivalence-classesp
 			bundle-match? (remove-if-not bundle? v)))))
 	   v))))
 
-(define (l8-met? v)
- (or (not *l8*)
-     (eq? (path-of-depth-greater-than-k *l8* bundle-match? bundle? v) #f)))
+(define (bundle-depth-limit-met? v)
+ (or (not *bundle-depth-limit*)
+     (eq? (path-of-depth-greater-than-k
+	   *bundle-depth-limit* bundle-match? bundle? v)
+	  #f)))
+
+(define (tagged-pair-limit-met? v)
+ (or (not *tagged-pair-limit*)
+     (not (some-abstract-value?
+	   (lambda (v vs-above)
+	    (and (not (up? v))
+		 (some (lambda (us) (> (length us) *tagged-pair-limit*))
+		       (transitive-equivalence-classesp
+			tagged-pair-match? (remove-if-not tagged-pair? v)))))
+	   v))))
+
+(define (tagged-pair-depth-limit-met? v)
+ (or (not *tagged-pair-depth-limit*)
+     (eq? (path-of-depth-greater-than-k
+	   *tagged-pair-depth-limit* tagged-pair-match? tagged-pair? v)
+	  #f)))
+
+(define (syntactic-constraints-met? v)
+ (and (real-limit-met? v)
+      (closure-limit-met? v)
+      (closure-depth-limit-met? v)
+      (bundle-limit-met? v)
+      (tagged-pair-limit-met? v)
+      (tagged-pair-depth-limit-met? v)))
 
 (define (widen-abstract-value v)
- (define (syntactic-constraints-met? v)
-  (and
-   (l2-met? v) (l3-met? v) (l4-met? v) (l5-met? v) (l6-met? v) (l7-met? v)))
+ ;; This can introduce imprecision.
  (let loop ((v (remove-redundant-proto-abstract-values* v)))
   (if (syntactic-constraints-met? v)
       v
       (loop
        (remove-redundant-proto-abstract-values*
-	(limit-matching-reals
+	(limit-reals
 	 (remove-redundant-proto-abstract-values*
-	  (limit-matching-pair-depth
-	   (limit-matching-closure-depth
-	    (limit-matching-pairs
-	     (limit-matching-bundles
-	      (limit-matching-closures v))))))))))))
+	  (limit-tagged-pair-depth
+	   (limit-closure-depth
+	    (limit-tagged-pairs
+	     (limit-bundles
+	      (limit-closures v))))))))))))
+
+(define (pick-environments-to-coalesce vss) (sublist vss 0 2))
+
+(define (widen-abstract-flow-domain vss)
+ (let loop ((vss (map (lambda (vs)
+		       (map remove-redundant-proto-abstract-values* vs))
+		      vss)))
+  ;; This enforces three constraints. We could change the order in which they
+  ;; are enforced.
+  (cond
+   ;; First, that the domains be disjoint. This can introduce imprecision
+   ;; because of abstract-environment-union.
+   ((some (lambda (vs1)
+	   (some (lambda (vs2)
+		  (and (not (eq? vs1 vs2))
+		       (abstract-environment-nondisjoint? vs1 vs2)))
+		 vss))
+	  vss)
+    ;; needs work: Should abstract the choice of which environments to
+    ;;             coalesce as a pick procedure.
+    (let* ((vs1 (find-if
+		 (lambda (vs1)
+		  (some (lambda (vs2)
+			 (and (not (eq? vs1 vs2))
+			      (abstract-environment-nondisjoint? vs1 vs2)))
+			vss))
+		 vss))
+	   (vs2 (find-if (lambda (vs2)
+			  (and (not (eq? vs1 vs2))
+			       (abstract-environment-nondisjoint? vs1 vs2)))
+			 vss)))
+     (loop (cons (map remove-redundant-proto-abstract-values*
+		      (abstract-environment-union vs1 vs2))
+		 (removeq vs2 (removeq vs1 vss))))))
+   ;; Second, that the abstract values in the domains meet the syntactic
+   ;; constraints. This can introduct imprecision.
+   ((some
+     (lambda (vs) (some (lambda (v) (not (syntactic-constraints-met? v))) vs))
+     vss)
+    (loop (map (lambda (vs) (map widen-abstract-value vs)) vss)))
+   ;; Third, that the flow size limit be met. This can introduce imprecision
+   ;; because of abstract-environment-union.
+   ((not (flow-size-limit-met? vss))
+    (let ((vs1-vs2 (pick-environments-to-coalesce vss)))
+     (loop
+      (cons (map remove-redundant-proto-abstract-values*
+		 (abstract-environment-union (first vs1-vs2) (second vs1-vs2)))
+	    (removeq (second vs1-vs2) (removeq (first vs1-vs2) vss))))))
+   (else vss))))
+
+(define (widen-analysis-domains bs)
+ ;; This discards the flow ranges, which should always be top anyway. This can
+ ;; introduce imprecision.
+ (map (lambda (b)
+       (make-expression-binding
+	(expression-binding-expression b)
+	(map (lambda (b)
+	      (map (lambda (vs) (make-environment-binding vs (top)))
+		   (widen-abstract-flow-domain
+		    (map environment-binding-values b))))
+	     (expression-binding-flow b))))
+      bs))
 
 ;;; Abstract Interpretation
 
 (define (initial-abstract-analysis e bs)
+ ;; This (like update-analysis-domains) only makes domains.
  (make-abstract-analysis
   e
   (map
@@ -5069,10 +5114,15 @@
       ;; Because the domains of a flow are disjoint there can be only one.
       (let ((b (find-if (lambda (b)
 			 (abstract-environment-subset?
-			  vs
-			  (abstract-environment-binding-abstract-values b)))
-			(abstract-expression-binding-abstract-flow b))))
-       (if b (abstract-environment-binding-abstract-value b) (top)))
+			  vs (environment-binding-values b)))
+			(expression-binding-flow b))))
+       (when (> (count-if (lambda (b)
+			   (abstract-environment-subset?
+			    vs (environment-binding-values b)))
+			  (expression-binding-flow b))
+		1)
+	(internal-error))
+       (if b (environment-binding-value b) (top)))
       (top))))
 
 (define (abstract-apply-closure p u1 v2)
@@ -5185,25 +5235,25 @@
 
 (define (initial-analysis-ranges bs)
  (map (lambda (b1)
-       (make-abstract-expression-binding
-	(abstract-expression-binding-expression b1)
+       (make-expression-binding
+	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (make-abstract-environment-binding
-	       (abstract-environment-binding-abstract-values b2) (top)))
-	     (abstract-expression-binding-abstract-flow b1))))
+	      (make-environment-binding (environment-binding-values b2) (top)))
+	     (expression-binding-flow b1))))
       bs))
 
 (define (update-analysis-ranges bs)
  (map (lambda (b1)
-       (make-abstract-expression-binding
-	(abstract-expression-binding-expression b1)
+       (make-expression-binding
+	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (make-abstract-environment-binding
-	       (abstract-environment-binding-abstract-values b2)
-	       (abstract-eval (abstract-expression-binding-expression b1)
-			      (abstract-environment-binding-abstract-values b2)
-			      bs)))
-	     (abstract-expression-binding-abstract-flow b1))))
+	      (make-environment-binding
+	       (environment-binding-values b2)
+	       (widen-abstract-value
+		(abstract-eval (expression-binding-expression b1)
+			       (environment-binding-values b2)
+			       bs))))
+	     (expression-binding-flow b1))))
       bs))
 
 (define (update-analysis-ranges* bs)
@@ -5274,23 +5324,24 @@
    (else (internal-error)))))
 
 (define (update-analysis-domains bs)
- (reduce
-  abstract-analysis-union
-  (map (lambda (b1)
-	(reduce abstract-analysis-union
-		(map (lambda (b2)
-		      (abstract-eval-prime
-		       (abstract-expression-binding-expression b1)
-		       (abstract-environment-binding-abstract-values b2)
-		       bs))
-		     (abstract-expression-binding-abstract-flow b1))
-		(empty-abstract-analysis)))
-       bs)
-  (empty-abstract-analysis)))
+ (reduce abstract-analysis-union
+	 (map (lambda (b1)
+	       (reduce abstract-analysis-union
+		       (map (lambda (b2)
+			     (abstract-eval-prime
+			      (expression-binding-expression b1)
+			      (environment-binding-values b2)
+			      bs))
+			    (expression-binding-flow b1))
+		       (empty-abstract-analysis)))
+	      bs)
+	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let loop ((bs (update-analysis-ranges* (initial-abstract-analysis e bs))))
-  (let ((bs1 (update-analysis-ranges* (update-analysis-domains bs))))
+ (let loop ((bs (update-analysis-ranges*
+		 (widen-analysis-domains (initial-abstract-analysis e bs)))))
+  (let ((bs1 (update-analysis-ranges*
+	      (widen-analysis-domains (update-analysis-domains bs)))))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 ;;; Abstract Basis
@@ -6084,28 +6135,26 @@
       xs (vector->list vs)))
 
 (define (externalize-abstract-environment-binding xs b)
- (unless (abstract-environment-binding? b)
+ (unless (environment-binding? b)
   (internal-error "Not an abstract environment binding"))
- (list (externalize-abstract-environment
-	xs (abstract-environment-binding-abstract-values b))
-       (externalize-abstract-value
-	(abstract-environment-binding-abstract-value b))))
+ (list (externalize-abstract-environment xs (environment-binding-values b))
+       (externalize-abstract-value (environment-binding-value b))))
 
 (define (externalize-abstract-flow xs bs)
- (unless (and (list? bs) (every abstract-environment-binding? bs))
+ (unless (and (list? bs) (every environment-binding? bs))
   (internal-error "Not an abstract flow"))
  (map (lambda (b) (externalize-abstract-environment-binding xs b)) bs))
 
 (define (externalize-abstract-expression-binding b)
- (unless (abstract-expression-binding? b)
+ (unless (expression-binding? b)
   (internal-error "Not an abstract expression binding"))
- (list (abstract->concrete (abstract-expression-binding-expression b))
+ (list (abstract->concrete (expression-binding-expression b))
        (externalize-abstract-flow
-	(free-variables (abstract-expression-binding-expression b))
-	(abstract-expression-binding-abstract-flow b))))
+	(free-variables (expression-binding-expression b))
+	(expression-binding-flow b))))
 
 (define (externalize-abstract-analysis bs)
- (unless (and (list? bs) (every abstract-expression-binding? bs))
+ (unless (and (list? bs) (every expression-binding? bs))
   (internal-error "Not an abstract analysis"))
  (map externalize-abstract-expression-binding bs))
 
