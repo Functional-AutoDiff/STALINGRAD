@@ -166,8 +166,8 @@
 ;;; expression bindings. All of the environments in the environment bindings of
 ;;; a given flow must map the same set of variables, namely precisely the free
 ;;; variables in the expression binding that contains that flow. Thus we
-;;; represent the environment in an environment binding as a list of values in
-;;; the canonical order of the free variables.
+;;; represent the environment in an environment binding as a vector of values
+;;; in the canonical order of the free variables.
 
 ;;; Note that both the abstract values in the abstract environment of an
 ;;; abstract environment binding as well as the abstract value in an
@@ -4161,7 +4161,7 @@
 			(recursive-closure-bodies u2)))))
 
 (define (make-abstract-recursive-closure xs vs xs-procedures xs-arguments es i)
- (if (some empty-abstract-value? vs)
+ (if (some-vector empty-abstract-value? vs)
      (empty-abstract-value)
      (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))))
 
@@ -4283,14 +4283,16 @@
  ;; Using a conservative approximation is sound since proto abstract values are
  ;; removed only when the predicate returns #t which is a precise result for
  ;; all of the approximations.
- (remove-duplicatesp
-  (case *method-for-removing-redundant-proto-abstract-values*
-   ((identity) eq?)
-   ((structural) equalq?)
-   ((equality) proto-abstract-value=?)
-   ((subset) proto-abstract-value-subset?)
-   (else (internal-error)))
-  v))
+ (if (top? v)
+     v
+     (remove-duplicatesp
+      (case *method-for-removing-redundant-proto-abstract-values*
+       ((identity) eq?)
+       ((structural) equalq?)
+       ((equality) proto-abstract-value=?)
+       ((subset) proto-abstract-value-subset?)
+       (else (internal-error)))
+      v)))
 
 ;;; (Proto-)Abstract-Value Subset, Equality, Disjointness, and Union
 
@@ -4334,6 +4336,8 @@
 
 (define (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above)
  (cond
+  ((top? v2) #t)
+  ((top? v1) #f)
   ((up? v1)
    (abstract-value-subset?-internal (list-ref vs1-above (up-index v1))
 				    v2
@@ -4400,7 +4404,9 @@
 		 (aggregate-value-values u2)))))
 
 (define (abstract-value-nondisjoint?-internal v1 v2 cs vs1-above vs2-above)
- (cond ((up? v1)
+ (cond ((top? v1) (not (empty-abstract-value? v2)))
+       ((top? v2) (not (empty-abstract-value? v1)))
+       ((up? v1)
 	(abstract-value-nondisjoint?-internal
 	 (list-ref vs1-above (up-index v1))
 	 v2
@@ -4433,6 +4439,8 @@
  (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
 
 (define (closed-proto-abstract-values v)
+ (when (top? v)
+  (internal-error "Cannot get closed proto abstract values of top"))
  (let loop ((v v) (vs-above '()))
   (if (up? v)
       (if (= (up-index v) (- (length vs-above) 1))
@@ -4459,10 +4467,7 @@
 
 (define (abstract-value-union v1 v2)
  ;; This cannot introduce imprecision.
- ;; optimization
- (cond ((empty-abstract-value? v1) v2)
-       ((empty-abstract-value? v2) v1)
-       ((eq? v1 v2) v1)
+ (cond ((or (top? v1) (top? v2)) (top))
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
@@ -4475,10 +4480,7 @@
  ;; {(),pair(0,^0)} U {(),pair(1,^0)} would yield
  ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
  ;; extension even though it is not in the extension of either argument.
- ;; optimization
- (cond ((empty-abstract-value? v1) v2)
-       ((empty-abstract-value? v2) v1)
-       ((eq? v1 v2) v1)
+ (cond ((or (top? v1) (top? v2)) (top))
        ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
@@ -4604,10 +4606,12 @@
 
 (define (some-abstract-value?-internal p v vs-above)
  (or (p v vs-above)
-     (and (not (up? v))
-	  (some (lambda (u)
-		 (some-proto-abstract-value?-internal p u (cons v vs-above)))
-		v))))
+     (begin
+      (when (top? v) (internal-error "Cannot ask some-abstract-value? of top"))
+      (and (not (up? v))
+	   (some (lambda (u)
+		  (some-proto-abstract-value?-internal p u (cons v vs-above)))
+		 v)))))
 
 (define (some-proto-abstract-value? p u)
  (some-proto-abstract-value?-internal p u '()))
@@ -4616,6 +4620,7 @@
 
 (define (map-abstract-value f v)
  (let loop ((v v) (vs-above '()))
+  (when (top? v) (internal-error "Cannot map abstract value of top"))
   (if (up? v)
       v
       (map (lambda (u)
@@ -4628,8 +4633,10 @@
 	   (f v vs-above)))))
 
 (define (remove-redundant-proto-abstract-values* v)
- (map-abstract-value
-  (lambda (v vs-above) (remove-redundant-proto-abstract-values v)) v))
+ (if (top? v)
+     v
+     (map-abstract-value
+      (lambda (v vs-above) (remove-redundant-proto-abstract-values v)) v)))
 
 (define (free-up? v vs-above)
  ;; needs work: candidate for removal
@@ -4656,6 +4663,7 @@
 (define (abstract-value-process-free-ups-internal f v vs-above)
  ;; needs work: candidate for removal
  (cond ((free-up? v vs-above) (f v vs-above))
+       ((top? v) (internal-error "Cannot process free ups of top"))
        ((up? v) v)
        (else (map (lambda (u)
 		   (proto-abstract-value-process-free-ups-internal
@@ -5007,12 +5015,13 @@
 	  #f)))
 
 (define (syntactic-constraints-met? v)
- (and (real-limit-met? v)
-      (closure-limit-met? v)
-      (closure-depth-limit-met? v)
-      (bundle-limit-met? v)
-      (tagged-pair-limit-met? v)
-      (tagged-pair-depth-limit-met? v)))
+ (or (top? v)
+     (and (real-limit-met? v)
+	  (closure-limit-met? v)
+	  (closure-depth-limit-met? v)
+	  (bundle-limit-met? v)
+	  (tagged-pair-limit-met? v)
+	  (tagged-pair-depth-limit-met? v))))
 
 (define (widen-abstract-value v)
  ;; This can introduce imprecision.
@@ -5033,7 +5042,7 @@
 
 (define (widen-abstract-flow-domain vss)
  (let loop ((vss (map (lambda (vs)
-		       (map remove-redundant-proto-abstract-values* vs))
+		       (map-vector remove-redundant-proto-abstract-values* vs))
 		      vss)))
   ;; This enforces three constraints. We could change the order in which they
   ;; are enforced.
@@ -5059,22 +5068,23 @@
 			  (and (not (eq? vs1 vs2))
 			       (abstract-environment-nondisjoint? vs1 vs2)))
 			 vss)))
-     (loop (cons (map remove-redundant-proto-abstract-values*
-		      (abstract-environment-union vs1 vs2))
+     (loop (cons (map-vector remove-redundant-proto-abstract-values*
+			     (abstract-environment-union vs1 vs2))
 		 (removeq vs2 (removeq vs1 vss))))))
    ;; Second, that the abstract values in the domains meet the syntactic
    ;; constraints. This can introduct imprecision.
-   ((some
-     (lambda (vs) (some (lambda (v) (not (syntactic-constraints-met? v))) vs))
-     vss)
-    (loop (map (lambda (vs) (map widen-abstract-value vs)) vss)))
+   ((some (lambda (vs)
+	   (some-vector (lambda (v) (not (syntactic-constraints-met? v))) vs))
+	  vss)
+    (loop (map (lambda (vs) (map-vector widen-abstract-value vs)) vss)))
    ;; Third, that the flow size limit be met. This can introduce imprecision
    ;; because of abstract-environment-union.
    ((not (flow-size-limit-met? vss))
     (let ((vs1-vs2 (pick-environments-to-coalesce vss)))
      (loop
-      (cons (map remove-redundant-proto-abstract-values*
-		 (abstract-environment-union (first vs1-vs2) (second vs1-vs2)))
+      (cons (map-vector
+	     remove-redundant-proto-abstract-values*
+	     (abstract-environment-union (first vs1-vs2) (second vs1-vs2)))
 	    (removeq (second vs1-vs2) (removeq (first vs1-vs2) vss))))))
    (else vss))))
 
@@ -5084,11 +5094,9 @@
  (map (lambda (b)
        (make-expression-binding
 	(expression-binding-expression b)
-	(map (lambda (b)
-	      (map (lambda (vs) (make-environment-binding vs (top)))
-		   (widen-abstract-flow-domain
-		    (map environment-binding-values b))))
-	     (expression-binding-flow b))))
+	(map (lambda (vs) (make-environment-binding vs (top)))
+	     (widen-abstract-flow-domain
+	      (map environment-binding-values (expression-binding-flow b))))))
       bs))
 
 ;;; Abstract Interpretation
@@ -5097,12 +5105,13 @@
  ;; This (like update-analysis-domains) only makes domains.
  (make-abstract-analysis
   e
-  (map
-   (lambda (x)
-    (vlad-value->abstract-value
-     (value-binding-value
-      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-   (free-variables e))))
+  (list->vector
+   (map
+    (lambda (x)
+     (vlad-value->abstract-value
+      (value-binding-value
+       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
+    (free-variables e)))))
 
 (define (abstract-eval1 e vs bs)
  ;; This is a conservative approximation because abstract-environment-subset?
@@ -5340,6 +5349,7 @@
 (define (flow-analysis e bs)
  (let loop ((bs (update-analysis-ranges*
 		 (widen-analysis-domains (initial-abstract-analysis e bs)))))
+  (pp (externalize-abstract-analysis bs)) (newline)
   (let ((bs1 (update-analysis-ranges*
 	      (widen-analysis-domains (update-analysis-domains bs)))))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
@@ -5383,8 +5393,8 @@
 
 (define (abstract-base-variables-v v)
  (when (and (list? v) (not (= (length v) 1)))
-  (internal-error "How to handle abstract-base-variables-v for v?" v))
- (unless (list? v) (internal-error "Why isn't v a list?" v))
+  (internal-error "How to handle abstract-base-variables-v for v?: ~s" v))
+ (unless (list? v) (internal-error "Why isn't v a list?: ~s" v))
  (abstract-base-variables-u (first v)))
 
 ;;; \AB{U} -> [variable]*
@@ -6115,16 +6125,17 @@
 	;; Only needed for *unabbreviate-transformed?*.
 	`(reverse
 	  ,(externalize-abstract-value (reverse-tagged-value-primal u))))
-       (else (internal-error "Not a proto-abstract-value" u))))
+       (else (internal-error "Not a proto-abstract-value: ~s" u))))
 
 (define (externalize-abstract-value v)
- (cond ((up? v) `(up ,(up-index v)))
+ (cond ((top? v) 'top)
+       ((up? v) `(up ,(up-index v)))
        ((list? v)
-	(cond ((empty-abstract-value? v) '(bottom))
+	(cond ((empty-abstract-value? v) 'bottom)
 	      ((empty-abstract-value? (rest v))
 	       (externalize-proto-abstract-value (first v)))
 	      (else `(union ,@(map externalize-proto-abstract-value v)))))
-       (else (internal-error "Not an abstract value" v))))
+       (else (internal-error "Not an abstract value: ~s" v))))
 
 (define (externalize-abstract-environment xs vs)
  (unless (and (vector? vs)
