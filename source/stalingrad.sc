@@ -188,9 +188,8 @@
 	  (newline))
 	 (cond
 	  (flow-analysis?
-	   (pp
-	    (externalize-abstract-analysis
-	     (flow-analysis (first result) (second result))))
+	   (pp (externalize-abstract-analysis
+		(flow-analysis (first result) (second result))))
 	   (newline))
 	  (else
 	   (when metered?
