@@ -4704,10 +4704,8 @@
  ;; returns: (list v additions)
  (list up (append (make-list (up-index up) '()) (list (list v)))))
 
-(define (move-values-up-tree v additions)
+(define (move-values-up-value v additions)
  ;; returns: (list v additions)
- ;; needs work: rename "tree"
- ;; needs work: top
  (when (null? additions)
   (internal-error "Shouldn't we NOT do this if (null? additions)?"))
  (when (some up? (first additions))
@@ -4833,7 +4831,7 @@
 					  '()))
 			   (list (map first u-additions-list) '())
 			   (let ((v-additions
-				  (move-values-up-tree
+				  (move-values-up-value
 				   (map first u-additions-list)
 				   (reduce merge-additions
 					   (map second u-additions-list)
@@ -4842,7 +4840,7 @@
 				(loop (first v-additions))
 				v-additions)))))
 		  (let ((v-additions
-			 (move-values-up-tree
+			 (move-values-up-value
 			  (first v-additions) (second v-additions))))
 		   (if (null? (second v-additions))
 		       (loop (first v-additions))
@@ -4970,7 +4968,7 @@
 			(first path))))
 	      (if (null? (second v-additions))
 		  (list v '())
-		  (move-values-up-tree v (second v-additions))))))))
+		  (move-values-up-value v (second v-additions))))))))
   (unless (null? (second v-additions))
    (internal-error "Some addition wasn't applied"))
   (first v-additions)))
@@ -5081,6 +5079,8 @@
       (begin
        (unless (abstract-value-subset? v-debugging v)
 	(internal-error "widen: ~s" (externalize-abstract-value v-debugging)))
+       (unless (bundle-depth-limit-met? v)
+	(compile-time-error "Bundle depth limit exceeded"))
        v)
       (loop
        (remove-redundant-proto-abstract-values*
@@ -5411,16 +5411,12 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let ((bs0 (initial-abstract-analysis e bs))
+ (let ((bs (initial-abstract-analysis e bs))
        ;; debugging
        (es '()))
-  (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs0)))
-	     ;; debugging
-	     (i 0))
-   (when #t				;debugging
-    (when (= i 23) (exit -1)))
+  (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs))))
    ;; debugging
-   (begin
+   (when #t
     (for-each
      (lambda (b)
       (unless (memp expression=? (expression-binding-expression b) es)
@@ -5432,19 +5428,18 @@
     (newline)
     (pp (map-indexed (lambda (e i)
 		      (let ((b (lookup-expression-binding e bs)))
-		       (list
-			i
-			(if b
-			    (externalize-abstract-environment-binding
-			     (free-variables e)
-			     (first (expression-binding-flow b)))
-			    #f))))
+		       (list i
+			     (if b
+				 (externalize-abstract-environment-binding
+				  (free-variables e)
+				  (first (expression-binding-flow b)))
+				 #f))))
 		     es))
     (newline))
    (let ((bs1 (update-analysis-ranges*
 	       (widen-analysis-domains
-		(abstract-analysis-union bs0 (update-analysis-domains bs))))))
-    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1)))))))
+		(abstract-analysis-union bs (update-analysis-domains bs))))))
+    (if (abstract-analysis=? bs1 bs) bs (loop bs1))))))
 
 ;;; Abstract Basis
 
