@@ -129,7 +129,15 @@
 			       expression-equality-using-structural?)
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
-		 (at-most-one ("quiet" quiet?))
+		 (at-most-one
+		  ("remove-redundant-proto-abstract-values-using-identity"
+		   remove-redundant-proto-abstract-values-using-identity?)
+		  ("remove-redundant-proto-abstract-values-using-structural"
+		   remove-redundant-proto-abstract-values-using-structural?)
+		  ("remove-redundant-proto-abstract-values-using-equality"
+		   remove-redundant-proto-abstract-values-using-equality?)
+		  ("remove-redundant-proto-abstract-values-using-subset"
+		   remove-redundant-proto-abstract-values-using-subset?))
 		 (at-most-one ("parse-abstract" parse-abstract?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -167,13 +175,20 @@
  (set! *bundle-depth-limit* bundle-depth-limit)
  (set! *tagged-pair-limit* tagged-pair-limit)
  (set! *tagged-pair-depth-limit* tagged-pair-depth-limit)
- (set! *warn?* #f)
+ (set! *warn?* (not no-warn?))
  (when expression-equality-using-identity?
   (set! *expression-equality* 'identity))
  (when expression-equality-using-structural?
   (set! *expression-equality* 'structural))
  (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
- (set! *quiet?* quiet?)
+ (when remove-redundant-proto-abstract-values-using-identity?
+  (set! *method-for-removing-redundant-proto-abstract-values* 'identity))
+ (when remove-redundant-proto-abstract-values-using-structural?
+  (set! *method-for-removing-redundant-proto-abstract-values* 'structural))
+ (when remove-redundant-proto-abstract-values-using-equality?
+  (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
+ (when remove-redundant-proto-abstract-values-using-subset?
+  (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
  (set! *parse-abstract?* parse-abstract?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))

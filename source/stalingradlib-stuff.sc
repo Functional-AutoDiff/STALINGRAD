@@ -262,8 +262,6 @@
 
 (define *method-for-removing-redundant-proto-abstract-values* 'structural)
 
-(define *quiet?* #f)
-
 (define *parse-abstract?* #f)
 
 ;;; Procedures
@@ -4489,6 +4487,7 @@
 		      (closed-proto-abstract-values v2))))))
 
 (define (abstract-value-union-without-unroll v1 v2)
+ ;; needs work: Why does this procedure exist?
  ;; This can introduce imprecision, as illustrated by the following example:
  ;; {(),pair(0,^0)} U {(),pair(1,^0)} would yield
  ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
@@ -4499,8 +4498,13 @@
 	(internal-error "Can't union a union type with a backlink"))
        (else (remove-redundant-proto-abstract-values (append v1 v2)))))
 
-;;; needs work: why do we sometimes call abstract-value-union-without-unroll
-;;;             and sometimes call imprecise-abstract-value-union
+(define (contains-top? v)
+ (or (top? v)
+     (and (not (up? v))
+	  (some (lambda (u)
+		 (and (not (scalar-proto-abstract-value? u))
+		      (some contains-top? (aggregate-value-values u))))
+		v))))
 
 ;;; Abstract Environments
 
@@ -4576,7 +4580,10 @@
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
    "vs and (length (free-variables e)) should be of same length"))
- (list (make-expression-binding e (list (make-environment-binding vs (top))))))
+ (if (some-vector contains-top? vs)
+     (empty-abstract-analysis)
+     (list
+      (make-expression-binding e (list (make-environment-binding vs (top)))))))
 
 (define (abstract-analysis=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
@@ -4619,12 +4626,11 @@
 
 (define (some-abstract-value?-internal p v vs-above)
  (or (p v vs-above)
-     (begin
-      (when (top? v) (internal-error "Cannot ask some-abstract-value? of top"))
-      (and (not (up? v))
-	   (some (lambda (u)
-		  (some-proto-abstract-value?-internal p u (cons v vs-above)))
-		 v)))))
+     (and (not (top? v))
+	  (not (up? v))
+	  (some (lambda (u)
+		 (some-proto-abstract-value?-internal p u (cons v vs-above)))
+		v))))
 
 (define (some-proto-abstract-value? p u)
  (some-proto-abstract-value?-internal p u '()))
@@ -4649,20 +4655,16 @@
   (lambda (v vs-above) (remove-redundant-proto-abstract-values v)) v))
 
 (define (free-up? v vs-above)
- ;; needs work: candidate for removal
  (and (up? v) (>= (up-index v) (length vs-above))))
 
 (define (free-up-index up vs-above)
- ;; needs work: candidate for removal
  (unless (free-up? up vs-above) (internal-error))
  (- (up-index up) (length vs-above)))
 
 (define (make-free-up index vs-above)
- ;; needs work: candidate for removal
  (make-up (+ index (length vs-above))))
 
 (define (proto-abstract-value-process-free-ups-internal f u vs-above)
- ;; needs work: candidate for removal
  (if (scalar-proto-abstract-value? u)
      u
      (make-aggregate-value-with-new-values
@@ -4671,9 +4673,8 @@
 	   (aggregate-value-values u)))))
 
 (define (abstract-value-process-free-ups-internal f v vs-above)
- ;; needs work: candidate for removal
  (cond ((free-up? v vs-above) (f v vs-above))
-       ((top? v) (internal-error "Cannot process free ups of top"))
+       ((top? v) v)
        ((up? v) v)
        (else (map (lambda (u)
 		   (proto-abstract-value-process-free-ups-internal
@@ -4681,15 +4682,12 @@
 		  v))))
 
 (define (proto-abstract-value-process-free-ups f u)
- ;; needs work: candidate for removal
  (proto-abstract-value-process-free-ups-internal f u '()))
 
 (define (abstract-value-process-free-ups f v)
- ;; needs work: candidate for removal
  (abstract-value-process-free-ups-internal f v '()))
 
 (define (decrement-free-ups v)
- ;; needs work: candidate for removal
  (abstract-value-process-free-ups
   (lambda (up vs-above) (make-up (- (up-index up) 1))) v))
 
@@ -4704,13 +4702,12 @@
 
 (define (create-v-additions up v)
  ;; returns: (list v additions)
- ;; needs work: candidate for removal
  (list up (append (make-list (up-index up) '()) (list (list v)))))
 
 (define (move-values-up-tree v additions)
  ;; returns: (list v additions)
  ;; needs work: rename "tree"
- ;; needs work: candidate for removal
+ ;; needs work: top
  (when (null? additions)
   (internal-error "Shouldn't we NOT do this if (null? additions)?"))
  (when (some up? (first additions))
@@ -4746,6 +4743,7 @@
 
 ;;; Matching Values
 
+;;; needs work: To prefer widening to real instead of creating unions.
 (define (pick-closures-to-coalesce us) (sublist us 0 2))
 
 (define (pick-bundles-to-coalesce us) (sublist us 0 2))
@@ -4769,10 +4767,10 @@
 
 (define (abstract-value-union-for-widening v1 v2 vs-above)
  ;; This assumes that v1 and v2 share the same context.
- (if (and (up? v1) (up? v2) (= (up-index v1) (up-index v2)))
-     v1
-     (remove-redundant-proto-abstract-values
-      (append (unroll v1 vs-above) (unroll v2 vs-above)))))
+ (cond ((or (top? v1) (top? v2)) (top))
+       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+       (else (remove-redundant-proto-abstract-values
+	      (append (unroll v1 vs-above) (unroll v2 vs-above))))))
 
 (define (limit-aggregate-values v
 				vs-above
@@ -4780,32 +4778,36 @@
 				target-aggregate-value?
 				match?
 				pick-us-to-coalesce)
- (when (up? v) (internal-error))
+ (when (or (top? v) (up? v)) (internal-error))
+ ;; If there were no redundant proto abstract values upon entry, there will be
+ ;; none upon exit.
  (append
-  (reduce append
-	  (map (lambda (us)
-		(let loop ((us us))
-		 (if (<= (length us) k)
-		     us
-		     (let* ((u1-u2 (pick-us-to-coalesce us))
-			    (u1 (first u1-u2))
-			    (u2 (second u1-u2)))
-		      (loop (cons (make-aggregate-value-with-new-values
-				   u1
-				   (map (lambda (v1 v2)
-					 (abstract-value-union-for-widening
-					  v1 v2 (cons v vs-above)))
-					(aggregate-value-values u1)
-					(aggregate-value-values u2)))
-				  (removeq u2 (removeq u1 us))))))))
-	       (transitive-equivalence-classesp
-		match? (remove-if-not target-aggregate-value? v)))
-	  '())
+  (reduce
+   append
+   (map (lambda (us)
+	 (let loop ((us us))
+	  ;; This assumes that we have first called
+	  ;; remove-redundant-proto-abstract-values.
+	  (if (<= (length us) k)
+	      us
+	      (let ((u1-u2 (pick-us-to-coalesce us)))
+	       (loop (cons (make-aggregate-value-with-new-values
+			    (first u1-u2)
+			    (map (lambda (v1 v2)
+				  (abstract-value-union-for-widening
+				   v1 v2 (cons v vs-above)))
+				 (aggregate-value-values (first u1-u2))
+				 (aggregate-value-values (second u1-u2))))
+			   (removeq (second u1-u2)
+				    (removeq (first u1-u2) us))))))))
+	(transitive-equivalence-classesp
+	 match? (remove-if-not target-aggregate-value? v)))
+   '())
   (remove-if target-aggregate-value? v)))
 
 (define (limit-aggregate-values* limit v)
  (let loop ((v v) (vs-above '()))
-  (if (up? v)
+  (if (or (top? v) (up? v))
       v
       (limit (map (lambda (u)
 		   (if (scalar-proto-abstract-value? u)
@@ -4818,11 +4820,11 @@
 	     vs-above))))
 
 (define (limit-reals v)
- ;; This assumes that there are no duplicate concrete reals within an abstract
- ;; value.
  (if (eq? *real-limit* #f)
      v
      (map-abstract-value (lambda (v vs-above)
+			  ;; This assumes that we have first called
+			  ;; remove-redundant-proto-abstract-values.
 			  (if (> (count-if abstract-real? v) *real-limit*)
 			      (cons 'real (remove-if abstract-real? v))
 			      v))
@@ -4855,6 +4857,8 @@
       v)))
 
 (define (limit-tagged-pairs v)
+ (format #t "limit-tagged-pairs~%")	;debugging
+ (pp (externalize-abstract-value v)) (newline) ;debugging
  (if (eq? *tagged-pair-limit* #f)
      v
      (limit-aggregate-values*
@@ -4886,19 +4890,24 @@
 
 (define (path-of-depth-greater-than-k k match? type? v)
  (let outer ((v v) (path '()))
-  (if (or (up? v) (empty-abstract-value? v))
-      (if (> (depth match? type? (cons v path)) k) (reverse (cons v path)) #f)
+  (if (or (top? v) (up? v) (empty-abstract-value? v))
+      (if (> (depth match? type? (reverse (cons v path))) k)
+	  (reverse (cons v path))
+	  #f)
       (let middle ((us v))
        (if (null? us)
 	   #f
 	   (if (scalar-proto-abstract-value? (first us))
-	       (if (> (depth match? type? (cons (first us) path)) k)
-		   (reverse (cons (first us) path))
+	       (if (> (depth
+		       match? type? (reverse (cons (first us) (cons v path))))
+		      k)
+		   (reverse (cons (first us) (cons v path)))
 		   (middle (rest us)))
 	       (let inner ((vs (aggregate-value-values (first us))))
 		(if (null? vs)
 		    (middle (rest us))
-		    (let ((path (outer (first vs) (cons (first us) path))))
+		    (let ((path
+			   (outer (first vs) (cons (first us) (cons v path)))))
 		     (if (eq? path #f) (inner (rest vs)) path))))))))))
 
 (define (pick-values-to-coalesce match? type? path)
@@ -4952,6 +4961,8 @@
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 (define (limit-tagged-pair-depth v)
+ (format #t "limit-tagged-pair-depth~%") ;debugging
+ (pp (externalize-abstract-value v)) (newline) ;debugging
  (if (eq? *tagged-pair-depth-limit* #f)
      v
      (let loop ((v v))
@@ -4973,14 +4984,17 @@
  (or (not *real-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (up? v)) (> (count-if abstract-real? v) *real-limit*)))
+	    (and (not (top? v))
+		 (not (up? v))
+		 (> (count-if abstract-real? v) *real-limit*)))
 	   v))))
 
 (define (closure-limit-met? v)
  (or (not *closure-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (up? v))
+	    (and (not (top? v))
+		 (not (up? v))
 		 (some (lambda (us) (> (length us) *closure-limit*))
 		       (transitive-equivalence-classesp
 			closure-match? (remove-if-not closure? v)))))
@@ -4996,7 +5010,8 @@
  (or (not *bundle-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (up? v))
+	    (and (not (top? v))
+		 (not (up? v))
 		 (some (lambda (us) (> (length us) *bundle-limit*))
 		       (transitive-equivalence-classesp
 			bundle-match? (remove-if-not bundle? v)))))
@@ -5012,7 +5027,8 @@
  (or (not *tagged-pair-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (up? v))
+	    (and (not (top? v))
+		 (not (up? v))
 		 (some (lambda (us) (> (length us) *tagged-pair-limit*))
 		       (transitive-equivalence-classesp
 			tagged-pair-match? (remove-if-not tagged-pair? v)))))
@@ -5033,11 +5049,15 @@
 	  (tagged-pair-limit-met? v)
 	  (tagged-pair-depth-limit-met? v))))
 
-(define (widen-abstract-value v)
+(define (widen-abstract-value v-debugging)
+ (format #t "begin~%")			;debugging
  ;; This can introduce imprecision.
- (let loop ((v (remove-redundant-proto-abstract-values* v)))
+ (let loop ((v (remove-redundant-proto-abstract-values* v-debugging)))
   (if (syntactic-constraints-met? v)
-      v
+      (begin
+       (unless (abstract-value-subset? v-debugging v)
+	(internal-error "widen: ~s" (externalize-abstract-value v-debugging)))
+       v)
       (loop
        (remove-redundant-proto-abstract-values*
 	(limit-reals
@@ -5078,7 +5098,7 @@
 			  (and (not (eq? vs1 vs2))
 			       (abstract-environment-nondisjoint? vs1 vs2)))
 			 vss)))
-     (when #t				;debugging
+     (when #f				;debugging
       (format #t "bingo~%")
       (pp (list (map-vector externalize-abstract-value vs1)
 		(map-vector externalize-abstract-value vs2)))
@@ -5374,8 +5394,9 @@
 (define (flow-analysis e bs)
  (let ((bs0 (initial-abstract-analysis e bs)))
   (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs0)))
+	     ;; debugging
 	     (i 0))
-   (when #t				;debugging
+   (when #f				;debugging
     (pp (externalize-abstract-analysis bs))
     (newline))
    (when #f				;debugging
@@ -5391,7 +5412,8 @@
    (when #f
     (pp (map abstract->concrete (map expression-binding-expression bs)))
     (newline))
-   (when (= i 18) (exit -1))		;debugging
+   (when #f				;debugging
+    (when (= i 18) (exit -1)))
    (let ((bs1 (update-analysis-ranges*
 	       (widen-analysis-domains
 		(abstract-analysis-union bs0 (update-analysis-domains bs))))))
