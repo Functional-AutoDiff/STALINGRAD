@@ -4712,10 +4712,11 @@
   (internal-error "Shouldn't we NOT do this if (null? additions)?"))
  (when (some up? (first additions))
   (internal-error "No additions should be UPs...should they?"))
- (let ((v-new
-	(remove-redundant-proto-abstract-values
-	 (append
-	  v (reduce append (map decrement-free-ups (first additions)) '())))))
+ (let ((v-new (abstract-value-union-without-unroll
+	       v
+	       (reduce abstract-value-union-without-unroll
+		       (map decrement-free-ups (first additions))
+		       (empty-abstract-value)))))
   (list v-new
 	(map-indexed
 	 (lambda (vs i)
@@ -4750,74 +4751,105 @@
 
 (define (pick-tagged-pairs-to-coalesce us) (sublist us 0 2))
 
-(define (unroll v vs-above)
- (if (up? v)
-     (map (lambda (u)
-	   (if (scalar-proto-abstract-value? u)
-	       u
-	       (make-aggregate-value-with-new-values
-		u
-		(map (lambda (v)
-		      (if (memq v vs-above)
-			  (make-up (+ (positionq v vs-above) 1))
-			  v))
-		     (aggregate-value-values u)))))
-	  (list-ref vs-above (up-index v)))
-     v))
+(define (merge-additions additions1 additions2)
+ (cond ((null? additions1) additions2)
+       ((null? additions2) additions1)
+       (else (cons (append (first additions1) (first additions2))
+		   (merge-additions (rest additions1) (rest additions2))))))
 
-(define (abstract-value-union-for-widening v1 v2 vs-above)
- ;; This assumes that v1 and v2 share the same context.
- (cond ((or (top? v1) (top? v2)) (top))
-       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
-       (else (remove-redundant-proto-abstract-values
-	      (append (unroll v1 vs-above) (unroll v2 vs-above))))))
+(define (union-for-widening v1 v2)
+ ;; This assumes that v1 and v2 share the same context. In other words, all
+ ;; free ups which are the same refer to the same abstract values.
+ ;; returns: (list v additions)
+ (cond ((and (up? v1) (up? v2))
+	(cond ((> (up-index v1) (up-index v2)) (create-v-additions v1 v2))
+	      ((< (up-index v1) (up-index v2)) (create-v-additions v2 v1))
+	      (else (list v1 '()))))
+       ((up? v1) (create-v-additions v1 v2))
+       ((up? v2) (create-v-additions v2 v1))
+       (else (list (abstract-value-union-without-unroll v1 v2) '()))))
 
 (define (limit-aggregate-values v
-				vs-above
 				k
 				target-aggregate-value?
 				match?
 				pick-us-to-coalesce)
- (when (or (top? v) (up? v)) (internal-error))
  ;; If there were no redundant proto abstract values upon entry, there will be
  ;; none upon exit.
- (append
-  (reduce
-   append
-   (map (lambda (us)
-	 (let loop ((us us))
-	  ;; This assumes that we have first called
-	  ;; remove-redundant-proto-abstract-values.
-	  (if (<= (length us) k)
-	      us
-	      (let ((u1-u2 (pick-us-to-coalesce us)))
-	       (loop (cons (make-aggregate-value-with-new-values
-			    (first u1-u2)
-			    (map (lambda (v1 v2)
-				  (abstract-value-union-for-widening
-				   v1 v2 (cons v vs-above)))
-				 (aggregate-value-values (first u1-u2))
-				 (aggregate-value-values (second u1-u2))))
-			   (removeq (second u1-u2)
-				    (removeq (first u1-u2) us))))))))
-	(transitive-equivalence-classesp
-	 match? (remove-if-not target-aggregate-value? v)))
-   '())
-  (remove-if target-aggregate-value? v)))
+ ;; returns: (list v additions)
+ (let ((v-additions-list
+	(map
+	 (lambda (us)
+	  (let loop ((us us) (additions '()))
+	   ;; This assumes that we have first called
+	   ;; remove-redundant-proto-abstract-values.
+	   (if (<= (length us) k)
+	       (list us additions)
+	       (let* ((u1-u2 (pick-us-to-coalesce us))
+		      (v-additions-list
+		       (map union-for-widening
+			    (aggregate-value-values (first u1-u2))
+			    (aggregate-value-values (second u1-u2)))))
+		(loop
+		 (cons (make-aggregate-value-with-new-values
+			(first u1-u2) (map first v-additions-list))
+		       (removeq (second u1-u2) (removeq (first u1-u2) us)))
+		 (merge-additions
+		  additions
+		  (reduce
+		   merge-additions (map second v-additions-list) '())))))))
+	 (transitive-equivalence-classesp
+	  match? (remove-if-not target-aggregate-value? v)))))
+  (list (append (remove-if target-aggregate-value? v)
+		(reduce append (map first v-additions-list) '()))
+	(reduce merge-additions (map second v-additions-list) '()))))
 
 (define (limit-aggregate-values* limit v)
- (let loop ((v v) (vs-above '()))
-  (if (or (top? v) (up? v))
-      v
-      (limit (map (lambda (u)
-		   (if (scalar-proto-abstract-value? u)
-		       u
-		       (make-aggregate-value-with-new-values
-			u
-			(map (lambda (v1) (loop v1 (cons v vs-above)))
-			     (aggregate-value-values u)))))
-		  v)
-	     vs-above))))
+ (let ((v-additions
+	;; returns: (list v additions)
+	(let loop ((v v))
+	 (if (or (top? v) (up? v))
+	     (list v '())
+	     (let ((v-additions (limit v)))
+	      (if (null? (second v-additions))
+		  (if (or (top? (first v-additions)) (up? (first v-additions)))
+		      (list (first v-additions) '())
+		      (let ((u-additions-list
+			     (map
+			      (lambda (u)
+			       (if (scalar-proto-abstract-value? u)
+				   (list u '())
+				   (let ((v-additions-list
+					  (map loop
+					       (aggregate-value-values u))))
+				    (list (make-aggregate-value-with-new-values
+					   u (map first v-additions-list))
+					  (reduce merge-additions
+						  (map second v-additions-list)
+						  '())))))
+			      (first v-additions))))
+		       (if (null? (reduce merge-additions
+					  (map second u-additions-list)
+					  '()))
+			   (list (map first u-additions-list) '())
+			   (let ((v-additions
+				  (move-values-up-tree
+				   (map first u-additions-list)
+				   (reduce merge-additions
+					   (map second u-additions-list)
+					   '()))))
+			    (if (null? (second v-additions))
+				(loop (first v-additions))
+				v-additions)))))
+		  (let ((v-additions
+			 (move-values-up-tree
+			  (first v-additions) (second v-additions))))
+		   (if (null? (second v-additions))
+		       (loop (first v-additions))
+		       v-additions))))))))
+  (unless (null? (second v-additions))
+   (internal-error "Some addition wasn't applied"))
+  (first v-additions)))
 
 (define (limit-reals v)
  (if (eq? *real-limit* #f)
@@ -4834,9 +4866,8 @@
  (if (eq? *closure-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v vs-above)
+      (lambda (v)
        (limit-aggregate-values v
-			       vs-above
 			       *closure-limit*
 			       closure?
 			       closure-match?
@@ -4847,9 +4878,8 @@
  (if (eq? *bundle-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v vs-above)
+      (lambda (v)
        (limit-aggregate-values v
-			       vs-above
 			       *bundle-limit*
 			       bundle?
 			       bundle-match?
@@ -4857,14 +4887,11 @@
       v)))
 
 (define (limit-tagged-pairs v)
- (format #t "limit-tagged-pairs~%")	;debugging
- (pp (externalize-abstract-value v)) (newline) ;debugging
  (if (eq? *tagged-pair-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v vs-above)
+      (lambda (v)
        (limit-aggregate-values v
-			       vs-above
 			       *tagged-pair-limit*
 			       tagged-pair?
 			       tagged-pair-match?
@@ -4961,8 +4988,6 @@
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 (define (limit-tagged-pair-depth v)
- (format #t "limit-tagged-pair-depth~%") ;debugging
- (pp (externalize-abstract-value v)) (newline) ;debugging
  (if (eq? *tagged-pair-depth-limit* #f)
      v
      (let loop ((v v))
@@ -5050,7 +5075,6 @@
 	  (tagged-pair-depth-limit-met? v))))
 
 (define (widen-abstract-value v-debugging)
- (format #t "begin~%")			;debugging
  ;; This can introduce imprecision.
  (let loop ((v (remove-redundant-proto-abstract-values* v-debugging)))
   (if (syntactic-constraints-met? v)
@@ -5098,11 +5122,6 @@
 			  (and (not (eq? vs1 vs2))
 			       (abstract-environment-nondisjoint? vs1 vs2)))
 			 vss)))
-     (when #f				;debugging
-      (format #t "bingo~%")
-      (pp (list (map-vector externalize-abstract-value vs1)
-		(map-vector externalize-abstract-value vs2)))
-      (newline))
      (loop (cons (map-vector remove-redundant-proto-abstract-values*
 			     (abstract-environment-union vs1 vs2))
 		 (removeq vs2 (removeq vs1 vss))))))
@@ -5392,28 +5411,36 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let ((bs0 (initial-abstract-analysis e bs)))
+ (let ((bs0 (initial-abstract-analysis e bs))
+       ;; debugging
+       (es '()))
   (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs0)))
 	     ;; debugging
 	     (i 0))
-   (when #f				;debugging
-    (pp (externalize-abstract-analysis bs))
+   (when #t				;debugging
+    (when (= i 23) (exit -1)))
+   ;; debugging
+   (begin
+    (for-each
+     (lambda (b)
+      (unless (memp expression=? (expression-binding-expression b) es)
+       (set! es (append es (list (expression-binding-expression b))))))
+     bs)
+    (write (length es))
+    (newline)
+    (write (count-if (lambda (e) (lookup-expression-binding e bs)) es))
+    (newline)
+    (pp (map-indexed (lambda (e i)
+		      (let ((b (lookup-expression-binding e bs)))
+		       (list
+			i
+			(if b
+			    (externalize-abstract-environment-binding
+			     (free-variables e)
+			     (first (expression-binding-flow b)))
+			    #f))))
+		     es))
     (newline))
-   (when #f				;debugging
-    (pp (map (lambda (b)
-	      (map (lambda (b)
-		    (externalize-abstract-value (environment-binding-value b)))
-		   (expression-binding-flow b)))
-	     bs))
-    (newline))
-   (when #f				;debugging
-    (write (length bs))
-    (newline))
-   (when #f
-    (pp (map abstract->concrete (map expression-binding-expression bs)))
-    (newline))
-   (when #f				;debugging
-    (when (= i 18) (exit -1)))
    (let ((bs1 (update-analysis-ranges*
 	       (widen-analysis-domains
 		(abstract-analysis-union bs0 (update-analysis-domains bs))))))
