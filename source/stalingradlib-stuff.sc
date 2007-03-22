@@ -5411,31 +5411,8 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let ((bs (initial-abstract-analysis e bs))
-       ;; debugging
-       (es '()))
+ (let ((bs (initial-abstract-analysis e bs)))
   (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs))))
-   ;; debugging
-   (when #t
-    (for-each
-     (lambda (b)
-      (unless (memp expression=? (expression-binding-expression b) es)
-       (set! es (append es (list (expression-binding-expression b))))))
-     bs)
-    (write (length es))
-    (newline)
-    (write (count-if (lambda (e) (lookup-expression-binding e bs)) es))
-    (newline)
-    (pp (map-indexed (lambda (e i)
-		      (let ((b (lookup-expression-binding e bs)))
-		       (list i
-			     (if b
-				 (externalize-abstract-environment-binding
-				  (free-variables e)
-				  (first (expression-binding-flow b)))
-				 #f))))
-		     es))
-    (newline))
    (let ((bs1 (update-analysis-ranges*
 	       (widen-analysis-domains
 		(abstract-analysis-union bs (update-analysis-domains bs))))))
