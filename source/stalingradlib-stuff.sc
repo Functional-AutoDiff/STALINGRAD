@@ -280,6 +280,7 @@
 
 (define (compile-time-error message . arguments)
  (apply format stderr-port message arguments)
+ (newline stderr-port)
  (exit -1))
 
 (define (run-time-error message . vs)
@@ -299,6 +300,7 @@
 	    (newline stderr-port))
 	   vs)
  (display message stderr-port)
+ (newline stderr-port)
  (exit -1))
 
 (define (internal-error . arguments)
@@ -4276,10 +4278,6 @@
 ;;; needs work: To check for recursive values that can't terminate.
 (define (empty-abstract-value? v) (null? v))
 
-(define (top) 'top)
-
-(define (top? v) (eq? v 'top))
-
 (define (vlad-value->abstract-value v)
  (if (scalar-proto-abstract-value? v)
      (list v)
@@ -4346,8 +4344,6 @@
 
 (define (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above)
  (cond
-  ((top? v2) #t)
-  ((top? v1) #f)
   ((up? v1)
    (abstract-value-subset?-internal (list-ref vs1-above (up-index v1))
 				    v2
@@ -4414,9 +4410,7 @@
 		 (aggregate-value-values u2)))))
 
 (define (abstract-value-nondisjoint?-internal v1 v2 cs vs1-above vs2-above)
- (cond ((top? v1) (not (empty-abstract-value? v2)))
-       ((top? v2) (not (empty-abstract-value? v1)))
-       ((up? v1)
+ (cond ((up? v1)
 	(abstract-value-nondisjoint?-internal
 	 (list-ref vs1-above (up-index v1))
 	 v2
@@ -4449,37 +4443,33 @@
  (abstract-value-nondisjoint?-internal v1 v2 '() '() '()))
 
 (define (closed-proto-abstract-values v)
- (when (top? v)
-  (internal-error "Cannot get closed proto abstract values of top"))
  (let loop ((v v) (vs-above '()))
-  (cond ((top? v) v)
-	((up? v)
-	 (if (= (up-index v) (- (length vs-above) 1))
-	     (map (lambda (u)
-		   (if (scalar-proto-abstract-value? u)
-		       u
-		       (make-aggregate-value-with-new-values
-			u
-			(map (lambda (v)
-			      (if (memq v vs-above)
-				  (make-up (+ (positionq v vs-above) 1))
-				  v))
-			     (aggregate-value-values u)))))
-		  (last vs-above))
-	     v))
-	(else (map (lambda (u)
-		    (if (scalar-proto-abstract-value? u)
-			u
-			(make-aggregate-value-with-new-values
-			 u
-			 (map (lambda (v1) (loop v1 (cons v vs-above)))
-			      (aggregate-value-values u)))))
-		   v)))))
+  (if (up? v)
+      (if (= (up-index v) (- (length vs-above) 1))
+	  (map (lambda (u)
+		(if (scalar-proto-abstract-value? u)
+		    u
+		    (make-aggregate-value-with-new-values
+		     u
+		     (map (lambda (v)
+			   (if (memq v vs-above)
+			       (make-up (+ (positionq v vs-above) 1))
+			       v))
+			  (aggregate-value-values u)))))
+	       (last vs-above))
+	  v)
+      (map (lambda (u)
+	    (if (scalar-proto-abstract-value? u)
+		u
+		(make-aggregate-value-with-new-values
+		 u
+		 (map (lambda (v1) (loop v1 (cons v vs-above)))
+		      (aggregate-value-values u)))))
+	   v))))
 
 (define (abstract-value-union v1 v2)
  ;; This cannot introduce imprecision.
- (cond ((or (top? v1) (top? v2)) (top))
-       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+ (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
        (else (remove-redundant-proto-abstract-values
@@ -4492,19 +4482,10 @@
  ;; {(),pair(0,^0)} U {(),pair(1,^0)} would yield
  ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
  ;; extension even though it is not in the extension of either argument.
- (cond ((or (top? v1) (top? v2)) (top))
-       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+ (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
        (else (remove-redundant-proto-abstract-values (append v1 v2)))))
-
-(define (contains-top? v)
- (or (top? v)
-     (and (not (up? v))
-	  (some (lambda (u)
-		 (and (not (scalar-proto-abstract-value? u))
-		      (some contains-top? (aggregate-value-values u))))
-		v))))
 
 ;;; Abstract Environments
 
@@ -4580,10 +4561,10 @@
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
    "vs and (length (free-variables e)) should be of same length"))
- (if (some-vector contains-top? vs)
+ (if (some-vector empty-abstract-value? vs)
      (empty-abstract-analysis)
-     (list
-      (make-expression-binding e (list (make-environment-binding vs (top)))))))
+     (list (make-expression-binding
+	    e (list (make-environment-binding vs (empty-abstract-value)))))))
 
 (define (abstract-analysis=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
@@ -4626,8 +4607,7 @@
 
 (define (some-abstract-value?-internal p v vs-above)
  (or (p v vs-above)
-     (and (not (top? v))
-	  (not (up? v))
+     (and (not (up? v))
 	  (some (lambda (u)
 		 (some-proto-abstract-value?-internal p u (cons v vs-above)))
 		v))))
@@ -4639,16 +4619,16 @@
 
 (define (map-abstract-value f v)
  (let loop ((v v) (vs-above '()))
-  (cond ((top? v) v)
-	((up? v) v)
-	(else (map (lambda (u)
-		    (if (scalar-proto-abstract-value? u)
-			u
-			(make-aggregate-value-with-new-values
-			 u
-			 (map (lambda (v1) (loop v1 (cons v vs-above)))
-			      (aggregate-value-values u)))))
-		   (f v vs-above))))))
+  (if (up? v)
+      v
+      (map (lambda (u)
+	    (if (scalar-proto-abstract-value? u)
+		u
+		(make-aggregate-value-with-new-values
+		 u
+		 (map (lambda (v1) (loop v1 (cons v vs-above)))
+		      (aggregate-value-values u)))))
+	   (f v vs-above)))))
 
 (define (remove-redundant-proto-abstract-values* v)
  (map-abstract-value
@@ -4674,7 +4654,6 @@
 
 (define (abstract-value-process-free-ups-internal f v vs-above)
  (cond ((free-up? v vs-above) (f v vs-above))
-       ((top? v) v)
        ((up? v) v)
        (else (map (lambda (u)
 		   (proto-abstract-value-process-free-ups-internal
@@ -4806,11 +4785,11 @@
  (let ((v-additions
 	;; returns: (list v additions)
 	(let loop ((v v))
-	 (if (or (top? v) (up? v))
+	 (if (up? v)
 	     (list v '())
 	     (let ((v-additions (limit v)))
 	      (if (null? (second v-additions))
-		  (if (or (top? (first v-additions)) (up? (first v-additions)))
+		  (if (up? (first v-additions))
 		      (list (first v-additions) '())
 		      (let ((u-additions-list
 			     (map
@@ -4915,7 +4894,7 @@
 
 (define (path-of-depth-greater-than-k k match? type? v)
  (let outer ((v v) (path '()))
-  (if (or (top? v) (up? v) (empty-abstract-value? v))
+  (if (or (up? v) (empty-abstract-value? v))
       (if (> (depth match? type? (reverse (cons v path))) k)
 	  (reverse (cons v path))
 	  #f)
@@ -5007,17 +4986,14 @@
  (or (not *real-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (top? v))
-		 (not (up? v))
-		 (> (count-if abstract-real? v) *real-limit*)))
+	    (and (not (up? v)) (> (count-if abstract-real? v) *real-limit*)))
 	   v))))
 
 (define (closure-limit-met? v)
  (or (not *closure-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (top? v))
-		 (not (up? v))
+	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *closure-limit*))
 		       (transitive-equivalence-classesp
 			closure-match? (remove-if-not closure? v)))))
@@ -5033,8 +5009,7 @@
  (or (not *bundle-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (top? v))
-		 (not (up? v))
+	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *bundle-limit*))
 		       (transitive-equivalence-classesp
 			bundle-match? (remove-if-not bundle? v)))))
@@ -5050,8 +5025,7 @@
  (or (not *tagged-pair-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
-	    (and (not (top? v))
-		 (not (up? v))
+	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *tagged-pair-limit*))
 		       (transitive-equivalence-classesp
 			tagged-pair-match? (remove-if-not tagged-pair? v)))))
@@ -5064,13 +5038,12 @@
 	  #f)))
 
 (define (syntactic-constraints-met? v)
- (or (top? v)
-     (and (real-limit-met? v)
-	  (closure-limit-met? v)
-	  (closure-depth-limit-met? v)
-	  (bundle-limit-met? v)
-	  (tagged-pair-limit-met? v)
-	  (tagged-pair-depth-limit-met? v))))
+ (and (real-limit-met? v)
+      (closure-limit-met? v)
+      (closure-depth-limit-met? v)
+      (bundle-limit-met? v)
+      (tagged-pair-limit-met? v)
+      (tagged-pair-depth-limit-met? v)))
 
 (define (widen-abstract-value v-debugging)
  ;; This can introduce imprecision.
@@ -5143,12 +5116,12 @@
    (else vss))))
 
 (define (widen-analysis-domains bs)
- ;; This discards the flow ranges, which should always be top anyway. This can
- ;; introduce imprecision.
+ ;; This discards the flow ranges, which should always be empty anyway. This
+ ;; can introduce imprecision.
  (map (lambda (b)
        (make-expression-binding
 	(expression-binding-expression b)
-	(map (lambda (vs) (make-environment-binding vs (top)))
+	(map (lambda (vs) (make-environment-binding vs (empty-abstract-value)))
 	     (widen-abstract-flow-domain
 	      (map environment-binding-values (expression-binding-flow b))))))
       bs))
@@ -5168,10 +5141,6 @@
     (free-variables e)))))
 
 (define (abstract-eval1 e vs bs)
- ;; This is a conservative approximation because abstract-environment-subset?
- ;; is and might return top when a matching binding exists. It always returns
- ;; an abstract value whose extension contains the actual value of the
- ;; expression and is thus always sound.
  (let ((b (lookup-expression-binding e bs)))
   (cond (b
 	 ;; Because the domains of a flow are disjoint there can be only one.
@@ -5185,8 +5154,8 @@
 			    (abstract-environment-subset?
 			     vs (environment-binding-values b)))
 			   (expression-binding-flow b))))
-	  (if b (environment-binding-value b) (top))))
-	(else (top)))))
+	  (if b (environment-binding-value b) (empty-abstract-value))))
+	(else (empty-abstract-value)))))
 
 (define (abstract-apply-closure p u1 v2)
  (cond
@@ -5230,22 +5199,19 @@
   (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
- (if (top? v1)
-     (top)
+ (if (empty-abstract-value? v2)
+     (empty-abstract-value)
      (reduce
       abstract-value-union
       (map
        (lambda (u1)
 	(cond
 	 ((primitive-procedure? u1)
-	  (if (top? v2)
-	      ;; needs work: Can be more precise in many cases.
-	      (top)
-	      (reduce abstract-value-union
-		      (map (lambda (u2)
-			    ((primitive-procedure-abstract-procedure u1) u2))
-			   (closed-proto-abstract-values v2))
-		      (empty-abstract-value))))
+	  (reduce abstract-value-union
+		  (map (lambda (u2)
+			((primitive-procedure-abstract-procedure u1) u2))
+		       (closed-proto-abstract-values v2))
+		  (empty-abstract-value)))
 	 ((closure? u1)
 	  (abstract-apply-closure
 	   (lambda (e vs) (abstract-eval1 e vs bs)) u1 v2))
@@ -5307,7 +5273,8 @@
        (make-expression-binding
 	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (make-environment-binding (environment-binding-values b2) (top)))
+	      (make-environment-binding (environment-binding-values b2)
+					(empty-abstract-value)))
 	     (expression-binding-flow b1))))
       bs))
 
@@ -5331,8 +5298,7 @@
    (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 (define (abstract-apply-prime v1 v2)
- (if (top? v1)
-     ;; needs work: I'm not sure that this is correct.
+ (if (empty-abstract-value? v2)
      (empty-abstract-analysis)
      (reduce
       abstract-analysis-union
@@ -5486,7 +5452,6 @@
 
 ;;; \AB{V} -> \AB{V}
 (define (abstract-zero-v v)
- ;; needs work: top
  (if (up? v)
      v
      (reduce abstract-value-union-without-unroll
@@ -5518,7 +5483,6 @@
 ;;; Forward Mode
 
 (define (abstract-primal-v v-forward)
- ;; needs work: top
  (if (up? v-forward)
      v-forward
      (reduce abstract-value-union-without-unroll
@@ -5617,7 +5581,6 @@
        (else (internal-error))))
 
 (define (abstract-tangent-v v)
- ;; needs work: top
  (if (up? v)
      v
      (reduce abstract-value-union-without-unroll
@@ -5670,7 +5633,6 @@
 
 (define (abstract-tagged-null? tags u vs-above)
  ;; vs-above is the context for u
- ;; needs work: top
  (if (null? tags)
      (null? u)
      (case (first tags)
@@ -5705,7 +5667,6 @@
 
 (define (abstract-legitimate-list? vs u-perturbation tags vs-above cs)
  ;; vs-above is the context for u-perturbation
- ;; needs work: top
  (or (and (null? vs) (abstract-tagged-null? tags u-perturbation vs-above))
      (and (not (null? vs))
 	  (vlad-pair? u-perturbation tags)
@@ -5727,7 +5688,6 @@
 
 (define (abstract-legitimate? v v-perturbation vs-above cs)
  ;; vs-above is the context for v-perturbation
- ;; needs work: top
  (cond
   ((up? v)
    (abstract-legitimate?
@@ -5795,7 +5755,6 @@
 
 (define (abstract-bundle-list vs u-perturbation tags vs-above cs)
  ;; vs-above is the context for u-perturbation
- ;; needs work: top
  (if (null? vs)
      (cond ((abstract-tagged-null? tags u-perturbation vs-above) '(()))
 	   (else
@@ -5832,7 +5791,6 @@
 
 (define (abstract-bundle-internal v v-perturbation vs-above cs)
  ;; vs-above is the context for v-perturbation
- ;; needs work: top
  (cond
   ((up? v)
    (abstract-bundle-internal
@@ -6047,119 +6005,87 @@
  (lambda (u)
   (cond
    ((vlad-pair? u '())
-    (if (or (top? (abstract-vlad-car-u u '()))
-	    (top? (abstract-vlad-cdr-u u '())))
-	;; needs work: Can be more precise in many cases.
-	(top)
-	(let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
-	 (reduce
-	  abstract-value-union
-	  (map (lambda (u1)
-		(reduce abstract-value-union
-			(map (lambda (u2) (list (f u1 u2))) v2)
-			(empty-abstract-value)))
-	       (closed-proto-abstract-values (abstract-vlad-car-u u '())))
-	  (empty-abstract-value)))))
+    (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
+     (reduce abstract-value-union
+	     (map (lambda (u1)
+		   (reduce abstract-value-union
+			   (map (lambda (u2) (list (f u1 u2))) v2)
+			   (empty-abstract-value)))
+		  (closed-proto-abstract-values (abstract-vlad-car-u u '())))
+	     (empty-abstract-value))))
    (else (compile-time-warning
 	  (format #f "Argument to ~a might be invalid" s) u)))))
 
 (define (abstract-binary-u->v f s)
  ;; This is different in that f is of type: \AB{U} -> \AB{V}
  (lambda (u)
-  (cond ((vlad-pair? u '())
-	 (if (or (top? (abstract-vlad-car-u u '()))
-		 (top? (abstract-vlad-cdr-u u '())))
-	     ;; needs work: Can be more precise in many cases.
-	     (top)
-	     (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
-		(closed-proto-abstract-values (abstract-vlad-cdr-u u '())))))
-	(else (compile-time-warning
-	       (format #f "Argument to ~a might be invalid" s) u)))))
+  (if (vlad-pair? u '())
+      (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
+	 (closed-proto-abstract-values (abstract-vlad-cdr-u u '())))
+      (compile-time-warning
+       (format #f "Argument to ~a might be invalid" s) u))))
 
 (define (abstract-binary-real f s)
  (lambda (u)
-  (cond
-   ((vlad-pair? u '())
-    (if (or (top? (abstract-vlad-car-u u '()))
-	    (top? (abstract-vlad-cdr-u u '())))
-	;; needs work: Can be more precise in many cases.
-	(top)
-	(let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
-	 (reduce
-	  abstract-value-union
-	  (map
-	   (lambda (u1)
-	    (reduce
-	     abstract-value-union
-	     (map
-	      (lambda (u2)
-	       (cond
-		((and (real? u1) (real? u2)) (list (f u1 u2)))
-		((and (abstract-real? u1) (abstract-real? u2)) '(real))
-		(else (compile-time-warning
-		       (format #f "Argument to ~a might be invalid" s) u))))
-	      v2)
-	     (empty-abstract-value)))
-	   (closed-proto-abstract-values (abstract-vlad-car-u u '())))
-	  (empty-abstract-value)))))
-   (else (compile-time-warning
-	  (format #f "Argument to ~a might be invalid" s) u)))))
+  (if (vlad-pair? u '())
+      (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
+       (reduce
+	abstract-value-union
+	(map
+	 (lambda (u1)
+	  (reduce
+	   abstract-value-union
+	   (map
+	    (lambda (u2)
+	     (cond ((and (real? u1) (real? u2)) (list (f u1 u2)))
+		   ((and (abstract-real? u1) (abstract-real? u2)) '(real))
+		   (else (compile-time-warning
+			  (format #f "Argument to ~a might be invalid" s) u))))
+	    v2)
+	   (empty-abstract-value)))
+	 (closed-proto-abstract-values (abstract-vlad-car-u u '())))
+	(empty-abstract-value)))
+      (compile-time-warning
+       (format #f "Argument to ~a might be invalid" s) u))))
 
 (define (abstract-binary-real-predicate f s)
  (lambda (u)
-  (cond
-   ((vlad-pair? u '())
-    (if (or (top? (abstract-vlad-car-u u '()))
-	    (top? (abstract-vlad-cdr-u u '())))
-	;; needs work: Can be more precise in many cases.
-	(top)
-	(let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
-	 (reduce
-	  abstract-value-union
-	  (map
-	   (lambda (u1)
-	    (reduce
-	     abstract-value-union
-	     (map
-	      (lambda (u2)
-	       (cond
-		((and (real? u1) (real? u2))
-		 (list (if (f u1 u2) vlad-true vlad-false)))
-		((and (abstract-real? u1) (abstract-real? u2))
-		 (list vlad-true vlad-false))
-		(else (compile-time-warning
-		       (format #f "Argument to ~a might be invalid" s) u))))
-	      v2)
-	     (empty-abstract-value)))
-	   (closed-proto-abstract-values (abstract-vlad-car-u u '())))
-	  (empty-abstract-value)))))
-   (else (compile-time-warning
-	  (format #f "Argument to ~a might be invalid" s) u)))))
+  (if (vlad-pair? u '())
+      (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
+       (reduce
+	abstract-value-union
+	(map
+	 (lambda (u1)
+	  (reduce
+	   abstract-value-union
+	   (map
+	    (lambda (u2)
+	     (cond ((and (real? u1) (real? u2))
+		    (list (if (f u1 u2) vlad-true vlad-false)))
+		   ((and (abstract-real? u1) (abstract-real? u2))
+		    (list vlad-true vlad-false))
+		   (else (compile-time-warning
+			  (format #f "Argument to ~a might be invalid" s) u))))
+	    v2)
+	   (empty-abstract-value)))
+	 (closed-proto-abstract-values (abstract-vlad-car-u u '())))
+	(empty-abstract-value)))
+      (compile-time-warning
+       (format #f "Argument to ~a might be invalid" s) u))))
 
 (define (abstract-ternary f s)
  (lambda (u123)
-  (cond
-   ((vlad-pair? u123 '())
-    (if (or (top? (abstract-vlad-car-u u123 '()))
-	    (top? (abstract-vlad-cdr-u u123 '())))
-	;; needs work: Can be more precise in many cases.
-	(top)
-	(let ((v23
-	       (closed-proto-abstract-values (abstract-vlad-cdr-u u123 '()))))
-	 (reduce
-	  abstract-value-union
-	  (map
-	   (lambda (u1)
-	    (reduce
-	     abstract-value-union
-	     (map
-	      (lambda (u23)
-	       (cond
-		((vlad-pair? u23 '())
-		 (if (or (top? (abstract-vlad-car-u u23 '()))
-			 (top? (abstract-vlad-cdr-u u23 '())))
-		     ;; needs work: Can be more precise in many cases.
-		     (top)
+  (if (vlad-pair? u123 '())
+      (let ((v23
+	     (closed-proto-abstract-values (abstract-vlad-cdr-u u123 '()))))
+       (reduce
+	abstract-value-union
+	(map
+	 (lambda (u1)
+	  (reduce
+	   abstract-value-union
+	   (map (lambda (u23)
+		 (if (vlad-pair? u23 '())
 		     (let ((v3 (closed-proto-abstract-values
 				(abstract-vlad-cdr-u u23 '()))))
 		      (reduce
@@ -6170,15 +6096,15 @@
 				     (empty-abstract-value)))
 			    (closed-proto-abstract-values
 			     (abstract-vlad-car-u u23 '())))
-		       (empty-abstract-value)))))
-		(else (compile-time-warning
-		       (format #f "Argument to ~a might be invalid" s) u123))))
-	      v23)
-	     (empty-abstract-value)))
-	   (closed-proto-abstract-values (abstract-vlad-car-u u123 '())))
-	  (empty-abstract-value)))))
-   (else (compile-time-warning
-	  (format #f "Argument to ~a might be invalid" s) u123)))))
+		       (empty-abstract-value)))
+		     (compile-time-warning
+		      (format #f "Argument to ~a might be invalid" s) u123)))
+		v23)
+	   (empty-abstract-value)))
+	 (closed-proto-abstract-values (abstract-vlad-car-u u123 '())))
+	(empty-abstract-value)))
+      (compile-time-warning
+       (format #f "Argument to ~a might be invalid" s) u123))))
 
 ;;; Pretty printer for abstract
 
@@ -6228,8 +6154,7 @@
        (else (internal-error "Not a proto-abstract-value: ~s" u))))
 
 (define (externalize-abstract-value v)
- (cond ((top? v) 'top)
-       ((up? v) `(up ,(up-index v)))
+ (cond ((up? v) `(up ,(up-index v)))
        ((list? v)
 	(cond ((empty-abstract-value? v) 'bottom)
 	      ((empty-abstract-value? (rest v))
@@ -6239,7 +6164,7 @@
 
 (define (externalize-abstract-environment xs vs)
  (unless (and (vector? vs)
-	      (every-vector (lambda (v) (or (list? v) (top? v) (up? v))) vs)
+	      (every-vector (lambda (v) (or (list? v) (up? v))) vs)
 	      (= (length xs) (vector-length vs)))
   (internal-error "Not an abstract environment"))
  (map (lambda (x v) (list x (externalize-abstract-value v)))
