@@ -4557,15 +4557,6 @@
 
 (define (empty-abstract-analysis) '())
 
-(define (make-abstract-analysis e vs)
- (unless (= (vector-length vs) (length (free-variables e)))
-  (internal-error
-   "vs and (length (free-variables e)) should be of same length"))
- (if (some-vector empty-abstract-value? vs)
-     (empty-abstract-analysis)
-     (list (make-expression-binding
-	    e (list (make-environment-binding vs (empty-abstract-value)))))))
-
 (define (abstract-analysis=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
@@ -4979,8 +4970,8 @@
 
 ;;; Syntactic Constraints
 
-(define (flow-size-limit-met? bs/vss)
- (or (not *flow-size-limit*) (<= (length bs/vss) *flow-size-limit*)))
+(define (flow-size-limit-met? bs)
+ (or (not *flow-size-limit*) (<= (length bs) *flow-size-limit*)))
 
 (define (real-limit-met? v)
  (or (not *real-limit*)
@@ -5065,68 +5056,108 @@
 	     (limit-bundles
 	      (limit-closures v))))))))))))
 
-(define (pick-environments-to-coalesce vss) (sublist vss 0 2))
+(define (pick-environment-bindings-to-coalesce bs) (sublist bs 0 2))
 
-(define (widen-abstract-flow-domain vss)
- (let loop ((vss (map (lambda (vs)
-		       (map-vector remove-redundant-proto-abstract-values* vs))
-		      vss)))
+(define (widen-abstract-flow bs)
+ (let loop ((bs (map (lambda (b)
+		      (make-environment-binding
+		       ;; needs work: This should be removed if not necessary
+		       ;;             and moved to abstract-value-union if
+		       ;;             necessary.
+		       (map-vector remove-redundant-proto-abstract-values*
+				   (environment-binding-values b))
+		       (environment-binding-value b)))
+		     bs)))
   ;; This enforces three constraints. We could change the order in which they
   ;; are enforced.
   (cond
    ;; First, that the domains be disjoint. This can introduce imprecision
    ;; because of abstract-environment-union.
-   ((some (lambda (vs1)
-	   (some (lambda (vs2)
-		  (and (not (eq? vs1 vs2))
-		       (abstract-environment-nondisjoint? vs1 vs2)))
-		 vss))
-	  vss)
+   ((some (lambda (b1)
+	   (some (lambda (b2)
+		  (and (not (eq? b1 b2))
+		       (abstract-environment-nondisjoint?
+			(environment-binding-values b1)
+			(environment-binding-values b2))))
+		 bs))
+	  bs)
     ;; needs work: Should abstract the choice of which environments to
     ;;             coalesce as a pick procedure.
-    (let* ((vs1 (find-if
-		 (lambda (vs1)
-		  (some (lambda (vs2)
-			 (and (not (eq? vs1 vs2))
-			      (abstract-environment-nondisjoint? vs1 vs2)))
-			vss))
-		 vss))
-	   (vs2 (find-if (lambda (vs2)
-			  (and (not (eq? vs1 vs2))
-			       (abstract-environment-nondisjoint? vs1 vs2)))
-			 vss)))
-     (loop (cons (map-vector remove-redundant-proto-abstract-values*
-			     (abstract-environment-union vs1 vs2))
-		 (removeq vs2 (removeq vs1 vss))))))
+    (let* ((b1 (find-if
+		(lambda (b1)
+		 (some (lambda (b2)
+			(and (not (eq? b1 b2))
+			     (abstract-environment-nondisjoint?
+			      (environment-binding-values b1)
+			      (environment-binding-values b2))))
+		       bs))
+		bs))
+	   (b2 (find-if (lambda (b2)
+			 (and (not (eq? b1 b2))
+			      (abstract-environment-nondisjoint?
+			       (environment-binding-values b1)
+			       (environment-binding-values b2))))
+			bs)))
+     (loop (cons (make-environment-binding
+		  ;; needs work: This should be removed if not necessary and
+		  ;;             moved to abstract-value-union if necessary.
+		  (map-vector remove-redundant-proto-abstract-values*
+			      (abstract-environment-union
+			       (environment-binding-values b1)
+			       (environment-binding-values b2)))
+		  ;; We pick one range arbitrarily. We don't union the ranges
+		  ;; and leave it up to update-analysis-ranges to do that.
+		  (environment-binding-value b1))
+		 (removeq b2 (removeq b1 bs))))))
    ;; Second, that the abstract values in the domains meet the syntactic
    ;; constraints. This can introduct imprecision.
-   ((some (lambda (vs)
-	   (some-vector (lambda (v) (not (syntactic-constraints-met? v))) vs))
-	  vss)
-    (loop (map (lambda (vs) (map-vector widen-abstract-value vs)) vss)))
+   ((some (lambda (b)
+	   (some-vector (lambda (v) (not (syntactic-constraints-met? v)))
+			(environment-binding-values b)))
+	  bs)
+    (loop (map (lambda (b)
+		(make-environment-binding
+		 (map-vector widen-abstract-value
+			     (environment-binding-values b))
+		 (environment-binding-value b)))
+	       bs)))
    ;; Third, that the flow size limit be met. This can introduce imprecision
    ;; because of abstract-environment-union.
-   ((not (flow-size-limit-met? vss))
-    (let ((vs1-vs2 (pick-environments-to-coalesce vss)))
-     (loop
-      (cons (map-vector
-	     remove-redundant-proto-abstract-values*
-	     (abstract-environment-union (first vs1-vs2) (second vs1-vs2)))
-	    (removeq (second vs1-vs2) (removeq (first vs1-vs2) vss))))))
-   (else vss))))
+   ((not (flow-size-limit-met? bs))
+    (let ((b1-b2 (pick-environment-bindings-to-coalesce bs)))
+     (loop (cons (make-environment-binding
+		  ;; needs work: This should be removed if not necessary and
+		  ;;             moved to abstract-value-union if necessary.
+		  (map-vector remove-redundant-proto-abstract-values*
+			      (abstract-environment-union
+			       (environment-binding-values (first b1-b2))
+			       (environment-binding-values (second b1-b2))))
+		  ;; We pick one range arbitrarily. We don't union the ranges
+		  ;; and leave it up to update-analysis-ranges to do that.
+		  (environment-binding-value (first b1-b2)))
+		 (removeq (second b1-b2) (removeq (first b1-b2) bs))))))
+   (else bs))))
 
 (define (widen-analysis-domains bs)
- ;; This discards the flow ranges, which should always be empty anyway. This
- ;; can introduce imprecision.
+ ;; This can introduce imprecision.
  (map (lambda (b)
        (make-expression-binding
 	(expression-binding-expression b)
-	(map (lambda (vs) (make-environment-binding vs (empty-abstract-value)))
-	     (widen-abstract-flow-domain
-	      (map environment-binding-values (expression-binding-flow b))))))
+	(widen-abstract-flow (expression-binding-flow b))))
       bs))
 
 ;;; Abstract Interpretation
+
+(define (make-abstract-analysis e vs bs)
+ (unless (= (vector-length vs) (length (free-variables e)))
+  (internal-error
+   "vs and (length (free-variables e)) should be of same length"))
+ (if (some-vector empty-abstract-value? vs)
+     (empty-abstract-analysis)
+     (list (make-expression-binding
+	    e (list (make-environment-binding
+		     vs
+		     (widen-abstract-value (abstract-eval1 e vs bs))))))))
 
 (define (initial-abstract-analysis e bs)
  ;; This (like update-analysis-domains) only makes domains.
@@ -5138,7 +5169,8 @@
      (vlad-value->abstract-value
       (value-binding-value
        (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-    (free-variables e)))))
+    (free-variables e)))
+  '()))
 
 (define (abstract-eval1 e vs bs)
  (let ((b (lookup-expression-binding e bs)))
@@ -5268,36 +5300,26 @@
       bs)))
    (else (internal-error)))))
 
-(define (initial-analysis-ranges bs)
- (map (lambda (b1)
-       (make-expression-binding
-	(expression-binding-expression b1)
-	(map (lambda (b2)
-	      (make-environment-binding (environment-binding-values b2)
-					(empty-abstract-value)))
-	     (expression-binding-flow b1))))
-      bs))
+(define (abstract-eval1-prime e vs bs)
+ (let ((b (lookup-expression-binding e bs)))
+  (cond (b
+	 ;; Because the domains of a flow are disjoint there can be only one.
+	 (when (> (count-if (lambda (b)
+			     (abstract-environment-subset?
+			      vs (environment-binding-values b)))
+			    (expression-binding-flow b))
+		  1)
+	  (internal-error))
+	 (let ((b (find-if (lambda (b)
+			    (abstract-environment-subset?
+			     vs (environment-binding-values b)))
+			   (expression-binding-flow b))))
+	  (if b
+	      (empty-abstract-analysis)
+	      (make-abstract-analysis e vs bs))))
+	(else (make-abstract-analysis e vs bs)))))
 
-(define (update-analysis-ranges bs)
- (map (lambda (b1)
-       (make-expression-binding
-	(expression-binding-expression b1)
-	(map (lambda (b2)
-	      (make-environment-binding
-	       (environment-binding-values b2)
-	       (widen-abstract-value
-		(abstract-eval (expression-binding-expression b1)
-			       (environment-binding-values b2)
-			       bs))))
-	     (expression-binding-flow b1))))
-      bs))
-
-(define (update-analysis-ranges* bs)
- (let loop ((bs (initial-analysis-ranges bs)))
-  (let ((bs1 (update-analysis-ranges bs)))
-   (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
-
-(define (abstract-apply-prime v1 v2)
+(define (abstract-apply-prime v1 v2 bs)
  (if (empty-abstract-value? v2)
      (empty-abstract-analysis)
      (reduce
@@ -5307,7 +5329,8 @@
 	(cond
 	 ((primitive-procedure? u1) (empty-abstract-analysis))
 	 ((closure? u1)
-	  (abstract-apply-closure make-abstract-analysis u1 v2))
+	  (abstract-apply-closure
+	   (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 v2))
 	 (else (compile-time-warning "Target might not be a procedure" u1))))
        (closed-proto-abstract-values v1))
       (empty-abstract-analysis))))
@@ -5320,12 +5343,14 @@
    ((application? e)
     (abstract-analysis-union
      (abstract-analysis-union
-      (make-abstract-analysis
+      (abstract-eval1-prime
        (application-callee e)
-       (restrict-environment vs xs (free-variables (application-callee e))))
-      (make-abstract-analysis
+       (restrict-environment vs xs (free-variables (application-callee e)))
+       bs)
+      (abstract-eval1-prime
        (application-argument e)
-       (restrict-environment vs xs (free-variables (application-argument e)))))
+       (restrict-environment vs xs (free-variables (application-argument e)))
+       bs))
      (abstract-apply-prime
       (abstract-eval1
        (application-callee e)
@@ -5334,9 +5359,10 @@
       (abstract-eval1
        (application-argument e)
        (restrict-environment vs xs (free-variables (application-argument e)))
-       bs))))
+       bs)
+      bs)))
    ((letrec-expression? e)
-    (make-abstract-analysis
+    (abstract-eval1-prime
      (letrec-expression-body e)
      (list->vector
       (map (lambda (x)
@@ -5351,16 +5377,33 @@
 		 (positionp
 		  variable=? x (letrec-expression-procedure-variables e)))
 		(vector-ref vs (positionp variable=? x xs))))
-	   (free-variables (letrec-expression-body e))))))
+	   (free-variables (letrec-expression-body e))))
+     bs))
    ((cons-expression? e)
     (abstract-analysis-union
-     (make-abstract-analysis
+     (abstract-eval1-prime
       (cons-expression-car e)
-      (restrict-environment vs xs (free-variables (cons-expression-car e))))
-     (make-abstract-analysis
+      (restrict-environment vs xs (free-variables (cons-expression-car e)))
+      bs)
+     (abstract-eval1-prime
       (cons-expression-cdr e)
-      (restrict-environment vs xs (free-variables (cons-expression-cdr e))))))
+      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
+      bs)))
    (else (internal-error)))))
+
+(define (update-analysis-ranges bs)
+ (map (lambda (b1)
+       (make-expression-binding
+	(expression-binding-expression b1)
+	(map (lambda (b2)
+	      (make-environment-binding
+	       (environment-binding-values b2)
+	       (widen-abstract-value
+		(abstract-eval (expression-binding-expression b1)
+			       (environment-binding-values b2)
+			       bs))))
+	     (expression-binding-flow b1))))
+      bs))
 
 (define (update-analysis-domains bs)
  (reduce abstract-analysis-union
@@ -5377,12 +5420,11 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let ((bs (initial-abstract-analysis e bs)))
-  (let loop ((bs (update-analysis-ranges* (widen-analysis-domains bs))))
-   (let ((bs1 (update-analysis-ranges*
-	       (widen-analysis-domains
-		(abstract-analysis-union bs (update-analysis-domains bs))))))
-    (if (abstract-analysis=? bs1 bs) bs (loop bs1))))))
+ (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs))))
+  (let ((bs1 (widen-analysis-domains
+	      (abstract-analysis-union (update-analysis-ranges bs)
+				       (update-analysis-domains bs)))))
+   (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 ;;; Abstract Basis
 
