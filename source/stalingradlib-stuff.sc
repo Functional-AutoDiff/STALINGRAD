@@ -134,13 +134,14 @@
  procedure-variables			;vector
  argument-variables			;vector
  bodies					;vector
+ body
  index)
 
 (define-structure bundle primal tangent)
 
 (define-structure reverse-tagged-value primal)
 
-(define-structure tagged-pair tags car cdr)
+(define-structure tagged-pair tags car cdr expression environment)
 
 (define-structure forward-cache-entry primal? primal tangent? tangent forward)
 
@@ -583,6 +584,9 @@
 		  (else (internal-error)))))
      (tagged-pair-cdr v)))
 
+(define (create-tagged-pair tags v1 v2)
+ (make-tagged-pair '() v1 v2 #f #f))
+
 (define (vlad-cons v1 v2)
  ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
  (if *church-pairs?*
@@ -599,7 +603,7 @@
 		       (new-application (new-variable-access-expression 'x1)
 					(new-variable-access-expression 'd)))
 		 (new-variable-access-expression 'x2))))
-     (make-tagged-pair '() v1 v2)))
+     (create-tagged-pair '() v1 v2)))
 
 (define (listify xs tags)
  (if *church-pairs?*
@@ -621,7 +625,7 @@
 		 ((reverse) *j)
 		 (else (internal-error)))
 		(loop (rest tags)))))
-	  (make-tagged-pair tags (first xs) (loop (rest xs)))))))
+	  (create-tagged-pair tags (first xs) (loop (rest xs)))))))
 
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v) (closure? v))
@@ -1947,6 +1951,8 @@
  (cond ((null? v) v)
        ((boolean? v) (if v vlad-true vlad-false))
        ((real? v) v)
+       ;; needs work: flow analysis requires tagged pairs to have expression
+       ;;             and environment slots
        ((pair? v) (vlad-cons (internalize (car v)) (internalize (cdr v))))
        (else (internal-error))))
 
@@ -2215,9 +2221,9 @@
        ((reverse-tagged-value? x)
 	(make-reverse-tagged-value (zero (reverse-tagged-value-primal x))))
        ((and (not *church-pairs?*) (tagged-pair? x))
-	(make-tagged-pair (tagged-pair-tags x)
-			  (zero (vlad-car x (tagged-pair-tags x)))
-			  (zero (vlad-cdr x (tagged-pair-tags x)))))
+	(create-tagged-pair (tagged-pair-tags x)
+			    (zero (vlad-car x (tagged-pair-tags x)))
+			    (zero (vlad-cdr x (tagged-pair-tags x)))))
        (else (internal-error))))
 
 (define (conform? x1 x2)
@@ -2507,6 +2513,9 @@
 				     (append (vector->list xs1) xs)
 				     (lambda-expression-body e)))
 			     es))
+		       ;; The body slot is only used for flow analysis. For
+		       ;; efficiency, we don't (un)transform it.
+		       (recursive-closure-body x-forward)
 		       (recursive-closure-index x-forward))))))
 	       ((bundle? x-forward) (bundle-primal x-forward))
 	       ((reverse-tagged-value? x-forward)
@@ -2518,9 +2527,9 @@
 			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
 		 (run-time-error
 		  "Attempt to take primal of a non-forward value" x-forward))
-		(make-tagged-pair (rest (tagged-pair-tags x-forward))
-				  (primal (tagged-pair-car x-forward))
-				  (primal (tagged-pair-cdr x-forward))))
+		(create-tagged-pair (rest (tagged-pair-tags x-forward))
+				    (primal (tagged-pair-car x-forward))
+				    (primal (tagged-pair-cdr x-forward))))
 	       (else (internal-error))))
 	     (forward-cache-entry
 	      (find-if (lambda (forward-cache-entry)
@@ -2587,9 +2596,9 @@
 			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
 		 (run-time-error
 		  "Attempt to take tangent of a non-forward value" x-forward))
-		(make-tagged-pair (rest (tagged-pair-tags x-forward))
-				  (tangent (tagged-pair-car x-forward))
-				  (tangent (tagged-pair-cdr x-forward))))
+		(create-tagged-pair (rest (tagged-pair-tags x-forward))
+				    (tangent (tagged-pair-car x-forward))
+				    (tangent (tagged-pair-cdr x-forward))))
 	       (else (internal-error))))
 	     (forward-cache-entry
 	      (find-if (lambda (forward-cache-entry)
@@ -2720,11 +2729,13 @@
 				(append (vector->list xs1) xs)
 				(lambda-expression-body e)))
 			es))
+     ;; See comment in primal.
+     (recursive-closure-body x)
      (recursive-closure-index x))))
   ((bundle? x) (make-bundle x x-perturbation))
   ((reverse-tagged-value? x) (make-bundle x x-perturbation))
   ((and (not *church-pairs?*) (tagged-pair? x))
-   (make-tagged-pair
+   (create-tagged-pair
     (cons 'forward (tagged-pair-tags x))
     (bundle-internal (tagged-pair-car x) (tagged-pair-car x-perturbation))
     (bundle-internal (tagged-pair-cdr x) (tagged-pair-cdr x-perturbation))))
@@ -3399,13 +3410,15 @@
 			    (copy-propagate
 			     (anf-convert (lambda-expression-body e)))))
 		    es))
+	      ;; See comment in primal.
+	      (recursive-closure-body v)
 	      (recursive-closure-index v))))
 	   ((bundle? v) (make-reverse-tagged-value v))
 	   ((reverse-tagged-value? v) (make-reverse-tagged-value v))
 	   ((and (not *church-pairs?*) (tagged-pair? v))
-	    (make-tagged-pair (cons 'reverse (tagged-pair-tags v))
-			      (*j (tagged-pair-car v))
-			      (*j (tagged-pair-cdr v))))
+	    (create-tagged-pair (cons 'reverse (tagged-pair-tags v))
+				(*j (tagged-pair-car v))
+				(*j (tagged-pair-cdr v))))
 	   (else (internal-error)))))
    (when *memoized?*
     (set! *reverse-cache* (cons reverse-cache-entry *reverse-cache*))))
@@ -3512,6 +3525,8 @@
 				 (append (vector->list xs1) xs)
 				 (copy-propagate (lambda-expression-body e))))
 			 es))
+		   ;; See comment in primal.
+		   (recursive-closure-body x-reverse)
 		   (recursive-closure-index x-reverse))))))
 	   ((bundle? x-reverse)
 	    (run-time-error
@@ -3523,9 +3538,9 @@
 			 (eq? (first (tagged-pair-tags x-reverse)) 'reverse))
 	     (run-time-error
 	      "Attempt to take primal of a non-reverse value" x-reverse))
-	    (make-tagged-pair (rest (tagged-pair-tags x-reverse))
-			      (*j-inverse (tagged-pair-car x-reverse))
-			      (*j-inverse (tagged-pair-cdr x-reverse))))
+	    (create-tagged-pair (rest (tagged-pair-tags x-reverse))
+				(*j-inverse (tagged-pair-car x-reverse))
+				(*j-inverse (tagged-pair-cdr x-reverse))))
 	   (else (internal-error)))
 	  x-reverse))
    (when *memoized?*
@@ -3903,6 +3918,7 @@
 			       (recursive-closure-procedure-variables callee)
 			       (recursive-closure-argument-variables callee)
 			       (recursive-closure-bodies callee)
+			       (recursive-closure-body callee)
 			       i)))
 			 (vector-length (recursive-closure-bodies callee)))
 			(recursive-closure-values callee))))
@@ -3966,11 +3982,12 @@
 		     (letrec-expression-bodies-free-variable-indices e)))
 		(xs0 (list->vector (letrec-expression-procedure-variables e)))
 		(xs1 (list->vector (letrec-expression-argument-variables e)))
-		(es (list->vector (letrec-expression-bodies e))))
+		(es (list->vector (letrec-expression-bodies e)))
+		(e1 (letrec-expression-body e)))
 	   (map-n-vector
 	    (lambda (i)
 	     (make-recursive-closure
-	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es i))
+	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es e1 i))
 	    (vector-length es)))
 	  (map-vector lookup
 		      (letrec-expression-body-free-variable-indices e)))))
@@ -3978,7 +3995,7 @@
 	;; This LET* is to specify the evaluation order.
 	(let* ((car (evaluate (cons-expression-car e) v vs))
 	       (cdr (evaluate (cons-expression-cdr e) v vs)))
-	 (make-tagged-pair (cons-expression-tags e) car cdr)))
+	 (create-tagged-pair (cons-expression-tags e) car cdr)))
        (else (internal-error))))
 
 ;;; begin stuff that belongs to brownfis
@@ -4139,13 +4156,28 @@
 
 ;;; Abstract Closures
 
-(define (nonrecursive-closure-match? u1 u2)
+(define (nonrecursive-closure-extensional-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
      (unimplemented "Alpha equivalence")
      (and (variable=? (nonrecursive-closure-variable u1)
 		      (nonrecursive-closure-variable u2))
 	  (expression=? (nonrecursive-closure-body u1)
 			(nonrecursive-closure-body u2)))))
+
+(define (nonrecursive-closure-match? bs)
+ (lambda (u1 u2)
+  (and (nonrecursive-closure-extensional-match? u1 u2)
+       (let ((b1 (lookup-environment-binding
+		  (new-lambda-expression (nonrecursive-closure-variable u1)
+					 (nonrecursive-closure-body u1))
+		  (nonrecursive-closure-values u1)
+		  bs))
+	     (b2 (lookup-environment-binding
+		  (new-lambda-expression (nonrecursive-closure-variable u2)
+					 (nonrecursive-closure-body u2))
+		  (nonrecursive-closure-values u2)
+		  bs)))
+	(and b1 b2 (eq? b1 b2))))))
 
 (define (make-abstract-nonrecursive-closure vs e)
  (if (some-vector empty-abstract-value? vs)
@@ -4156,7 +4188,7 @@
 	    (lambda-expression-variable e)
 	    (lambda-expression-body e)))))
 
-(define (recursive-closure-match? u1 u2)
+(define (recursive-closure-extensional-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
      (unimplemented "Alpha equivalence")
      (and (= (recursive-closure-index u1) (recursive-closure-index u2))
@@ -4174,10 +4206,32 @@
 			(recursive-closure-bodies u1)
 			(recursive-closure-bodies u2)))))
 
-(define (make-abstract-recursive-closure xs vs xs-procedures xs-arguments es i)
+(define (recursive-closure-match? bs)
+ (lambda (u1 u2)
+  (and (recursive-closure-extensional-match? u1 u2)
+       (let ((b1 (lookup-environment-binding
+		  (new-letrec-expression
+		   (recursive-closure-procedure-variables u1)
+		   (recursive-closure-argument-variables u1)
+		   (recursive-closure-bodies u1)
+		   (recursive-closure-body u1))
+		  (recursive-closure-values u1)
+		  bs))
+	     (b2 (lookup-environment-binding
+		  (new-letrec-expression
+		   (recursive-closure-procedure-variables u2)
+		   (recursive-closure-argument-variables u2)
+		   (recursive-closure-bodies u2)
+		   (recursive-closure-body u2))
+		  (recursive-closure-values u2)
+		  bs)))
+	(and b1 b2 (eq? b1 b2))))))
+
+(define (make-abstract-recursive-closure
+	 xs vs xs-procedures xs-arguments es e i)
  (if (some-vector empty-abstract-value? vs)
      (empty-abstract-value)
-     (list (make-recursive-closure xs vs xs-procedures xs-arguments es i))))
+     (list (make-recursive-closure xs vs xs-procedures xs-arguments es e i))))
 
 (define (recursive-closure-procedure-lambda-expressions v)
  ;; This is only used in externalize-proto-abstract-value.
@@ -4185,15 +4239,26 @@
 	     (recursive-closure-argument-variables v)
 	     (recursive-closure-bodies v)))
 
-(define (closure-match? u1 u2)
+(define (closure-extensional-match? u1 u2)
  (unless (and (closure? u1) (closure? u2))
   (internal-error "u1 and u2 should both be closures"))
  (or (and (nonrecursive-closure? u1)
 	  (nonrecursive-closure? u2)
-	  (nonrecursive-closure-match? u1 u2))
+	  (nonrecursive-closure-extensional-match? u1 u2))
      (and (recursive-closure? u1)
 	  (recursive-closure? u2)
-	  (recursive-closure-match? u1 u2))))
+	  (recursive-closure-extensional-match? u1 u2))))
+
+(define (closure-match? bs)
+ (lambda (u1 u2)
+  (unless (and (closure? u1) (closure? u2))
+   (internal-error "u1 and u2 should both be closures"))
+  (or (and (nonrecursive-closure? u1)
+	   (nonrecursive-closure? u2)
+	   ((nonrecursive-closure-match? bs) u1 u2))
+      (and (recursive-closure? u1)
+	   (recursive-closure? u2)
+	   ((recursive-closure-match? bs) u1 u2)))))
 
 (define (closure-values u)
  (cond ((nonrecursive-closure? u) (nonrecursive-closure-values u))
@@ -4208,7 +4273,9 @@
      (empty-abstract-value)
      (list (make-bundle v1 v2))))
 
-(define (bundle-match? u1 u2) #t)
+(define (bundle-extensional-match? u1 u2) #t)
+
+(define (bundle-match? bs) (lambda (u1 u2) #t))
 
 ;;; Abstract Reverse Tagged Values
 
@@ -4218,28 +4285,51 @@
      (empty-abstract-value)
      (list (make-reverse-tagged-value v))))
 
-(define (reverse-tagged-value-match? u1 u2) #t)
+(define (reverse-tagged-value-extensional-match? u1 u2) #t)
+
+(define (reverse-tagged-value-match? bs) (lambda (u1 u2) #t))
 
 ;;; Abstract Tagged Pairs
 
-(define (make-abstract-tagged-pair tags v1 v2)
+(define (make-abstract-tagged-pair tags v1 v2 e vs)
  (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
-     (list (make-tagged-pair tags v1 v2))))
+     (list (make-tagged-pair tags v1 v2 e vs))))
 
-(define (tagged-pair-match? u1 u2)
+(define (tagged-pair-extensional-match? u1 u2)
  (equal? (tagged-pair-tags u1) (tagged-pair-tags u2)))
+
+(define (tagged-pair-match? bs)
+ (lambda (u1 u2)
+  (and (tagged-pair-extensional-match? u1 u2)
+       (let ((b1 (lookup-environment-binding (tagged-pair-expression u1)
+					     (tagged-pair-environment u1)
+					     bs))
+	     (b2 (lookup-environment-binding (tagged-pair-expression u2)
+					     (tagged-pair-environment u2)
+					     bs)))
+	(and b1 b2 (eq? b1 b2))))))
 
 ;;; Abstract Aggregate Values
 
 (define (scalar-proto-abstract-value? u)
  (or (null? u) (boolean? u) (abstract-real? u) (primitive-procedure? u)))
 
-(define (aggregate-value-match? u1 u2)
- (or (and (closure? u1) (closure? u2) (closure-match? u1 u2))
-     (and (bundle? u1) (bundle? u2) (bundle-match? u1 u2))
+(define (aggregate-value-extensional-match? u1 u2)
+ (or (and (closure? u1) (closure? u2) (closure-extensional-match? u1 u2))
+     (and (bundle? u1) (bundle? u2) (bundle-extensional-match? u1 u2))
      ;; needs work: reverse tagged values
-     (and (tagged-pair? u1) (tagged-pair? u2) (tagged-pair-match? u1 u2))))
+     (and (tagged-pair? u1)
+	  (tagged-pair? u2)
+	  (tagged-pair-extensional-match? u1 u2))))
+
+(define (aggregate-value-match? bs)
+ (lambda (u1 u2)
+  (or
+   (and (closure? u1) (closure? u2) ((closure-match? bs) u1 u2))
+   (and (bundle? u1) (bundle? u2) ((bundle-match? bs) u1 u2))
+   ;; needs work: reverse tagged values
+   (and (tagged-pair? u1) (tagged-pair? u2) ((tagged-pair-match? bs) u1 u2)))))
 
 (define (aggregate-value-values u)
  (cond ((closure? u) (vector->list (closure-values u)))
@@ -4261,6 +4351,7 @@
 				(recursive-closure-procedure-variables u)
 				(recursive-closure-argument-variables u)
 				(recursive-closure-bodies u)
+				(recursive-closure-body u)
 				(recursive-closure-index u)))
        ((bundle? u)
 	(when (or (up? (first vs)) (up? (second vs)))
@@ -4268,7 +4359,11 @@
 	(make-bundle (first vs) (second vs)))
        ;; needs work: reverse tagged values
        ((tagged-pair? u)
-	(make-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
+	(make-tagged-pair (tagged-pair-tags u)
+			  (first vs)
+			  (second vs)
+			  (tagged-pair-expression u)
+			  (tagged-pair-environment u)))
        (else (internal-error))))
 
 ;;; Abstract Values
@@ -4281,6 +4376,7 @@
 (define (vlad-value->abstract-value v)
  (if (scalar-proto-abstract-value? v)
      (list v)
+     ;; needs work: this doesn't fill in the expression and environment slots
      (list (make-aggregate-value-with-new-values
 	    v (map vlad-value->abstract-value (aggregate-value-values v))))))
 
@@ -4327,6 +4423,9 @@
 ;;; precise result. In principle, one only need multiply out v1. But if v1 has
 ;;; recursion, there is no bound on the amount of multiplying out that may be
 ;;; needed.
+;;; Only used in remove-redundant-proto-abstract-values, widen-abstract-value
+;;; (only as an error check), lookup-environment-binding, convergence check,
+;;; abstract-primal-u, and abstract-tangent-u.
 
 (define (proto-abstract-value-subset?-internal u1 u2 cs vs1-above vs2-above)
  (or (and (null? u1) (null? u2))
@@ -4335,7 +4434,7 @@
      (and (real? u1) (eq? u2 'real))
      (and (real? u1) (real? u2) (= u1 u2))
      (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
-     (and (aggregate-value-match? u1 u2)
+     (and (aggregate-value-extensional-match? u1 u2)
 	  (every
 	   (lambda (v1 v2)
 	    (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above))
@@ -4392,6 +4491,7 @@
 ;;; strong equivalence, not weak equivalence. And I believe that determining
 ;;; whether the set of trees generated by two context-free grammars is
 ;;; nondisjoint is decidable. And I believe that this algorithm is precise.
+;;; Only used in widen-abstract-flow.
 
 (define (proto-abstract-value-nondisjoint?-internal
 	 u1 u2 cs vs1-above vs2-above)
@@ -4402,7 +4502,7 @@
      (and (real? u1) (eq? u2 'real))
      (and (real? u1) (real? u2) (= u1 u2))
      (and (primitive-procedure? u1) (primitive-procedure? u2) (eq? u1 u2))
-     (and (aggregate-value-match? u1 u2)
+     (and (aggregate-value-extensional-match? u1 u2)
 	  (every (lambda (v1 v2)
 		  (abstract-value-nondisjoint?-internal
 		   v1 v2 cs vs1-above vs2-above))
@@ -4525,27 +4625,6 @@
 	      bs2))
 
 (define (abstract-flow-union bs1 bs2) (append bs1 bs2))
-
-(define (subsumes? b1 b2)
- ;; This is a conservative approximation. A #t result is precise.
- (and (abstract-environment-subset? (environment-binding-values b2)
-				    (environment-binding-values b1))
-      (abstract-value-subset? (environment-binding-value b1)
-			      (environment-binding-value b2))))
-
-(define (remove-subsumed-abstract-environment-bindings bs)
- ;; The meaning of a flow is unchanged if subsumed bindings are removed. The
- ;; fact that subsumption is approximated only means that some subsumed
- ;; bindings are not removed.
- (let loop ((bs bs) (bs1 '()))
-  (if (null? bs)
-      bs1
-      (loop
-       (rest bs)
-       (if (some (lambda (b1) (subsumes? b1 (first bs))) bs1)
-	   bs1
-	   (cons (first bs)
-		 (remove-if (lambda (b1) (subsumes? (first bs) b1)) bs1)))))))
 
 ;;; Abstract Analyses
 ;;; It's possible that the order of expressions in abstract analyses (for the
@@ -4830,7 +4909,7 @@
 			      v))
 			 v)))
 
-(define (limit-closures v)
+(define (limit-closures v bs)
  (if (eq? *closure-limit* #f)
      v
      (limit-aggregate-values*
@@ -4838,11 +4917,11 @@
        (limit-aggregate-values v
 			       *closure-limit*
 			       closure?
-			       closure-match?
+			       (closure-match? bs)
 			       pick-closures-to-coalesce))
       v)))
 
-(define (limit-bundles v)
+(define (limit-bundles v bs)
  (if (eq? *bundle-limit* #f)
      v
      (limit-aggregate-values*
@@ -4850,11 +4929,11 @@
        (limit-aggregate-values v
 			       *bundle-limit*
 			       bundle?
-			       bundle-match?
+			       (bundle-match? bs)
 			       pick-bundles-to-coalesce))
       v)))
 
-(define (limit-tagged-pairs v)
+(define (limit-tagged-pairs v bs)
  (if (eq? *tagged-pair-limit* #f)
      v
      (limit-aggregate-values*
@@ -4862,7 +4941,7 @@
        (limit-aggregate-values v
 			       *tagged-pair-limit*
 			       tagged-pair?
-			       tagged-pair-match?
+			       (tagged-pair-match? bs)
 			       pick-tagged-pairs-to-coalesce))
       v)))
 
@@ -4943,29 +5022,30 @@
    (internal-error "Some addition wasn't applied"))
   (first v-additions)))
 
-(define (limit-closure-depth v)
+(define (limit-closure-depth v bs)
  (if (eq? *closure-depth-limit* #f)
      v
      (let loop ((v v))
       (let ((path (path-of-depth-greater-than-k
-		   *closure-depth-limit* closure-match? closure? v)))
+		   *closure-depth-limit* (closure-match? bs) closure? v)))
        (if (eq? path #f)
 	   v
 	   (let ((v1-v2
-		  (pick-values-to-coalesce closure-match? closure? path)))
+		  (pick-values-to-coalesce (closure-match? bs) closure? path)))
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
-(define (limit-tagged-pair-depth v)
+(define (limit-tagged-pair-depth v bs)
  (if (eq? *tagged-pair-depth-limit* #f)
      v
      (let loop ((v v))
-      (let ((path
-	     (path-of-depth-greater-than-k
-	      *tagged-pair-depth-limit* tagged-pair-match? tagged-pair? v)))
+      (let ((path (path-of-depth-greater-than-k *tagged-pair-depth-limit*
+						(tagged-pair-match? bs)
+						tagged-pair?
+						v)))
        (if (eq? path #f)
 	   v
 	   (let ((v1-v2 (pick-values-to-coalesce
-			 tagged-pair-match? tagged-pair? path)))
+			 (tagged-pair-match? bs) tagged-pair? path)))
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 ;;; Syntactic Constraints
@@ -4980,70 +5060,71 @@
 	    (and (not (up? v)) (> (count-if abstract-real? v) *real-limit*)))
 	   v))))
 
-(define (closure-limit-met? v)
+(define (closure-limit-met? v bs)
  (or (not *closure-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
 	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *closure-limit*))
 		       (transitive-equivalence-classesp
-			closure-match? (remove-if-not closure? v)))))
+			(closure-match? bs) (remove-if-not closure? v)))))
 	   v))))
 
-(define (closure-depth-limit-met? v)
+(define (closure-depth-limit-met? v bs)
  (or (not *closure-depth-limit*)
      (eq? (path-of-depth-greater-than-k
-	   *closure-depth-limit* closure-match? closure? v)
+	   *closure-depth-limit* (closure-match? bs) closure? v)
 	  #f)))
 
-(define (bundle-limit-met? v)
+(define (bundle-limit-met? v bs)
  (or (not *bundle-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
 	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *bundle-limit*))
 		       (transitive-equivalence-classesp
-			bundle-match? (remove-if-not bundle? v)))))
+			(bundle-match? bs) (remove-if-not bundle? v)))))
 	   v))))
 
-(define (bundle-depth-limit-met? v)
+(define (bundle-depth-limit-met? v bs)
  (or (not *bundle-depth-limit*)
      (eq? (path-of-depth-greater-than-k
-	   *bundle-depth-limit* bundle-match? bundle? v)
+	   *bundle-depth-limit* (bundle-match? bs) bundle? v)
 	  #f)))
 
-(define (tagged-pair-limit-met? v)
+(define (tagged-pair-limit-met? v bs)
  (or (not *tagged-pair-limit*)
      (not (some-abstract-value?
 	   (lambda (v vs-above)
 	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *tagged-pair-limit*))
 		       (transitive-equivalence-classesp
-			tagged-pair-match? (remove-if-not tagged-pair? v)))))
+			(tagged-pair-match? bs)
+			(remove-if-not tagged-pair? v)))))
 	   v))))
 
-(define (tagged-pair-depth-limit-met? v)
+(define (tagged-pair-depth-limit-met? v bs)
  (or (not *tagged-pair-depth-limit*)
      (eq? (path-of-depth-greater-than-k
-	   *tagged-pair-depth-limit* tagged-pair-match? tagged-pair? v)
+	   *tagged-pair-depth-limit* (tagged-pair-match? bs) tagged-pair? v)
 	  #f)))
 
-(define (syntactic-constraints-met? v)
+(define (syntactic-constraints-met? v bs)
  (and (real-limit-met? v)
-      (closure-limit-met? v)
-      (closure-depth-limit-met? v)
-      (bundle-limit-met? v)
-      (tagged-pair-limit-met? v)
-      (tagged-pair-depth-limit-met? v)))
+      (closure-limit-met? v bs)
+      (closure-depth-limit-met? v bs)
+      (bundle-limit-met? v bs)
+      (tagged-pair-limit-met? v bs)
+      (tagged-pair-depth-limit-met? v bs)))
 
-(define (widen-abstract-value v-debugging)
+(define (widen-abstract-value v-debugging bs)
  ;; This can introduce imprecision.
  (let loop ((v (remove-redundant-proto-abstract-values* v-debugging)))
-  (if (syntactic-constraints-met? v)
+  (if (syntactic-constraints-met? v bs)
       (begin
        (unless (abstract-value-subset? v-debugging v)
 	(internal-error "widen: ~s" (externalize-abstract-value v-debugging)))
-       (unless (bundle-depth-limit-met? v)
+       (unless (bundle-depth-limit-met? v bs)
 	(compile-time-error "Bundle depth limit exceeded"))
        v)
       (loop
@@ -5053,12 +5134,13 @@
 	  (limit-tagged-pair-depth
 	   (limit-closure-depth
 	    (limit-tagged-pairs
-	     (limit-bundles
-	      (limit-closures v))))))))))))
+	     (limit-bundles (limit-closures v bs) bs) bs)
+	    bs)
+	   bs))))))))
 
 (define (pick-environment-bindings-to-coalesce bs) (sublist bs 0 2))
 
-(define (widen-abstract-flow bs)
+(define (widen-abstract-flow bs bs1)
  (let loop ((bs (map (lambda (b)
 		      (make-environment-binding
 		       ;; needs work: This should be removed if not necessary
@@ -5112,12 +5194,12 @@
    ;; Second, that the abstract values in the domains meet the syntactic
    ;; constraints. This can introduct imprecision.
    ((some (lambda (b)
-	   (some-vector (lambda (v) (not (syntactic-constraints-met? v)))
+	   (some-vector (lambda (v) (not (syntactic-constraints-met? v bs1)))
 			(environment-binding-values b)))
 	  bs)
     (loop (map (lambda (b)
 		(make-environment-binding
-		 (map-vector widen-abstract-value
+		 (map-vector (lambda (v) (widen-abstract-value v bs1))
 			     (environment-binding-values b))
 		 (environment-binding-value b)))
 	       bs)))
@@ -5138,12 +5220,12 @@
 		 (removeq (second b1-b2) (removeq (first b1-b2) bs))))))
    (else bs))))
 
-(define (widen-analysis-domains bs)
+(define (widen-analysis-domains bs bs1)
  ;; This can introduce imprecision.
  (map (lambda (b)
        (make-expression-binding
 	(expression-binding-expression b)
-	(widen-abstract-flow (expression-binding-flow b))))
+	(widen-abstract-flow (expression-binding-flow b) bs1)))
       bs))
 
 ;;; Abstract Interpretation
@@ -5157,7 +5239,7 @@
      (list (make-expression-binding
 	    e (list (make-environment-binding
 		     vs
-		     (widen-abstract-value (abstract-eval1 e vs bs))))))))
+		     (widen-abstract-value (abstract-eval1 e vs bs) bs)))))))
 
 (define (initial-abstract-analysis e bs)
  ;; This (like update-analysis-domains) only makes domains.
@@ -5172,7 +5254,7 @@
     (free-variables e)))
   '()))
 
-(define (abstract-eval1 e vs bs)
+(define (lookup-environment-binding e vs bs)
  (let ((b (lookup-expression-binding e bs)))
   (cond (b
 	 ;; Because the domains of a flow are disjoint there can be only one.
@@ -5186,8 +5268,12 @@
 			    (abstract-environment-subset?
 			     vs (environment-binding-values b)))
 			   (expression-binding-flow b))))
-	  (if b (environment-binding-value b) (empty-abstract-value))))
-	(else (empty-abstract-value)))))
+	  (if b b #f)))
+	(else #f))))
+
+(define (abstract-eval1 e vs bs)
+ (let ((b (lookup-environment-binding e vs bs)))
+  (if b (environment-binding-value b) (empty-abstract-value))))
 
 (define (abstract-apply-closure p u1 v2)
  (cond
@@ -5220,6 +5306,7 @@
 		(recursive-closure-procedure-variables u1)
 		(recursive-closure-argument-variables u1)
 		(recursive-closure-bodies u1)
+		(recursive-closure-body u1)
 		(positionp-vector
 		 variable=? x (recursive-closure-procedure-variables u1))))
 	      (else
@@ -5282,6 +5369,7 @@
 		 (list->vector (letrec-expression-procedure-variables e))
 		 (list->vector (letrec-expression-argument-variables e))
 		 (list->vector (letrec-expression-bodies e))
+		 (letrec-expression-body e)
 		 (positionp
 		  variable=? x (letrec-expression-procedure-variables e)))
 		(vector-ref vs (positionp variable=? x xs))))
@@ -5297,27 +5385,14 @@
      (abstract-eval1
       (cons-expression-cdr e)
       (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
-      bs)))
+      bs)
+     e
+     vs))
    (else (internal-error)))))
 
 (define (abstract-eval1-prime e vs bs)
- (let ((b (lookup-expression-binding e bs)))
-  (cond (b
-	 ;; Because the domains of a flow are disjoint there can be only one.
-	 (when (> (count-if (lambda (b)
-			     (abstract-environment-subset?
-			      vs (environment-binding-values b)))
-			    (expression-binding-flow b))
-		  1)
-	  (internal-error))
-	 (let ((b (find-if (lambda (b)
-			    (abstract-environment-subset?
-			     vs (environment-binding-values b)))
-			   (expression-binding-flow b))))
-	  (if b
-	      (empty-abstract-analysis)
-	      (make-abstract-analysis e vs bs))))
-	(else (make-abstract-analysis e vs bs)))))
+ (let ((b (lookup-environment-binding e vs bs)))
+  (if b (empty-abstract-analysis) (make-abstract-analysis e vs bs))))
 
 (define (abstract-apply-prime v1 v2 bs)
  (if (empty-abstract-value? v2)
@@ -5374,6 +5449,7 @@
 		 (list->vector (letrec-expression-procedure-variables e))
 		 (list->vector (letrec-expression-argument-variables e))
 		 (list->vector (letrec-expression-bodies e))
+		 (letrec-expression-body e)
 		 (positionp
 		  variable=? x (letrec-expression-procedure-variables e)))
 		(vector-ref vs (positionp variable=? x xs))))
@@ -5401,7 +5477,8 @@
 	       (widen-abstract-value
 		(abstract-eval (expression-binding-expression b1)
 			       (environment-binding-values b2)
-			       bs))))
+			       bs)
+		bs)))
 	     (expression-binding-flow b1))))
       bs))
 
@@ -5420,10 +5497,11 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs))))
+ (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '())))
   (let ((bs1 (widen-analysis-domains
 	      (abstract-analysis-union (update-analysis-ranges bs)
-				       (update-analysis-domains bs)))))
+				       (update-analysis-domains bs))
+	      bs)))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
 
 ;;; Abstract Basis
@@ -5444,9 +5522,6 @@
 	 (tagged-pair-cdr u))
      (compile-time-warning "Might attempt to take cdr of a non-pair" u)))
 
-;;; \AB{V} x \AB{V} -> \AB{V}
-(define (abstract-vlad-cons v1 v2) (list (vlad-cons v1 v2)))
-
 ;;; [\AB{V}]* x [tag]* -> \AB{V}
 (define (abstract-listify vs tags)
  (if *church-pairs?*
@@ -5461,7 +5536,9 @@
 		 ((reverse) abstract-*j-v)
 		 (else (internal-error)))
 		(loop (rest tags)))))
-	  (make-abstract-tagged-pair tags (first vs) (loop (rest vs)))))))
+	  ;; needs work: to give the expression and environment
+	  (make-abstract-tagged-pair
+	   tags (first vs) (loop (rest vs)) #f #f)))))
 
 (define (abstract-base-variables-v v)
  (when (and (list? v) (not (= (length v) 1)))
@@ -5519,7 +5596,9 @@
 	(make-abstract-tagged-pair
 	 (tagged-pair-tags u)
 	 (abstract-zero-v (abstract-vlad-car-u u (tagged-pair-tags u)))
-	 (abstract-zero-v (abstract-vlad-cdr-u u (tagged-pair-tags u)))))
+	 (abstract-zero-v (abstract-vlad-cdr-u u (tagged-pair-tags u)))
+	 (tagged-pair-expression u)
+	 (tagged-pair-environment u)))
        (else (internal-error))))
 
 ;;; Forward Mode
@@ -5606,6 +5685,8 @@
 		   xs1
 		   (list->vector (map lambda-expression-variable es))
 		   (list->vector (map lambda-expression-body es))
+		   (forward-transform-inverse
+		    (recursive-closure-body u-forward))
 		   (recursive-closure-index u-forward)))))))
        ((bundle? u-forward) (bundle-primal u-forward))
        ((reverse-tagged-value? u-forward)
@@ -5619,7 +5700,9 @@
 	    (make-abstract-tagged-pair
 	     (rest (tagged-pair-tags u-forward))
 	     (abstract-primal-v (tagged-pair-car u-forward))
-	     (abstract-primal-v (tagged-pair-cdr u-forward)))))
+	     (abstract-primal-v (tagged-pair-cdr u-forward))
+	     (tagged-pair-expression u-forward)
+	     (tagged-pair-environment u-forward))))
        (else (internal-error))))
 
 (define (abstract-tangent-v v)
@@ -5670,7 +5753,11 @@
 	    (make-abstract-tagged-pair
 	     (rest (tagged-pair-tags u-forward))
 	     (abstract-tangent-v (tagged-pair-car u-forward))
-	     (abstract-tangent-v (tagged-pair-cdr u-forward)))))
+	     (abstract-tangent-v (tagged-pair-cdr u-forward))
+	     ;; needs work: tangent of bundle gives the expression and
+	     ;;             environment of the primal
+	     (tagged-pair-expression u-forward)
+	     (tagged-pair-environment u-forward))))
        (else (internal-error))))
 
 (define (abstract-tagged-null? tags u vs-above)
@@ -5914,6 +6001,7 @@
 			      (forward-transform (new-lambda-expression x e)))
 			     (recursive-closure-argument-variables u)
 			     (recursive-closure-bodies u))))
+		       (e (forward-transform (recursive-closure-body u)))
 		       (xs1 (map-vector
 			     forwardify
 			     (recursive-closure-procedure-variables u)))
@@ -5938,6 +6026,7 @@
 			xs1
 			(list->vector (map lambda-expression-variable es))
 			(list->vector (map lambda-expression-body es))
+			e
 			(recursive-closure-index u)))
 		      (abstract-bundle-list
 		       (abstract-base-values-u u)
@@ -5988,7 +6077,9 @@
 		  (tagged-pair-cdr u)
 		  (tagged-pair-cdr u-perturbation)
 		  (cons v-perturbation vs-above)
-		  (cons (cons v v-perturbation) cs))))
+		  (cons (cons v v-perturbation) cs))
+		 (tagged-pair-expression u)
+		 (tagged-pair-environment u)))
 	       (else (compile-time-warning
 		      "The arguments to bundle might be illegitimate"
 		      u
