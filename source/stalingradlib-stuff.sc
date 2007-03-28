@@ -122,11 +122,16 @@
 (define-structure primitive-procedure
  name procedure abstract-procedure forward reverse meter)
 
+;;; The index-{expression,environment} slots are used solely to index
+;;; aggregate proto abstract values during flow analysis.
+
 (define-structure nonrecursive-closure
  variables
  values					;vector
  variable
- body)
+ body
+ index-expression
+ index-environment)			;vector
 
 (define-structure recursive-closure
  variables
@@ -134,14 +139,20 @@
  procedure-variables			;vector
  argument-variables			;vector
  bodies					;vector
- body
- index)
+ index
+ index-expression
+ index-environment)			;vector
 
 (define-structure bundle primal tangent)
 
 (define-structure reverse-tagged-value primal)
 
-(define-structure tagged-pair tags car cdr expression environment)
+(define-structure tagged-pair
+ tags
+ car
+ cdr
+ index-expression
+ index-environment)			;vector
 
 (define-structure forward-cache-entry primal? primal tangent? tangent forward)
 
@@ -585,24 +596,30 @@
      (tagged-pair-cdr v)))
 
 (define (create-tagged-pair tags v1 v2)
+ ;; We intentionally don't give the index-expression and index-environment
+ ;; since these are only used during flow analysis.
  (make-tagged-pair '() v1 v2 #f #f))
 
 (define (vlad-cons v1 v2)
  ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
  (if *church-pairs?*
-     (make-nonrecursive-closure
-      '(a d)
-      (vector v1 v2)
-      'm
-      (index
-       'm
+     (let ((vs (vector v1 v2)))
+      (make-nonrecursive-closure
        '(a d)
-       (new-let* '(x1 x2)
-		 (list (new-application (new-variable-access-expression 'm)
-					(new-variable-access-expression 'a))
-		       (new-application (new-variable-access-expression 'x1)
-					(new-variable-access-expression 'd)))
-		 (new-variable-access-expression 'x2))))
+       vs
+       'm
+       (index
+	'm
+	'(a d)
+	(new-let* '(x1 x2)
+		  (list (new-application (new-variable-access-expression 'm)
+					 (new-variable-access-expression 'a))
+			(new-application (new-variable-access-expression 'x1)
+					 (new-variable-access-expression 'd)))
+		  (new-variable-access-expression 'x2)))
+       ;; needs work: to fill in index-expression
+       #f
+       vs))
      (create-tagged-pair '() v1 v2)))
 
 (define (listify xs tags)
@@ -1951,8 +1968,8 @@
  (cond ((null? v) v)
        ((boolean? v) (if v vlad-true vlad-false))
        ((real? v) v)
-       ;; needs work: flow analysis requires tagged pairs to have expression
-       ;;             and environment slots
+       ;; needs work: flow analysis requires tagged pairs to have
+       ;;             index-expression and index-environment slots
        ((pair? v) (vlad-cons (internalize (car v)) (internalize (cdr v))))
        (else (internal-error))))
 
@@ -2468,9 +2485,15 @@
 		       xs
 		       ;; We don't do add/remove-slots here.
 		       (map-vector
-			primal (nonrecursive-closure-values x-forward))
+			primal
+			(nonrecursive-closure-values x-forward))
 		       x
-		       (index x xs (lambda-expression-body e)))))))
+		       (index x xs (lambda-expression-body e))
+		       ;; needs work: tangent of bundle gives the
+		       ;;             index-expression and index-environment of
+		       ;;             the primal
+		       (nonrecursive-closure-index-expression x-forward)
+		       (nonrecursive-closure-index-environment x-forward))))))
 	       ((recursive-closure? x-forward)
 		(unless (and (not (null? (recursive-closure-tags x-forward)))
 			     (eq? (first (recursive-closure-tags x-forward))
@@ -2513,10 +2536,12 @@
 				     (append (vector->list xs1) xs)
 				     (lambda-expression-body e)))
 			     es))
-		       ;; The body slot is only used for flow analysis. For
-		       ;; efficiency, we don't (un)transform it.
-		       (recursive-closure-body x-forward)
-		       (recursive-closure-index x-forward))))))
+		       (recursive-closure-index x-forward)
+		       ;; needs work: tangent of bundle gives the
+		       ;;             index-expression and index-environment of
+		       ;;             the primal
+		       (recursive-closure-index-expression x-forward)
+		       (recursive-closure-index-environment x-forward))))))
 	       ((bundle? x-forward) (bundle-primal x-forward))
 	       ((reverse-tagged-value? x-forward)
 		(run-time-error
@@ -2527,6 +2552,8 @@
 			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
 		 (run-time-error
 		  "Attempt to take primal of a non-forward value" x-forward))
+		;; needs work: tangent of bundle gives the index-expression
+		;;             and index-environment of the primal
 		(create-tagged-pair (rest (tagged-pair-tags x-forward))
 				    (primal (tagged-pair-car x-forward))
 				    (primal (tagged-pair-cdr x-forward))))
@@ -2596,6 +2623,8 @@
 			 (eq? (first (tagged-pair-tags x-forward)) 'forward))
 		 (run-time-error
 		  "Attempt to take tangent of a non-forward value" x-forward))
+		;; needs work: tangent of bundle gives the index-expression and
+		;;             index-environment of the primal
 		(create-tagged-pair (rest (tagged-pair-tags x-forward))
 				    (tangent (tagged-pair-car x-forward))
 				    (tangent (tagged-pair-cdr x-forward))))
@@ -2697,7 +2726,11 @@
 	    (nonrecursive-closure-variables x)
 	    (vector->list (nonrecursive-closure-values x)))))
      x1
-     (index x1 xs (lambda-expression-body e)))))
+     (index x1 xs (lambda-expression-body e))
+     ;; needs work: tangent of bundle gives the index-expression and
+     ;;             index-environment of the primal
+     (nonrecursive-closure-index-expression x)
+     (nonrecursive-closure-index-environment x))))
   ((recursive-closure? x)
    (let* ((es (vector->list
 	       (map-vector (lambda (x e)
@@ -2729,12 +2762,16 @@
 				(append (vector->list xs1) xs)
 				(lambda-expression-body e)))
 			es))
-     ;; See comment in primal.
-     (recursive-closure-body x)
-     (recursive-closure-index x))))
+     (recursive-closure-index x)
+     ;; needs work: tangent of bundle gives the index-expression and
+     ;;             index-environment of the primal
+     (recursive-closure-index-expression x)
+     (recursive-closure-index-environment x))))
   ((bundle? x) (make-bundle x x-perturbation))
   ((reverse-tagged-value? x) (make-bundle x x-perturbation))
   ((and (not *church-pairs?*) (tagged-pair? x))
+   ;; needs work: tangent of bundle gives the index-expression and
+   ;;             index-environment of the primal
    (create-tagged-pair
     (cons 'forward (tagged-pair-tags x))
     (bundle-internal (tagged-pair-car x) (tagged-pair-car x-perturbation))
@@ -3362,9 +3399,9 @@
 	       bs)
 	      x
 	      (index
-	       x
-	       xs
-	       (copy-propagate (anf-convert (lambda-expression-body e)))))))
+	       x xs (copy-propagate (anf-convert (lambda-expression-body e))))
+	      (nonrecursive-closure-index-expression v)
+	      (nonrecursive-closure-index-environment v))))
 	   ((recursive-closure? v)
 	    (let* ((bs (added-bindings))
 		   (es (map-n
@@ -3410,9 +3447,9 @@
 			    (copy-propagate
 			     (anf-convert (lambda-expression-body e)))))
 		    es))
-	      ;; See comment in primal.
-	      (recursive-closure-body v)
-	      (recursive-closure-index v))))
+	      (recursive-closure-index v)
+	      (recursive-closure-index-expression v)
+	      (recursive-closure-index-environment v))))
 	   ((bundle? v) (make-reverse-tagged-value v))
 	   ((reverse-tagged-value? v) (make-reverse-tagged-value v))
 	   ((and (not *church-pairs?*) (tagged-pair? v))
@@ -3477,8 +3514,9 @@
 		    (nonrecursive-closure-values x-reverse)
 		    '())
 		   x
-		   (index
-		    x xs (copy-propagate (lambda-expression-body e))))))))
+		   (index x xs (copy-propagate (lambda-expression-body e)))
+		   (nonrecursive-closure-index-expression x-reverse)
+		   (nonrecursive-closure-index-environment x-reverse))))))
 	   ((recursive-closure? x-reverse)
 	    (unless (and (not (null? (recursive-closure-tags x-reverse)))
 			 (eq? (first (recursive-closure-tags x-reverse))
@@ -3525,9 +3563,9 @@
 				 (append (vector->list xs1) xs)
 				 (copy-propagate (lambda-expression-body e))))
 			 es))
-		   ;; See comment in primal.
-		   (recursive-closure-body x-reverse)
-		   (recursive-closure-index x-reverse))))))
+		   (recursive-closure-index x-reverse)
+		   (recursive-closure-index-expression x-reverse)
+		   (recursive-closure-index-environment x-reverse))))))
 	   ((bundle? x-reverse)
 	    (run-time-error
 	     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
@@ -3918,8 +3956,9 @@
 			       (recursive-closure-procedure-variables callee)
 			       (recursive-closure-argument-variables callee)
 			       (recursive-closure-bodies callee)
-			       (recursive-closure-body callee)
-			       i)))
+			       i
+			       (recursive-closure-index-expression callee)
+			       (recursive-closure-index-environment callee))))
 			 (vector-length (recursive-closure-bodies callee)))
 			(recursive-closure-values callee))))
 		     (else (internal-error)))))
@@ -3944,11 +3983,15 @@
  (cond ((variable-access-expression? e)
 	(lookup (variable-access-expression-index e)))
        ((lambda-expression? e)
-	(make-nonrecursive-closure
-	 (free-variables e)
-	 (map-vector lookup (lambda-expression-free-variable-indices e))
-	 (lambda-expression-variable e)
-	 (lambda-expression-body e)))
+	(let ((vs (map-vector
+		   lookup (lambda-expression-free-variable-indices e))))
+	 (make-nonrecursive-closure
+	  (free-variables e)
+	  vs
+	  (lambda-expression-variable e)
+	  (lambda-expression-body e)
+	  e
+	  vs)))
        ;; This is a vestigial let*-expression.
        ((let*? e)
 	(let ((x? (and *x* (variable=? (first (let*-variables e)) *x*))))
@@ -3982,12 +4025,18 @@
 		     (letrec-expression-bodies-free-variable-indices e)))
 		(xs0 (list->vector (letrec-expression-procedure-variables e)))
 		(xs1 (list->vector (letrec-expression-argument-variables e)))
-		(es (list->vector (letrec-expression-bodies e)))
-		(e1 (letrec-expression-body e)))
+		(es (list->vector (letrec-expression-bodies e))))
 	   (map-n-vector
 	    (lambda (i)
 	     (make-recursive-closure
-	      (letrec-expression-bodies-free-variables e) vs xs0 xs1 es e1 i))
+	      (letrec-expression-bodies-free-variables e)
+	      vs
+	      xs0
+	      xs1
+	      es
+	      i
+	      e
+	      vs))
 	    (vector-length es)))
 	  (map-vector lookup
 		      (letrec-expression-body-free-variable-indices e)))))
@@ -4168,25 +4217,25 @@
  (lambda (u1 u2)
   (and (nonrecursive-closure-extensional-match? u1 u2)
        (let ((b1 (lookup-environment-binding
-		  (new-lambda-expression (nonrecursive-closure-variable u1)
-					 (nonrecursive-closure-body u1))
-		  (nonrecursive-closure-values u1)
+		  (nonrecursive-closure-index-expression u1)
+		  (nonrecursive-closure-index-environment u1)
 		  bs))
 	     (b2 (lookup-environment-binding
-		  (new-lambda-expression (nonrecursive-closure-variable u2)
-					 (nonrecursive-closure-body u2))
-		  (nonrecursive-closure-values u2)
+		  (nonrecursive-closure-index-expression u2)
+		  (nonrecursive-closure-index-environment u2)
 		  bs)))
 	(and b1 b2 (eq? b1 b2))))))
 
-(define (make-abstract-nonrecursive-closure vs e)
+(define (make-abstract-nonrecursive-closure vs e index-environment)
  (if (some-vector empty-abstract-value? vs)
      (empty-abstract-value)
      (list (make-nonrecursive-closure
 	    (free-variables e)
 	    vs
 	    (lambda-expression-variable e)
-	    (lambda-expression-body e)))))
+	    (lambda-expression-body e)
+	    e
+	    index-environment))))
 
 (define (recursive-closure-extensional-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
@@ -4210,28 +4259,34 @@
  (lambda (u1 u2)
   (and (recursive-closure-extensional-match? u1 u2)
        (let ((b1 (lookup-environment-binding
-		  (new-letrec-expression
-		   (recursive-closure-procedure-variables u1)
-		   (recursive-closure-argument-variables u1)
-		   (recursive-closure-bodies u1)
-		   (recursive-closure-body u1))
-		  (recursive-closure-values u1)
+		  (recursive-closure-index-expression u1)
+		  (recursive-closure-index-environment u1)
 		  bs))
 	     (b2 (lookup-environment-binding
-		  (new-letrec-expression
-		   (recursive-closure-procedure-variables u2)
-		   (recursive-closure-argument-variables u2)
-		   (recursive-closure-bodies u2)
-		   (recursive-closure-body u2))
-		  (recursive-closure-values u2)
+		  (recursive-closure-index-expression u2)
+		  (recursive-closure-index-environment u2)
 		  bs)))
 	(and b1 b2 (eq? b1 b2))))))
 
-(define (make-abstract-recursive-closure
-	 xs vs xs-procedures xs-arguments es e i)
- (if (some-vector empty-abstract-value? vs)
+(define (make-abstract-recursive-closure variables
+					 values
+					 procedure-variables
+					 argument-variables
+					 bodies
+					 index
+					 index-expression
+					 index-environment)
+ (if (some-vector empty-abstract-value? values)
      (empty-abstract-value)
-     (list (make-recursive-closure xs vs xs-procedures xs-arguments es e i))))
+     (list (make-recursive-closure
+	    variables
+	    values
+	    procedure-variables
+	    argument-variables
+	    bodies
+	    index
+	    index-expression
+	    index-environment))))
 
 (define (recursive-closure-procedure-lambda-expressions v)
  ;; This is only used in externalize-proto-abstract-value.
@@ -4291,10 +4346,11 @@
 
 ;;; Abstract Tagged Pairs
 
-(define (make-abstract-tagged-pair tags v1 v2 e vs)
+(define (make-abstract-tagged-pair
+	 tags v1 v2 index-expression index-environment)
  (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
-     (list (make-tagged-pair tags v1 v2 e vs))))
+     (list (make-tagged-pair tags v1 v2 index-expression index-environment))))
 
 (define (tagged-pair-extensional-match? u1 u2)
  (equal? (tagged-pair-tags u1) (tagged-pair-tags u2)))
@@ -4302,11 +4358,11 @@
 (define (tagged-pair-match? bs)
  (lambda (u1 u2)
   (and (tagged-pair-extensional-match? u1 u2)
-       (let ((b1 (lookup-environment-binding (tagged-pair-expression u1)
-					     (tagged-pair-environment u1)
+       (let ((b1 (lookup-environment-binding (tagged-pair-index-expression u1)
+					     (tagged-pair-index-environment u1)
 					     bs))
-	     (b2 (lookup-environment-binding (tagged-pair-expression u2)
-					     (tagged-pair-environment u2)
+	     (b2 (lookup-environment-binding (tagged-pair-index-expression u2)
+					     (tagged-pair-index-environment u2)
 					     bs)))
 	(and b1 b2 (eq? b1 b2))))))
 
@@ -4344,15 +4400,18 @@
 	(make-nonrecursive-closure (nonrecursive-closure-variables u)
 				   (list->vector vs)
 				   (nonrecursive-closure-variable u)
-				   (nonrecursive-closure-body u)))
+				   (nonrecursive-closure-body u)
+				   (nonrecursive-closure-index-expression u)
+				   (nonrecursive-closure-index-environment u)))
        ((recursive-closure? u)
 	(make-recursive-closure (recursive-closure-variables u)
 				(list->vector vs)
 				(recursive-closure-procedure-variables u)
 				(recursive-closure-argument-variables u)
 				(recursive-closure-bodies u)
-				(recursive-closure-body u)
-				(recursive-closure-index u)))
+				(recursive-closure-index u)
+				(recursive-closure-index-expression u)
+				(recursive-closure-index-environment u)))
        ((bundle? u)
 	(when (or (up? (first vs)) (up? (second vs)))
 	 (unimplemented "Bundles with backlinks"))
@@ -4362,8 +4421,8 @@
 	(make-tagged-pair (tagged-pair-tags u)
 			  (first vs)
 			  (second vs)
-			  (tagged-pair-expression u)
-			  (tagged-pair-environment u)))
+			  (tagged-pair-index-expression u)
+			  (tagged-pair-index-environment u)))
        (else (internal-error))))
 
 ;;; Abstract Values
@@ -4376,7 +4435,8 @@
 (define (vlad-value->abstract-value v)
  (if (scalar-proto-abstract-value? v)
      (list v)
-     ;; needs work: this doesn't fill in the expression and environment slots
+     ;; needs work: this doesn't fill in the index-expression and
+     ;;             index-environment slots
      (list (make-aggregate-value-with-new-values
 	    v (map vlad-value->abstract-value (aggregate-value-values v))))))
 
@@ -5306,9 +5366,10 @@
 		(recursive-closure-procedure-variables u1)
 		(recursive-closure-argument-variables u1)
 		(recursive-closure-bodies u1)
-		(recursive-closure-body u1)
 		(positionp-vector
-		 variable=? x (recursive-closure-procedure-variables u1))))
+		 variable=? x (recursive-closure-procedure-variables u1))
+		(recursive-closure-index-expression u1)
+		(recursive-closure-index-environment u1)))
 	      (else
 	       (vector-ref
 		(recursive-closure-values u1)
@@ -5344,7 +5405,7 @@
    ((variable-access-expression? e)
     (vector-ref
      vs (positionp variable=? (variable-access-expression-variable e) xs)))
-   ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e))
+   ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
    ((application? e)
     (abstract-apply
      (abstract-eval1
@@ -5362,16 +5423,20 @@
      (list->vector
       (map (lambda (x)
 	    (if (memp variable=? x (letrec-expression-procedure-variables e))
-		(make-abstract-recursive-closure
-		 (letrec-expression-recursive-closure-variables e)
-		 (restrict-environment
-		  vs xs (letrec-expression-recursive-closure-variables e))
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-argument-variables e))
-		 (list->vector (letrec-expression-bodies e))
-		 (letrec-expression-body e)
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e)))
+		(let ((vs (restrict-environment
+			   vs
+			   xs
+			   (letrec-expression-recursive-closure-variables e))))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-recursive-closure-variables e)
+		  vs
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))
 		(vector-ref vs (positionp variable=? x xs))))
 	   (free-variables (letrec-expression-body e))))
      bs))
@@ -5442,16 +5507,20 @@
      (list->vector
       (map (lambda (x)
 	    (if (memp variable=? x (letrec-expression-procedure-variables e))
-		(make-abstract-recursive-closure
-		 (letrec-expression-recursive-closure-variables e)
-		 (restrict-environment
-		  vs xs (letrec-expression-recursive-closure-variables e))
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-argument-variables e))
-		 (list->vector (letrec-expression-bodies e))
-		 (letrec-expression-body e)
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e)))
+		(let ((vs (restrict-environment
+			   vs
+			   xs
+			   (letrec-expression-recursive-closure-variables e))))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-recursive-closure-variables e)
+		  vs
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))
 		(vector-ref vs (positionp variable=? x xs))))
 	   (free-variables (letrec-expression-body e))))
      bs))
@@ -5536,7 +5605,7 @@
 		 ((reverse) abstract-*j-v)
 		 (else (internal-error)))
 		(loop (rest tags)))))
-	  ;; needs work: to give the expression and environment
+	  ;; needs work: to give the index-expression and index-environment
 	  (make-abstract-tagged-pair
 	   tags (first vs) (loop (rest vs)) #f #f)))))
 
@@ -5597,8 +5666,8 @@
 	 (tagged-pair-tags u)
 	 (abstract-zero-v (abstract-vlad-car-u u (tagged-pair-tags u)))
 	 (abstract-zero-v (abstract-vlad-cdr-u u (tagged-pair-tags u)))
-	 (tagged-pair-expression u)
-	 (tagged-pair-environment u)))
+	 (tagged-pair-index-expression u)
+	 (tagged-pair-index-environment u)))
        (else (internal-error))))
 
 ;;; Forward Mode
@@ -5646,7 +5715,10 @@
 		  (forward-transform-inverse
 		   (new-lambda-expression
 		    (nonrecursive-closure-variable u-forward)
-		    (nonrecursive-closure-body u-forward))))))))
+		    (nonrecursive-closure-body u-forward)))
+		  ;; needs work: tangent of bundle gives the index-expression
+		  ;;             and index-environment of the primal
+		  (nonrecursive-closure-index-environment u-forward))))))
        ((recursive-closure? u-forward)
 	(if (or (null? (recursive-closure-tags u-forward))
 		(not (eq? (first (recursive-closure-tags u-forward))
@@ -5685,9 +5757,11 @@
 		   xs1
 		   (list->vector (map lambda-expression-variable es))
 		   (list->vector (map lambda-expression-body es))
-		   (forward-transform-inverse
-		    (recursive-closure-body u-forward))
-		   (recursive-closure-index u-forward)))))))
+		   (recursive-closure-index u-forward)
+		   ;; needs work: tangent of bundle gives the index-expression
+		   ;;             and index-environment of the primal
+		   (recursive-closure-index-expression u-forward)
+		   (recursive-closure-index-environment u-forward)))))))
        ((bundle? u-forward) (bundle-primal u-forward))
        ((reverse-tagged-value? u-forward)
 	(compile-time-warning
@@ -5701,8 +5775,10 @@
 	     (rest (tagged-pair-tags u-forward))
 	     (abstract-primal-v (tagged-pair-car u-forward))
 	     (abstract-primal-v (tagged-pair-cdr u-forward))
-	     (tagged-pair-expression u-forward)
-	     (tagged-pair-environment u-forward))))
+	     ;; needs work: tangent of bundle gives the index-expression and
+	     ;;             index-environment of the primal
+	     (tagged-pair-index-expression u-forward)
+	     (tagged-pair-index-environment u-forward))))
        (else (internal-error))))
 
 (define (abstract-tangent-v v)
@@ -5754,10 +5830,10 @@
 	     (rest (tagged-pair-tags u-forward))
 	     (abstract-tangent-v (tagged-pair-car u-forward))
 	     (abstract-tangent-v (tagged-pair-cdr u-forward))
-	     ;; needs work: tangent of bundle gives the expression and
-	     ;;             environment of the primal
-	     (tagged-pair-expression u-forward)
-	     (tagged-pair-environment u-forward))))
+	     ;; needs work: tangent of bundle gives the index-expression and
+	     ;;             index-environment of the primal
+	     (tagged-pair-index-expression u-forward)
+	     (tagged-pair-index-environment u-forward))))
        (else (internal-error))))
 
 (define (abstract-tagged-null? tags u vs-above)
@@ -5981,7 +6057,12 @@
 			      is
 			      (vector->list (nonrecursive-closure-values u))))
 			x
-			(lambda-expression-body e)))
+			(lambda-expression-body e)
+			;; needs work: tangent of bundle gives the
+			;;             index-expression and index-environment
+			;;             of the primal
+			(nonrecursive-closure-index-expression u)
+			(nonrecursive-closure-index-environment u)))
 		      (abstract-bundle-list
 		       (abstract-base-values-u u)
 		       u-perturbation
@@ -6001,7 +6082,6 @@
 			      (forward-transform (new-lambda-expression x e)))
 			     (recursive-closure-argument-variables u)
 			     (recursive-closure-bodies u))))
-		       (e (forward-transform (recursive-closure-body u)))
 		       (xs1 (map-vector
 			     forwardify
 			     (recursive-closure-procedure-variables u)))
@@ -6026,8 +6106,12 @@
 			xs1
 			(list->vector (map lambda-expression-variable es))
 			(list->vector (map lambda-expression-body es))
-			e
-			(recursive-closure-index u)))
+			(recursive-closure-index u)
+			;; needs work: tangent of bundle gives the
+			;;             index-expression and index-environment
+			;;             of the primal
+			(recursive-closure-index-expression u)
+			(recursive-closure-index-environment u)))
 		      (abstract-bundle-list
 		       (abstract-base-values-u u)
 		       u-perturbation
@@ -6078,8 +6162,10 @@
 		  (tagged-pair-cdr u-perturbation)
 		  (cons v-perturbation vs-above)
 		  (cons (cons v v-perturbation) cs))
-		 (tagged-pair-expression u)
-		 (tagged-pair-environment u)))
+		 ;; needs work: tangent of bundle gives the index-expression
+		 ;;             and index-environment of the primal
+		 (tagged-pair-index-expression u)
+		 (tagged-pair-index-environment u)))
 	       (else (compile-time-warning
 		      "The arguments to bundle might be illegitimate"
 		      u
@@ -6443,7 +6529,10 @@
 			       (new-variable-access-expression 'x3)))
 		    (new-application (new-variable-access-expression 'p)
 				     (new-variable-access-expression 'x1)))
-	      (new-variable-access-expression 'x2))))
+	      (new-variable-access-expression 'x2)))
+	    ;; needs work: to fill in index-expression
+	    #f
+	    '#())
 	   #t))
  (set! vlad-false
        (if *church-booleans?*
@@ -6468,7 +6557,10 @@
 			       (new-variable-access-expression 'x3)))
 		    (new-application (new-variable-access-expression 'p)
 				     (new-variable-access-expression 'x1)))
-	      (new-variable-access-expression 'x2))))
+	      (new-variable-access-expression 'x2)))
+	    ;; needs work: to fill in index-expression
+	    #f
+	    '#())
 	   #f))
  (define-primitive-procedure '+
   (binary-real + "+")
