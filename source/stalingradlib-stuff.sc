@@ -598,7 +598,7 @@
 (define (create-tagged-pair tags v1 v2)
  ;; We intentionally don't give the index-expression and index-environment
  ;; since these are only used during flow analysis.
- (make-tagged-pair '() v1 v2 #f #f))
+ (make-tagged-pair tags v1 v2 #f #f))
 
 (define (vlad-cons v1 v2)
  ;; (lambda (m) (let* ((x1 (m a)) (x2 (x1 d))) x2))
@@ -2216,7 +2216,10 @@
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
 		 (constants-in e)))
 	(e (constant-convert bs e))
-	(e (alpha-convert e (free-variables e)))
+	(e (if #t			;debugging
+	       (copy-propagate
+		(anf-convert (alpha-convert e (free-variables e))))
+	       (alpha-convert e (free-variables e))))
 	(xs (free-variables e))
 	(bs (append bs *value-bindings*)))
   (list
