@@ -2216,7 +2216,7 @@
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
 		 (constants-in e)))
 	(e (constant-convert bs e))
-	(e (if #t			;debugging
+	(e (if #f			;debugging
 	       (copy-propagate
 		(anf-convert (alpha-convert e (free-variables e))))
 	       (alpha-convert e (free-variables e))))
