@@ -70,7 +70,9 @@
 		 (at-most-one ("church-booleans" church-booleans?))
 		 (at-most-one ("church-pairs" church-pairs?))
 		 (at-most-one ("letrec-as-y" letrec-as-y?))
-		 (at-most-one ("flow-analysis" flow-analysis?))
+		 (at-most-one
+		  ("flow-analysis" flow-analysis?)
+		  ("flow-analysis-result" flow-analysis-result?))
 		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
@@ -203,9 +205,26 @@
 	  (newline))
 	 (cond
 	  (flow-analysis?
-	   (pp (externalize-abstract-analysis
-		(flow-analysis (first result) (second result))))
-	   (newline))
+	   (let* ((bs (flow-analysis (first result) (second result)))
+		  (bs1 (expression-binding-flow
+			(lookup-expression-binding
+			 (first result)
+			 bs))))
+	    (unless (= (length bs1) 1) (internal-error))
+	    (pp (externalize-abstract-value
+		 (environment-binding-value (first bs1))))
+	    (newline)
+	    (pp (externalize-abstract-analysis bs))
+	    (newline)))
+	  (flow-analysis-result?
+	   (let ((bs (expression-binding-flow
+		      (lookup-expression-binding
+		       (first result)
+		       (flow-analysis (first result) (second result))))))
+	    (unless (= (length bs) 1) (internal-error))
+	    (pp (externalize-abstract-value
+		 (environment-binding-value (first bs))))
+	    (newline)))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)
