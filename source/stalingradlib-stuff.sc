@@ -2395,50 +2395,88 @@
 
 ;;; J*
 
+(define *forward-expression-cache* '())
+
+(define (lambda-expressions-eq? e1 e2)
+ (unless (and (lambda-expression? e1) (lambda-expression? e2))
+  (internal-error))
+ (and (variable=? (lambda-expression-variable e1)
+		  (lambda-expression-variable e2))
+      (eq? (lambda-expression-body e1)
+	   (lambda-expression-body e2))))
+
 (define (forward-transform e)
- (cond ((variable-access-expression? e) (forwardify-access e))
-       ((lambda-expression? e)
-	(new-lambda-expression (forwardify (lambda-expression-variable e))
-			       (forward-transform (lambda-expression-body e))))
-       ((application? e)
-	(new-application (forward-transform (application-callee e))
-			 (forward-transform (application-argument e))))
-       ((letrec-expression? e)
-	(new-letrec-expression
-	 (map forwardify (letrec-expression-procedure-variables e))
-	 (map forwardify (letrec-expression-argument-variables e))
-	 (map forward-transform (letrec-expression-bodies e))
-	 (forward-transform (letrec-expression-body e))))
-       ((cons-expression? e)
-	(make-cons-expression (cons 'forward (cons-expression-tags e))
-			      (forward-transform (cons-expression-car e))
-			      (forward-transform (cons-expression-cdr e))))
-       (else (internal-error))))
+ (let ((entry
+	(find-if (lambda (entry) (lambda-expressions-eq? (first entry) e))
+		 *forward-expression-cache*)))
+  (if entry
+      (begin
+       (format #t "Hit~%")		;debugging
+       (second entry))
+      (let ((e-prime
+	     (let loop ((e e))
+	      (cond
+	       ((variable-access-expression? e) (forwardify-access e))
+	       ((lambda-expression? e)
+		(new-lambda-expression
+		 (forwardify (lambda-expression-variable e))
+		 (loop (lambda-expression-body e))))
+	       ((application? e)
+		(new-application (loop (application-callee e))
+				 (loop (application-argument e))))
+	       ((letrec-expression? e)
+		(new-letrec-expression
+		 (map forwardify (letrec-expression-procedure-variables e))
+		 (map forwardify (letrec-expression-argument-variables e))
+		 (map loop (letrec-expression-bodies e))
+		 (loop (letrec-expression-body e))))
+	       ((cons-expression? e)
+		(make-cons-expression (cons 'forward (cons-expression-tags e))
+				      (loop (cons-expression-car e))
+				      (loop (cons-expression-cdr e))))
+	       (else (internal-error))))))
+       (format #t "Miss~%")		;debugging
+       (set! *forward-expression-cache*
+	     (cons (list e e-prime) *forward-expression-cache*))
+       e-prime))))
 
 (define (forward-transform-inverse e)
- (cond
-  ((variable-access-expression? e) (unforwardify-access e))
-  ((lambda-expression? e)
-   (new-lambda-expression
-    (unforwardify (lambda-expression-variable e))
-    (forward-transform-inverse (lambda-expression-body e))))
-  ((application? e)
-   (new-application (forward-transform-inverse (application-callee e))
-		    (forward-transform-inverse (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression
-    (map unforwardify (letrec-expression-procedure-variables e))
-    (map unforwardify (letrec-expression-argument-variables e))
-    (map forward-transform-inverse (letrec-expression-bodies e))
-    (forward-transform-inverse (letrec-expression-body e))))
-  ((cons-expression? e)
-   (unless (and (not (null? (cons-expression-tags e)))
-		(eq? (first (cons-expression-tags e)) 'forward))
-    (internal-error))
-   (make-cons-expression (rest (cons-expression-tags e))
-			 (forward-transform-inverse (cons-expression-car e))
-			 (forward-transform-inverse (cons-expression-cdr e))))
-  (else (internal-error))))
+ (let ((entry
+	(find-if (lambda (entry) (lambda-expressions-eq? (second entry) e))
+		 *forward-expression-cache*)))
+  (if entry
+      (begin
+       (format #t "Inverse Hit~%")	;debugging
+       (first entry))
+      (let ((e-prime
+	     (let loop ((e e))
+	      (cond
+	       ((variable-access-expression? e) (unforwardify-access e))
+	       ((lambda-expression? e)
+		(new-lambda-expression
+		 (unforwardify (lambda-expression-variable e))
+		 (loop (lambda-expression-body e))))
+	       ((application? e)
+		(new-application (loop (application-callee e))
+				 (loop (application-argument e))))
+	       ((letrec-expression? e)
+		(new-letrec-expression
+		 (map unforwardify (letrec-expression-procedure-variables e))
+		 (map unforwardify (letrec-expression-argument-variables e))
+		 (map loop (letrec-expression-bodies e))
+		 (loop (letrec-expression-body e))))
+	       ((cons-expression? e)
+		(unless (and (not (null? (cons-expression-tags e)))
+			     (eq? (first (cons-expression-tags e)) 'forward))
+		 (internal-error))
+		(make-cons-expression (rest (cons-expression-tags e))
+				      (loop (cons-expression-car e))
+				      (loop (cons-expression-cdr e))))
+	       (else (internal-error))))))
+       (format #t "Inverse Miss~%")	;debugging
+       (set! *forward-expression-cache*
+	     (cons (list e-prime e) *forward-expression-cache*))
+       e-prime))))
 
 (define (primal x-forward)
  (let ((forward-cache-entry
@@ -4149,7 +4187,9 @@
 ;;; Expression Equality
 
 (define (expression-eqv? e1 e2)
- (or (and (constant-expression? e1)
+ ;; optimization
+ (or (eq? e1 e2)
+     (and (constant-expression? e1)
 	  (constant-expression? e2)
 	  (equal? (constant-expression-value e1)
 		  (constant-expression-value e2)))
@@ -4399,34 +4439,49 @@
 
 (define (make-aggregate-value-with-new-values u vs)
  ;; needs work: To check that no vs is empty-abstract-value.
- (cond ((nonrecursive-closure? u)
-	(make-nonrecursive-closure (nonrecursive-closure-variables u)
-				   (list->vector vs)
-				   (nonrecursive-closure-variable u)
-				   (nonrecursive-closure-body u)
-				   (nonrecursive-closure-index-expression u)
-				   (nonrecursive-closure-index-environment u)))
-       ((recursive-closure? u)
-	(make-recursive-closure (recursive-closure-variables u)
-				(list->vector vs)
-				(recursive-closure-procedure-variables u)
-				(recursive-closure-argument-variables u)
-				(recursive-closure-bodies u)
-				(recursive-closure-index u)
-				(recursive-closure-index-expression u)
-				(recursive-closure-index-environment u)))
-       ((bundle? u)
-	(when (or (up? (first vs)) (up? (second vs)))
-	 (unimplemented "Bundles with backlinks"))
-	(make-bundle (first vs) (second vs)))
-       ;; needs work: reverse tagged values
-       ((tagged-pair? u)
-	(make-tagged-pair (tagged-pair-tags u)
-			  (first vs)
-			  (second vs)
-			  (tagged-pair-index-expression u)
-			  (tagged-pair-index-environment u)))
-       (else (internal-error))))
+ (cond
+  ((nonrecursive-closure? u)
+   ;; optimization
+   (if (every eq? (vector->list (nonrecursive-closure-values u)) vs)
+       u
+       (make-nonrecursive-closure (nonrecursive-closure-variables u)
+				  (list->vector vs)
+				  (nonrecursive-closure-variable u)
+				  (nonrecursive-closure-body u)
+				  (nonrecursive-closure-index-expression u)
+				  (nonrecursive-closure-index-environment u))))
+  ((recursive-closure? u)
+   ;; optimization
+   (if (every eq? (vector->list (recursive-closure-values u)) vs)
+       u
+       (make-recursive-closure (recursive-closure-variables u)
+			       (list->vector vs)
+			       (recursive-closure-procedure-variables u)
+			       (recursive-closure-argument-variables u)
+			       (recursive-closure-bodies u)
+			       (recursive-closure-index u)
+			       (recursive-closure-index-expression u)
+			       (recursive-closure-index-environment u))))
+  ((bundle? u)
+   (when (or (up? (first vs)) (up? (second vs)))
+    (unimplemented "Bundles with backlinks"))
+   ;; optimization
+   (if (and (eq? (bundle-primal u) (first vs))
+	    (eq? (bundle-tangent u) (second vs)))
+       u
+       (make-bundle (first vs) (second vs))))
+  ;; needs work: reverse tagged values
+  ((tagged-pair? u)
+   ;; optimization
+   (if (and (eq? (tagged-pair-car u) (first vs))
+	    (eq? (tagged-pair-cdr u) (second vs)))
+       u
+       (make-tagged-pair (tagged-pair-tags u)
+			 (first vs)
+			 (second vs)
+			 (tagged-pair-index-expression u)
+			 (tagged-pair-index-environment u))))
+  (else (internal-error))))
 
 ;;; Abstract Values
 
@@ -4491,7 +4546,9 @@
 ;;; abstract-primal-u, and abstract-tangent-u.
 
 (define (proto-abstract-value-subset?-internal u1 u2 cs vs1-above vs2-above)
- (or (and (null? u1) (null? u2))
+ ;; optimization
+ (or (eq? u1 u2)
+     (and (null? u1) (null? u2))
      (and (boolean? u1) (boolean? u2) (eq? u1 u2))
      (and (eq? u1 'real) (eq? u2 'real))
      (and (real? u1) (eq? u2 'real))
@@ -4506,6 +4563,8 @@
 
 (define (abstract-value-subset?-internal v1 v2 cs vs1-above vs2-above)
  (cond
+  ;; optimization
+  ((eq? v1 v2) #t)
   ((up? v1)
    (abstract-value-subset?-internal (list-ref vs1-above (up-index v1))
 				    v2
@@ -4558,7 +4617,9 @@
 
 (define (proto-abstract-value-nondisjoint?-internal
 	 u1 u2 cs vs1-above vs2-above)
- (or (and (null? u1) (null? u2))
+ ;; optimization
+ (or (eq? u1 u2)
+     (and (null? u1) (null? u2))
      (and (boolean? u1) (boolean? u2) (eq? u1 u2))
      (and (eq? u1 'real) (eq? u2 'real))
      (and (eq? u1 'real) (real? u2))
@@ -4573,7 +4634,9 @@
 		 (aggregate-value-values u2)))))
 
 (define (abstract-value-nondisjoint?-internal v1 v2 cs vs1-above vs2-above)
- (cond ((up? v1)
+ ;; optimization
+ (cond ((eq? v1 v2) #t)
+       ((up? v1)
 	(abstract-value-nondisjoint?-internal
 	 (list-ref vs1-above (up-index v1))
 	 v2
@@ -4621,18 +4684,24 @@
 			  (aggregate-value-values u)))))
 	       (last vs-above))
 	  v)
-      (map (lambda (u)
-	    (if (scalar-proto-abstract-value? u)
-		u
-		(make-aggregate-value-with-new-values
-		 u
-		 (map (lambda (v1) (loop v1 (cons v vs-above)))
-		      (aggregate-value-values u)))))
-	   v))))
+      (let ((v1 (map (lambda (u)
+		      (if (scalar-proto-abstract-value? u)
+			  u
+			  (make-aggregate-value-with-new-values
+			   u
+			   (map (lambda (v1) (loop v1 (cons v vs-above)))
+				(aggregate-value-values u)))))
+		     v)))
+       ;; optimization
+       (if (every eq? v1 v) v v1)))))
 
 (define (abstract-value-union v1 v2)
  ;; This cannot introduce imprecision.
- (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+ ;; optimization
+ (cond ((null? v1) v2)
+       ((null? v2) v1)
+       ((eq? v1 v2) v1)
+       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
        (else (remove-redundant-proto-abstract-values
@@ -4645,7 +4714,11 @@
  ;; {(),pair(0,^0)} U {(),pair(1,^0)} would yield
  ;; {(),pair(0,^0),pair(1,^0)} which includes pair(0,pair(1,())) in its
  ;; extension even though it is not in the extension of either argument.
- (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+ ;; optimization
+ (cond ((null? v1) v2)
+       ((null? v2) v1)
+       ((eq? v1 v2) v1)
+       ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
        ((or (up? v1) (up? v2))
 	(internal-error "Can't union a union type with a backlink"))
        (else (remove-redundant-proto-abstract-values (append v1 v2)))))
@@ -4679,13 +4752,16 @@
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp? (lambda (b1 b2)
-	       (and (abstract-environment=? (environment-binding-values b1)
-					    (environment-binding-values b2))
-		    (abstract-value=? (environment-binding-value b1)
-				      (environment-binding-value b2))))
-	      bs1
-	      bs2))
+ ;; optimization
+ (or (eq? bs1 bs2)
+     (set-equalp?
+      (lambda (b1 b2)
+       (and (abstract-environment=? (environment-binding-values b1)
+				    (environment-binding-values b2))
+	    (abstract-value=? (environment-binding-value b1)
+			      (environment-binding-value b2))))
+      bs1
+      bs2)))
 
 (define (abstract-flow-union bs1 bs2) (append bs1 bs2))
 
@@ -4980,7 +5056,7 @@
        (limit-aggregate-values v
 			       *closure-limit*
 			       closure?
-			       (closure-match? bs)
+			       closure-extensional-match?
 			       pick-closures-to-coalesce))
       v)))
 
@@ -5004,7 +5080,7 @@
        (limit-aggregate-values v
 			       *tagged-pair-limit*
 			       tagged-pair?
-			       (tagged-pair-match? bs)
+			       tagged-pair-extensional-match?
 			       pick-tagged-pairs-to-coalesce))
       v)))
 
@@ -5130,7 +5206,8 @@
 	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *closure-limit*))
 		       (transitive-equivalence-classesp
-			(closure-match? bs) (remove-if-not closure? v)))))
+			closure-extensional-match?
+			(remove-if-not closure? v)))))
 	   v))))
 
 (define (closure-depth-limit-met? v bs)
@@ -5162,7 +5239,7 @@
 	    (and (not (up? v))
 		 (some (lambda (us) (> (length us) *tagged-pair-limit*))
 		       (transitive-equivalence-classesp
-			(tagged-pair-match? bs)
+			tagged-pair-extensional-match?
 			(remove-if-not tagged-pair? v)))))
 	   v))))
 
@@ -5185,8 +5262,10 @@
  (let loop ((v (remove-redundant-proto-abstract-values* v-debugging)))
   (if (syntactic-constraints-met? v bs)
       (begin
-       (unless (abstract-value-subset? v-debugging v)
-	(internal-error "widen: ~s" (externalize-abstract-value v-debugging)))
+       (when #t				;debugging
+	(unless (abstract-value-subset? v-debugging v)
+	 (internal-error
+	  "widen: ~s" (externalize-abstract-value v-debugging))))
        (unless (bundle-depth-limit-met? v bs)
 	(compile-time-error "Bundle depth limit exceeded"))
        v)
@@ -5320,13 +5399,14 @@
 (define (lookup-environment-binding e vs bs)
  (let ((b (lookup-expression-binding e bs)))
   (cond (b
-	 ;; Because the domains of a flow are disjoint there can be only one.
-	 (when (> (count-if (lambda (b)
-			     (abstract-environment-subset?
-			      vs (environment-binding-values b)))
-			    (expression-binding-flow b))
-		  1)
-	  (internal-error))
+	 (when #t			;debugging
+	  ;; Because the domains of a flow are disjoint there can be only one.
+	  (when (> (count-if (lambda (b)
+			      (abstract-environment-subset?
+			       vs (environment-binding-values b)))
+			     (expression-binding-flow b))
+		   1)
+	   (internal-error)))
 	 (let ((b (find-if (lambda (b)
 			    (abstract-environment-subset?
 			     vs (environment-binding-values b)))
@@ -6874,10 +6954,19 @@
   '(lambda ((reverse (ignore)))
     (cons (*j (read-real))
 	  (lambda ((sensitivity y)) (cons '() (sensitivity y))))))
+ (define-primitive-procedure 'real
+  (unary-real identity "real")
+  (abstract-unary-real (lambda (u) 'real) "real")
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
+     (bundle x (perturbation x))))
+  '(lambda ((reverse x))
+    (let ((x (*j-inverse (reverse x))))
+     (cons (*j x) (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
  (define-primitive-procedure 'write
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write")
-  (abstract-unary (lambda (x) x) "write")
+  (abstract-unary identity "write")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (write x) (perturbation x))))
