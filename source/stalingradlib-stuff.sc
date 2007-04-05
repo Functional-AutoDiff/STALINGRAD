@@ -2411,7 +2411,7 @@
 		 *forward-expression-cache*)))
   (if entry
       (begin
-       (format #t "Hit~%")		;debugging
+       (when #f (format #t "Hit~%"))	;debugging
        (second entry))
       (let ((e-prime
 	     (let loop ((e e))
@@ -2435,7 +2435,7 @@
 				      (loop (cons-expression-car e))
 				      (loop (cons-expression-cdr e))))
 	       (else (internal-error))))))
-       (format #t "Miss~%")		;debugging
+       (when #f (format #t "Miss~%"))	;debugging
        (set! *forward-expression-cache*
 	     (cons (list e e-prime) *forward-expression-cache*))
        e-prime))))
@@ -2446,7 +2446,7 @@
 		 *forward-expression-cache*)))
   (if entry
       (begin
-       (format #t "Inverse Hit~%")	;debugging
+       (when #f (format #t "Inverse Hit~%")) ;debugging
        (first entry))
       (let ((e-prime
 	     (let loop ((e e))
@@ -2473,7 +2473,7 @@
 				      (loop (cons-expression-car e))
 				      (loop (cons-expression-cdr e))))
 	       (else (internal-error))))))
-       (format #t "Inverse Miss~%")	;debugging
+       (when #f (format #t "Inverse Miss~%")) ;debugging
        (set! *forward-expression-cache*
 	     (cons (list e-prime e) *forward-expression-cache*))
        e-prime))))
@@ -5407,11 +5407,10 @@
 			     (expression-binding-flow b))
 		   1)
 	   (internal-error)))
-	 (let ((b (find-if (lambda (b)
-			    (abstract-environment-subset?
-			     vs (environment-binding-values b)))
-			   (expression-binding-flow b))))
-	  (if b b #f)))
+	 (find-if (lambda (b)
+		   (abstract-environment-subset?
+		    vs (environment-binding-values b)))
+		  (expression-binding-flow b)))
 	(else #f))))
 
 (define (abstract-eval1 e vs bs)
@@ -5648,13 +5647,23 @@
 	      bs)
 	 (empty-abstract-analysis)))
 
-(define (flow-analysis e bs)
+(define (debugging-flow-analysis e bs)
  (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '())))
   (let ((bs1 (widen-analysis-domains
 	      (abstract-analysis-union (update-analysis-ranges bs)
 				       (update-analysis-domains bs))
 	      bs)))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
+
+(define (flow-analysis e bs)
+ (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '())))
+  (let* ((bs2 (time "A ~a~%" (lambda () (update-analysis-ranges bs))))
+	 (bs3 (time "B ~a~%" (lambda () (update-analysis-domains bs))))
+	 (bs4 (time "C ~a~%" (lambda () (abstract-analysis-union bs2 bs3))))
+	 (bs1 (time "D ~a~%" (lambda () (widen-analysis-domains bs4 bs)))))
+   (if (time "E ~a~%" (lambda () (abstract-analysis=? bs1 bs)))
+       bs
+       (loop bs1)))))
 
 ;;; Abstract Basis
 
