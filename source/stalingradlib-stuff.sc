@@ -1548,9 +1548,8 @@
 	      (append xs (list (first xs1)))
 	      (cons (index x xs (first es1)) es2)))))
   ((application? e)
-   (make-application (index x xs (application-callee e))
-		     (index x xs (application-argument e))
-		     #f))
+   (new-application (index x xs (application-callee e))
+		    (index x xs (application-argument e))))
   ((letrec-expression? e)
    (make-letrec-expression
     (letrec-expression-bodies-free-variables e)
@@ -2198,10 +2197,7 @@
 	(xs (free-variables e))
 	(bs (append bs *value-bindings*)))
   (list
-   (abstract-index (lambda (x)
-		    (unless (memp variable=? x xs) (internal-error))
-		    (positionp variable=? x xs))
-		   e)
+   (index #f xs e)
    (map (lambda (x)
 	 (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))
 	xs))))
@@ -4066,6 +4062,17 @@
 
 (define (rest* l k) (if (zero? k) l (rest* (rest l) (- k 1))))
 
+(define (minimal-elements <? s)
+ ;; belongs in QobiScheme
+ (remove-if (lambda (e) (some (lambda (e-prime) (<? e-prime e)) s)) s))
+
+(define (positionp-vector p x v)
+ ;; belongs in QobiScheme
+ (let loop ((i 0))
+  (cond ((>= i (vector-length v)) #f)
+	((p x (vector-ref v i)) i)
+	(else (loop (+ i 1))))))
+
 ;;; Expression Equality
 
 (define (expression-eqv? e1 e2)
@@ -4571,6 +4578,12 @@
        (else (remove-redundant-proto-abstract-values (append v1 v2)))))
 
 ;;; Abstract Environments
+
+(define (restrict-environment vs xs xs-new)
+ (list->vector
+  (map (lambda (x-new)
+	(vector-ref vs (position-if (lambda (x) (variable=? x x-new)) xs)))
+       xs-new)))
 
 (define (abstract-environment-subset? vs1 vs2)
  (every-vector abstract-value-subset? vs1 vs2))
@@ -5210,111 +5223,6 @@
 
 ;;; Abstract Interpretation
 
-(define (free-variable-indices e)
- (cond
-  ((variable-access-expression? e)
-   (vector (variable-access-expression-index e)))
-  ((lambda-expression? e) (lambda-expression-free-variable-indices e))
-  ((application? e) (application-free-variable-indices e))
-  ((letrec-expression? e) (letrec-expression-body-free-variable-indices e))
-  ((cons-expression? e) (cons-expression-free-variable-indices e))
-  (else (internal-error))))
-
-(define (abstract-index lookup e)
- (let ((xs (free-variables e)))
-  (cond
-   ((variable-access-expression? e)
-    (make-variable-access-expression
-     (variable-access-expression-variable e)
-     (lookup (variable-access-expression-variable e))))
-   ((lambda-expression? e)
-    (make-lambda-expression
-     xs
-     (list->vector (map lookup xs))
-     (lambda-expression-variable e)
-     (abstract-index (lambda (x)
-		      (unless (or (variable=? x (lambda-expression-variable e))
-				  (memp variable=? x xs))
-		       (internal-error))
-		      (if (variable=? x (lambda-expression-variable e))
-			  (length xs)
-			  (positionp variable=? x xs)))
-		     (lambda-expression-body e))))
-   ((application? e)
-    (make-application
-     (abstract-index (lambda (x)
-		      (unless (memp variable=? x xs) (internal-error))
-		      (positionp variable=? x xs))
-		     (application-callee e))
-     (abstract-index (lambda (x)
-		      (unless (memp variable=? x xs) (internal-error))
-		      (positionp variable=? x xs))
-		     (application-argument e))
-     (list->vector (map lookup xs))))
-   ((letrec-expression? e)
-    (make-letrec-expression
-     (letrec-expression-bodies-free-variables e)
-     (list->vector (map (lambda (x)
-			 (unless (memp variable=? x xs) (internal-error))
-			 (positionp variable=? x xs))
-			(letrec-expression-bodies-free-variables e)))
-     xs
-     (list->vector (map lookup xs))
-     (letrec-expression-procedure-variables e)
-     (letrec-expression-argument-variables e)
-     (map (lambda (x1 e1)
-	   (abstract-index
-	    (lambda (x)
-	     (unless (or (variable=? x x1)
-			 (memp variable=?
-			       x
-			       (letrec-expression-procedure-variables e))
-			 (memp variable=?
-			       x
-			       (letrec-expression-bodies-free-variables e)))
-	      (internal-error))
-	     (cond
-	      ((variable=? x x1)
-	       (+ (length (letrec-expression-bodies-free-variables e))
-		  (length (letrec-expression-procedure-variables e))))
-	      ((memp variable=?
-		     x
-		     (letrec-expression-procedure-variables e))
-	       (+ (length (letrec-expression-bodies-free-variables e))
-		  (positionp
-		   variable=? x (letrec-expression-procedure-variables e))))
-	      (else
-	       (positionp
-		variable=? x (letrec-expression-bodies-free-variables e)))))
-	    e1))
-	  (letrec-expression-argument-variables e)
-	  (letrec-expression-bodies e))
-     (abstract-index
-      (lambda (x)
-       (unless (or
-		(memp variable=? x (letrec-expression-procedure-variables e))
-		(memp variable=? x xs))
-	(internal-error))
-       (if (memp variable=? x (letrec-expression-procedure-variables e))
-	   (+ (length xs)
-	      (positionp
-	       variable=? x (letrec-expression-procedure-variables e)))
-	   (positionp variable=? x xs)))
-      (letrec-expression-body e))))
-   ((cons-expression? e)
-    (make-cons-expression
-     (cons-expression-tags e)
-     (abstract-index (lambda (x)
-		      (unless (memp variable=? x xs) (internal-error))
-		      (positionp variable=? x xs))
-		     (cons-expression-car e))
-     (abstract-index (lambda (x)
-		      (unless (memp variable=? x xs) (internal-error))
-		      (positionp variable=? x xs))
-		     (cons-expression-cdr e))
-     (list->vector (map lookup xs))))
-   (else (internal-error)))))
-
 (define (make-abstract-analysis e vs bs)
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
@@ -5364,33 +5272,43 @@
  (cond
   ((nonrecursive-closure? u1)
    (p (nonrecursive-closure-body u1)
-      (let ((vs (list->vector
-		 (append (vector->list (nonrecursive-closure-values u1))
-			 (list v2)))))
-       (map-vector (lambda (i) (vector-ref vs i))
-		   (free-variable-indices (nonrecursive-closure-body u1))))))
+      (list->vector
+       (map (lambda (x)
+	     (if (variable=? x (nonrecursive-closure-variable u1))
+		 v2
+		 (vector-ref
+		  (nonrecursive-closure-values u1)
+		  (positionp
+		   variable=? x (nonrecursive-closure-variables u1)))))
+	    (free-variables (nonrecursive-closure-body u1))))))
   ((recursive-closure? u1)
    (p (vector-ref (recursive-closure-bodies u1) (recursive-closure-index u1))
-      (let ((vs (list->vector
-		 (append
-		  (vector->list (recursive-closure-values u1))
-		  (map-n
-		   (lambda (i)
-		    (make-abstract-recursive-closure
-		     (recursive-closure-variables u1)
-		     (recursive-closure-values u1)
-		     (recursive-closure-procedure-variables u1)
-		     (recursive-closure-argument-variables u1)
-		     (recursive-closure-bodies u1)
-		     i
-		     (recursive-closure-index-expression u1)
-		     (recursive-closure-index-environment u1)))
-		   (vector-length (recursive-closure-procedure-variables u1)))
-		  (list v2)))))
-       (map-vector (lambda (i) (vector-ref vs i))
-		   (free-variable-indices
-		    (vector-ref (recursive-closure-bodies u1)
-				(recursive-closure-index u1)))))))
+      (list->vector
+       (map (lambda (x)
+	     (cond
+	      ((variable=?
+		x
+		(vector-ref (recursive-closure-argument-variables u1)
+			    (recursive-closure-index u1)))
+	       v2)
+	      ((some-vector (lambda (x1) (variable=? x x1))
+			    (recursive-closure-procedure-variables u1))
+	       (make-abstract-recursive-closure
+		(recursive-closure-variables u1)
+		(recursive-closure-values u1)
+		(recursive-closure-procedure-variables u1)
+		(recursive-closure-argument-variables u1)
+		(recursive-closure-bodies u1)
+		(positionp-vector
+		 variable=? x (recursive-closure-procedure-variables u1))
+		(recursive-closure-index-expression u1)
+		(recursive-closure-index-environment u1)))
+	      (else
+	       (vector-ref
+		(recursive-closure-values u1)
+		(positionp variable=? x (recursive-closure-variables u1))))))
+	    (free-variables (vector-ref (recursive-closure-bodies u1)
+					(recursive-closure-index u1)))))))
   (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
@@ -5415,60 +5333,60 @@
       (empty-abstract-value))))
 
 (define (abstract-eval e vs bs)
- (cond
-  ((variable-access-expression? e) (vector-ref vs 0))
-  ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
-  ((application? e)
-   (abstract-apply
+ (let ((xs (free-variables e)))
+  (cond
+   ((variable-access-expression? e)
+    (vector-ref
+     vs (positionp variable=? (variable-access-expression-variable e) xs)))
+   ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
+   ((application? e)
+    (abstract-apply
+     (abstract-eval1
+      (application-callee e)
+      (restrict-environment vs xs (free-variables (application-callee e)))
+      bs)
+     (abstract-eval1
+      (application-argument e)
+      (restrict-environment vs xs (free-variables (application-argument e)))
+      bs)
+     bs))
+   ((letrec-expression? e)
     (abstract-eval1
-     (application-callee e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (application-callee e)))
-     bs)
-    (abstract-eval1
-     (application-argument e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (application-argument e)))
-     bs)
-    bs))
-  ((letrec-expression? e)
-   (abstract-eval1
-    (letrec-expression-body e)
-    (let ((vs (list->vector
-	       (append
-		(vector->list vs)
-		(let ((xs0 (letrec-expression-bodies-free-variables e))
-		      (vs (map-vector
-			   (lambda (i) (vector-ref vs i))
-			   (letrec-expression-bodies-free-variable-indices e)))
-		      (xs1 (list->vector
-			    (letrec-expression-procedure-variables e)))
-		      (xs2 (list->vector
-			    (letrec-expression-argument-variables e)))
-		      (es (list->vector (letrec-expression-bodies e))))
-		 (map-n
-		  (lambda (i)
-		   (make-abstract-recursive-closure xs0 vs xs1 xs2 es i e vs))
-		  (length (letrec-expression-procedure-variables e))))))))
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (letrec-expression-body e))))
-    bs))
-  ((cons-expression? e)
-   (make-abstract-tagged-pair
-    (cons-expression-tags e)
-    (abstract-eval1
-     (cons-expression-car e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (cons-expression-car e)))
-     bs)
-    (abstract-eval1
-     (cons-expression-cdr e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (cons-expression-cdr e)))
-     bs)
-    e
-    vs))
-  (else (internal-error))))
+     (letrec-expression-body e)
+     (list->vector
+      (map (lambda (x)
+	    (if (memp variable=? x (letrec-expression-procedure-variables e))
+		(let ((vs (restrict-environment
+			   vs
+			   xs
+			   (letrec-expression-bodies-free-variables e))))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-bodies-free-variables e)
+		  vs
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))
+		(vector-ref vs (positionp variable=? x xs))))
+	   (free-variables (letrec-expression-body e))))
+     bs))
+   ((cons-expression? e)
+    (make-abstract-tagged-pair
+     (cons-expression-tags e)
+     (abstract-eval1
+      (cons-expression-car e)
+      (restrict-environment vs xs (free-variables (cons-expression-car e)))
+      bs)
+     (abstract-eval1
+      (cons-expression-cdr e)
+      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
+      bs)
+     e
+     vs))
+   (else (internal-error)))))
 
 (define (abstract-eval1-prime e vs bs)
  (let ((b (lookup-environment-binding e vs bs)))
@@ -5491,69 +5409,65 @@
       (empty-abstract-analysis))))
 
 (define (abstract-eval-prime e vs bs)
- (cond
-  ((variable-access-expression? e) (empty-abstract-analysis))
-  ((lambda-expression? e) (empty-abstract-analysis))
-  ((application? e)
-   (abstract-analysis-union
+ (let ((xs (free-variables e)))
+  (cond
+   ((variable-access-expression? e) (empty-abstract-analysis))
+   ((lambda-expression? e) (empty-abstract-analysis))
+   ((application? e)
+    (abstract-analysis-union
+     (abstract-analysis-union
+      (abstract-eval1-prime
+       (application-callee e)
+       (restrict-environment vs xs (free-variables (application-callee e)))
+       bs)
+      (abstract-eval1-prime
+       (application-argument e)
+       (restrict-environment vs xs (free-variables (application-argument e)))
+       bs))
+     (abstract-apply-prime
+      (abstract-eval1
+       (application-callee e)
+       (restrict-environment vs xs (free-variables (application-callee e)))
+       bs)
+      (abstract-eval1
+       (application-argument e)
+       (restrict-environment vs xs (free-variables (application-argument e)))
+       bs)
+      bs)))
+   ((letrec-expression? e)
+    (abstract-eval1-prime
+     (letrec-expression-body e)
+     (list->vector
+      (map (lambda (x)
+	    (if (memp variable=? x (letrec-expression-procedure-variables e))
+		(let ((vs (restrict-environment
+			   vs
+			   xs
+			   (letrec-expression-bodies-free-variables e))))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-bodies-free-variables e)
+		  vs
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))
+		(vector-ref vs (positionp variable=? x xs))))
+	   (free-variables (letrec-expression-body e))))
+     bs))
+   ((cons-expression? e)
     (abstract-analysis-union
      (abstract-eval1-prime
-      (application-callee e)
-      (map-vector (lambda (i) (vector-ref vs i))
-		  (free-variable-indices (application-callee e)))
+      (cons-expression-car e)
+      (restrict-environment vs xs (free-variables (cons-expression-car e)))
       bs)
      (abstract-eval1-prime
-      (application-argument e)
-      (map-vector (lambda (i) (vector-ref vs i))
-		  (free-variable-indices (application-argument e)))
-      bs))
-    (abstract-apply-prime
-     (abstract-eval1
-      (application-callee e)
-      (map-vector (lambda (i) (vector-ref vs i))
-		  (free-variable-indices (application-callee e)))
-      bs)
-     (abstract-eval1
-      (application-argument e)
-      (map-vector (lambda (i) (vector-ref vs i))
-		  (free-variable-indices (application-argument e)))
-      bs)
-     bs)))
-  ((letrec-expression? e)
-   (abstract-eval1-prime
-    (letrec-expression-body e)
-    (let ((vs (list->vector
-	       (append
-		(vector->list vs)
-		(let ((xs0 (letrec-expression-bodies-free-variables e))
-		      (vs (map-vector
-			   (lambda (i) (vector-ref vs i))
-			   (letrec-expression-bodies-free-variable-indices e)))
-		      (xs1 (list->vector
-			    (letrec-expression-procedure-variables e)))
-		      (xs2 (list->vector
-			    (letrec-expression-argument-variables e)))
-		      (es (list->vector (letrec-expression-bodies e))))
-		 (map-n
-		  (lambda (i)
-		   (make-abstract-recursive-closure xs0 vs xs1 xs2 es i e vs))
-		  (length (letrec-expression-procedure-variables e))))))))
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (letrec-expression-body e))))
-    bs))
-  ((cons-expression? e)
-   (abstract-analysis-union
-    (abstract-eval1-prime
-     (cons-expression-car e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (cons-expression-car e)))
-     bs)
-    (abstract-eval1-prime
-     (cons-expression-cdr e)
-     (map-vector (lambda (i) (vector-ref vs i))
-		 (free-variable-indices (cons-expression-cdr e)))
-     bs)))
-  (else (internal-error))))
+      (cons-expression-cdr e)
+      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
+      bs)))
+   (else (internal-error)))))
 
 (define (update-analysis-ranges bs)
  (map (lambda (b1)
@@ -5585,12 +5499,20 @@
 	 (empty-abstract-analysis)))
 
 (define (flow-analysis e bs)
- (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '())))
-  (let ((bs1 (widen-analysis-domains
-	      (abstract-analysis-union (update-analysis-ranges bs)
-				       (update-analysis-domains bs))
-	      bs)))
-   (if (abstract-analysis=? bs1 bs) bs (loop bs1)))))
+ (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '()))
+	    (i 0))
+  (format #t "~s: " i)
+  (let ((bs1 (time
+	      "~a, "
+	      (lambda ()
+	       (widen-analysis-domains
+		(abstract-analysis-union (update-analysis-ranges bs)
+					 (update-analysis-domains bs))
+		bs)))))
+   (format #t "|analysis|=~s~%"
+	   (reduce
+	    + (map (lambda (b) (length (expression-binding-flow b))) bs1) 0))
+   (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
 
 ;;; Abstract Basis
 
