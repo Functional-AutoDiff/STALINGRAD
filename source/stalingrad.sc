@@ -73,7 +73,6 @@
 		 (at-most-one
 		  ("flow-analysis" flow-analysis?)
 		  ("flow-analysis-result" flow-analysis-result?))
-		 (at-most-one ("undecorated" undecorated?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
@@ -140,7 +139,6 @@
 		   remove-redundant-proto-abstract-values-using-equality?)
 		  ("remove-redundant-proto-abstract-values-using-subset"
 		   remove-redundant-proto-abstract-values-using-subset?))
-		 (at-most-one ("parse-abstract" parse-abstract?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -191,7 +189,6 @@
   (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
  (when remove-redundant-proto-abstract-values-using-subset?
   (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
- (set! *parse-abstract?* parse-abstract?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
@@ -199,33 +196,32 @@
        (loop (rest es) (cons (first es) ds))
        (let ((e (expand-definitions (reverse ds) (first es))))
 	(syntax-check-expression! e)
-	(let ((result (if *parse-abstract?* (parse-abstract e) (parse e))))
-	 (when undecorated?
-	  (pp (abstract->concrete (first result)))
-	  (newline))
-	 (cond
-	  (flow-analysis?
-	   (let* ((bs (flow-analysis (first result) (second result)))
-		  (bs1 (expression-binding-flow
-			(lookup-expression-binding
-			 (first result)
-			 bs))))
-	    (unless (= (length bs1) 1) (internal-error))
-	    (pp (externalize-abstract-value
-		 (environment-binding-value (first bs1))))
-	    (newline)
-	    (pp (externalize-abstract-analysis bs))
-	    (newline)))
-	  (flow-analysis-result?
-	   (let ((bs (expression-binding-flow
+	(cond
+	 (flow-analysis?
+	  (let* ((result (abstract-parse e))
+		 (bs (flow-analysis (first result) (second result)))
+		 (bs1 (expression-binding-flow
+		       (lookup-expression-binding
+			(first result)
+			bs))))
+	   (unless (= (length bs1) 1) (internal-error))
+	   (pp (externalize-abstract-value
+		(environment-binding-value (first bs1))))
+	   (newline)
+	   (pp (externalize-abstract-analysis bs))
+	   (newline)))
+	 (flow-analysis-result?
+	  (let* ((result (abstract-parse e))
+		 (bs (expression-binding-flow
 		      (lookup-expression-binding
 		       (first result)
 		       (flow-analysis (first result) (second result))))))
-	    (unless (= (length bs) 1) (internal-error))
-	    (pp (externalize-abstract-value
-		 (environment-binding-value (first bs))))
-	    (newline)))
-	  (else
+	   (unless (= (length bs) 1) (internal-error))
+	   (pp (externalize-abstract-value
+		(environment-binding-value (first bs))))
+	   (newline)))
+	 (else
+	  (let ((result (parse e)))
 	   (when metered?
 	    (for-each (lambda (b)
 		       (let ((v (value-binding-value b)))
