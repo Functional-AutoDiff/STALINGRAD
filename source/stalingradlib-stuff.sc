@@ -222,6 +222,8 @@
 
 (define *letrec-as-y?* #f)
 
+(define *flow-analysis?* #f)
+
 (define *metered?* #f)
 
 (define *show-access-indices?* #f)
@@ -2176,24 +2178,11 @@
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
 		 (constants-in e)))
 	(e (constant-convert bs e))
-	(e (copy-propagate (anf-convert (alpha-convert e (free-variables e)))))
-	(xs (free-variables e))
-	(bs (append bs *value-bindings*)))
-  (list
-   (index #f xs e)
-   (map (lambda (x)
-	 (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))
-	xs))))
-
-(define (abstract-parse e)
- (let* ((e (concrete->abstract-expression e))
-	(bs (map (lambda (v) (make-value-binding (gensym) v))
-		 (constants-in e)))
-	(e (constant-convert bs e))
-	(e (if #f			;debugging
+	;; debugging
+	(e (if *flow-analysis?*
+	       (alpha-convert e (free-variables e))
 	       (copy-propagate
-		(anf-convert (alpha-convert e (free-variables e))))
-	       (alpha-convert e (free-variables e))))
+		(anf-convert (alpha-convert e (free-variables e))))))
 	(xs (free-variables e))
 	(bs (append bs *value-bindings*)))
   (list
@@ -5113,7 +5102,7 @@
  (let loop ((v (remove-redundant-proto-abstract-values* v-debugging)))
   (if (syntactic-constraints-met? v bs)
       (begin
-       (when #t				;debugging
+       (when #f				;debugging
 	(unless (abstract-value-subset? v-debugging v)
 	 (internal-error
 	  "widen: ~s" (externalize-abstract-value v-debugging))))
@@ -5182,7 +5171,11 @@
 			       (environment-binding-values b2)))
 		  ;; We pick one range arbitrarily. We don't union the ranges
 		  ;; and leave it up to update-analysis-ranges to do that.
-		  (environment-binding-value b1))
+		  ;; needs work: we no longer do the above
+		  (widen-abstract-value
+		   (abstract-value-union (environment-binding-value b1)
+					 (environment-binding-value b2))
+		   bs1))
 		 (removeq b2 (removeq b1 bs))))))
    ;; Second, that the abstract values in the domains meet the syntactic
    ;; constraints. This can introduct imprecision.
@@ -5209,7 +5202,12 @@
 			       (environment-binding-values (second b1-b2))))
 		  ;; We pick one range arbitrarily. We don't union the ranges
 		  ;; and leave it up to update-analysis-ranges to do that.
-		  (environment-binding-value (first b1-b2)))
+		  ;; needs work: we no longer do the above
+		  (widen-abstract-value
+		   (abstract-value-union
+		    (environment-binding-value (first b1-b2))
+		    (environment-binding-value (second b1-b2)))
+		   bs1))
 		 (removeq (second b1-b2) (removeq (first b1-b2) bs))))))
    (else bs))))
 
@@ -5250,7 +5248,7 @@
 (define (lookup-environment-binding e vs bs)
  (let ((b (lookup-expression-binding e bs)))
   (cond (b
-	 (when #t			;debugging
+	 (when #f			;debugging
 	  ;; Because the domains of a flow are disjoint there can be only one.
 	  (when (> (count-if (lambda (b)
 			      (abstract-environment-subset?
@@ -5477,9 +5475,12 @@
 	      (make-environment-binding
 	       (environment-binding-values b2)
 	       (widen-abstract-value
-		(abstract-eval (expression-binding-expression b1)
-			       (environment-binding-values b2)
-			       bs)
+		;; needs work: I don't understand why this union is necessary.
+		(abstract-value-union
+		 (environment-binding-value b2)
+		 (abstract-eval (expression-binding-expression b1)
+				(environment-binding-values b2)
+				bs))
 		bs)))
 	     (expression-binding-flow b1))))
       bs))
@@ -5498,6 +5499,15 @@
 	      bs)
 	 (empty-abstract-analysis)))
 
+;;; debugging
+(define (has-union? v)
+ (and (not (up? v))
+      (or (and (> (length v) 1) (not (every boolean? v)))
+	  (some (lambda (u)
+		 (and (not (scalar-proto-abstract-value? u))
+		      (some has-union? (aggregate-value-values u))))
+		v))))
+
 (define (flow-analysis e bs)
  (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '()))
 	    (i 0))
@@ -5512,6 +5522,72 @@
    (format #t "|analysis|=~s~%"
 	   (reduce
 	    + (map (lambda (b) (length (expression-binding-flow b))) bs1) 0))
+   ;; debugging
+   (when #t
+    (when (some
+	   (lambda (b)
+	    (some (lambda (b)
+		   (some-vector has-union? (environment-binding-values b)))
+		  (expression-binding-flow b)))
+	   bs1)
+     (for-each
+      (lambda (b)
+       (for-each
+	(lambda (b1)
+	 (when (some-vector has-union? (environment-binding-values b1))
+	  (pp (list (abstract->concrete (expression-binding-expression b))
+		    (externalize-abstract-environment
+		     (free-variables (expression-binding-expression b))
+		     (environment-binding-values b1))))
+	  (newline)))
+	(expression-binding-flow b)))
+      bs1)
+     (internal-error "Some environment has a union")))
+   ;; debugging
+   (when #f
+    (when (set-equalp? expression=?
+		       (map expression-binding-expression bs)
+		       (map expression-binding-expression bs1))
+     (when #t (format #t "No new expressions~%"))
+     (when (every
+	    (lambda (e)
+	     (let ((bs (expression-binding-flow
+			(find-if
+			 (lambda (b)
+			  (expression=? e (expression-binding-expression b)))
+			 bs)))
+		   (bs1 (expression-binding-flow
+			 (find-if
+			  (lambda (b1)
+			   (expression=? e (expression-binding-expression b1)))
+			  bs1))))
+	      (set-equalp? abstract-environment=?
+			   (map environment-binding-values bs)
+			   (map environment-binding-values bs1))))
+	    (map expression-binding-expression bs))
+      (when #t (format #t "No new environments~%"))
+      (for-each
+       (lambda (b)
+	(let ((e (expression-binding-expression b)))
+	 (for-each
+	  (lambda (b1)
+	   (let* ((vs (environment-binding-values b1))
+		  (v (environment-binding-value b1))
+		  (b2 (lookup-environment-binding e vs bs1))
+		  (vs2 (environment-binding-values b2))
+		  (v2 (environment-binding-value b2)))
+	    (unless (abstract-environment=? vs vs2) (internal-error "A"))
+	    (unless (abstract-value-subset? v v2) (internal-error "B"))
+	    (when #t
+	     (unless (abstract-value=? v v2)
+	      (pp (list
+		   (abstract->concrete e)
+		   (externalize-abstract-environment (free-variables e) vs2)
+		   (externalize-abstract-value v)
+		   (externalize-abstract-value v2)))
+	      (newline)))))
+	  (expression-binding-flow b))))
+       bs))))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
 
 ;;; Abstract Basis
