@@ -1,0 +1,3 @@
+(let ((y (read-real)))
+ (letrec ((f (lambda (x) (if (zero? x) y (f (- x (real 1)))))))
+  (write (f (read-real)))))

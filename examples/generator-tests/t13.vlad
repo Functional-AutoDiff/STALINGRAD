@@ -1,0 +1,3 @@
+(include "math")
+
+(write (dot (list (read-real) (read-real)) (list (read-real) (read-real))))

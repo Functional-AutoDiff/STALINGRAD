@@ -1,1 +1,1 @@
-(real 5)
+(write (real 5))

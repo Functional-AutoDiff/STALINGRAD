@@ -1,0 +1,31 @@
+#!/bin/tcsh -f
+echo Compiling t1
+stalingrad -compile -no-warn t1
+echo Compiling t2
+stalingrad -compile -no-warn t2
+echo Compiling t3
+stalingrad -compile -no-warn t3
+echo Compiling t4
+stalingrad -compile -no-warn t4
+echo Compiling t5
+stalingrad -compile -no-warn t5
+echo Compiling t5a
+stalingrad -compile -no-warn t5a
+echo Compiling t6
+stalingrad -compile -no-warn t6
+echo Compiling t6a
+stalingrad -compile -no-warn t6a
+echo Compiling t7
+stalingrad -compile -no-warn t7
+echo Compiling t8
+stalingrad -compile -no-warn t8
+echo Compiling t9
+stalingrad -compile -no-warn t9
+echo Compiling t10
+stalingrad -compile -no-warn t10
+echo Compiling t11
+stalingrad -compile -no-warn t11
+echo Compiling t12
+stalingrad -compile -no-warn t12
+echo Compiling t13
+stalingrad -compile -no-warn t13

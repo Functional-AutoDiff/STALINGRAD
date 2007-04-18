@@ -1,0 +1,2 @@
+(letrec ((f (lambda (x) (if (zero? x) x (f (- x (real 1)))))))
+ (write (f (read-real))))
