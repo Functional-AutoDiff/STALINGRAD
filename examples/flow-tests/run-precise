@@ -1,19 +1,13 @@
 #!/bin/tcsh -f
 
-set EXAMPLE = $1
-set NUM = $2
+set EXAMPLE=$1
 
-set OUTFILE=${EXAMPLE}-precise-`date +"%m%d%y"`-${NUM}.txt
+set OUTFILE=${EXAMPLE}-precise.txt
 
-set OPTS1 = "-no-warn"
-set OPTS2 = ""
-set OPTS3 = "-expression-equality-using-structural"
-set OPTS4 = ""
+set OPTIONS="-no-warn -expression-equality-using-structural"
 
-echo unbuff ">>" $OUTFILE time ./stalingrad -pp -flow-analysis\
-$OPTS1 $OPTS2 $OPTS3 $OPTS4 \
-${EXAMPLE}.vlad > $OUTFILE
+echo unbuff ">>" ${OUTFILE} time ./stalingrad -pp -flow-analysis\
+${OPTIONS} ${EXAMPLE}.vlad >${OUTFILE}
 
-unbuff >> $OUTFILE time ./stalingrad -pp -flow-analysis\
-$OPTS1 $OPTS2 $OPTS3 $OPTS4\
-${EXAMPLE}.vlad
+unbuff >>${OUTFILE} time ./stalingrad -pp -flow-analysis\
+${OPTIONS} ${EXAMPLE}.vlad

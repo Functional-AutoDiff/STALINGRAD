@@ -7,7 +7,7 @@ if ($#argv != 1) then
   exit -1
   endif
 
-set OLD = qobi5
+set OLD = qobi26
 
 set EXAMPLE = $1.tgz
 mkdir $1
@@ -18,19 +18,19 @@ mkdir old
 mkdir diffs
 
 cd new
-tar zxf ../../$EXAMPLE
+tar zxf ../../${EXAMPLE}
 
 cd ../old
-tar zxf ../../../${OLD}/$EXAMPLE
+tar zxf ../../../${OLD}/${EXAMPLE}
 
 cd ..
 
 foreach f (new/*.txt)
-  set BASE = `echo $f:r:t|rev|cut -d\- -f3-|rev`
-  echo diff old/$BASE*.txt new/$BASE*.txt >diffs/$BASE.diff
-  grep -v "time" old/$BASE*.txt|grep -v CPU|\
-    grep -v pagefaults >old/tmp-$BASE.txt
-  grep -v "time" new/$BASE*.txt|grep -v CPU|\
-    grep -v pagefaults >new/tmp-$BASE.txt
-  diff old/tmp-$BASE.txt new/tmp-$BASE.txt >diffs/$BASE.diff
+  set BASE = $f:r:t
+  echo diff old/${BASE}*.txt new/${BASE}*.txt >diffs/${BASE}.diff
+  grep -v "time" old/${BASE}*.txt|grep -v CPU|\
+    grep -v pagefaults >old/tmp-${BASE}.txt
+  grep -v "time" new/${BASE}*.txt|grep -v CPU|\
+    grep -v pagefaults >new/tmp-${BASE}.txt
+  diff old/tmp-${BASE}.txt new/tmp-${BASE}.txt >diffs/${BASE}.diff
   end
