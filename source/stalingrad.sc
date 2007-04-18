@@ -221,13 +221,15 @@
 	    (newline)))
 	  (compile?
 	   (let ((bs (flow-analysis (first result) (second result))))
+	    ;; needs work: This overwrites the code file and the database file
+	    ;;             for all but the last top-level expression. And it
+	    ;;             fails to delete those files if there is no
+	    ;;             top-level expression.
 	    ;; needs work: -db
-	    (when #t
-	     (pp (externalize-abstract-analysis bs))
-	     (newline))
-	    ;; needs work: This overwrites the code file for all but the last
-	    ;;             top-level expression. And it fails to delete the
-	    ;;             code file if there is no top-level expression.
+	    (call-with-output-file (replace-extension pathname "db")
+	     (lambda (output-port)
+	      (pp (externalize-abstract-analysis bs) output-port)
+	      (newline output-port)))
 	    (generate-file (generate (first result) bs) pathname)
 	    ;; needs work: -c -k -cc -copt
 	    (system (format #f "gcc -o ~a -Wall ~a -lm"
