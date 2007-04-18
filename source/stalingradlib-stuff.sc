@@ -120,7 +120,7 @@
 (define-structure alpha-binding variable1 variable2)
 
 (define-structure primitive-procedure
- name procedure abstract-procedure forward reverse meter)
+ name procedure abstract-procedure generator forward reverse meter)
 
 ;;; The index-{expression,environment} slots are used solely to index
 ;;; aggregate proto abstract values during flow analysis.
@@ -5118,23 +5118,44 @@
    ;; Third, that the flow size limit be met. This can introduce imprecision
    ;; because of abstract-environment-union.
    ((not (flow-size-limit-met? bs))
-    (let ((b1-b2 (pick-environment-bindings-to-coalesce bs)))
-     (loop (cons (make-environment-binding
-		  ;; needs work: This should be removed if not necessary and
-		  ;;             moved to abstract-value-union if necessary.
-		  (map-vector remove-redundant-proto-abstract-values*
-			      (abstract-environment-union
-			       (environment-binding-values (first b1-b2))
-			       (environment-binding-values (second b1-b2))))
-		  ;; We pick one range arbitrarily. We don't union the ranges
-		  ;; and leave it up to update-analysis-ranges to do that.
-		  ;; needs work: we no longer do the above
-		  (widen-abstract-value
-		   (abstract-value-union
-		    (environment-binding-value (first b1-b2))
-		    (environment-binding-value (second b1-b2)))
-		   bs1))
-		 (removeq (second b1-b2) (removeq (first b1-b2) bs))))))
+    (if (some (lambda (b1)
+	       (some (lambda (b2)
+		      (and (not (eq? b1 b2))
+			   (abstract-environment-subset?
+			    (environment-binding-values b1)
+			    (environment-binding-values b2))))
+		     bs))
+	      bs)
+	;; needs work: Should abstract the choice of which environment to
+	;;             remove as a pick procedure.
+	(loop
+	 (removeq (find-if (lambda (b1)
+			    (some (lambda (b2)
+				   (and (not (eq? b1 b2))
+					(abstract-environment-subset?
+					 (environment-binding-values b1)
+					 (environment-binding-values b2))))
+				  bs))
+			   bs)
+		  bs))
+	(let ((b1-b2 (pick-environment-bindings-to-coalesce bs)))
+	 (loop
+	  (cons (make-environment-binding
+		 ;; needs work: This should be removed if not necessary and
+		 ;;             moved to abstract-value-union if necessary.
+		 (map-vector remove-redundant-proto-abstract-values*
+			     (abstract-environment-union
+			      (environment-binding-values (first b1-b2))
+			      (environment-binding-values (second b1-b2))))
+		 ;; We pick one range arbitrarily. We don't union the ranges
+		 ;; and leave it up to update-analysis-ranges to do that.
+		 ;; needs work: we no longer do the above
+		 (widen-abstract-value
+		  (abstract-value-union
+		   (environment-binding-value (first b1-b2))
+		   (environment-binding-value (second b1-b2)))
+		  bs1))
+		(removeq (second b1-b2) (removeq (first b1-b2) bs)))))))
    (else bs))))
 
 (define (widen-analysis-domains bs bs1)
@@ -5182,12 +5203,25 @@
 				      (abstract-environment-subset?
 				       vs (environment-binding-values b)))
 				     (expression-binding-flow b)))))
+	    ;; This is just so we catch an example where this is the case.
+	    ;; This occurs in unbounded polyvariant saddle.
+	    (when #f
+	     (when (> (length bs) 1)
+	      (internal-error "Ambiguity in lookup-environment-binding")))
 	    (if (null? bs) #f (first bs))))
 	(else #f))))
 
 (define (abstract-eval1 e vs bs)
  (let ((b (lookup-environment-binding e vs bs)))
-  (if b (environment-binding-value b) (empty-abstract-value))))
+  (if b
+      (if (or (abstract-environment=? vs (environment-binding-values b))
+	      (and *flow-size-limit*
+		   (= (length (expression-binding-flow
+			       (lookup-expression-binding e bs)))
+		      *flow-size-limit*)))
+	  (environment-binding-value b)
+	  (empty-abstract-value))
+      (empty-abstract-value))))
 
 (define (abstract-apply-closure p u1 v2)
  (cond
@@ -5311,15 +5345,15 @@
 
 (define (abstract-eval1-prime e vs bs)
  (let ((b (lookup-environment-binding e vs bs)))
-  ;; debugging
-  (when #t
-   (when (and (or (equal? (abstract->concrete e) '(cons x1 x2))
-		  (equal? (abstract->concrete e) 'x1)
-		  (equal? (abstract->concrete e) 'x2))
-	      (not b))
-    (pp (externalize-abstract-environment (free-variables e) vs))
-    (newline)))
-  (if b (empty-abstract-analysis) (make-abstract-analysis e vs bs))))
+  (if b
+      (if (or (abstract-environment=? vs (environment-binding-values b))
+	      (and *flow-size-limit*
+		   (= (length (expression-binding-flow
+			       (lookup-expression-binding e bs)))
+		      *flow-size-limit*)))
+	  (empty-abstract-analysis)
+	  (make-abstract-analysis e vs bs))
+      (make-abstract-analysis e vs bs))))
 
 (define (abstract-apply-prime v1 v2 bs)
  (if (empty-abstract-value? v2)
@@ -5406,12 +5440,9 @@
 	      (make-environment-binding
 	       (environment-binding-values b2)
 	       (widen-abstract-value
-		;; needs work: I don't understand why this union is necessary.
-		(abstract-value-union
-		 (environment-binding-value b2)
-		 (abstract-eval (expression-binding-expression b1)
-				(environment-binding-values b2)
-				bs))
+		(abstract-eval (expression-binding-expression b1)
+			       (environment-binding-values b2)
+			       bs)
 		bs)))
 	     (expression-binding-flow b1))))
       bs))
@@ -5459,15 +5490,24 @@
 		      (some has-union? (aggregate-value-values u))))
 		v))))
 
+(define (concrete-reals-in v)
+ (if (up? v)
+     '()
+     (reduce
+      unionv
+      (map (lambda (u)
+	    (cond ((real? u) (list u))
+		  ((scalar-proto-abstract-value? u) '())
+		  (else (reduce
+			 unionv
+			 (map concrete-reals-in (aggregate-value-values u))
+			 '()))))
+	   v)
+      '())))
+
 (define (flow-analysis e bs)
  (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '()))
 	    (i 0))
-  ;; debugging
-  (when #t
-   (when (= i 1005)
-    (pp (externalize-abstract-analysis bs))
-    (newline)
-    (exit -1)))
   (format #t "~s: " i)
   (let ((bs1 (time
 	      "~a, "
@@ -5480,38 +5520,49 @@
 	   (reduce
 	    + (map (lambda (b) (length (expression-binding-flow b))) bs1) 0))
    ;; debugging
-   (when #f
-    (for-each
-     (lambda (b)
-      (when (equal? (abstract->concrete (expression-binding-expression b))
-		    '(cons x1 x2))
-       (for-each
-	(lambda (b1)
-	 (pp (list 'bingo
-		   (abstract->concrete (expression-binding-expression b))
-		   (externalize-abstract-environment
-		    (free-variables (expression-binding-expression b))
-		    (environment-binding-values b1))
-		   (externalize-abstract-value
-		    (environment-binding-value b1))))
-	 (newline))
-	(expression-binding-flow b))))
-     bs1))
+   (when #t
+    (format #t "expressions: ~s, max flow size: ~s, bottoms: ~s, concrete reals: ~s~%"
+	    (length bs)
+	    (reduce max
+		    (map (lambda (b) (length (expression-binding-flow b))) bs)
+		    minus-infinity)
+	    (reduce
+	     +
+	     (map (lambda (b)
+		   (count-if (lambda (b) (null? (environment-binding-value b)))
+			     (expression-binding-flow b)))
+		  bs)
+	     0)
+	    (reduce
+	     unionv
+	     (map (lambda (b)
+		   (reduce
+		    unionv
+		    (map (lambda (b)
+			  (unionv
+			   (reduce-vector
+			    unionv
+			    (map-vector concrete-reals-in
+					(environment-binding-values b))
+			    '())
+			   (concrete-reals-in (environment-binding-value b))))
+			 (expression-binding-flow b))
+		    '()))
+		  bs)
+	     '())))
    ;; debugging
-   (when #f
-    (when (some
-	   (lambda (b)
-	    (some (lambda (b)
-		   (has-nonif-union? (environment-binding-value b)))
-		  (expression-binding-flow b)))
-	   bs1)
+   (when #t
+    (when (some (lambda (b)
+		 (some (lambda (b)
+			(has-nonif-union? (environment-binding-value b)))
+		       (expression-binding-flow b)))
+		bs1)
      (for-each
       (lambda (b)
        (for-each
 	(lambda (b1)
 	 (when (has-nonif-union? (environment-binding-value b1))
-	  (pp (list 'value
-		    (abstract->concrete (expression-binding-expression b))
+	  (pp (list (abstract->concrete (expression-binding-expression b))
 		    (externalize-abstract-environment
 		     (free-variables (expression-binding-expression b))
 		     (environment-binding-values b1))
@@ -5519,32 +5570,30 @@
 		     (environment-binding-value b1))))
 	  (newline)))
 	(expression-binding-flow b)))
-      bs1)))
+      bs1)
+     (internal-error "Some value has a non-if union")))
    ;; debugging
    (when #t
-    (when (some
-	   (lambda (b)
-	    (some (lambda (b)
-		   (some-vector has-nonboolean-union?
-				(environment-binding-values b)))
-		  (expression-binding-flow b)))
-	   bs1)
-     (when #f
-      (for-each
-       (lambda (b)
-	(for-each
-	 (lambda (b1)
-	  (when (some-vector has-nonboolean-union?
-			     (environment-binding-values b1))
-	   (pp (list 'environment
-		     (abstract->concrete (expression-binding-expression b))
-		     (externalize-abstract-environment
-		      (free-variables (expression-binding-expression b))
-		      (environment-binding-values b1))))
-	   (newline)))
-	 (expression-binding-flow b)))
-       bs1))
-     (internal-error "Some environment has a union")))
+    (when (some (lambda (b)
+		 (some (lambda (b)
+			(some-vector has-nonboolean-union?
+				     (environment-binding-values b)))
+		       (expression-binding-flow b)))
+		bs1)
+     (for-each
+      (lambda (b)
+       (for-each
+	(lambda (b1)
+	 (when (some-vector has-nonboolean-union?
+			    (environment-binding-values b1))
+	  (pp (list (abstract->concrete (expression-binding-expression b))
+		    (externalize-abstract-environment
+		     (free-variables (expression-binding-expression b))
+		     (environment-binding-values b1))))
+	  (newline)))
+	(expression-binding-flow b)))
+      bs1)
+     (internal-error "Some environment has a non-boolean union")))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
 
 ;;; Abstract Basis
@@ -5624,7 +5673,8 @@
 (define (abstract-zero-u u)
  (cond ((null? u) '(()))
        ((and (not *church-booleans?*) (vlad-boolean? u)) '(()))
-       ((abstract-real? u) '(0))
+       ;; This intentionally was made imprecise (from 0 to real).
+       ((abstract-real? u) '(real))
        ((primitive-procedure? u) '(()))
        ((closure? u)
 	(abstract-listify (map abstract-zero-v (abstract-base-values-u u))
@@ -6389,6 +6439,682 @@
 
 ;;; end stuff that belongs to brownfis
 
+;;; Code Generator
+
+;;; x#, s#, p, t, a, d, m#, f#, r, c
+
+(define (boolean-value? v) (and (= (length v) 2) (every boolean? v)))
+
+(define (void? v)
+ (when (up? v) (internal-error))
+ (or (boolean-value? v)
+     (begin
+      (unless (= (length v) 1) (internal-error))
+      (let ((u (first v)))
+       (not (or (eq? u 'real)
+		(and (not (scalar-proto-abstract-value? u))
+		     (not (every void? (aggregate-value-values u))))))))))
+
+(define (all-variables-in-expression e)
+ (cond ((variable-access-expression? e)
+	(list (variable-access-expression-variable e)))
+       ((lambda-expression? e)
+	(adjoinp variable=?
+		 (lambda-expression-variable e)
+		 (all-variables-in-expression (lambda-expression-body e))))
+       ((application? e)
+	(unionp variable=?
+		(all-variables-in-expression (application-callee e))
+		(all-variables-in-expression (application-argument e))))
+       ((letrec-expression? e)
+	(unionp
+	 variable=?
+	 (letrec-expression-procedure-variables e)
+	 (unionp variable=?
+		 (letrec-expression-argument-variables e)
+		 (unionp variable=?
+			 (reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+				 (map all-variables-in-expression
+				      (letrec-expression-bodies e))
+				 '())
+			 (all-variables-in-expression
+			  (letrec-expression-body e))))))
+       ((cons-expression? e)
+	(unionp variable=?
+		(all-variables-in-expression (cons-expression-car e))
+		(all-variables-in-expression (cons-expression-cdr e))))
+       (else (internal-error))))
+
+(define (all-variables bs)
+ (reduce
+  (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+  (map (lambda (b)
+	(all-variables-in-expression (expression-binding-expression b)))
+       bs)
+  '()))
+
+(define (generate-variable-name x xs)
+ (unless (memp variable=? x xs) (internal-error))
+ (list "x" (positionp variable=? x xs)))
+
+(define (generate-specifier v vs)
+ (when (up? v) (internal-error))
+ (when (void? v) (internal-error))
+ (cond
+  ((boolean-value? v) "int")
+  (else
+   (unless (= (length v) 1) (internal-error))
+   (let ((u (first v)))
+    (if (eq? u 'real)
+	"double"
+	(list "struct s" (positionp abstract-value=? v vs)))))))
+
+(define (generate-slot-names u xs)
+ (cond ((closure? u)
+	(map (lambda (x) (generate-variable-name x xs)) (closure-variables u)))
+       ((bundle? u) '("p" "t"))
+       ((tagged-pair? u) '("a" "d"))
+       (else (internal-error))))
+
+(define (generate-struct-declarations xs vs)
+ (map
+  (lambda (v)
+   (when (up? v) (internal-error))
+   (when (void? v) (internal-error))
+   (cond
+    ((boolean-value? v) '())
+    (else (unless (= (length v) 1) (internal-error))
+	  (let ((u (first v)))
+	   (if (eq? u 'real)
+	       '()
+	       (list (generate-specifier v vs)
+		     "{"
+		     (map (lambda (s v)
+			   (if (void? v)
+			       '()
+			       (list (generate-specifier v vs) " " s ";")))
+			  (generate-slot-names u xs)
+			  (aggregate-value-values u))
+		     "};"
+		     #\newline))))))
+  vs))
+
+(define (all-aggregate-abstract-values bs)
+ (reduce
+  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+  (map
+   (lambda (b)
+    (reduce
+     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+     (map (lambda (b)
+	   (remove-duplicatesp
+	    abstract-value=?
+	    (remove-if
+	     (lambda (v) (or (void? v) (boolean-value? v) (equal? v '(real))))
+	     (cons (environment-binding-value b)
+		   (vector->list (environment-binding-values b))))))
+	  (expression-binding-flow b))
+     '()))
+   bs)
+  '()))
+
+(define (all-aggregate-abstract-subvalues v)
+ (when (up? v) (internal-error))
+ (if (or (void? v) (boolean-value? v) (equal? v '(real)))
+     '()
+     (cons v
+	   (reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+		   (map all-aggregate-abstract-subvalues
+			(aggregate-value-values (first v)))
+		   '()))))
+
+(define (component? v1 v2)
+ (or (abstract-value=? v1 v2)
+     (and (= (length v2) 1)
+	  (scalar-proto-abstract-value? (first v2))
+	  (memp component? v1 (aggregate-value-values (first v2))))))
+
+(define (all-nested-aggregate-abstract-values bs)
+ (topological-sort
+  (lambda (v1 v2) (and (not (abstract-value=? v1 v2)) (component? v1 v2)))
+  (adjoinp
+   abstract-value=?
+   (list (vlad-cons '(real) '(real)))
+   (reduce
+    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+    (map all-aggregate-abstract-subvalues (all-aggregate-abstract-values bs))
+    '()))))
+
+(define (generate-maker-name v vs)
+ (unless (memp abstract-value=? v vs) (internal-error))
+ (list "m" (positionp abstract-value=? v vs)))
+
+(define (generate-function-name v1 v2 v1v2s)
+ (when (up? v1) (internal-error))
+ ;; needs work: To give error on improper call.
+ (unless (= (length v1) 1) (internal-error))
+ (cond
+  ((primitive-procedure? (first v1))
+   ((primitive-procedure-generator (first v1)) v2))
+  (else
+   (let ((v1v2 (list v1 v2)))
+    (unless (memp (lambda (v1v2a v1v2b)
+		   (and (abstract-value=? (first v1v2a) (first v1v2b))
+			(abstract-value=? (second v1v2a) (second v1v2b))))
+		  v1v2
+		  v1v2s)
+     (internal-error))
+    (list "f"
+	  (positionp (lambda (v1v2a v1v2b)
+		      (and (abstract-value=? (first v1v2a) (first v1v2b))
+			   (abstract-value=? (second v1v2a) (second v1v2b))))
+		     v1v2
+		     v1v2s))))))
+
+(define (commas-between-void codes)
+ (cond
+  ((null? codes) "void")
+  ((null? (rest codes)) (first codes))
+  (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '()))))
+
+(define (commas-between codes)
+ (cond
+  ((null? codes) '())
+  ((null? (rest codes)) (first codes))
+  (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '()))))
+
+(define (closure-variable v)
+ (when (up? v) (internal-error))
+ (unless (= (length v) 1) (internal-error))
+ (let ((u (first v)))
+  (cond ((nonrecursive-closure? u) (nonrecursive-closure-variable u))
+	((recursive-closure? u)
+	 (list-ref (recursive-closure-argument-variables u)
+		   (recursive-closure-index u)))
+	(else (internal-error)))))
+
+(define (closure-body v)
+ (when (up? v) (internal-error))
+ (unless (= (length v) 1) (internal-error))
+ (let ((u (first v)))
+  (cond ((nonrecursive-closure? u) (nonrecursive-closure-body u))
+	((recursive-closure? u)
+	 (list-ref (recursive-closure-bodies u) (recursive-closure-index u)))
+	(else (internal-error)))))
+
+(define (generate-maker-declarations xs vs)
+ ;; needs work: To not generate maker declarations for ifs.
+ (map
+  (lambda (v)
+   (list
+    (generate-specifier v vs)
+    " "
+    (generate-maker-name v vs)
+    "("
+    (commas-between-void
+     (removeq #f
+	      (map (lambda (s v)
+		    (if (void? v) #f (list (generate-specifier v vs) " " s)))
+		   (generate-slot-names (first v) xs)
+		   (aggregate-value-values (first v)))))
+    ");"
+    #\newline))
+  vs))
+
+(define (generate-maker-definitions xs vs)
+ ;; needs work: To not generate maker definitions for ifs.
+ (map
+  (lambda (v)
+   (list
+    (generate-specifier v vs)
+    " "
+    (generate-maker-name v vs)
+    "("
+    (commas-between-void
+     (removeq #f
+	      (map (lambda (s v)
+		    (if (void? v) #f (list (generate-specifier v vs) " " s)))
+		   (generate-slot-names (first v) xs)
+		   (aggregate-value-values (first v)))))
+    "){"
+    (generate-specifier v vs)
+    " r;"
+    (map (lambda (s v) (if (void? v) '() (list "r." s "=" s ";")))
+	 (generate-slot-names (first v) xs)
+	 (aggregate-value-values (first v)))
+    "return r;}"
+    #\newline))
+  vs))
+
+(define (all-functions bs)
+ (reduce
+  (lambda (v1v2sa v2v2sb)
+   (unionp (lambda (v1v2a v1v2b)
+	    (and (abstract-value=? (first v1v2a) (first v1v2b))
+		 (abstract-value=? (second v1v2a) (second v1v2b))))
+	   v1v2sa
+	   v2v2sb))
+  (map (lambda (b)
+	(let ((e (expression-binding-expression b)))
+	 (if (application? e)
+	     (remove-duplicatesp
+	      (lambda (v1v2a v1v2b)
+	       (and (abstract-value=? (first v1v2a) (first v1v2b))
+		    (abstract-value=? (second v1v2a) (second v1v2b))))
+	      (removeq
+	       #f
+	       (map (lambda (b)
+		     ;; needs work: blah blah
+		     (let ((v1 (abstract-eval1
+				(application-callee e)
+				(restrict-environment
+				 (environment-binding-values b)
+				 (free-variables e)
+				 (free-variables (application-callee e)))
+				bs)))
+		      (if (closure? (first v1))
+			  (list v1
+				;; needs work: blah blah
+				(abstract-eval1
+				 (application-argument e)
+				 (restrict-environment
+				  (environment-binding-values b)
+				  (free-variables e)
+				  (free-variables (application-argument e)))
+				 bs))
+			  #f)))
+		    (expression-binding-flow b))))
+	     '())))
+       bs)
+  '()))
+
+(define (generate-function-declarations bs xs vs v1v2s)
+ ;; needs work: To not generate function declarations for consequents and
+ ;;             alternates.
+ (map (lambda (v1v2)
+       (let ((v1 (first v1v2)) (v2 (second v1v2)))
+	(list
+	 (generate-specifier (abstract-apply v1 v2 bs) vs)
+	 " "
+	 (generate-function-name v1 v2 v1v2s)
+	 "("
+	 (commas-between-void
+	  (removeq
+	   #f
+	   (list
+	    (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+	    (if (void? v2)
+		#f
+		(list (generate-specifier v2 vs)
+		      " "
+		      (generate-variable-name (closure-variable v1) xs))))))
+	 ");"
+	 #\newline)))
+      v1v2s))
+
+(define (if? e vs bs)
+ ;; needs work: We don't check that the consequent/alternate is a cons
+ ;;             expression of two lambda expressions, that their arguments are
+ ;;             never used, and that the expression passed to those unused
+ ;;             arguments is ().
+ (and (application? e)
+      (application? (application-callee e))
+      (let ((v (abstract-eval1
+		(application-callee (application-callee e))
+		(restrict-environment
+		 vs
+		 (free-variables e)
+		 (free-variables (application-callee (application-callee e))))
+		bs)))
+       (and (= (length v) 1)
+	    (primitive-procedure? (first v))
+	    (eq? (primitive-procedure-name (first v)) 'if-procedure)))))
+
+(define (if-antecedent e)
+ (application-callee (application-callee e)))
+
+(define (if-consequent e)
+ (lambda-expression-body
+  (cons-expression-car (application-argument (application-callee e)))))
+
+(define (if-alternate e)
+ (lambda-expression-body
+  (cons-expression-cdr (application-argument (application-callee e)))))
+
+(define (generate-expression e vs xs bs xs1 vs1 v1v2s)
+ (let ((v (abstract-eval1 e vs bs)))
+  (when (up? v) (internal-error))
+  (cond
+   ((void? v)
+    (unless (= (length v) 1) (internal-error))
+    (let ((u (first v)))
+     (cond ((null? u) (internal-error))
+	   ((eq? u #t) "TRUE")
+	   ((eq? u #f) "FALSE")
+	   ((real? u) u)
+	   ((primitive-procedure? u) (internal-error))
+	   ;; needs work: void aggregate values
+	   ((nonrecursive-closure? u) (internal-error))
+	   ((recursive-closure? u) (internal-error))
+	   ((bundle? u) (internal-error))
+	   ((tagged-pair? u) (internal-error))
+	   (else (internal-error)))))
+   ((variable-access-expression? e)
+    (if (memp variable=? (variable-access-expression-variable e) xs)
+	(list
+	 "c."
+	 (generate-variable-name (variable-access-expression-variable e) xs1))
+	(generate-variable-name (variable-access-expression-variable e) xs1)))
+   ((lambda-expression? e)
+    (unless (= (length v) 1) (internal-error))
+    (list (generate-maker-name v vs1)
+	  "("
+	  (commas-between
+	   (removeq #f
+		    (map (lambda (x s v)
+			  (cond ((void? v) #f)
+				((memp variable=? x xs)
+				 (list "c." (generate-variable-name x xs1)))
+				(else (generate-variable-name x xs1))))
+			 (closure-variables (first v))
+			 (generate-slot-names (first v) xs1)
+			 (aggregate-value-values (first v)))))
+	  ")"))
+   ((if? e vs bs)
+    ;; needs work: blah blah
+    (let ((v1 (abstract-eval1
+	       (if-antecedent e)
+	       (restrict-environment
+		vs (free-variables e) (free-variables (if-antecedent e)))
+	       bs)))
+     (if (boolean-value? v1)
+	 ;; needs work: blah blah
+	 (let ((v2 (abstract-eval1
+		    (if-consequent e)
+		    (restrict-environment
+		     vs (free-variables e) (free-variables (if-consequent e)))
+		    bs))
+	       ;; needs work: blah blah
+	       (v3 (abstract-eval1
+		    (if-alternate e)
+		    (restrict-environment
+		     vs (free-variables e) (free-variables (if-alternate e)))
+		    bs)))
+	  (list "("
+		(generate-expression
+		 (if-antecedent e)
+		 (restrict-environment
+		  vs (free-variables e) (free-variables (if-antecedent e)))
+		 xs
+		 bs
+		 xs1
+		 vs1
+		 v1v2s)
+		"?"
+		(generate-expression
+		 (if-consequent e)
+		 (restrict-environment
+		  vs (free-variables e) (free-variables (if-consequent e)))
+		 xs
+		 bs
+		 xs1
+		 vs1
+		 v1v2s)
+		":"
+		(generate-expression
+		 (if-alternate e)
+		 (restrict-environment
+		  vs (free-variables e) (free-variables (if-alternate e)))
+		 xs
+		 bs
+		 xs1
+		 vs1
+		 v1v2s)
+		")"))
+	 (begin
+	  (unless (= (length v1) 1) (internal-error))
+	  (if (first v1)
+	      (generate-expression
+	       (if-consequent e)
+	       (restrict-environment
+		vs (free-variables e) (free-variables (if-consequent e)))
+	       xs
+	       bs
+	       xs1
+	       vs1
+	       v1v2s)
+	      (generate-expression
+	       (if-alternate e)
+	       (restrict-environment
+		vs (free-variables e) (free-variables (if-alternate e)))
+	       xs
+	       bs
+	       xs1
+	       vs1
+	       v1v2s))))))
+   ((application? e)
+    ;; needs work: blah blah
+    (let ((v1 (abstract-eval1
+	       (application-callee e)
+	       (restrict-environment
+		vs (free-variables e) (free-variables (application-callee e)))
+	       bs))
+	  (v2
+	   (abstract-eval1
+	    (application-argument e)
+	    (restrict-environment
+	     vs (free-variables e) (free-variables (application-argument e)))
+	    bs)))
+     (list
+      (generate-function-name v1 v2 v1v2s)
+      "("
+      (commas-between
+       ;; needs work: This unsoundly removes code that might do I/O, signal an
+       ;;             error, or not terminate.
+       (removeq
+	#f
+	(list
+	 (if (void? v1)
+	     #f
+	     (generate-expression
+	      (application-callee e)
+	      (restrict-environment
+	       vs (free-variables e) (free-variables (application-callee e)))
+	      xs
+	      bs
+	      xs1
+	      vs1
+	      v1v2s))
+	 (if (void? v2)
+	     #f
+	     (generate-expression
+	      (application-argument e)
+	      (restrict-environment
+	       vs (free-variables e) (free-variables (application-argument e)))
+	      xs
+	      bs
+	      xs1
+	      vs1
+	      v1v2s)))))
+      ")")))
+   ((letrec-expression? e)
+    ;; needs work: to create bindings for the recursive closure structs
+    (generate-expression
+     (letrec-expression-body e)
+     (let ((xs (free-variables e)))
+      (list->vector
+       (map (lambda (x)
+	     (if (memp variable=? x (letrec-expression-procedure-variables e))
+		 (let ((vs (restrict-environment
+			    vs
+			    xs
+			    (letrec-expression-bodies-free-variables e))))
+		  (make-abstract-recursive-closure
+		   (letrec-expression-bodies-free-variables e)
+		   vs
+		   (list->vector (letrec-expression-procedure-variables e))
+		   (list->vector (letrec-expression-argument-variables e))
+		   (list->vector (letrec-expression-bodies e))
+		   (positionp
+		    variable=? x (letrec-expression-procedure-variables e))
+		   e
+		   vs))
+		 (vector-ref vs (positionp variable=? x xs))))
+	    (free-variables (letrec-expression-body e)))))
+     xs
+     bs
+     xs1
+     vs1
+     v1v2s))
+   ((cons-expression? e)
+    (unless (= (length v) 1) (internal-error))
+    ;; needs work: blah blah
+    (let ((v1 (vlad-car v (cons-expression-tags e)))
+	  (v2 (vlad-cdr v (cons-expression-tags e))))
+     (list
+      (generate-maker-name v vs1)
+      "("
+      (commas-between
+       ;; needs work: This unsoundly removes code that might do I/O, signal an
+       ;;             error, or not terminate.
+       (removeq
+	#f
+	(list
+	 (if (void? v1)
+	     #f
+	     (generate-expression
+	      (cons-expression-car e)
+	      (restrict-environment
+	       vs (free-variables e) (free-variables (cons-expression-car e)))
+	      xs
+	      bs
+	      xs1
+	      vs1
+	      v1v2s))
+	 (if (void? v2)
+	     #f
+	     (generate-expression
+	      (cons-expression-cdr e)
+	      (restrict-environment
+	       vs (free-variables e) (free-variables (cons-expression-cdr e)))
+	      xs
+	      bs
+	      xs1
+	      vs1
+	      v1v2s)))))
+      ")")))
+   (else (internal-error)))))
+
+(define (generate-function-definitions bs xs vs v1v2s)
+ ;; needs work: To not generate function definitions for consequents and
+ ;;             alternates.
+ (map (lambda (v1v2)
+       (let ((v1 (first v1v2)) (v2 (second v1v2)))
+	(list
+	 (generate-specifier (abstract-apply v1 v2 bs) vs)
+	 " "
+	 (generate-function-name v1 v2 v1v2s)
+	 "("
+	 (commas-between-void
+	  (removeq
+	   #f
+	   (list
+	    (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+	    (if (void? v2)
+		#f
+		(list (generate-specifier v2 vs)
+		      " "
+		      (generate-variable-name (closure-variable v1) xs))))))
+	 "){return "
+	 (generate-expression
+	  (closure-body v1)
+	  (abstract-apply-closure (lambda (e vs) vs) (first v1) v2)
+	  (free-variables (closure-body v1))
+	  bs
+	  xs
+	  vs
+	  v1v2s)
+	 ";}"
+	 #\newline)))
+      v1v2s))
+
+(define (generate e bs)
+ (let* ((xs (all-variables bs))
+	(vs (all-nested-aggregate-abstract-values bs))
+	(pair (generate-specifier
+	       (findp abstract-value=? (list (vlad-cons '(real) '(real))) vs)
+	       vs))
+	(v1v2s (all-functions bs)))
+  (list "#include <math.h>" #\newline
+	"#include <stdio.h>" #\newline
+	"#define car(x) x.a" #\newline
+	"#define cdr(x) x.d" #\newline
+	"#define TRUE (0==0)" #\newline
+	"#define FALSE (0!=0)" #\newline
+	(generate-struct-declarations xs vs)
+	(generate-maker-declarations xs vs)
+	"double add(" pair " x);" #\newline
+	"double minus(" pair " x);" #\newline
+	"double times(" pair " x);" #\newline
+	"double divide(" pair " x);" #\newline
+	"double atantwo(" pair " x);" #\newline
+	"int eq(" pair " x);" #\newline
+	"int lt(" pair " x);" #\newline
+	"int gt(" pair " x);" #\newline
+	"int le(" pair " x);" #\newline
+	"int ge(" pair " x);" #\newline
+	"int iszero(double x);" #\newline
+	"int positive(double x);" #\newline
+	"int negative(double x);" #\newline
+	"double read_real(void);" #\newline
+	"double id(double x);" #\newline
+	"double write_real(double x);" #\newline
+	(generate-function-declarations bs xs vs v1v2s)
+	"int main(void);" #\newline
+	(generate-maker-definitions xs vs)
+	"double add(" pair " x){return x.a+x.d;}" #\newline
+	"double minus(" pair " x){return x.a-x.d;}" #\newline
+	"double times(" pair " x){return x.a*x.d;}" #\newline
+	"double divide(" pair " x){return x.a/x.d;}" #\newline
+	"double atantwo(" pair " x){return atan2(x.a,x.d);}" #\newline
+	"int eq(" pair " x){return x.a==x.d;}" #\newline
+	"int lt(" pair " x){return x.a<x.d;}" #\newline
+	"int gt(" pair " x){return x.a>x.d;}" #\newline
+	"int le(" pair " x){return x.a<=x.d;}" #\newline
+	"int ge(" pair " x){return x.a>=x.d;}" #\newline
+	"int iszero(double x){return x==0;}" #\newline
+	"int positive(double x){return x<0;}" #\newline
+	"int negative(double x){return x>0;}" #\newline
+	"double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
+	#\newline
+	"double id(double x){return x;}" #\newline
+	"double write_real(double x){printf(\"%lf\\n\",x);return x;}" #\newline
+	(generate-function-definitions bs xs vs v1v2s)
+	(list "int main(void){"
+	      (generate-expression
+	       e
+	       (environment-binding-values
+		(first
+		 (expression-binding-flow (lookup-expression-binding e bs))))
+	       (free-variables e)
+	       bs
+	       xs
+	       vs
+	       v1v2s)
+	      ";return 0;}"
+	      #\newline))))
+
+(define (generate-file code pathname)
+ (call-with-output-file (replace-extension pathname "c")
+  (lambda (output-port)
+   (let loop ((code code))
+    (cond ((char? code) (write-char code output-port))
+	  ((string? code) (display code output-port))
+	  ((number? code) (write code output-port))
+	  ((pair? code) (loop (car code)) (loop (cdr code)))
+	  ((null? code) #f)
+	  (else (internal-error)))))))
+
 ;;; Primitives
 
 (define (divide x1 x2)
@@ -6451,12 +7177,12 @@
    (f (vlad-car x '()) (vlad-car x23 '()) (vlad-cdr x23 '())))))
 
 (define (define-primitive-procedure
-	 x procedure abstract-procedure forward reverse)
+	 x procedure abstract-procedure generator forward reverse)
  (set! *value-bindings*
        (cons (make-value-binding
 	      x
 	      (make-primitive-procedure
-	       x procedure abstract-procedure forward reverse 0))
+	       x procedure abstract-procedure generator forward reverse 0))
 	     *value-bindings*)))
 
 (define (evaluate-in-top-level-environment e)
@@ -6536,9 +7262,12 @@
 	    #f
 	    '#())
 	   #f))
+ ;; The following all real constants are wrapped in real yielding (real 0) and
+ ;; (real 2).
  (define-primitive-procedure '+
   (binary-real + "+")
   (abstract-binary-real + "+")
+  (lambda (v) "add")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6551,6 +7280,7 @@
  (define-primitive-procedure '-
   (binary-real - "-")
   (abstract-binary-real - "-")
+  (lambda (v) "minus")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6559,10 +7289,11 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (- x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons '() (cons (sensitivity y) (- 0 (sensitivity y)))))))))
+	    (cons '() (cons (sensitivity y) (- (real 0) (sensitivity y)))))))))
  (define-primitive-procedure '*
   (binary-real * "*")
   (abstract-binary-real * "*")
+  (lambda (v) "times")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6577,6 +7308,7 @@
  (define-primitive-procedure '/
   (binary-real divide "/")
   (abstract-binary-real divide "/")
+  (lambda (v) "divide")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6585,25 +7317,28 @@
       (/ (- (* x2 (perturbation x1)) (* x1 (perturbation x2))) (* x2 x2)))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
-     (cons (*j (/ x1 x2))
-	   (lambda ((sensitivity y))
-	    (cons '()
-		  (cons (/ (sensitivity y) x2)
-			(- 0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
+     (cons
+      (*j (/ x1 x2))
+      (lambda ((sensitivity y))
+       (cons '()
+	     (cons (/ (sensitivity y) x2)
+		   (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
+  (lambda (v) "sqrt")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (sqrt x) (/ (perturbation x) (* 2 (sqrt x))))))
+     (bundle (sqrt x) (/ (perturbation x) (* (real 2) (sqrt x))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (sqrt x))
 	   (lambda ((sensitivity y))
-	    (cons '() (/ (sensitivity y) (* 2 (sqrt x)))))))))
+	    (cons '() (/ (sensitivity y) (* (real 2) (sqrt x)))))))))
  (define-primitive-procedure 'exp
   (unary-real exp "exp")
   (abstract-unary-real exp "exp")
+  (lambda (v) "exp")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (exp x) (* (exp x) (perturbation x)))))
@@ -6615,6 +7350,7 @@
  (define-primitive-procedure 'log
   (unary-real log "log")
   (abstract-unary-real log "log")
+  (lambda (v) "log")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (log x) (/ (perturbation x) x))))
@@ -6625,6 +7361,7 @@
  (define-primitive-procedure 'sin
   (unary-real sin "sin")
   (abstract-unary-real sin "sin")
+  (lambda (v) "sin")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (sin x) (* (cos x) (perturbation x)))))
@@ -6636,17 +7373,19 @@
  (define-primitive-procedure 'cos
   (unary-real cos "cos")
   (abstract-unary-real cos "cos")
+  (lambda (v) "cos")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (cos x) (- 0 (* (sin x) (perturbation x))))))
+     (bundle (cos x) (- (real 0) (* (sin x) (perturbation x))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (cos x))
 	   (lambda ((sensitivity y))
-	    (cons '() (- 0 (* (sin x) (sensitivity y)))))))))
+	    (cons '() (- (real 0) (* (sin x) (sensitivity y)))))))))
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (abstract-binary-real atan "atan")
+  (lambda (v) "atantwo")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6658,7 +7397,7 @@
      (cons (*j (atan x2 x1))
 	   (lambda ((sensitivity y))
 	    (cons '()
-		  (cons (- 0
+		  (cons (- (real 0)
 			   (/ (* x2 (sensitivity y))
 			      (+ (* x1 x1) (* x2 x2))))
 			(/ (* x1 (sensitivity y))
@@ -6666,6 +7405,7 @@
  (define-primitive-procedure '=
   (binary-real-predicate = "=")
   (abstract-binary-real-predicate = "=")
+  (lambda (v) "eq")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (= x1 x2) '())))
   '(lambda ((reverse x))
@@ -6675,6 +7415,7 @@
  (define-primitive-procedure '<
   (binary-real-predicate < "<")
   (abstract-binary-real-predicate < "<")
+  (lambda (v) "lt")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (< x1 x2) '())))
   '(lambda ((reverse x))
@@ -6684,6 +7425,7 @@
  (define-primitive-procedure '>
   (binary-real-predicate > ">")
   (abstract-binary-real-predicate > ">")
+  (lambda (v) "gt")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (> x1 x2) '())))
   '(lambda ((reverse x))
@@ -6693,6 +7435,7 @@
  (define-primitive-procedure '<=
   (binary-real-predicate <= "<=")
   (abstract-binary-real-predicate <= "<=")
+  (lambda (v) "le")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (<= x1 x2) '())))
   '(lambda ((reverse x))
@@ -6702,6 +7445,7 @@
  (define-primitive-procedure '>=
   (binary-real-predicate >= ">=")
   (abstract-binary-real-predicate >= ">=")
+  (lambda (v) "ge")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (>= x1 x2) '())))
   '(lambda ((reverse x))
@@ -6711,6 +7455,7 @@
  (define-primitive-procedure 'zero?
   (unary-real-predicate zero? "zero?")
   (abstract-unary-real-predicate zero? "zero?")
+  (lambda (v) "iszero")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (zero? x) '())))
   '(lambda ((reverse x))
@@ -6719,6 +7464,7 @@
  (define-primitive-procedure 'positive?
   (unary-real-predicate positive? "positive?")
   (abstract-unary-real-predicate positive? "positive?")
+  (lambda (v) "positive")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (positive? x) '())))
   '(lambda ((reverse x))
@@ -6728,6 +7474,7 @@
  (define-primitive-procedure 'negative?
   (unary-real-predicate negative? "negative?")
   (abstract-unary-real-predicate negative? "negative?")
+  (lambda (v) "negative")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (negative? x) '())))
   '(lambda ((reverse x))
@@ -6737,6 +7484,7 @@
  (define-primitive-procedure 'null?
   (unary-predicate null? "null?")
   (abstract-unary-predicate null? "null?")
+  (lambda (v) (unimplemented "null?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (null? x) '())))
   '(lambda ((reverse x))
@@ -6745,6 +7493,7 @@
  (define-primitive-procedure 'boolean?
   (unary-predicate vlad-boolean? "boolean?")
   (abstract-unary-predicate vlad-boolean? "boolean?")
+  (lambda (v) (unimplemented "boolean?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (boolean? x) '())))
   '(lambda ((reverse x))
@@ -6753,6 +7502,7 @@
  (define-primitive-procedure 'real?
   (unary-predicate real? "real?")
   (abstract-unary-predicate real? "real?")
+  (lambda (v) (unimplemented "real?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (real? x) '())))
   '(lambda ((reverse x))
@@ -6761,6 +7511,7 @@
  (define-primitive-procedure 'pair?
   (unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
   (abstract-unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
+  (lambda (v) (unimplemented "pair?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (pair? x) '())))
   '(lambda ((reverse x))
@@ -6769,6 +7520,7 @@
  (define-primitive-procedure 'procedure?
   (unary-predicate vlad-procedure? "procedure?")
   (abstract-unary-predicate vlad-procedure? "procedure?")
+  (lambda (v) (unimplemented "procedure?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (procedure? x) '())))
   '(lambda ((reverse x))
@@ -6778,6 +7530,7 @@
  (define-primitive-procedure 'forward?
   (unary-predicate vlad-forward? "forward?")
   (abstract-unary-predicate vlad-forward? "forward?")
+  (lambda (v) (unimplemented "forward?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (forward? x) '())))
   '(lambda ((reverse x))
@@ -6786,6 +7539,7 @@
  (define-primitive-procedure 'reverse?
   (unary-predicate vlad-reverse? "reverse?")
   (abstract-unary-predicate vlad-reverse? "reverse?")
+  (lambda (v) (unimplemented "reverse?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (reverse? x) '())))
   '(lambda ((reverse x))
@@ -6795,6 +7549,7 @@
   (define-primitive-procedure 'if-procedure
    (ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
    (abstract-ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
+   (lambda (v) (compile-time-error "You used if-procedure"))
    '(lambda ((forward x))
      (let (((cons* x1 x2 x3) (primal (forward x)))
 	   ((cons* (perturbation x1) (perturbation x2) (perturbation x3))
@@ -6815,6 +7570,7 @@
   (define-primitive-procedure 'car
    (unary (lambda (x) (vlad-car x '())) "car")
    (unary (lambda (u) (abstract-vlad-car-u u '())) "car")
+   (lambda (v) "car")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
 	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
@@ -6827,6 +7583,7 @@
   (define-primitive-procedure 'cdr
    (unary (lambda (x) (vlad-cdr x '())) "cdr")
    (unary (lambda (u) (abstract-vlad-cdr-u u '())) "cdr")
+   (lambda (v) "cdr")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
 	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
@@ -6839,6 +7596,7 @@
  (define-primitive-procedure 'read-real
   (lambda (x) (read-real))
   (lambda (u) '(real))
+  (lambda (v) "read_real")
   ;; needs work: is this right?
   '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
   ;; needs work: is this right?
@@ -6848,9 +7606,11 @@
  (define-primitive-procedure 'real
   (unary-real identity "real")
   (abstract-unary-real (lambda (u) 'real) "real")
+  (lambda (v) "id")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle x (perturbation x))))
+     (bundle (real x) (real (perturbation x)))))
+  ;; needs work
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j x) (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
@@ -6858,6 +7618,8 @@
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write")
   (abstract-unary identity "write")
+  ;; needs work: a special case for now
+  (lambda (v) "write_real")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (write x) (perturbation x))))
@@ -6868,6 +7630,7 @@
  (define-primitive-procedure 'zero
   (unary zero "zero")
   (unary abstract-zero-u "zero")
+  (lambda (v) (unimplemented "zero"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (zero x) (zero (perturbation x)))))
@@ -6877,6 +7640,7 @@
  (define-primitive-procedure 'plus
   (binary plus "plus")
   (abstract-binary abstract-plus "plus")
+  (lambda (v) (unimplemented "plus"))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -6889,6 +7653,7 @@
  (define-primitive-procedure 'primal
   (unary primal "primal")
   (unary abstract-primal-u "primal")
+  (lambda (v) (unimplemented "primal"))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
 	  ((perturbation x-forward) (tangent (forward x-forward))))
@@ -6900,6 +7665,7 @@
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
   (unary abstract-tangent-u "tangent")
+  (lambda (v) (unimplemented "tangent"))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
 	  ((perturbation x-forward) (tangent (forward x-forward))))
@@ -6914,6 +7680,7 @@
  (define-primitive-procedure 'bundle
   (binary bundle "bundle")
   (abstract-binary-u->v abstract-bundle "bundle")
+  (lambda (v) (unimplemented "bundle"))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation (perturbation x2)))
@@ -6930,6 +7697,7 @@
  (define-primitive-procedure 'j*
   (unary j* "j*")
   (unary abstract-j*-u "j*")
+  (lambda (v) (unimplemented "j*"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (j* x) (j* (perturbation x)))))
@@ -6941,6 +7709,7 @@
  (define-primitive-procedure '*j
   (unary *j "*j")
   (unary abstract-*j-u "*j")
+  (lambda (v) (unimplemented "*j"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (*j x) (*j (perturbation x)))))
@@ -6953,6 +7722,7 @@
  (define-primitive-procedure '*j-inverse
   (unary *j-inverse "*j-inverse")
   (unary abstract-*j-inverse-u "*j-inverse")
+  (lambda (v) (unimplemented "*j-inverse"))
   '(lambda ((forward x-reverse))
     (let ((x-reverse (primal (forward x-reverse)))
 	  ((perturbation x-reverse) (tangent (forward x-reverse))))

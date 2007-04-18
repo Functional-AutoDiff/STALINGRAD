@@ -72,7 +72,8 @@
 		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one
 		  ("flow-analysis" flow-analysis?)
-		  ("flow-analysis-result" flow-analysis-result?))
+		  ("flow-analysis-result" flow-analysis-result?)
+		  ("compile" compile?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
@@ -151,6 +152,7 @@
  (set! *church-booleans?* church-booleans?)
  (set! *church-pairs?* church-pairs?)
  (set! *letrec-as-y?* letrec-as-y?)
+ (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
@@ -196,32 +198,42 @@
        (loop (rest es) (cons (first es) ds))
        (let ((e (expand-definitions (reverse ds) (first es))))
 	(syntax-check-expression! e)
-	(cond
-	 (flow-analysis?
-	  (let* ((result (abstract-parse e))
-		 (bs (flow-analysis (first result) (second result)))
-		 (bs1 (expression-binding-flow
-		       (lookup-expression-binding
-			(first result)
-			bs))))
-	   (unless (= (length bs1) 1) (internal-error))
-	   (pp (externalize-abstract-value
-		(environment-binding-value (first bs1))))
-	   (newline)
-	   (pp (externalize-abstract-analysis bs))
-	   (newline)))
-	 (flow-analysis-result?
-	  (let* ((result (abstract-parse e))
-		 (bs (expression-binding-flow
+	(let ((result (parse e)))
+	 (cond
+	  (flow-analysis?
+	   (let* ((bs (flow-analysis (first result) (second result)))
+		  (bs1 (expression-binding-flow
+			(lookup-expression-binding (first result) bs))))
+	    (unless (= (length bs1) 1) (internal-error))
+	    (pp (externalize-abstract-value
+		 (environment-binding-value (first bs1))))
+	    (newline)
+	    (pp (externalize-abstract-analysis bs))
+	    (newline)))
+	  (flow-analysis-result?
+	   (let ((bs (expression-binding-flow
 		      (lookup-expression-binding
 		       (first result)
 		       (flow-analysis (first result) (second result))))))
-	   (unless (= (length bs) 1) (internal-error))
-	   (pp (externalize-abstract-value
-		(environment-binding-value (first bs))))
-	   (newline)))
-	 (else
-	  (let ((result (parse e)))
+	    (unless (= (length bs) 1) (internal-error))
+	    (pp (externalize-abstract-value
+		 (environment-binding-value (first bs))))
+	    (newline)))
+	  (compile?
+	   (let ((bs (flow-analysis (first result) (second result))))
+	    ;; needs work: -db
+	    (when #t
+	     (pp (externalize-abstract-analysis bs))
+	     (newline))
+	    ;; needs work: This overwrites the code file for all but the last
+	    ;;             top-level expression. And it fails to delete the
+	    ;;             code file if there is no top-level expression.
+	    (generate-file (generate (first result) bs) pathname)
+	    ;; needs work: -c -k -cc -copt
+	    (system (format #f "gcc -o ~a -Wall ~a -lm"
+			    (strip-extension pathname)
+			    (replace-extension pathname "c")))))
+	  (else
 	   (when metered?
 	    (for-each (lambda (b)
 		       (let ((v (value-binding-value b)))
