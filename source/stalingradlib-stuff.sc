@@ -5679,8 +5679,7 @@
 (define (abstract-zero-u u)
  (cond ((null? u) '(()))
        ((and (not *church-booleans?*) (vlad-boolean? u)) '(()))
-       ;; This intentionally was made imprecise (from 0 to real).
-       ((abstract-real? u) '(real))
+       ((abstract-real? u) '(0))
        ((primitive-procedure? u) '(()))
        ((closure? u)
 	(abstract-listify (map abstract-zero-v (abstract-base-values-u u))
@@ -6451,17 +6450,19 @@
 
 (define (boolean-value? v) (and (= (length v) 2) (every boolean? v)))
 
+(define (abstract-real-value? v) (abstract-value=? v '(real)))
+
+(define (real-pair) (list (vlad-cons '(real) '(real))))
+
 (define (if-value? v) (and (= (length v) 2) (every nonrecursive-closure? v)))
 
 (define (void? v)
  (when (up? v) (internal-error))
  (and (not (boolean-value? v))
-      (begin
-       (unless (= (length v) 1) (internal-error))
-       (let ((u (first v)))
-	(not (or (eq? u 'real)
-		 (and (not (scalar-proto-abstract-value? u))
-		      (not (every void? (aggregate-value-values u))))))))))
+      (not (abstract-real-value? v))
+      (begin (unless (= (length v) 1) (internal-error))
+	     (or (scalar-proto-abstract-value? (first v))
+		 (every void? (aggregate-value-values (first v)))))))
 
 (define (all-variables-in-expression e)
  (cond ((variable-access-expression? e)
@@ -6502,18 +6503,18 @@
   '()))
 
 (define (generate-variable-name x xs)
- (unless (memp variable=? x xs) (internal-error))
- (list "x" (positionp variable=? x xs)))
+ (let ((i (positionp variable=? x xs)))
+  (unless i (internal-error))
+  (list "x" i)))
 
 (define (generate-specifier v vs)
  (when (up? v) (internal-error))
  (when (void? v) (internal-error))
  (cond ((boolean-value? v) "int")
-       (else (unless (= (length v) 1) (internal-error))
-	     (let ((u (first v)))
-	      (if (eq? u 'real)
-		  "double"
-		  (list "struct s" (positionp abstract-value=? v vs)))))))
+       ((abstract-real-value? v) "double")
+       (else (let ((i (positionp abstract-value=? v vs)))
+	      (unless i (internal-error))
+	      (list "struct s" i)))))
 
 (define (generate-slot-names u xs)
  (cond ((closure? u)
@@ -6527,21 +6528,18 @@
        (when (up? v) (internal-error))
        (when (void? v) (internal-error))
        (cond
-	((boolean-value? v) '())
+	((or (boolean-value? v) (abstract-real-value? v)) '())
 	(else (unless (= (length v) 1) (internal-error))
-	      (let ((u (first v)))
-	       (if (eq? u 'real)
-		   '()
-		   (list (generate-specifier v vs)
-			 "{"
-			 (map (lambda (s v)
-			       (if (void? v)
-				   '()
-				   (list (generate-specifier v vs) " " s ";")))
-			      (generate-slot-names u xs)
-			      (aggregate-value-values u))
-			 "};"
-			 #\newline))))))
+	      (list (generate-specifier v vs)
+		    "{"
+		    (map (lambda (s v)
+			  (if (void? v)
+			      '()
+			      (list (generate-specifier v vs) " " s ";")))
+			 (generate-slot-names (first v) xs)
+			 (aggregate-value-values (first v)))
+		    "};"
+		    #\newline))))
       vs))
 
 (define (all-aggregate-abstract-values bs)
@@ -6558,7 +6556,7 @@
 			(or (boolean-value? v)
 			    (if-value? v)
 			    (void? v)
-			    (equal? v '(real))))
+			    (abstract-real-value? v)))
 		       (cons (environment-binding-value b)
 			     (vector->list (environment-binding-values b))))))
 	  (expression-binding-flow b))
@@ -6568,13 +6566,35 @@
 
 (define (all-aggregate-abstract-subvalues v)
  (when (up? v) (internal-error))
- (if (or (boolean-value? v) (if-value? v) (void? v) (equal? v '(real)))
+ (if (or (boolean-value? v)
+	 (if-value? v)
+	 (void? v)
+	 (abstract-real-value? v))
      '()
-     (cons v
-	   (reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		   (map all-aggregate-abstract-subvalues
-			(aggregate-value-values (first v)))
-		   '()))))
+     (begin
+      (unless (= (length v) 1) (internal-error))
+      (cons v
+	    (reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+		    (map all-aggregate-abstract-subvalues
+			 (aggregate-value-values (first v)))
+		    '())))))
+
+(define (all-abstract-subvalues-for-bundle v v-perturbation)
+ (when (or (up? v) (up? v-perturbation)) (internal-error))
+ (cons (list (vlad-cons v v-perturbation))
+       (if (or (and (boolean-value? v) (void? v-perturbation))
+	       (and (abstract-real-value? v)
+		    (or (abstract-real-value? v) (void? v-perturbation)))
+	       (and (void? v)
+		    (or (abstract-real-value? v) (void? v-perturbation))))
+	   '()
+	   (begin (unless (and (= (length v) 1) (= (length v-perturbation) 1))
+		   (internal-error))
+		  (reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+			  (map all-abstract-subvalues-for-bundle
+			       (aggregate-value-values (first v))
+			       (aggregate-value-values (first v-perturbation)))
+			  '())))))
 
 (define (component? v1 v2)
  (or (abstract-value=? v1 v2)
@@ -6588,32 +6608,27 @@
    (lambda (v1 v2) (and (not (abstract-value=? v1 v2)) (component? v1 v2)))
    (adjoinp
     abstract-value=?
-    (list (vlad-cons '(real) '(real)))
+    (real-pair)
     (reduce
      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
      (map all-aggregate-abstract-subvalues (all-aggregate-abstract-values bs))
      '())))))
 
-(define (generate-maker-name v vs)
- (unless (memp abstract-value=? v vs) (internal-error))
- (list "m" (positionp abstract-value=? v vs)))
+(define (generate-builtin-name s v vs)
+ (let ((i (positionp abstract-value=? v vs)))
+  (unless i (internal-error))
+  (list s i)))
 
 (define (generate-function-name v1 v2 v1v2s)
  (when (up? v1) (internal-error))
  (unless (= (length v1) 1) (internal-error))
- (let ((v1v2 (list v1 v2)))
-  (unless (memp (lambda (v1v2a v1v2b)
-		 (and (abstract-value=? (first v1v2a) (first v1v2b))
-		      (abstract-value=? (second v1v2a) (second v1v2b))))
-		v1v2
-		v1v2s)
-   (internal-error))
-  (list "f"
-	(positionp (lambda (v1v2a v1v2b)
-		    (and (abstract-value=? (first v1v2a) (first v1v2b))
-			 (abstract-value=? (second v1v2a) (second v1v2b))))
-		   v1v2
-		   v1v2s))))
+ (let ((i (positionp (lambda (v1v2a v1v2b)
+		      (and (abstract-value=? (first v1v2a) (first v1v2b))
+			   (abstract-value=? (second v1v2a) (second v1v2b))))
+		     (list v1 v2)
+		     v1v2s)))
+  (unless i (internal-error))
+  (list "f" i)))
 
 (define (commas-between-void codes)
  (cond
@@ -6646,15 +6661,16 @@
 	 (vector-ref (recursive-closure-bodies u) (recursive-closure-index u)))
 	(else (internal-error)))))
 
-(define (generate-maker-declarations xs vs)
- ;; needs work: To not generate maker declarations for ifs.
+(define (generate-constructor-declarations xs vs)
+ ;; needs work: To not generate constructor declarations for ifs.
  (map
   (lambda (v)
+   (unless (= (length v) 1) (internal-error))
    (list
-    "static "
+    "static inline "
     (generate-specifier v vs)
     " "
-    (generate-maker-name v vs)
+    (generate-builtin-name "m" v vs)
     "("
     (commas-between-void
      (removeq #f
@@ -6666,15 +6682,16 @@
     #\newline))
   vs))
 
-(define (generate-maker-definitions xs vs)
- ;; needs work: To not generate maker definitions for ifs.
+(define (generate-constructor-definitions xs vs)
+ ;; needs work: To not generate constructor definitions for ifs.
  (map
   (lambda (v)
+   (unless (= (length v) 1) (internal-error))
    (list
-    "static "
+    "static inline "
     (generate-specifier v vs)
     " "
-    (generate-maker-name v vs)
+    (generate-builtin-name "m" v vs)
     "("
     (commas-between-void
      (removeq #f
@@ -6820,7 +6837,7 @@
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
     (unless (= (length v) 1) (internal-error))
-    (list (generate-maker-name v vs1)
+    (list (generate-builtin-name "m" v vs1)
 	  "("
 	  (commas-between
 	   (removeq #f
@@ -6916,10 +6933,11 @@
 	    (restrict-environment
 	     vs (free-variables e) (free-variables (application-argument e)))
 	    bs)))
+     (unless (= (length v1) 1) (internal-error))
      ;; needs work: To give an error on improper call.
      (if (primitive-procedure? (first v1))
 	 (list
-	  ((primitive-procedure-generator (first v1)) v2)
+	  ((primitive-procedure-generator (first v1)) v2 vs1)
 	  "("
 	  ;; needs work: This unsoundly removes the code from the callee, and
 	  ;;             possibly the argument, that might do I/O, signal an
@@ -6974,7 +6992,6 @@
 				    v1v2s)))))
 	       ")"))))
    ((letrec-expression? e)
-    ;; needs work: to create bindings for the recursive closure structs
     (generate-expression
      (letrec-expression-body e)
      (let ((xs (free-variables e)))
@@ -7016,7 +7033,7 @@
 		vs (free-variables e) (free-variables (cons-expression-cdr e)))
 	       bs)))
      (list
-      (generate-maker-name v vs1)
+      (generate-builtin-name "m" v vs1)
       "("
       (commas-between
        ;; needs work: This unsoundly removes code that might do I/O, signal an
@@ -7140,6 +7157,7 @@
 	    (restrict-environment
 	     vs (free-variables e) (free-variables (application-argument e)))
 	    bs)))
+     (unless (= (length v1) 1) (internal-error))
      ;; needs work: To give an error on improper call.
      (if (primitive-procedure? (first v1))
 	 ;; needs work: This unsoundly removes the code from the callee, and
@@ -7158,8 +7176,8 @@
 	      xs1
 	      vs1
 	      v1v2s))
-	 ;; needs work: This unsoundly removes code that might do I/O,
-	 ;;             signal an error, or not terminate.
+	 ;; needs work: This unsoundly removes code that might do I/O, signal
+	 ;;             an error, or not terminate.
 	 (list (if (void? v1)
 		   '()
 		   (generate-letrec-bindings
@@ -7207,21 +7225,23 @@
 		 vs)))
 	(if (void? v)
 	    '()
-	    (list (generate-specifier v vs1)
-		  " "
-		  (generate-variable-name x xs1)
-		  "="
-		  (generate-maker-name v vs1)
-		  "("
-		  (commas-between
-		   (removeq
-		    #f
-		    (map (lambda (x s v)
-			  (if (void? v) #f (generate-reference x xs2 xs xs1)))
-			 (closure-variables (first v))
-			 (generate-slot-names (first v) xs1)
-			 (aggregate-value-values (first v)))))
-		  ");"))))
+	    (begin
+	     (unless (= (length v) 1) (internal-error))
+	     (list (generate-specifier v vs1)
+		   " "
+		   (generate-variable-name x xs1)
+		   "="
+		   (generate-builtin-name "m" v vs1)
+		   "("
+		   (commas-between
+		    (removeq
+		     #f
+		     (map (lambda (x s v)
+			   (if (void? v) #f (generate-reference x xs2 xs xs1)))
+			  (closure-variables (first v))
+			  (generate-slot-names (first v) xs1)
+			  (aggregate-value-values (first v)))))
+		   ");")))))
       (letrec-expression-procedure-variables e))
      (generate-letrec-bindings
       (letrec-expression-body e)
@@ -7300,6 +7320,7 @@
    (let* ((v1 (first v1v2))
 	  (v2 (second v1v2))
 	  (v3 (abstract-apply v1 v2 bs)))
+    (unless (= (length v1) 1) (internal-error))
     (if (void? v3)
 	'()
 	(list
@@ -7350,13 +7371,238 @@
 	 #\newline))))
   v1v2s))
 
+(define (all-ad s bs)
+ (reduce
+  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+  (map
+   all-aggregate-abstract-subvalues
+   (reduce
+    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+    (map (lambda (b)
+	  (let ((e (expression-binding-expression b)))
+	   (if (application? e)
+	       (remove-duplicatesp
+		abstract-value=?
+		(removeq
+		 #f
+		 (map (lambda (b)
+		       (let ((v1 (abstract-eval1
+				  (application-callee e)
+				  (restrict-environment
+				   (environment-binding-values b)
+				   (free-variables e)
+				   (free-variables (application-callee e)))
+				  bs)))
+			(if (and (= (length v1) 1)
+				 (primitive-procedure? (first v1))
+				 (eq? (primitive-procedure-name (first v1)) s))
+			    (abstract-eval1
+			     (application-argument e)
+			     (restrict-environment
+			      (environment-binding-values b)
+			      (free-variables e)
+			      (free-variables (application-argument e)))
+			     bs)
+			    #f)))
+		      (expression-binding-flow b))))
+	       '())))
+	 bs)
+    '()))
+  '()))
+
+(define (all-bundles bs)
+ (reduce
+  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+  (map (lambda (v)
+	(unless (= (length v) 1) (internal-error))
+	(all-abstract-subvalues-for-bundle
+	 (abstract-vlad-car-u (first v) '())
+	 (abstract-vlad-cdr-u (first v) '())))
+       (reduce
+	(lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+	(map (lambda (b)
+	      (let ((e (expression-binding-expression b)))
+	       (if (application? e)
+		   (remove-duplicatesp
+		    abstract-value=?
+		    (removeq
+		     #f
+		     (map (lambda (b)
+			   (let ((v1 (abstract-eval1
+				      (application-callee e)
+				      (restrict-environment
+				       (environment-binding-values b)
+				       (free-variables e)
+				       (free-variables (application-callee e)))
+				      bs)))
+			    (if (and (= (length v1) 1)
+				     (primitive-procedure? (first v1))
+				     (eq? (primitive-procedure-name (first v1))
+					  'bundle))
+				(abstract-eval1
+				 (application-argument e)
+				 (restrict-environment
+				  (environment-binding-values b)
+				  (free-variables e)
+				  (free-variables (application-argument e)))
+				 bs)
+				#f)))
+			  (expression-binding-flow b))))
+		   '())))
+	     bs)
+	'()))
+  '()))
+
+(define (generate-ad-declarations f s vs1 vs)
+ (map (lambda (v)
+       (let ((v1 (f v)))
+	(if (void? v1)
+	    '()
+	    (list "static inline "
+		  (generate-specifier v1 vs)
+		  " "
+		  (generate-builtin-name s v vs)
+		  "("
+		  (generate-specifier v vs)
+		  " x);"
+		  #\newline))))
+      vs1))
+
+(define (generate-primal-definitions vs1 xs vs)
+ (map
+  (lambda (v)
+   (let ((v1 (abstract-primal-v v)))
+    (if (void? v1)
+	'()
+	(begin
+	 (unless (= (length v) 1) (internal-error))
+	 (list
+	  "static inline "
+	  (generate-specifier v1 vs)
+	  " "
+	  (generate-builtin-name "p" v vs)
+	  "("
+	  (generate-specifier v vs)
+	  " x){return "
+	  (if (or (boolean-value? v1) (abstract-real-value? v1))
+	      "x.p"
+	      (list
+	       (generate-builtin-name "m" v1 vs)
+	       "("
+	       (commas-between
+		(removeq
+		 #f
+		 (map
+		  (lambda (s v)
+		   (if (void? v)
+		       #f
+		       (list (generate-builtin-name "p" v vs) "(x." s ")")))
+		  (generate-slot-names (first v) xs)
+		  (aggregate-value-values (first v)))))
+	       ")"))
+	  ";}"
+	  #\newline)))))
+  vs1))
+
+(define (generate-tangent-definitions vs1 xs vs)
+ (map
+  (lambda (v)
+   (let ((v1 (abstract-tangent-v v)))
+    (if (void? v1)
+	'()
+	(begin
+	 (unless (= (length v) 1) (internal-error))
+	 (list
+	  "static inline "
+	  (generate-specifier v1 vs)
+	  " "
+	  (generate-builtin-name "t" v vs)
+	  "("
+	  (generate-specifier v vs)
+	  " x){return "
+	  (if (abstract-real-value? v1)
+	      "x.t"
+	      (list
+	       (generate-builtin-name "m" v1 vs)
+	       "("
+	       (commas-between
+		(removeq
+		 #f
+		 (map
+		  (lambda (s v)
+		   (if (void? v)
+		       #f
+		       (list (generate-builtin-name "t" v vs) "(x." s ")")))
+		  (generate-slot-names (first v) xs)
+		  (aggregate-value-values (first v)))))
+	       ")"))
+	  ";}"
+	  #\newline)))))
+  vs1))
+
+(define (generate-bundle-definitions vs1 xs vs)
+ (map
+  (lambda (v)
+   (unless (= (length v) 1) (internal-error))
+   (let* ((v1 (abstract-vlad-car-u (first v) '()))
+	  (v2 (abstract-vlad-cdr-u (first v) '()))
+	  (v3 (abstract-bundle v1 v2)))
+    (unless (= (length v3) 1) (internal-error))
+    (if (void? v3)
+	'()
+	(list
+	 "static inline "
+	 (generate-specifier v3 vs)
+	 " "
+	 (generate-builtin-name "b" v vs)
+	 "("
+	 (generate-specifier v vs)
+	 " x){return "
+	 (if (or (boolean-value? v1)
+		 (begin (unless (= (length v1) 1) (internal-error))
+			(abstract-real? (first v1))))
+	     (list
+	      (generate-builtin-name "m" v3 vs)
+	      "("
+	      (commas-between
+	       (removeq
+		#f (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d"))))
+	      ")")
+	     (list
+	      (generate-builtin-name "m" v3 vs)
+	      "("
+	      (commas-between
+	       (removeq
+		#f
+		(map (lambda (s v)
+		      (if (void? v)
+			  #f
+			  (let ((v (list (vlad-cons (abstract-primal-v v)
+						    (abstract-tangent-v v)))))
+			   (list (generate-builtin-name "b" v vs)
+				 "("
+				 (generate-builtin-name "m" v vs)
+				 "(x.a."
+				 s
+				 ",x.d."
+				 s
+				 "))"))))
+		     (generate-slot-names (first v3) xs)
+		     (aggregate-value-values (first v3)))))
+	      ")"))
+	 ";}"
+	 #\newline))))
+  vs1))
+
 (define (generate e bs)
  (let* ((xs (all-variables bs))
 	(vs (all-nested-aggregate-abstract-values bs))
 	(pair (generate-specifier
-	       (findp abstract-value=? (list (vlad-cons '(real) '(real))) vs)
-	       vs))
-	(v1v2s (all-functions bs)))
+	       (findp abstract-value=? (real-pair) vs) vs))
+	(v1v2s (all-functions bs))
+	(vs1 (all-ad 'primal bs))
+	(vs2 (all-ad 'tangent bs))
+	(vs3 (all-bundles bs)))
   (list "#include <math.h>" #\newline
 	"#include <stdio.h>" #\newline
 	"#define car(x) x.a" #\newline
@@ -7364,43 +7610,57 @@
 	"#define TRUE (0==0)" #\newline
 	"#define FALSE (0!=0)" #\newline
 	(generate-struct-declarations xs vs)
-	(generate-maker-declarations xs vs)
-	"static double add(" pair " x);" #\newline
-	"static double minus(" pair " x);" #\newline
-	"static double times(" pair " x);" #\newline
-	"static double divide(" pair " x);" #\newline
-	"static double atantwo(" pair " x);" #\newline
-	"static int eq(" pair " x);" #\newline
-	"static int lt(" pair " x);" #\newline
-	"static int gt(" pair " x);" #\newline
-	"static int le(" pair " x);" #\newline
-	"static int ge(" pair " x);" #\newline
-	"static int iszero(double x);" #\newline
-	"static int positive(double x);" #\newline
-	"static int negative(double x);" #\newline
-	"static double read_real(void);" #\newline
-	"static double id(double x);" #\newline
-	"static double write_real(double x);" #\newline
+	(generate-constructor-declarations xs vs)
+	(generate-ad-declarations abstract-primal-v "p" vs1 vs)
+	(generate-ad-declarations abstract-tangent-v "t" vs2 vs)
+	(generate-ad-declarations
+	 (lambda (v)
+	  (unless (= (length v) 1) (internal-error))
+	  (abstract-bundle (abstract-vlad-car-u (first v) '())
+			   (abstract-vlad-cdr-u (first v) '())))
+	 "b"
+	 vs3
+	 vs)
+	"static inline double add(" pair " x);" #\newline
+	"static inline double minus(" pair " x);" #\newline
+	"static inline double times(" pair " x);" #\newline
+	"static inline double divide(" pair " x);" #\newline
+	"static inline double atantwo(" pair " x);" #\newline
+	"static inline int eq(" pair " x);" #\newline
+	"static inline int lt(" pair " x);" #\newline
+	"static inline int gt(" pair " x);" #\newline
+	"static inline int le(" pair " x);" #\newline
+	"static inline int ge(" pair " x);" #\newline
+	"static inline int iszero(double x);" #\newline
+	"static inline int positive(double x);" #\newline
+	"static inline int negative(double x);" #\newline
+	"static inline double read_real(void);" #\newline
+	"static inline double id(double x);" #\newline
+	"static inline double write_real(double x);" #\newline
 	(generate-function-declarations bs xs vs v1v2s)
 	"int main(void);" #\newline
-	(generate-maker-definitions xs vs)
-	"static double add(" pair " x){return x.a+x.d;}" #\newline
-	"static double minus(" pair " x){return x.a-x.d;}" #\newline
-	"static double times(" pair " x){return x.a*x.d;}" #\newline
-	"static double divide(" pair " x){return x.a/x.d;}" #\newline
-	"static double atantwo(" pair " x){return atan2(x.a,x.d);}" #\newline
-	"static int eq(" pair " x){return x.a==x.d;}" #\newline
-	"static int lt(" pair " x){return x.a<x.d;}" #\newline
-	"static int gt(" pair " x){return x.a>x.d;}" #\newline
-	"static int le(" pair " x){return x.a<=x.d;}" #\newline
-	"static int ge(" pair " x){return x.a>=x.d;}" #\newline
-	"static int iszero(double x){return x==0;}" #\newline
-	"static int positive(double x){return x<0;}" #\newline
-	"static int negative(double x){return x>0;}" #\newline
-	"static double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
+	(generate-constructor-definitions xs vs)
+	(generate-primal-definitions vs1 xs vs)
+	(generate-tangent-definitions vs2 xs vs)
+	(generate-bundle-definitions vs3 xs vs)
+	"static inline double add(" pair " x){return x.a+x.d;}" #\newline
+	"static inline double minus(" pair " x){return x.a-x.d;}" #\newline
+	"static inline double times(" pair " x){return x.a*x.d;}" #\newline
+	"static inline double divide(" pair " x){return x.a/x.d;}" #\newline
+	"static inline double atantwo(" pair " x){return atan2(x.a,x.d);}"
 	#\newline
-	"static double id(double x){return x;}" #\newline
-	"static double write_real(double x){printf(\"%lf\\n\",x);return x;}"
+	"static inline int eq(" pair " x){return x.a==x.d;}" #\newline
+	"static inline int lt(" pair " x){return x.a<x.d;}" #\newline
+	"static inline int gt(" pair " x){return x.a>x.d;}" #\newline
+	"static inline int le(" pair " x){return x.a<=x.d;}" #\newline
+	"static inline int ge(" pair " x){return x.a>=x.d;}" #\newline
+	"static inline int iszero(double x){return x==0;}" #\newline
+	"static inline int positive(double x){return x<0;}" #\newline
+	"static inline int negative(double x){return x>0;}" #\newline
+	"static inline double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
+	#\newline
+	"static inline double id(double x){return x;}" #\newline
+	"static inline double write_real(double x){printf(\"%lf\\n\",x);return x;}"
 	#\newline
 	(generate-function-definitions bs xs vs v1v2s)
 	(list "int main(void){"
@@ -7587,12 +7847,12 @@
 	    #f
 	    '#())
 	   #f))
- ;; The following all real constants are wrapped in real yielding (real 0) and
- ;; (real 2).
+ ;; In the following, all real constants are wrapped in real yielding (real 0)
+ ;; and (real 2).
  (define-primitive-procedure '+
   (binary-real + "+")
   (abstract-binary-real + "+")
-  (lambda (v) "add")
+  (lambda (v vs) "add")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7605,7 +7865,7 @@
  (define-primitive-procedure '-
   (binary-real - "-")
   (abstract-binary-real - "-")
-  (lambda (v) "minus")
+  (lambda (v vs) "minus")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7618,7 +7878,7 @@
  (define-primitive-procedure '*
   (binary-real * "*")
   (abstract-binary-real * "*")
-  (lambda (v) "times")
+  (lambda (v vs) "times")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7633,7 +7893,7 @@
  (define-primitive-procedure '/
   (binary-real divide "/")
   (abstract-binary-real divide "/")
-  (lambda (v) "divide")
+  (lambda (v vs) "divide")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7651,7 +7911,7 @@
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
-  (lambda (v) "sqrt")
+  (lambda (v vs) "sqrt")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (sqrt x) (/ (perturbation x) (* (real 2) (sqrt x))))))
@@ -7663,7 +7923,7 @@
  (define-primitive-procedure 'exp
   (unary-real exp "exp")
   (abstract-unary-real exp "exp")
-  (lambda (v) "exp")
+  (lambda (v vs) "exp")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (exp x) (* (exp x) (perturbation x)))))
@@ -7675,7 +7935,7 @@
  (define-primitive-procedure 'log
   (unary-real log "log")
   (abstract-unary-real log "log")
-  (lambda (v) "log")
+  (lambda (v vs) "log")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (log x) (/ (perturbation x) x))))
@@ -7686,7 +7946,7 @@
  (define-primitive-procedure 'sin
   (unary-real sin "sin")
   (abstract-unary-real sin "sin")
-  (lambda (v) "sin")
+  (lambda (v vs) "sin")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (sin x) (* (cos x) (perturbation x)))))
@@ -7698,7 +7958,7 @@
  (define-primitive-procedure 'cos
   (unary-real cos "cos")
   (abstract-unary-real cos "cos")
-  (lambda (v) "cos")
+  (lambda (v vs) "cos")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (cos x) (- (real 0) (* (sin x) (perturbation x))))))
@@ -7710,7 +7970,7 @@
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (abstract-binary-real atan "atan")
-  (lambda (v) "atantwo")
+  (lambda (v vs) "atantwo")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7730,7 +7990,7 @@
  (define-primitive-procedure '=
   (binary-real-predicate = "=")
   (abstract-binary-real-predicate = "=")
-  (lambda (v) "eq")
+  (lambda (v vs) "eq")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (= x1 x2) '())))
   '(lambda ((reverse x))
@@ -7740,7 +8000,7 @@
  (define-primitive-procedure '<
   (binary-real-predicate < "<")
   (abstract-binary-real-predicate < "<")
-  (lambda (v) "lt")
+  (lambda (v vs) "lt")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (< x1 x2) '())))
   '(lambda ((reverse x))
@@ -7750,7 +8010,7 @@
  (define-primitive-procedure '>
   (binary-real-predicate > ">")
   (abstract-binary-real-predicate > ">")
-  (lambda (v) "gt")
+  (lambda (v vs) "gt")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (> x1 x2) '())))
   '(lambda ((reverse x))
@@ -7760,7 +8020,7 @@
  (define-primitive-procedure '<=
   (binary-real-predicate <= "<=")
   (abstract-binary-real-predicate <= "<=")
-  (lambda (v) "le")
+  (lambda (v vs) "le")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (<= x1 x2) '())))
   '(lambda ((reverse x))
@@ -7770,7 +8030,7 @@
  (define-primitive-procedure '>=
   (binary-real-predicate >= ">=")
   (abstract-binary-real-predicate >= ">=")
-  (lambda (v) "ge")
+  (lambda (v vs) "ge")
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))) (bundle (>= x1 x2) '())))
   '(lambda ((reverse x))
@@ -7780,7 +8040,7 @@
  (define-primitive-procedure 'zero?
   (unary-real-predicate zero? "zero?")
   (abstract-unary-real-predicate zero? "zero?")
-  (lambda (v) "iszero")
+  (lambda (v vs) "iszero")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (zero? x) '())))
   '(lambda ((reverse x))
@@ -7789,7 +8049,7 @@
  (define-primitive-procedure 'positive?
   (unary-real-predicate positive? "positive?")
   (abstract-unary-real-predicate positive? "positive?")
-  (lambda (v) "positive")
+  (lambda (v vs) "positive")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (positive? x) '())))
   '(lambda ((reverse x))
@@ -7799,7 +8059,7 @@
  (define-primitive-procedure 'negative?
   (unary-real-predicate negative? "negative?")
   (abstract-unary-real-predicate negative? "negative?")
-  (lambda (v) "negative")
+  (lambda (v vs) "negative")
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (negative? x) '())))
   '(lambda ((reverse x))
@@ -7809,7 +8069,7 @@
  (define-primitive-procedure 'null?
   (unary-predicate null? "null?")
   (abstract-unary-predicate null? "null?")
-  (lambda (v) (unimplemented "null?"))
+  (lambda (v vs) (unimplemented "null?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (null? x) '())))
   '(lambda ((reverse x))
@@ -7818,7 +8078,7 @@
  (define-primitive-procedure 'boolean?
   (unary-predicate vlad-boolean? "boolean?")
   (abstract-unary-predicate vlad-boolean? "boolean?")
-  (lambda (v) (unimplemented "boolean?"))
+  (lambda (v vs) (unimplemented "boolean?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (boolean? x) '())))
   '(lambda ((reverse x))
@@ -7827,7 +8087,7 @@
  (define-primitive-procedure 'real?
   (unary-predicate real? "real?")
   (abstract-unary-predicate real? "real?")
-  (lambda (v) (unimplemented "real?"))
+  (lambda (v vs) (unimplemented "real?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (real? x) '())))
   '(lambda ((reverse x))
@@ -7836,7 +8096,7 @@
  (define-primitive-procedure 'pair?
   (unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
   (abstract-unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
-  (lambda (v) (unimplemented "pair?"))
+  (lambda (v vs) (unimplemented "pair?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (pair? x) '())))
   '(lambda ((reverse x))
@@ -7845,7 +8105,7 @@
  (define-primitive-procedure 'procedure?
   (unary-predicate vlad-procedure? "procedure?")
   (abstract-unary-predicate vlad-procedure? "procedure?")
-  (lambda (v) (unimplemented "procedure?"))
+  (lambda (v vs) (unimplemented "procedure?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (procedure? x) '())))
   '(lambda ((reverse x))
@@ -7855,7 +8115,7 @@
  (define-primitive-procedure 'forward?
   (unary-predicate vlad-forward? "forward?")
   (abstract-unary-predicate vlad-forward? "forward?")
-  (lambda (v) (unimplemented "forward?"))
+  (lambda (v vs) (unimplemented "forward?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (forward? x) '())))
   '(lambda ((reverse x))
@@ -7864,7 +8124,7 @@
  (define-primitive-procedure 'reverse?
   (unary-predicate vlad-reverse? "reverse?")
   (abstract-unary-predicate vlad-reverse? "reverse?")
-  (lambda (v) (unimplemented "reverse?"))
+  (lambda (v vs) (unimplemented "reverse?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))) (bundle (reverse? x) '())))
   '(lambda ((reverse x))
@@ -7874,7 +8134,7 @@
   (define-primitive-procedure 'if-procedure
    (ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
    (abstract-ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
-   (lambda (v) (compile-time-error "You used if-procedure"))
+   (lambda (v vs) (compile-time-error "You used if-procedure"))
    '(lambda ((forward x))
      (let (((cons* x1 x2 x3) (primal (forward x)))
 	   ((cons* (perturbation x1) (perturbation x2) (perturbation x3))
@@ -7895,7 +8155,7 @@
   (define-primitive-procedure 'car
    (unary (lambda (x) (vlad-car x '())) "car")
    (unary (lambda (u) (abstract-vlad-car-u u '())) "car")
-   (lambda (v) "car")
+   (lambda (v vs) "car")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
 	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
@@ -7908,7 +8168,7 @@
   (define-primitive-procedure 'cdr
    (unary (lambda (x) (vlad-cdr x '())) "cdr")
    (unary (lambda (u) (abstract-vlad-cdr-u u '())) "cdr")
-   (lambda (v) "cdr")
+   (lambda (v vs) "cdr")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
 	   ((cons x1-tangent x2-tangent) (tangent (forward x))))
@@ -7921,7 +8181,7 @@
  (define-primitive-procedure 'read-real
   (lambda (x) (read-real))
   (lambda (u) '(real))
-  (lambda (v) "read_real")
+  (lambda (v vs) "read_real")
   ;; needs work: is this right?
   '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
   ;; needs work: is this right?
@@ -7931,7 +8191,7 @@
  (define-primitive-procedure 'real
   (unary-real identity "real")
   (abstract-unary-real (lambda (u) 'real) "real")
-  (lambda (v) "id")
+  (lambda (v vs) "id")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (real x) (real (perturbation x)))))
@@ -7943,8 +8203,9 @@
   (unary (lambda (x) ((if *pp?* pp write) (externalize x)) (newline) x)
 	 "write")
   (abstract-unary identity "write")
-  ;; needs work: a special case for now
-  (lambda (v) "write_real")
+  (lambda (v vs)
+   (unless (abstract-real-value? v) (unimplemented "write"))
+   "write_real")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (write x) (perturbation x))))
@@ -7955,7 +8216,7 @@
  (define-primitive-procedure 'zero
   (unary zero "zero")
   (unary abstract-zero-u "zero")
-  (lambda (v) (unimplemented "zero"))
+  (lambda (v vs) (unimplemented "zero"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (zero x) (zero (perturbation x)))))
@@ -7965,7 +8226,7 @@
  (define-primitive-procedure 'plus
   (binary plus "plus")
   (abstract-binary abstract-plus "plus")
-  (lambda (v) (unimplemented "plus"))
+  (lambda (v vs) (unimplemented "plus"))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
@@ -7978,7 +8239,7 @@
  (define-primitive-procedure 'primal
   (unary primal "primal")
   (unary abstract-primal-u "primal")
-  (lambda (v) (unimplemented "primal"))
+  (lambda (v vs) (generate-builtin-name "p" v vs))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
 	  ((perturbation x-forward) (tangent (forward x-forward))))
@@ -7990,7 +8251,7 @@
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
   (unary abstract-tangent-u "tangent")
-  (lambda (v) (unimplemented "tangent"))
+  (lambda (v vs) (generate-builtin-name "t" v vs))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
 	  ((perturbation x-forward) (tangent (forward x-forward))))
@@ -8005,7 +8266,7 @@
  (define-primitive-procedure 'bundle
   (binary bundle "bundle")
   (abstract-binary-u->v abstract-bundle "bundle")
-  (lambda (v) (unimplemented "bundle"))
+  (lambda (v vs) (generate-builtin-name "b" v vs))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation (perturbation x2)))
@@ -8022,7 +8283,7 @@
  (define-primitive-procedure 'j*
   (unary j* "j*")
   (unary abstract-j*-u "j*")
-  (lambda (v) (unimplemented "j*"))
+  (lambda (v vs) (unimplemented "j*"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (j* x) (j* (perturbation x)))))
@@ -8034,7 +8295,7 @@
  (define-primitive-procedure '*j
   (unary *j "*j")
   (unary abstract-*j-u "*j")
-  (lambda (v) (unimplemented "*j"))
+  (lambda (v vs) (unimplemented "*j"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (*j x) (*j (perturbation x)))))
@@ -8047,7 +8308,7 @@
  (define-primitive-procedure '*j-inverse
   (unary *j-inverse "*j-inverse")
   (unary abstract-*j-inverse-u "*j-inverse")
-  (lambda (v) (unimplemented "*j-inverse"))
+  (lambda (v vs) (unimplemented "*j-inverse"))
   '(lambda ((forward x-reverse))
     (let ((x-reverse (primal (forward x-reverse)))
 	  ((perturbation x-reverse) (tangent (forward x-reverse))))
