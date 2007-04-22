@@ -29,3 +29,7 @@ echo Compiling t12
 stalingrad -compile -no-warn t12
 echo Compiling t13
 stalingrad -compile -no-warn t13
+echo Compiling t14
+stalingrad -compile -no-warn t14
+echo Compiling t15
+stalingrad -compile -no-warn t15
