@@ -648,7 +648,11 @@
 				   (nonrecursive-closure-variables v1))
 			     (cons (nonrecursive-closure-variable v2)
 				   (nonrecursive-closure-variables v2)))
-	  ;; This assumes that the values are in the same order.
+	  ;; This assumes that the free variables in two alpha-equivalent
+	  ;; expressions are in the same order. Note that this is a weak notion
+	  ;; of equivalence. A stronger notion would attempt to find a
+	  ;; correspondence between the free variables that would allow them
+	  ;; to be contextually alpha equivalent.
 	  (every-vector vlad-equal?
 			(nonrecursive-closure-values v1)
 			(nonrecursive-closure-values v2)))
@@ -676,7 +680,7 @@
 	   (recursive-closure-argument-variables v2)
 	   (recursive-closure-bodies v1)
 	   (recursive-closure-bodies v2))
-	  ;; This assumes that the values are in the same order.
+	  ;; See the note above.
 	  (every-vector vlad-equal?
 			(recursive-closure-values v1)
 			(recursive-closure-values v2)))
@@ -1413,6 +1417,9 @@
     (else (internal-error))))))
 
 (define (alpha-equivalent? e1 e2 xs1 xs2)
+ ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
+ ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
+ ;; is assumed to be equivalent to the corresponding ex2_i.
  (or
   (and (variable-access-expression? e1)
        (variable-access-expression? e2)
@@ -2721,7 +2728,8 @@
 		 (nonrecursive-closure-variables x))
 	   (cons (nonrecursive-closure-variable x-perturbation)
 		 (nonrecursive-closure-variables x-perturbation)))
-	  ;; This assumes that the values are in the same order.
+	  ;; This assumes that the corresponding free variables in x and
+	  ;; x-perturbation are in the same order. See the note in vlad-equal?
 	  (every-vector legitimate?
 			(nonrecursive-closure-values x)
 			(nonrecursive-closure-values x-perturbation)))
@@ -2751,7 +2759,8 @@
 	   (recursive-closure-argument-variables x-perturbation)
 	   (recursive-closure-bodies x)
 	   (recursive-closure-bodies x-perturbation))
-	  ;; This assumes that the values are in the same order.
+	  ;; This assumes that the corresponding free variables in x and
+	  ;; x-perturbation are in the same order. See the note in vlad-equal?
 	  (every-vector legitimate?
 			(recursive-closure-values x)
 			(recursive-closure-values x-perturbation)))
@@ -2785,19 +2794,15 @@
 	      (new-lambda-expression (nonrecursive-closure-variable x)
 				     (nonrecursive-closure-body x))))
 	  (x1 (lambda-expression-variable e))
-	  (xs (free-variables e))
-	  (xs1 (map forwardify (nonrecursive-closure-variables x)))
-	  (xs2 (map forwardify
-		    (nonrecursive-closure-variables x-perturbation)))
-	  (vs1 (nonrecursive-closure-values x))
-	  (vs2 (nonrecursive-closure-values x-perturbation)))
+	  (xs (free-variables e)))
     (make-nonrecursive-closure
      xs
-     (list->vector
-      (map (lambda (x)
-	    (bundle-internal (vector-ref vs1 (positionp variable=? x xs1))
-			     (vector-ref vs2 (positionp variable=? x xs2))))
-	   xs))
+     ;; This assumes that the corresponding free variables in x,
+     ;; x-perturbation, and x-forward are in the same order. See the note in
+     ;; vlad-equal?
+     (map-vector bundle-internal
+		 (nonrecursive-closure-values x)
+		 (nonrecursive-closure-values x-perturbation))
      x1
      (index x1 xs (lambda-expression-body e))
      ;; needs work: tangent of bundle gives the index-expression and
@@ -2816,18 +2821,15 @@
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
 	       (map lambda-expression-body es)))
-	  (xs2 (append (vector->list xs1) xs))
-	  (xs3 (map forwardify (recursive-closure-variables x)))
-	  (xs4 (map forwardify (recursive-closure-variables x-perturbation)))
-	  (vs3 (recursive-closure-values x))
-	  (vs4 (recursive-closure-values x-perturbation)))
+	  (xs2 (append (vector->list xs1) xs)))
     (make-recursive-closure
      xs
-     (list->vector
-      (map (lambda (x)
-	    (bundle-internal (vector-ref vs3 (positionp variable=? x xs3))
-			     (vector-ref vs4 (positionp variable=? x xs4))))
-	   xs))
+     ;; This assumes that the corresponding free variables in x,
+     ;; x-perturbation, and x-forward are in the same order. See the note in
+     ;; vlad-equal?
+     (map-vector bundle-internal
+		 (recursive-closure-values x)
+		 (recursive-closure-values x-perturbation))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -5201,9 +5203,6 @@
 			bs)))
      (loop (cons (make-environment-binding
 		  (environment-binding-values b1)
-		  ;; We pick one range arbitrarily. We don't union the ranges
-		  ;; and leave it up to update-analysis-ranges to do that.
-		  ;; needs work: we no longer do the above
 		  (widen-abstract-value
 		   (abstract-value-union (environment-binding-value b1)
 					 (environment-binding-value b2))
@@ -5253,9 +5252,6 @@
 			     (abstract-environment-union
 			      (environment-binding-values (first b1-b2))
 			      (environment-binding-values (second b1-b2))))
-		 ;; We pick one range arbitrarily. We don't union the ranges
-		 ;; and leave it up to update-analysis-ranges to do that.
-		 ;; needs work: we no longer do the above
 		 (widen-abstract-value
 		  (abstract-value-union
 		   (environment-binding-value (first b1-b2))
@@ -5585,15 +5581,6 @@
 		      (some has-nonboolean-union? (aggregate-value-values u))))
 		v))))
 
-(define (has-union? v)
- ;; debugging
- (and (not (up? v))
-      (or (> (length v) 1)
-	  (some (lambda (u)
-		 (and (not (scalar-proto-abstract-value? u))
-		      (some has-union? (aggregate-value-values u))))
-		v))))
-
 (define (concrete-reals-in v)
  (if (up? v)
      '()
@@ -5732,7 +5719,7 @@
 	     (empty-abstract-value))))
 
 (define (abstract-zero-u u)
- ;; See note in zero.
+ ;; See the note in zero.
  (cond ((null? u) (list u))
        ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
        ((abstract-real? u) '(0))
@@ -5803,7 +5790,6 @@
 	     "Might attempt to take primal of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
-		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -5829,7 +5815,6 @@
 	     "Might attempt to take primal of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
-		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -5910,7 +5895,6 @@
 	     "Might attempt to take tangent of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
-		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -5936,7 +5920,6 @@
 	     "Might attempt to take tangent of a non-forward value" u-forward)
 	    (let ((b (find-if
 		      (lambda (b)
-		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
@@ -6044,27 +6027,23 @@
 			    (nonrecursive-closure-variables u))
 		      (cons (nonrecursive-closure-variable u-perturbation)
 			    (nonrecursive-closure-variables u-perturbation))))
-		(let* ((e (forward-transform
-			   (new-lambda-expression
-			    (nonrecursive-closure-variable u)
-			    (nonrecursive-closure-body u))))
-		       (xs1 (map forwardify
-				 (nonrecursive-closure-variables u)))
-		       (xs2
-			(map forwardify
-			     (nonrecursive-closure-variables u-perturbation)))
-		       (vs1 (nonrecursive-closure-values u))
-		       (vs2 (nonrecursive-closure-values u-perturbation)))
+		(let ((e (forward-transform
+			  (new-lambda-expression
+			   (nonrecursive-closure-variable u)
+			   (nonrecursive-closure-body u)))))
 		 (make-abstract-nonrecursive-closure
-		  (list->vector
-		   (map (lambda (x)
-			 (abstract-bundle-internal
-			  (vector-ref vs1 (positionp variable=? x xs1))
-			  (vector-ref vs2 (positionp variable=? x xs2))
-			  (cons v vs1-above)
-			  (cons v-perturbation vs2-above)
-			  (cons (cons v v-perturbation) cs)))
-			(free-variables e)))
+		  ;; This assumes that the corresponding free variables in u,
+		  ;; u-perturbation, and u-forward are in the same order. See
+		  ;; the note in vlad-equal?
+		  (map-vector (lambda (v1 v1-perturbation)
+			       (abstract-bundle-internal
+				v1
+				v1-perturbation
+				(cons v vs1-above)
+				(cons v-perturbation vs2-above)
+				(cons (cons v v-perturbation) cs)))
+			      (nonrecursive-closure-values u)
+			      (nonrecursive-closure-values u-perturbation))
 		  e
 		  ;; needs work: tangent of bundle gives the index-expression
 		  ;;             and index-environment of the primal
@@ -6110,23 +6089,21 @@
 		       (xs (letrec-recursive-closure-variables
 			    (vector->list xs1)
 			    (map lambda-expression-variable es)
-			    (map lambda-expression-body es)))
-		       (xs3 (map forwardify (recursive-closure-variables u)))
-		       (xs4 (map forwardify
-				 (recursive-closure-variables u-perturbation)))
-		       (vs3 (recursive-closure-values u))
-		       (vs4 (recursive-closure-values u-perturbation)))
+			    (map lambda-expression-body es))))
 		 (make-abstract-recursive-closure
 		  xs
-		  (list->vector
-		   (map (lambda (x)
-			 (abstract-bundle-internal
-			  (vector-ref vs3 (positionp variable=? x xs3))
-			  (vector-ref vs4 (positionp variable=? x xs4))
-			  (cons v vs1-above)
-			  (cons v-perturbation vs2-above)
-			  (cons (cons v v-perturbation) cs)))
-			xs))
+		  ;; This assumes that the corresponding free variables in u,
+		  ;; u-perturbation, and u-forward are in the same order. See
+		  ;; the note in vlad-equal?
+		  (map-vector (lambda (v1 v1-perturbation)
+			       (abstract-bundle-internal
+				v1
+				v1-perturbation
+				(cons v vs1-above)
+				(cons v-perturbation vs2-above)
+				(cons (cons v v-perturbation) cs)))
+			      (recursive-closure-values u)
+			      (recursive-closure-values u-perturbation))
 		  xs1
 		  (list->vector (map lambda-expression-variable es))
 		  (list->vector (map lambda-expression-body es))
