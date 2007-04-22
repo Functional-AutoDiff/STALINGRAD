@@ -622,28 +622,6 @@
        vs))
      (create-tagged-pair '() v1 v2)))
 
-(define (listify xs tags)
- (if *church-pairs?*
-     (if (null? tags)
-	 (let loop ((xs xs))
-	  (if (null? xs) '() (vlad-cons (first xs) (loop (rest xs)))))
-	 (case (first tags)
-	  ((forward) (bundle (listify (map primal xs) (rest tags))
-			     (listify (map tangent xs) (rest tags))))
-	  ((reverse) (*j (listify (map *j-inverse xs) (rest tags))))
-	  (else (internal-error))))
-     (let loop ((xs xs))
-      (if (null? xs)
-	  (let loop ((tags tags))
-	   (if (null? tags)
-	       '()
-	       ((case (first tags)
-		 ((forward) j*)
-		 ((reverse) *j)
-		 (else (internal-error)))
-		(loop (rest tags)))))
-	  (create-tagged-pair tags (first xs) (loop (rest xs)))))))
-
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v) (closure? v))
       (not (vlad-pair? v '()))
@@ -670,6 +648,7 @@
 				   (nonrecursive-closure-variables v1))
 			     (cons (nonrecursive-closure-variable v2)
 				   (nonrecursive-closure-variables v2)))
+	  ;; This assumes that the values are in the same order.
 	  (every-vector vlad-equal?
 			(nonrecursive-closure-values v1)
 			(nonrecursive-closure-values v2)))
@@ -697,6 +676,7 @@
 	   (recursive-closure-argument-variables v2)
 	   (recursive-closure-bodies v1)
 	   (recursive-closure-bodies v2))
+	  ;; This assumes that the values are in the same order.
 	  (every-vector vlad-equal?
 			(recursive-closure-values v1)
 			(recursive-closure-values v2)))
@@ -812,14 +792,17 @@
 (define (variable=? x1 x2) (equal? x1 x2))
 
 (define (variable-base x)
+ ;; needs work: to remove
  (if (and (list? x) (eq? (first x) 'alpha)) (variable-base (second x)) x))
 
 (define (variable-alpha x)
+ ;; needs work: to remove
  (if (and (list? x) (eq? (first x) 'alpha))
      (cons (third x) (variable-alpha (second x)))
      '()))
 
 (define (base-variable<? x1 x2)
+ ;; needs work: to remove
  (if (symbol? x1)
      (if (symbol? x2)
 	 (string<? (symbol->string x1) (symbol->string x2))
@@ -848,6 +831,7 @@
 				     reverse)))))))))
 
 (define (variable<? x1 x2)
+ ;; needs work: to remove
  (or (base-variable<? (variable-base x1) (variable-base x2))
      (and (variable=? (variable-base x1) (variable-base x2))
 	  ((lexicographically<? < =)
@@ -880,7 +864,9 @@
  (and (not (null? xs))
       (or (member (first xs) (rest xs)) (duplicates? (rest xs)))))
 
-(define (sort-variables xs) (sort xs variable<? identity))
+(define (sort-variables xs)
+ ;; needs work: to remove
+ (sort xs variable<? identity))
 
 (define (perturbationify x) `(perturbation ,x))
 
@@ -2194,11 +2180,39 @@
 ;;; AD
 
 (define (zero x)
- (cond ((null? x) '())
-       ((and (not *church-booleans?*) (vlad-boolean? x)) '())
+ ;; If we do perturbationify and perturbation-transform this will make this
+ ;; specific to forward mode and we will nee a corresponding version that
+ ;; does sensitivityify and sensitivity-transform for reverse mode.
+ ;; needs work: This breaks reverse mode.
+ (cond ((null? x) x)
+       ((and (not *church-booleans?*) (vlad-boolean? x)) x)
        ((real? x) 0)
-       ((primitive-procedure? x) '())
-       ((closure? x) (listify (map zero (base-values x)) (closure-tags x)))
+       ((primitive-procedure? x) x)
+       ((nonrecursive-closure? x)
+	(make-nonrecursive-closure
+	 ;; We don't perturbationify.
+	 (nonrecursive-closure-variables x)
+	 (map-vector zero (nonrecursive-closure-values x))
+	 ;; We don't perturbationify.
+	 (nonrecursive-closure-variable x)
+	 ;; We don't perturbation-transform.
+	 (nonrecursive-closure-body x)
+	 (nonrecursive-closure-index-expression x)
+	 (nonrecursive-closure-index-environment x)))
+       ((recursive-closure? x)
+	(make-recursive-closure
+	 ;; We don't perturbationify.
+	 (recursive-closure-variables x)
+	 (map-vector zero (recursive-closure-values x))
+	 ;; We don't perturbationify.
+	 (recursive-closure-procedure-variables x)
+	 ;; We don't perturbationify.
+	 (recursive-closure-argument-variables x)
+	 ;; We don't perturbation-transform.
+	 (recursive-closure-bodies x)
+	 (recursive-closure-index x)
+	 (recursive-closure-index-expression x)
+	 (recursive-closure-index-environment x)))
        ((bundle? x)
 	(make-bundle (zero (bundle-primal x)) (zero (bundle-tangent x))))
        ((reverse-tagged-value? x)
@@ -2256,6 +2270,7 @@
        (else (internal-error))))
 
 (define (forward-uptag-variables xs1 xs2)
+ ;; needs work: to remove
  (map (lambda (x1)
        (unless (one (lambda (x2) (variable=? x1 (unforwardify x2))) xs2)
 	(internal-error))
@@ -2263,6 +2278,7 @@
       xs1))
 
 (define (reverse-uptag-variables xs1 xs2)
+ ;; needs work: to remove
  (map (lambda (x1)
        (unless (one (lambda (x2) (variable=? x1 (lax-unreverseify x2))) xs2)
 	(internal-error))
@@ -2270,6 +2286,7 @@
       xs1))
 
 (define (base-variables x)
+ ;; needs work: to remove
  (cond
   ((primitive-procedure? x) '())
   ((closure? x)
@@ -2284,11 +2301,13 @@
   (else (internal-error))))
 
 (define (base-values x)
+ ;; needs work: to remove
  (let ((xs (closure-variables x)) (vs (closure-values x)))
   (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
        (base-variables x))))
 
 (define (nonrecursive-closure-base-letrec-variables x)
+ ;; needs work: to remove
  (cond
   ((primitive-procedure? x) '())
   ((nonrecursive-closure? x)
@@ -2307,6 +2326,7 @@
   (else (internal-error))))
 
 (define (recursive-closure-base-letrec-variables x i)
+ ;; needs work: to remove
  (cond ((primitive-procedure? x) '())
        ((recursive-closure? x)
 	(let ((xs (anf-letrec-bodies-free-variables
@@ -2324,6 +2344,7 @@
        (else (internal-error))))
 
 (define (lambda-expression-base-free-variables e)
+ ;; needs work: to remove
  (let ((xs (free-variables e)))
   (if (null? (lambda-expression-tags e))
       xs
@@ -2339,6 +2360,7 @@
        (else (internal-error))))))
 
 (define (anf-letrec-bodies-base-free-variables e)
+ ;; needs work: to remove
  (let ((xs (if (letrec-expression? (lambda-expression-body e))
 	       (letrec-expression-bodies-free-variables
 		(lambda-expression-body e))
@@ -2450,10 +2472,8 @@
 			    (xs (free-variables e)))
 		      (make-nonrecursive-closure
 		       xs
-		       ;; We don't do add/remove-slots here.
-		       (map-vector
-			primal
-			(nonrecursive-closure-values x-forward))
+		       (map-vector primal
+				   (nonrecursive-closure-values x-forward))
 		       x
 		       (index x xs (lambda-expression-body e))
 		       ;; needs work: tangent of bundle gives the
@@ -2489,10 +2509,10 @@
 			    (xs (letrec-recursive-closure-variables
 				 (vector->list xs1)
 				 (map lambda-expression-variable es)
-				 (map lambda-expression-body es))))
+				 (map lambda-expression-body es)))
+			    (xs2 (append (vector->list xs1) xs)))
 		      (make-recursive-closure
 		       xs
-		       ;; We don't do add/remove-slots here.
 		       (map-vector primal
 				   (recursive-closure-values x-forward))
 		       xs1
@@ -2500,7 +2520,7 @@
 		       (list->vector
 			(map (lambda (e)
 			      (index (lambda-expression-variable e)
-				     (append (vector->list xs1) xs)
+				     xs2
 				     (lambda-expression-body e)))
 			     es))
 		       (recursive-closure-index x-forward)
@@ -2567,19 +2587,85 @@
 	       ((primitive-procedure? x-forward)
 		(run-time-error
 		 "Attempt to take tangent of a non-forward value" x-forward))
-	       ((closure? x-forward)
-		(unless (and (not (null? (closure-tags x-forward)))
-			     (eq? (first (closure-tags x-forward)) 'forward))
+	       ((nonrecursive-closure? x-forward)
+		(unless (and
+			 (not (null? (nonrecursive-closure-tags x-forward)))
+			 (eq? (first (nonrecursive-closure-tags x-forward))
+			      'forward))
 		 (run-time-error
 		  "Attempt to take tangent of a non-forward value" x-forward))
-		(if (some (lambda (b)
-			   (vlad-equal? x-forward
-					(primitive-procedure-forward
-					 (value-binding-value b))))
-			  *value-bindings*)
-		    '()
-		    (listify (map tangent (base-values x-forward))
-			     (rest (closure-tags x-forward)))))
+		(let ((b (find-if (lambda (b)
+				   (vlad-equal? x-forward
+						(primitive-procedure-forward
+						 (value-binding-value b))))
+				  *value-bindings*)))
+		 (if b
+		     (value-binding-value b)
+		     (let* ((e (forward-transform-inverse
+				(new-lambda-expression
+				 (nonrecursive-closure-variable x-forward)
+				 (nonrecursive-closure-body x-forward))))
+			    (x (lambda-expression-variable e))
+			    (xs (free-variables e)))
+		      (make-nonrecursive-closure
+		       xs
+		       (map-vector tangent
+				   (nonrecursive-closure-values x-forward))
+		       x
+		       (index x xs (lambda-expression-body e))
+		       ;; needs work: tangent of bundle gives the
+		       ;;             index-expression and index-environment of
+		       ;;             the primal
+		       (nonrecursive-closure-index-expression x-forward)
+		       (nonrecursive-closure-index-environment x-forward))))))
+	       ((recursive-closure? x-forward)
+		(unless (and (not (null? (recursive-closure-tags x-forward)))
+			     (eq? (first (recursive-closure-tags x-forward))
+				  'forward))
+		 (run-time-error
+		  "Attempt to take tangent of a non-forward value" x-forward))
+		(let ((b (find-if (lambda (b)
+				   (vlad-equal? x-forward
+						(primitive-procedure-forward
+						 (value-binding-value b))))
+				  *value-bindings*)))
+		 (if b
+		     (value-binding-value b)
+		     (let* ((es (vector->list
+				 (map-vector
+				  (lambda (x e)
+				   (forward-transform-inverse
+				    (new-lambda-expression x e)))
+				  (recursive-closure-argument-variables
+				   x-forward)
+				  (recursive-closure-bodies x-forward))))
+			    (xs1 (map-vector
+				  unforwardify
+				  (recursive-closure-procedure-variables
+				   x-forward)))
+			    (xs (letrec-recursive-closure-variables
+				 (vector->list xs1)
+				 (map lambda-expression-variable es)
+				 (map lambda-expression-body es)))
+			    (xs2 (append (vector->list xs1) xs)))
+		      (make-recursive-closure
+		       xs
+		       (map-vector tangent
+				   (recursive-closure-values x-forward))
+		       xs1
+		       (list->vector (map lambda-expression-variable es))
+		       (list->vector
+			(map (lambda (e)
+			      (index (lambda-expression-variable e)
+				     xs2
+				     (lambda-expression-body e)))
+			     es))
+		       (recursive-closure-index x-forward)
+		       ;; needs work: tangent of bundle gives the
+		       ;;             index-expression and index-environment of
+		       ;;             the primal
+		       (recursive-closure-index-expression x-forward)
+		       (recursive-closure-index-environment x-forward))))))
 	       ((bundle? x-forward) (bundle-tangent x-forward))
 	       ((reverse-tagged-value? x-forward)
 		(run-time-error
@@ -2614,32 +2700,61 @@
 			   *forward-cache*)))))
        result))))
 
-(define (tagged-null? tags x)
- (if (null? tags)
-     (null? x)
-     (case (first tags)
-      ((forward) (and (bundle? x)
-		      (tagged-null? (rest tags) (bundle-primal x))
-		      (tagged-null? (rest tags) (bundle-tangent x))))
-      ((reverse)
-       (and (reverse-tagged-value? x)
-	    (tagged-null? (rest tags) (reverse-tagged-value-primal x))))
-      (else (internal-error)))))
-
-(define (legitimate-list? xs x-perturbations tags)
- (or (and (null? xs) (tagged-null? tags x-perturbations))
-     (and (not (null? xs))
-	  (vlad-pair? x-perturbations tags)
-	  (legitimate? (first xs) (vlad-car x-perturbations tags))
-	  (legitimate-list? (rest xs) (vlad-cdr x-perturbations tags) tags))))
-
 (define (legitimate? x x-perturbation)
  (or (and (null? x) (null? x-perturbation))
-     (and (not *church-booleans?*) (vlad-boolean? x) (null? x-perturbation))
+     (and (not *church-booleans?*)
+	  (vlad-boolean? x)
+	  (vlad-boolean? x-perturbation)
+	  (eq? x x-perturbation))
      (and (real? x) (real? x-perturbation))
-     (and (primitive-procedure? x) (null? x-perturbation))
-     (and (closure? x)
-	  (legitimate-list? (base-values x) x-perturbation (closure-tags x)))
+     (and (primitive-procedure? x)
+	  (primitive-procedure? x-perturbation)
+	  (eq? x x-perturbation))
+     (and (nonrecursive-closure? x)
+	  (nonrecursive-closure? x-perturbation)
+	  (= (vector-length (nonrecursive-closure-values x))
+	     (vector-length (nonrecursive-closure-values x-perturbation)))
+	  (alpha-equivalent?
+	   (nonrecursive-closure-body x)
+	   (nonrecursive-closure-body x-perturbation)
+	   (cons (nonrecursive-closure-variable x)
+		 (nonrecursive-closure-variables x))
+	   (cons (nonrecursive-closure-variable x-perturbation)
+		 (nonrecursive-closure-variables x-perturbation)))
+	  ;; This assumes that the values are in the same order.
+	  (every-vector legitimate?
+			(nonrecursive-closure-values x)
+			(nonrecursive-closure-values x-perturbation)))
+     (and (recursive-closure? x)
+	  (recursive-closure? x-perturbation)
+	  (= (vector-length (recursive-closure-bodies x))
+	     (vector-length (recursive-closure-bodies x-perturbation)))
+	  (= (recursive-closure-index x)
+	     (recursive-closure-index x-perturbation))
+	  (= (vector-length (recursive-closure-values x))
+	     (vector-length (recursive-closure-values x-perturbation)))
+	  (every-vector
+	   (lambda (x1 x2 e1 e2)
+	    (alpha-equivalent?
+	     e1
+	     e2
+	     (cons x1
+		   (append
+		    (vector->list (recursive-closure-procedure-variables x))
+		    (recursive-closure-variables x)))
+	     (cons x2
+		   (append
+		    (vector->list
+		     (recursive-closure-procedure-variables x-perturbation))
+		    (recursive-closure-variables x-perturbation)))))
+	   (recursive-closure-argument-variables x)
+	   (recursive-closure-argument-variables x-perturbation)
+	   (recursive-closure-bodies x)
+	   (recursive-closure-bodies x-perturbation))
+	  ;; This assumes that the values are in the same order.
+	  (every-vector legitimate?
+			(recursive-closure-values x)
+			(recursive-closure-values x-perturbation)))
      (and (bundle? x)
 	  (bundle? x-perturbation)
 	  (legitimate? (bundle-primal x)
@@ -2658,40 +2773,31 @@
 	  (legitimate? (tagged-pair-cdr x)
 		       (tagged-pair-cdr x-perturbation)))))
 
-(define (bundle-list xs x-perturbations tags)
- (if (null? xs)
-     '()
-     (cons (bundle-internal (first xs) (vlad-car x-perturbations tags))
-	   (bundle-list (rest xs) (vlad-cdr x-perturbations tags) tags))))
-
 (define (bundle-internal x x-perturbation)
  (cond
   ((null? x) (make-bundle x x-perturbation))
   ((and (not *church-booleans?*) (vlad-boolean? x))
    (make-bundle x x-perturbation))
   ((real? x) (make-bundle x x-perturbation))
-  ((primitive-procedure? x)
-   (unless (null? x-perturbation) (internal-error))
-   (primitive-procedure-forward x))
+  ((primitive-procedure? x) (primitive-procedure-forward x))
   ((nonrecursive-closure? x)
    (let* ((e (forward-transform
 	      (new-lambda-expression (nonrecursive-closure-variable x)
 				     (nonrecursive-closure-body x))))
 	  (x1 (lambda-expression-variable e))
-	  (xs (free-variables e)))
+	  (xs (free-variables e))
+	  (xs1 (map forwardify (nonrecursive-closure-variables x)))
+	  (xs2 (map forwardify
+		    (nonrecursive-closure-variables x-perturbation)))
+	  (vs1 (nonrecursive-closure-values x))
+	  (vs2 (nonrecursive-closure-values x-perturbation)))
     (make-nonrecursive-closure
      xs
-     ;; This should use a generalized add/remove-slots here.
      (list->vector
-      (let ((xs (base-variables x))
-	    (vs (bundle-list (base-values x)
-			     x-perturbation
-			     (nonrecursive-closure-tags x))))
-       (map (lambda (x v)
-	     (let ((i (positionp variable=? x xs)))
-	      (if i (list-ref vs i) (j* v))))
-	    (nonrecursive-closure-variables x)
-	    (vector->list (nonrecursive-closure-values x)))))
+      (map (lambda (x)
+	    (bundle-internal (vector-ref vs1 (positionp variable=? x xs1))
+			     (vector-ref vs2 (positionp variable=? x xs2))))
+	   xs))
      x1
      (index x1 xs (lambda-expression-body e))
      ;; needs work: tangent of bundle gives the index-expression and
@@ -2709,26 +2815,26 @@
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
-	       (map lambda-expression-body es))))
+	       (map lambda-expression-body es)))
+	  (xs2 (append (vector->list xs1) xs))
+	  (xs3 (map forwardify (recursive-closure-variables x)))
+	  (xs4 (map forwardify (recursive-closure-variables x-perturbation)))
+	  (vs3 (recursive-closure-values x))
+	  (vs4 (recursive-closure-values x-perturbation)))
     (make-recursive-closure
      xs
-     ;; This should use a generalized add/remove-slots here.
      (list->vector
-      (let ((xs (base-variables x))
-	    (vs (bundle-list
-		 (base-values x) x-perturbation (recursive-closure-tags x))))
-       (map (lambda (x v)
-	     (let ((i (positionp variable=? x xs)))
-	      (if i (list-ref vs i) (j* v))))
-	    (recursive-closure-variables x)
-	    (vector->list (recursive-closure-values x)))))
+      (map (lambda (x)
+	    (bundle-internal (vector-ref vs3 (positionp variable=? x xs3))
+			     (vector-ref vs4 (positionp variable=? x xs4))))
+	   xs))
      xs1
      (list->vector (map lambda-expression-variable es))
-     (list->vector (map (lambda (e)
-			 (index (lambda-expression-variable e)
-				(append (vector->list xs1) xs)
-				(lambda-expression-body e)))
-			es))
+     (list->vector
+      (map
+       (lambda (e)
+	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
+       es))
      (recursive-closure-index x)
      ;; needs work: tangent of bundle gives the index-expression and
      ;;             index-environment of the primal
@@ -5604,7 +5710,6 @@
 
 ;;; Abstract Basis
 
-;;; \AB{U} -> \AB{V}
 (define (abstract-vlad-car-u u tags)
  (if (vlad-pair? u tags)
      (if *church-pairs?*
@@ -5612,7 +5717,6 @@
 	 (tagged-pair-car u))
      (compile-time-warning "Might attempt to take car of a non-pair" u)))
 
-;;; \AB{U} -> \AB{V}
 (define (abstract-vlad-cdr-u u tags)
  (if (vlad-pair? u tags)
      (if *church-pairs?*
@@ -5620,54 +5724,6 @@
 	 (tagged-pair-cdr u))
      (compile-time-warning "Might attempt to take cdr of a non-pair" u)))
 
-;;; [\AB{V}]* x [tag]* -> \AB{V}
-(define (abstract-listify vs tags)
- (if *church-pairs?*
-     (unimplemented "abstract-listify for Church pairs")
-     (let loop ((vs vs))
-      (if (null? vs)
-	  (let loop ((tags tags))
-	   (if (null? tags)
-	       '(())
-	       ((case (first tags)
-		 ((forward) abstract-j*-v)
-		 ((reverse) abstract-*j-v)
-		 (else (internal-error)))
-		(loop (rest tags)))))
-	  ;; needs work: to give the index-expression and index-environment
-	  (make-abstract-tagged-pair
-	   tags (first vs) (loop (rest vs)) #f #f)))))
-
-(define (abstract-base-variables-v v)
- (when (and (list? v) (not (= (length v) 1)))
-  (internal-error "How to handle abstract-base-variables-v for v?: ~s" v))
- (unless (list? v) (internal-error "Why isn't v a list?: ~s" v))
- (abstract-base-variables-u (first v)))
-
-;;; \AB{U} -> [variable]*
-(define (abstract-base-variables-u u)
- (cond ((primitive-procedure? u) '())
-       ((closure? u)
-	(let ((xs (closure-variables u)))
-	 (if (null? (closure-tags u))
-	     xs
-	     (case (first (closure-tags u))
-	      ((forward)
-	       (forward-uptag-variables
-		(abstract-base-variables-v (abstract-primal-u u)) xs))
-	      ((reverse)
-	       (reverse-uptag-variables
-		(abstract-base-variables-v (abstract-*j-inverse-u u)) xs))
-	      (else (internal-error))))))
-       (else (internal-error))))
-
-;;; \AB{U} -> [\AB{V}]*
-(define (abstract-base-values-u u)
- (let ((xs (closure-variables u)) (vs (closure-values u)))
-  (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
-       (abstract-base-variables-u u))))
-
-;;; \AB{V} -> \AB{V}
 (define (abstract-zero-v v)
  (if (up? v)
      v
@@ -5675,15 +5731,33 @@
 	     (map abstract-zero-u v)
 	     (empty-abstract-value))))
 
-;;; \AB{U} -> \AB{V}
 (define (abstract-zero-u u)
- (cond ((null? u) '(()))
-       ((and (not *church-booleans?*) (vlad-boolean? u)) '(()))
+ ;; See note in zero.
+ (cond ((null? u) (list u))
+       ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
        ((abstract-real? u) '(0))
-       ((primitive-procedure? u) '(()))
-       ((closure? u)
-	(abstract-listify (map abstract-zero-v (abstract-base-values-u u))
-			  (closure-tags u)))
+       ((primitive-procedure? u) (list u))
+       ((nonrecursive-closure? u)
+	(make-abstract-nonrecursive-closure
+	 (map-vector abstract-zero-v (nonrecursive-closure-values u))
+	 ;; We don't perturbation-transform.
+	 (new-lambda-expression
+	  (nonrecursive-closure-variable u) (nonrecursive-closure-body u))
+	 (nonrecursive-closure-index-environment u)))
+       ((recursive-closure? u)
+	(make-abstract-recursive-closure
+	 ;; We don't perturbationify.
+	 (recursive-closure-variables u)
+	 (map-vector abstract-zero-v (recursive-closure-values u))
+	 ;; We don't perturbationify.
+	 (recursive-closure-procedure-variables u)
+	 ;; We don't perturbationify.
+	 (recursive-closure-argument-variables u)
+	 ;; We don't perturbation-transform.
+	 (recursive-closure-bodies u)
+	 (recursive-closure-index u)
+	 (recursive-closure-index-expression u)
+	 (recursive-closure-index-environment u)))
        ((bundle? u)
 	(make-abstract-bundle (abstract-zero-v (bundle-primal u))
 			      (abstract-zero-v (bundle-tangent u))))
@@ -5738,7 +5812,6 @@
 	     (if b
 		 (vlad-value->abstract-value (value-binding-value b))
 		 (make-abstract-nonrecursive-closure
-		  ;; We don't do add/remove-slots here.
 		  (map-vector abstract-primal-v
 			      (nonrecursive-closure-values u-forward))
 		  (forward-transform-inverse
@@ -5780,7 +5853,6 @@
 			     (map lambda-expression-body es))))
 		  (make-abstract-recursive-closure
 		   xs
-		   ;; We don't do add/remove-slots here.
 		   (map-vector abstract-primal-v
 			       (recursive-closure-values u-forward))
 		   xs1
@@ -5830,22 +5902,74 @@
        ((primitive-procedure? u-forward)
 	(compile-time-warning
 	 "Might attempt to take tangent of a non-forward value" u-forward))
-       ((closure? u-forward)
-	(if (or (null? (closure-tags u-forward))
-		(not (eq? (first (closure-tags u-forward)) 'forward)))
+       ((nonrecursive-closure? u-forward)
+	(if (or (null? (nonrecursive-closure-tags u-forward))
+		(not (eq? (first (nonrecursive-closure-tags u-forward))
+			  'forward)))
 	    (compile-time-warning
 	     "Might attempt to take tangent of a non-forward value" u-forward)
-	    (if (some (lambda (b)
+	    (let ((b (find-if
+		      (lambda (b)
 		       ;; needs work: imprecision
 		       (abstract-value=? (list u-forward)
 					 (vlad-value->abstract-value
 					  (primitive-procedure-forward
 					   (value-binding-value b)))))
-		      *value-bindings*)
-		'(())
-		(abstract-listify
-		 (map abstract-tangent-v (abstract-base-values-u u-forward))
-		 (rest (closure-tags u-forward))))))
+		      *value-bindings*)))
+	     (if b
+		 (vlad-value->abstract-value (value-binding-value b))
+		 (make-abstract-nonrecursive-closure
+		  (map-vector abstract-tangent-v
+			      (nonrecursive-closure-values u-forward))
+		  (forward-transform-inverse
+		   (new-lambda-expression
+		    (nonrecursive-closure-variable u-forward)
+		    (nonrecursive-closure-body u-forward)))
+		  ;; needs work: tangent of bundle gives the index-expression
+		  ;;             and index-environment of the primal
+		  (nonrecursive-closure-index-environment u-forward))))))
+       ((recursive-closure? u-forward)
+	(if (or (null? (recursive-closure-tags u-forward))
+		(not (eq? (first (recursive-closure-tags u-forward))
+			  'forward)))
+	    (compile-time-warning
+	     "Might attempt to take tangent of a non-forward value" u-forward)
+	    (let ((b (find-if
+		      (lambda (b)
+		       ;; needs work: imprecision
+		       (abstract-value=? (list u-forward)
+					 (vlad-value->abstract-value
+					  (primitive-procedure-forward
+					   (value-binding-value b)))))
+		      *value-bindings*)))
+	     (if b
+		 (vlad-value->abstract-value (value-binding-value b))
+		 (let* ((es (vector->list
+			     (map-vector
+			      (lambda (x e)
+			       (forward-transform-inverse
+				(new-lambda-expression x e)))
+			      (recursive-closure-argument-variables u-forward)
+			      (recursive-closure-bodies u-forward))))
+			(xs1 (map-vector unforwardify
+					 (recursive-closure-procedure-variables
+					  u-forward)))
+			(xs (letrec-recursive-closure-variables
+			     (vector->list xs1)
+			     (map lambda-expression-variable es)
+			     (map lambda-expression-body es))))
+		  (make-abstract-recursive-closure
+		   xs
+		   (map-vector abstract-tangent-v
+			       (recursive-closure-values u-forward))
+		   xs1
+		   (list->vector (map lambda-expression-variable es))
+		   (list->vector (map lambda-expression-body es))
+		   (recursive-closure-index u-forward)
+		   ;; needs work: tangent of bundle gives the index-expression
+		   ;;             and index-environment of the primal
+		   (recursive-closure-index-expression u-forward)
+		   (recursive-closure-index-environment u-forward)))))))
        ((bundle? u-forward) (bundle-tangent u-forward))
        ((reverse-tagged-value? u-forward)
 	(compile-time-warning
@@ -5865,174 +5989,20 @@
 	     (tagged-pair-index-environment u-forward))))
        (else (internal-error))))
 
-(define (abstract-tagged-null? tags u vs-above)
- ;; vs-above is the context for u
- (if (null? tags)
-     (null? u)
-     (case (first tags)
-      ((forward)
-       (and
-	(bundle? u)
-	(let ((v (bundle-primal u)))
-	 (some (lambda (u)
-		(abstract-tagged-null?
-		 (rest tags)
-		 u
-		 (if (up? v) (rest* vs-above (up-index v)) (cons v vs-above))))
-	       (if (up? v) (list-ref vs-above (up-index v)) v)))
-	(let ((v (bundle-tangent u)))
-	 (some (lambda (u)
-		(abstract-tagged-null?
-		 (rest tags)
-		 u
-		 (if (up? v) (rest* vs-above (up-index v)) (cons v vs-above))))
-	       (if (up? v) (list-ref vs-above (up-index v)) v)))))
-      ((reverse)
-       (and
-	(reverse-tagged-value? u)
-	(let ((v (reverse-tagged-value-primal u)))
-	 (some (lambda (u)
-		(abstract-tagged-null?
-		 (rest tags)
-		 u
-		 (if (up? v) (rest* vs-above (up-index v)) (cons v vs-above))))
-	       (if (up? v) (list-ref vs-above (up-index v)) v)))))
-      (else (internal-error)))))
-
-(define (abstract-legitimate-list? vs u-perturbation tags vs-above cs)
- ;; vs-above is the context for u-perturbation
- (or (and (null? vs) (abstract-tagged-null? tags u-perturbation vs-above))
-     (and (not (null? vs))
-	  (vlad-pair? u-perturbation tags)
-	  (abstract-legitimate?
-	   (first vs) (abstract-vlad-car-u u-perturbation tags) vs-above cs)
-	  (let ((v-perturbation (abstract-vlad-cdr-u u-perturbation tags)))
-	   (some (lambda (u-perturbation)
-		  (abstract-legitimate-list?
-		   (rest vs)
-		   u-perturbation
-		   tags
-		   (if (up? v-perturbation)
-		       (rest* vs-above (up-index v-perturbation))
-		       (cons v-perturbation vs-above))
-		   cs))
-		 (if (up? v-perturbation)
-		     (list-ref vs-above (up-index v-perturbation))
-		     v-perturbation))))))
-
-(define (abstract-legitimate? v v-perturbation vs-above cs)
+(define (abstract-bundle-internal v v-perturbation vs1-above vs2-above cs)
  ;; vs-above is the context for v-perturbation
  (cond
   ((up? v)
-   (abstract-legitimate?
-    (car (list-ref cs (up-index v))) v-perturbation vs-above cs))
-  ((up? v-perturbation)
-   (abstract-legitimate? v
-			 (list-ref vs-above (up-index v-perturbation))
-			 (rest* vs-above (+ (up-index v-perturbation) 1))
-			 cs))
-  (else
-   (let ((i (position-if
-	     (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation)))
-	     cs)))
-    (or
-     (not (eq? i #f))
-     (some
-      (lambda (u)
-       (some
-	(lambda (u-perturbation)
-	 (or
-	  (and (null? u) (null? u-perturbation))
-	  (and (not *church-booleans?*)
-	       (vlad-boolean? u)
-	       (null? u-perturbation))
-	  (and (abstract-real? u) (abstract-real? u-perturbation))
-	  (and (primitive-procedure? u) (null? u-perturbation))
-	  (and (closure? u)
-	       (abstract-legitimate-list? (abstract-base-values-u u)
-					  u-perturbation
-					  (closure-tags u)
-					  (cons v-perturbation vs-above)
-					  (cons (cons v v-perturbation) cs)))
-	  (and (bundle? u)
-	       (bundle? u-perturbation)
-	       (abstract-legitimate? (bundle-primal u)
-				     (bundle-primal u-perturbation)
-				     (cons v-perturbation vs-above)
-				     (cons (cons v v-perturbation) cs))
-	       (abstract-legitimate? (bundle-tangent u)
-				     (bundle-tangent u-perturbation)
-				     (cons v-perturbation vs-above)
-				     (cons (cons v v-perturbation) cs)))
-	  (and (reverse-tagged-value? u)
-	       (reverse-tagged-value? u-perturbation)
-	       (abstract-legitimate?
-		(reverse-tagged-value-primal u)
-		(reverse-tagged-value-primal u-perturbation)
-		(cons v-perturbation vs-above)
-		(cons (cons v v-perturbation) cs)))
-	  (and (not *church-pairs?*)
-	       (tagged-pair? u)
-	       (tagged-pair? u-perturbation)
-	       (equal? (tagged-pair-tags u)
-		       (tagged-pair-tags u-perturbation))
-	       (abstract-legitimate? (tagged-pair-car u)
-				     (tagged-pair-car u-perturbation)
-				     (cons v-perturbation vs-above)
-				     (cons (cons v v-perturbation) cs))
-	       (abstract-legitimate? (tagged-pair-cdr u)
-				     (tagged-pair-cdr u-perturbation)
-				     (cons v-perturbation vs-above)
-				     (cons (cons v v-perturbation) cs)))))
-	v-perturbation))
-      v))))))
-
-(define (abstract-bundle-list vs u-perturbation tags vs-above cs)
- ;; vs-above is the context for u-perturbation
- (if (null? vs)
-     (cond ((abstract-tagged-null? tags u-perturbation vs-above) '(()))
-	   (else
-	    (compile-time-warning
-	     "The arguments to bundle might be illegitimate" u-perturbation)
-	    '()))
-     (cond ((vlad-pair? u-perturbation tags)
-	    (let ((v (abstract-bundle-internal
-		      (first vs)
-		      (abstract-vlad-car-u u-perturbation tags)
-		      vs-above
-		      cs))
-		  (v-perturbation (abstract-vlad-cdr-u u-perturbation tags)))
-	     (reduce
-	      append
-	      (map (lambda (u-perturbation)
-		    (map (lambda (vs) (cons v vs))
-			 (abstract-bundle-list
-			  (rest vs)
-			  u-perturbation
-			  tags
-			  (if (up? v-perturbation)
-			      (rest* vs-above (up-index v-perturbation))
-			      (cons v-perturbation vs-above))
-			  cs)))
-		   (if (up? v-perturbation)
-		       (list-ref vs-above (up-index v-perturbation))
-		       v-perturbation))
-	      '())))
-	   (else
-	    (compile-time-warning
-	     "The arguments to bundle might be illegitimate" u-perturbation)
-	    '()))))
-
-(define (abstract-bundle-internal v v-perturbation vs-above cs)
- ;; vs-above is the context for v-perturbation
- (cond
-  ((up? v)
-   (abstract-bundle-internal
-    (car (list-ref cs (up-index v))) v-perturbation vs-above cs))
+   (abstract-bundle-internal (list-ref vs1-above (up-index v))
+			     v-perturbation
+			     (rest* vs1-above (+ (up-index v) 1))
+			     vs2-above
+			     cs))
   ((up? v-perturbation)
    (abstract-bundle-internal v
-			     (list-ref vs-above (up-index v-perturbation))
-			     (rest* vs-above (+ (up-index v-perturbation) 1))
+			     (list-ref vs2-above (up-index v-perturbation))
+			     vs1-above
+			     (rest* vs2-above (+ (up-index v-perturbation) 1))
 			     cs))
   (else
    (let ((i (position-if
@@ -6052,59 +6022,82 @@
 		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (not *church-booleans?*)
 		     (vlad-boolean? u)
-		     (null? u-perturbation))
+		     (vlad-boolean? u-perturbation)
+		     (eq? u u-perturbation))
 		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (abstract-real? u) (abstract-real? u-perturbation))
 		(make-abstract-bundle (list u) (list u-perturbation)))
-	       ((and (primitive-procedure? u) (null? u-perturbation))
+	       ((and (primitive-procedure? u)
+		     (primitive-procedure? u-perturbation)
+		     (eq? u u-perturbation))
 		(vlad-value->abstract-value (primitive-procedure-forward u)))
-	       ((and
-		 (nonrecursive-closure? u)
-		 (abstract-legitimate-list? (abstract-base-values-u u)
-					    u-perturbation
-					    (closure-tags u)
-					    (cons v-perturbation vs-above)
-					    (cons (cons v v-perturbation) cs)))
+	       ((and (nonrecursive-closure? u)
+		     (nonrecursive-closure? u)
+		     (nonrecursive-closure? u-perturbation)
+		     (= (vector-length (nonrecursive-closure-values u))
+			(vector-length
+			 (nonrecursive-closure-values u-perturbation)))
+		     (alpha-equivalent?
+		      (nonrecursive-closure-body u)
+		      (nonrecursive-closure-body u-perturbation)
+		      (cons (nonrecursive-closure-variable u)
+			    (nonrecursive-closure-variables u))
+		      (cons (nonrecursive-closure-variable u-perturbation)
+			    (nonrecursive-closure-variables u-perturbation))))
 		(let* ((e (forward-transform
 			   (new-lambda-expression
 			    (nonrecursive-closure-variable u)
 			    (nonrecursive-closure-body u))))
-		       (x (lambda-expression-variable e))
-		       (xs (free-variables e))
-		       (xs1 (abstract-base-variables-u u))
-		       (is (map (lambda (x) (positionp variable=? x xs1))
-				(nonrecursive-closure-variables u))))
-		 (map (lambda (vs)
-		       ;; needs work: should use
-		       ;;             make-abstract-nonrecursive-closure
-		       (make-nonrecursive-closure
-			xs
-			;; This should use a generalized add/remove-slots here.
-			(list->vector
-			 (map (lambda (i v)
-			       (if i (list-ref vs i) (abstract-j*-v v)))
-			      is
-			      (vector->list (nonrecursive-closure-values u))))
-			x
-			(lambda-expression-body e)
-			;; needs work: tangent of bundle gives the
-			;;             index-expression and index-environment
-			;;             of the primal
-			(nonrecursive-closure-index-expression u)
-			(nonrecursive-closure-index-environment u)))
-		      (abstract-bundle-list
-		       (abstract-base-values-u u)
-		       u-perturbation
-		       (nonrecursive-closure-tags u)
-		       (cons v-perturbation vs-above)
-		       (cons (cons v v-perturbation) cs)))))
+		       (xs1 (map forwardify
+				 (nonrecursive-closure-variables u)))
+		       (xs2
+			(map forwardify
+			     (nonrecursive-closure-variables u-perturbation)))
+		       (vs1 (nonrecursive-closure-values u))
+		       (vs2 (nonrecursive-closure-values u-perturbation)))
+		 (make-abstract-nonrecursive-closure
+		  (list->vector
+		   (map (lambda (x)
+			 (abstract-bundle-internal
+			  (vector-ref vs1 (positionp variable=? x xs1))
+			  (vector-ref vs2 (positionp variable=? x xs2))
+			  (cons v vs1-above)
+			  (cons v-perturbation vs2-above)
+			  (cons (cons v v-perturbation) cs)))
+			(free-variables e)))
+		  e
+		  ;; needs work: tangent of bundle gives the index-expression
+		  ;;             and index-environment of the primal
+		  (nonrecursive-closure-index-environment u))))
 	       ((and
 		 (recursive-closure? u)
-		 (abstract-legitimate-list? (abstract-base-values-u u)
-					    u-perturbation
-					    (closure-tags u)
-					    (cons v-perturbation vs-above)
-					    (cons (cons v v-perturbation) cs)))
+		 (recursive-closure? u-perturbation)
+		 (= (vector-length (recursive-closure-bodies u))
+		    (vector-length (recursive-closure-bodies u-perturbation)))
+		 (= (recursive-closure-index u)
+		    (recursive-closure-index u-perturbation))
+		 (= (vector-length (recursive-closure-values u))
+		    (vector-length (recursive-closure-values u-perturbation)))
+		 (every-vector
+		  (lambda (x1 x2 e1 e2)
+		   (alpha-equivalent?
+		    e1
+		    e2
+		    (cons
+		     x1
+		     (append
+		      (vector->list (recursive-closure-procedure-variables u))
+		      (recursive-closure-variables u)))
+		    (cons
+		     x2
+		     (append
+		      (vector->list
+		       (recursive-closure-procedure-variables u-perturbation))
+		      (recursive-closure-variables u-perturbation)))))
+		  (recursive-closure-argument-variables u)
+		  (recursive-closure-argument-variables u-perturbation)
+		  (recursive-closure-bodies u)
+		  (recursive-closure-bodies u-perturbation)))
 		(let* ((es (vector->list
 			    (map-vector
 			     (lambda (x e)
@@ -6118,78 +6111,55 @@
 			    (vector->list xs1)
 			    (map lambda-expression-variable es)
 			    (map lambda-expression-body es)))
-		       (xs2 (abstract-base-variables-u u))
-		       (is (map (lambda (x) (positionp variable=? x xs2))
-				(recursive-closure-variables u))))
-		 (map (lambda (vs)
-		       ;; needs work: should use
-		       ;;             make-abstract-recursive-closure
-		       (make-recursive-closure
-			xs
-			;; This should use a generalized add/remove-slots here.
-			(list->vector
-			 (map (lambda (i v)
-			       (if i (list-ref vs i) (abstract-j*-v v)))
-			      is
-			      (vector->list (recursive-closure-values u))))
-			xs1
-			(list->vector (map lambda-expression-variable es))
-			(list->vector (map lambda-expression-body es))
-			(recursive-closure-index u)
-			;; needs work: tangent of bundle gives the
-			;;             index-expression and index-environment
-			;;             of the primal
-			(recursive-closure-index-expression u)
-			(recursive-closure-index-environment u)))
-		      (abstract-bundle-list
-		       (abstract-base-values-u u)
-		       u-perturbation
-		       (recursive-closure-tags u)
-		       (cons v-perturbation vs-above)
-		       (cons (cons v v-perturbation) cs)))))
-	       ((and (bundle? u)
-		     (bundle? u-perturbation)
-		     (abstract-legitimate? (bundle-primal u)
-					   (bundle-primal u-perturbation)
-					   (cons v-perturbation vs-above)
-					   (cons (cons v v-perturbation) cs))
-		     (abstract-legitimate? (bundle-tangent u)
-					   (bundle-tangent u-perturbation)
-					   (cons v-perturbation vs-above)
-					   (cons (cons v v-perturbation) cs)))
+		       (xs3 (map forwardify (recursive-closure-variables u)))
+		       (xs4 (map forwardify
+				 (recursive-closure-variables u-perturbation)))
+		       (vs3 (recursive-closure-values u))
+		       (vs4 (recursive-closure-values u-perturbation)))
+		 (make-abstract-recursive-closure
+		  xs
+		  (list->vector
+		   (map (lambda (x)
+			 (abstract-bundle-internal
+			  (vector-ref vs3 (positionp variable=? x xs3))
+			  (vector-ref vs4 (positionp variable=? x xs4))
+			  (cons v vs1-above)
+			  (cons v-perturbation vs2-above)
+			  (cons (cons v v-perturbation) cs)))
+			xs))
+		  xs1
+		  (list->vector (map lambda-expression-variable es))
+		  (list->vector (map lambda-expression-body es))
+		  (recursive-closure-index u)
+		  ;; needs work: tangent of bundle gives the index-expression
+		  ;;             and index-environment of the primal
+		  (recursive-closure-index-expression u)
+		  (recursive-closure-index-environment u))))
+	       ((and (bundle? u) (bundle? u-perturbation))
+		;; needs work: doesn't check legitimacy
 		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (reverse-tagged-value? u)
-		     (reverse-tagged-value? u-perturbation)
-		     (abstract-legitimate?
-		      (reverse-tagged-value-primal u)
-		      (reverse-tagged-value-primal u-perturbation)
-		      (cons v-perturbation vs-above)
-		      (cons (cons v v-perturbation) cs)))
+		     (reverse-tagged-value? u-perturbation))
+		;; needs work: doesn't check legitimacy
 		(make-abstract-bundle (list u) (list u-perturbation)))
 	       ((and (not *church-pairs?*)
 		     (tagged-pair? u)
 		     (tagged-pair? u-perturbation)
 		     (equal? (tagged-pair-tags u)
-			     (tagged-pair-tags u-perturbation))
-		     (abstract-legitimate? (tagged-pair-car u)
-					   (tagged-pair-car u-perturbation)
-					   (cons v-perturbation vs-above)
-					   (cons (cons v v-perturbation) cs))
-		     (abstract-legitimate? (tagged-pair-cdr u)
-					   (tagged-pair-cdr u-perturbation)
-					   (cons v-perturbation vs-above)
-					   (cons (cons v v-perturbation) cs)))
+			     (tagged-pair-tags u-perturbation)))
 		(make-abstract-tagged-pair
 		 (cons 'forward (tagged-pair-tags u))
 		 (abstract-bundle-internal
 		  (tagged-pair-car u)
 		  (tagged-pair-car u-perturbation)
-		  (cons v-perturbation vs-above)
+		  (cons v vs1-above)
+		  (cons v-perturbation vs2-above)
 		  (cons (cons v v-perturbation) cs))
 		 (abstract-bundle-internal
 		  (tagged-pair-cdr u)
 		  (tagged-pair-cdr u-perturbation)
-		  (cons v-perturbation vs-above)
+		  (cons v vs1-above)
+		  (cons v-perturbation vs2-above)
 		  (cons (cons v v-perturbation) cs))
 		 ;; needs work: tangent of bundle gives the index-expression
 		 ;;             and index-environment of the primal
@@ -6206,12 +6176,10 @@
 	(make-up i))))))
 
 (define (abstract-bundle v v-perturbation)
- (abstract-bundle-internal v v-perturbation '() '()))
+ (abstract-bundle-internal v v-perturbation '() '() '()))
 
-;;; \AB{V} -> \AB{V}
 (define (abstract-j*-v v) (abstract-bundle v (abstract-zero-v v)))
 
-;;; \AB{U} -> \AB{V}
 (define (abstract-j*-u u) (abstract-bundle (list u) (abstract-zero-u u)))
 
 ;;; Reverse Mode
@@ -6228,8 +6196,6 @@
 
 ;;; Abstract Basis Generators
 
-;;; All these procedures take a function f: \AB{U} -> \AB{U} with the exception
-;;;   of abstract-binary-u->v, which takes f: \AB{U} -> \AB{V}
 (define (abstract-unary f s) (lambda (u) (list (f u))))
 
 (define (abstract-unary-real f s)
@@ -6265,7 +6231,6 @@
 	  (format #f "Argument to ~a might be invalid" s) u)))))
 
 (define (abstract-binary-u->v f s)
- ;; This is different in that f is of type: \AB{U} -> \AB{V}
  (lambda (u)
   (if (vlad-pair? u '())
       (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
