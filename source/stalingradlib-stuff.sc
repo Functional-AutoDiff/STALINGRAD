@@ -224,6 +224,8 @@
 
 (define *flow-analysis?* #f)
 
+(define *compile?* #f)
+
 (define *metered?* #f)
 
 (define *show-access-indices?* #f)
@@ -275,6 +277,10 @@
 (define *expression-equality* 'structural)
 
 (define *method-for-removing-redundant-proto-abstract-values* 'structural)
+
+(define *union-free?* #f)
+
+(define *verbose?* #f)
 
 ;;; Procedures
 
@@ -5564,7 +5570,6 @@
 	 (empty-abstract-analysis)))
 
 (define (has-nonif-union? v)
- ;; debugging
  (and (not (up? v))
       (or (and (> (length v) 1) (not (boolean-value? v)) (not (if-value? v)))
 	  (some (lambda (u)
@@ -5573,7 +5578,6 @@
 		v))))
 
 (define (has-nonboolean-union? v)
- ;; debugging
  (and (not (up? v))
       (or (and (> (length v) 1) (not (boolean-value? v)))
 	  (some (lambda (u)
@@ -5599,9 +5603,8 @@
 (define (flow-analysis e bs)
  (let loop ((bs (widen-analysis-domains (initial-abstract-analysis e bs) '()))
 	    (i 0))
-  ;; debugging
-  (when #f (format #t "~s: " i))
-  (let ((bs1 (if #f			;debugging
+  (when *verbose?* (format #t "~s: " i))
+  (let ((bs1 (if *verbose?*
 		 (time
 		  "~a, "
 		  (lambda ()
@@ -5613,13 +5616,11 @@
 		  (abstract-analysis-union (update-analysis-ranges bs)
 					   (update-analysis-domains bs))
 		  bs))))
-   ;; debugging
-   (when #f
+   (when *verbose?*
     (format #t "|analysis|=~s~%"
 	    (reduce
 	     + (map (lambda (b) (length (expression-binding-flow b))) bs1) 0)))
-   ;; debugging
-   (when #f
+   (when *verbose?*
     (format #t "expressions: ~s, max flow size: ~s, bottoms: ~s, concrete reals: ~s~%"
 	    (length bs)
 	    (reduce max
@@ -5649,8 +5650,7 @@
 		    '()))
 		  bs)
 	     '())))
-   ;; debugging
-   (when #t
+   (when (or *compile?* *union-free?*)
     (when (some (lambda (b)
 		 (some (lambda (b)
 			(has-nonif-union? (environment-binding-value b)))
@@ -5670,9 +5670,7 @@
 	  (newline)))
 	(expression-binding-flow b)))
       bs1)
-     (internal-error "Some value has a non-if union")))
-   ;; debugging
-   (when #t
+     (compile-time-error "Some value has a non-if union"))
     (when (some (lambda (b)
 		 (some (lambda (b)
 			(some-vector has-nonboolean-union?
@@ -5692,7 +5690,7 @@
 	  (newline)))
 	(expression-binding-flow b)))
       bs1)
-     (internal-error "Some environment has a non-boolean union")))
+     (compile-time-error "Some environment has a non-boolean union")))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
 
 ;;; Abstract Basis
@@ -7545,6 +7543,35 @@
 	(vs1 (all-ad 'primal bs))
 	(vs2 (all-ad 'tangent bs))
 	(vs3 (all-bundles bs)))
+  ;; debugging
+  (when #t
+   (for-each (lambda (v)
+	      (let ((v1 (abstract-primal-v v)))
+	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
+		(format #t "primal~%")
+		(pp (externalize-abstract-value v))
+		(newline))))
+	     vs1)
+   (for-each (lambda (v)
+	      (let ((v1 (abstract-tangent-v v)))
+	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
+		(format #t "tangent~%")
+		(pp (externalize-abstract-value v))
+		(newline))))
+	     vs2)
+   (for-each (lambda (v)
+	      (let ((v1 ((lambda (v)
+			  (unless (= (length v) 1) (internal-error))
+			  (abstract-bundle
+			   (abstract-vlad-car-u (first v) '())
+			   (abstract-vlad-cdr-u (first v) '()))) v)))
+	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
+		(format #t "bundle~%")
+		(pp (externalize-abstract-value v))
+		(newline))))
+	     vs3)
+   (pp (map externalize-abstract-value (all-aggregate-abstract-values bs)))
+   (newline))
   (list "#include <math.h>" #\newline
 	"#include <stdio.h>" #\newline
 	"#define car(x) x.a" #\newline

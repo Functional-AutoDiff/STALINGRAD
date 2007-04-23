@@ -140,6 +140,8 @@
 		   remove-redundant-proto-abstract-values-using-equality?)
 		  ("remove-redundant-proto-abstract-values-using-subset"
 		   remove-redundant-proto-abstract-values-using-subset?))
+		 (at-most-one ("union-free" union-free?))
+		 (at-most-one ("verbose" verbose?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -153,6 +155,7 @@
  (set! *church-pairs?* church-pairs?)
  (set! *letrec-as-y?* letrec-as-y?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
+ (set! *compile?* compile?)
  (set! *metered?* metered?)
  (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
@@ -191,6 +194,8 @@
   (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
  (when remove-redundant-proto-abstract-values-using-subset?
   (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
+ (set! *union-free?* union-free?)
+ (set! *verbose?* verbose?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
