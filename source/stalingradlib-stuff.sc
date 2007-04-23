@@ -2884,8 +2884,6 @@
     (set! *forward-cache* (cons forward-cache-entry *forward-cache*))))
   (forward-cache-entry-forward forward-cache-entry)))
 
-(define (j* x) (bundle x (zero x)))
-
 ;;; *J
 
 (define (added-variable bs v)
@@ -6153,10 +6151,6 @@
 (define (abstract-bundle v v-perturbation)
  (abstract-bundle-internal v v-perturbation '() '() '()))
 
-(define (abstract-j*-v v) (abstract-bundle v (abstract-zero-v v)))
-
-(define (abstract-j*-u u) (abstract-bundle (list u) (abstract-zero-u u)))
-
 ;;; Reverse Mode
 
 (define (abstract-plus u) (unimplemented "abstract-plus"))
@@ -6549,10 +6543,13 @@
    (adjoinp
     abstract-value=?
     (real-pair)
-    (reduce
-     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-     (map all-aggregate-abstract-subvalues (all-aggregate-abstract-values bs))
-     '())))))
+    (unionp
+     abstract-value=?
+     (all-bundles bs)
+     (reduce
+      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+      (map all-aggregate-abstract-subvalues (all-aggregate-abstract-values bs))
+      '()))))))
 
 (define (generate-builtin-name s v vs)
  (let ((i (positionp abstract-value=? v vs)))
@@ -7351,47 +7348,50 @@
   '()))
 
 (define (all-bundles bs)
- (reduce
-  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-  (map (lambda (v)
-	(unless (= (length v) 1) (internal-error))
-	(all-abstract-subvalues-for-bundle
-	 (abstract-vlad-car-u (first v) '())
-	 (abstract-vlad-cdr-u (first v) '())))
-       (reduce
-	(lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-	(map (lambda (b)
-	      (let ((e (expression-binding-expression b)))
-	       (if (application? e)
-		   (remove-duplicatesp
-		    abstract-value=?
-		    (removeq
-		     #f
-		     (map (lambda (b)
-			   (let ((v1 (abstract-eval1
-				      (application-callee e)
-				      (restrict-environment
-				       (environment-binding-values b)
-				       (free-variables e)
-				       (free-variables (application-callee e)))
-				      bs)))
-			    (if (and (= (length v1) 1)
-				     (primitive-procedure? (first v1))
-				     (eq? (primitive-procedure-name (first v1))
-					  'bundle))
-				(abstract-eval1
-				 (application-argument e)
-				 (restrict-environment
-				  (environment-binding-values b)
-				  (free-variables e)
-				  (free-variables (application-argument e)))
-				 bs)
-				#f)))
-			  (expression-binding-flow b))))
-		   '())))
-	     bs)
-	'()))
-  '()))
+ (remove-if
+  void?
+  (reduce
+   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+   (map
+    (lambda (v)
+     (unless (= (length v) 1) (internal-error))
+     (all-abstract-subvalues-for-bundle
+      (abstract-vlad-car-u (first v) '())
+      (abstract-vlad-cdr-u (first v) '())))
+    (reduce
+     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+     (map (lambda (b)
+	   (let ((e (expression-binding-expression b)))
+	    (if (application? e)
+		(remove-duplicatesp
+		 abstract-value=?
+		 (removeq
+		  #f
+		  (map (lambda (b)
+			(let ((v1 (abstract-eval1
+				   (application-callee e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    (free-variables e)
+				    (free-variables (application-callee e)))
+				   bs)))
+			 (if (and (= (length v1) 1)
+				  (primitive-procedure? (first v1))
+				  (eq? (primitive-procedure-name (first v1))
+				       'bundle))
+			     (abstract-eval1
+			      (application-argument e)
+			      (restrict-environment
+			       (environment-binding-values b)
+			       (free-variables e)
+			       (free-variables (application-argument e)))
+			      bs)
+			     #f)))
+		       (expression-binding-flow b))))
+		'())))
+	  bs)
+     '()))
+   '())))
 
 (define (generate-ad-declarations f s vs1 vs)
  (map (lambda (v)
@@ -7543,35 +7543,6 @@
 	(vs1 (all-ad 'primal bs))
 	(vs2 (all-ad 'tangent bs))
 	(vs3 (all-bundles bs)))
-  ;; debugging
-  (when #t
-   (for-each (lambda (v)
-	      (let ((v1 (abstract-primal-v v)))
-	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
-		(format #t "primal~%")
-		(pp (externalize-abstract-value v))
-		(newline))))
-	     vs1)
-   (for-each (lambda (v)
-	      (let ((v1 (abstract-tangent-v v)))
-	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
-		(format #t "tangent~%")
-		(pp (externalize-abstract-value v))
-		(newline))))
-	     vs2)
-   (for-each (lambda (v)
-	      (let ((v1 ((lambda (v)
-			  (unless (= (length v) 1) (internal-error))
-			  (abstract-bundle
-			   (abstract-vlad-car-u (first v) '())
-			   (abstract-vlad-cdr-u (first v) '()))) v)))
-	       (when (and (not (void? v1)) (not (memp abstract-value=? v vs)))
-		(format #t "bundle~%")
-		(pp (externalize-abstract-value v))
-		(newline))))
-	     vs3)
-   (pp (map externalize-abstract-value (all-aggregate-abstract-values bs)))
-   (newline))
   (list "#include <math.h>" #\newline
 	"#include <stdio.h>" #\newline
 	"#define car(x) x.a" #\newline
@@ -7961,7 +7932,9 @@
   (abstract-binary-real-predicate = "=")
   (lambda (v vs) "eq")
   '(lambda ((forward x))
-    (let (((cons x1 x2) (primal (forward x)))) (j* (= x1 x2))))
+    (let (((cons x1 x2) (primal (forward x)))
+	  (j* (lambda (x) (bundle x (zero x)))))
+     (j* (= x1 x2))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (= x1 x2))
@@ -7971,7 +7944,9 @@
   (abstract-binary-real-predicate < "<")
   (lambda (v vs) "lt")
   '(lambda ((forward x))
-    (let (((cons x1 x2) (primal (forward x)))) (j* (< x1 x2))))
+    (let (((cons x1 x2) (primal (forward x)))
+	  (j* (lambda (x) (bundle x (zero x)))))
+     (j* (< x1 x2))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (< x1 x2))
@@ -7981,7 +7956,9 @@
   (abstract-binary-real-predicate > ">")
   (lambda (v vs) "gt")
   '(lambda ((forward x))
-    (let (((cons x1 x2) (primal (forward x)))) (j* (> x1 x2))))
+    (let (((cons x1 x2) (primal (forward x)))
+	  (j* (lambda (x) (bundle x (zero x)))))
+     (j* (> x1 x2))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (> x1 x2))
@@ -7991,7 +7968,9 @@
   (abstract-binary-real-predicate <= "<=")
   (lambda (v vs) "le")
   '(lambda ((forward x))
-    (let (((cons x1 x2) (primal (forward x)))) (j* (<= x1 x2))))
+    (let (((cons x1 x2) (primal (forward x)))
+	  (j* (lambda (x) (bundle x (zero x)))))
+     (j* (<= x1 x2))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (<= x1 x2))
@@ -8001,7 +7980,9 @@
   (abstract-binary-real-predicate >= ">=")
   (lambda (v vs) "ge")
   '(lambda ((forward x))
-    (let (((cons x1 x2) (primal (forward x)))) (j* (>= x1 x2))))
+    (let (((cons x1 x2) (primal (forward x)))
+	  (j* (lambda (x) (bundle x (zero x)))))
+     (j* (>= x1 x2))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (>= x1 x2))
@@ -8010,7 +7991,9 @@
   (unary-real-predicate zero? "zero?")
   (abstract-unary-real-predicate zero? "zero?")
   (lambda (v vs) "iszero")
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (zero? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (zero? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (zero? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8018,7 +8001,9 @@
   (unary-real-predicate positive? "positive?")
   (abstract-unary-real-predicate positive? "positive?")
   (lambda (v vs) "positive")
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (positive? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (positive? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (positive? x))
@@ -8027,7 +8012,9 @@
   (unary-real-predicate negative? "negative?")
   (abstract-unary-real-predicate negative? "negative?")
   (lambda (v vs) "negative")
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (negative? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (negative? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (negative? x))
@@ -8036,7 +8023,9 @@
   (unary-predicate null? "null?")
   (abstract-unary-predicate null? "null?")
   (lambda (v vs) (unimplemented "null?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (null? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (null? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (null? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8044,7 +8033,9 @@
   (unary-predicate vlad-boolean? "boolean?")
   (abstract-unary-predicate vlad-boolean? "boolean?")
   (lambda (v vs) (unimplemented "boolean?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (boolean? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (boolean? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (boolean? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8052,7 +8043,9 @@
   (unary-predicate real? "real?")
   (abstract-unary-predicate real? "real?")
   (lambda (v vs) (unimplemented "real?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (real? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (real? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (real? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8060,7 +8053,9 @@
   (unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
   (abstract-unary-predicate (lambda (x) (vlad-pair? x '())) "pair?")
   (lambda (v vs) (unimplemented "pair?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (pair? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (pair? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (pair? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8068,7 +8063,9 @@
   (unary-predicate vlad-procedure? "procedure?")
   (abstract-unary-predicate vlad-procedure? "procedure?")
   (lambda (v vs) (unimplemented "procedure?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (procedure? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (procedure? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (procedure? x))
@@ -8077,7 +8074,9 @@
   (unary-predicate vlad-forward? "forward?")
   (abstract-unary-predicate vlad-forward? "forward?")
   (lambda (v vs) (unimplemented "forward?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (forward? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (forward? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (forward? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8085,7 +8084,9 @@
   (unary-predicate vlad-reverse? "reverse?")
   (abstract-unary-predicate vlad-reverse? "reverse?")
   (lambda (v vs) (unimplemented "reverse?"))
-  '(lambda ((forward x)) (let ((x (primal (forward x)))) (j* (reverse? x))))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
+     (j* (reverse? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (reverse? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
@@ -8204,7 +8205,8 @@
 	  ((perturbation x-forward) (tangent (forward x-forward))))
      (bundle (primal x-forward) (primal (perturbation x-forward)))))
   '(lambda ((reverse x-forward))
-    (let ((x-forward (*j-inverse (reverse x-forward))))
+    (let ((x-forward (*j-inverse (reverse x-forward)))
+	  (j* (lambda (x) (bundle x (zero x)))))
      (cons (*j (primal x-forward))
 	   (lambda ((sensitivity y)) (cons '() (j* (sensitivity y))))))))
  (define-primitive-procedure 'tangent
@@ -8239,18 +8241,6 @@
 	    (cons '()
 		  (cons (primal (sensitivity (forward y)))
 			(tangent (sensitivity (forward y))))))))))
- (define-primitive-procedure 'j*
-  (unary j* "j*")
-  (unary abstract-j*-u "j*")
-  (lambda (v vs) (unimplemented "j*"))
-  '(lambda ((forward x))
-    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (j* x) (j* (perturbation x)))))
-  '(lambda ((reverse x))
-    (let ((x (*j-inverse (reverse x))))
-     (cons (*j (j* x))
-	   (lambda ((sensitivity (forward y)))
-	    (cons '() (primal (sensitivity (forward y)))))))))
  (define-primitive-procedure '*j
   (unary *j "*j")
   (unary abstract-*j-u "*j")
