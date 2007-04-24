@@ -628,6 +628,14 @@
        vs))
      (create-tagged-pair '() v1 v2)))
 
+(define (tagged-null tags)
+ (if (null? tags)
+     '()
+     (case (first tags)
+      ((forward) (let ((x (tagged-null (rest tags)))) (bundle x (zero x))))
+      ((reverse) (*j (tagged-null (rest tags))))
+      (else (internal-error)))))
+
 (define (vlad-procedure? v)
  (and (or (primitive-procedure? v) (closure? v))
       (not (vlad-pair? v '()))
@@ -2019,8 +2027,8 @@
    (if *church-booleans?*
        `((,(second e) (cons (lambda () ,(third e)) (lambda () ,(fourth e)))))
        ;; needs work: to ensure that you don't shadow if-procedure
-       `((if-procedure
-	  ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))))
+       `(if-procedure
+	 ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e)))))
   ;; needs work: to ensure that you don't shadow cons-procedure
   ((cons)
    (unless (= (length e) 3) (compile-time-error "Invalid expression: ~s" e))
@@ -5383,7 +5391,7 @@
 	 ((primitive-procedure? u1)
 	  (reduce abstract-value-union
 		  (map (lambda (u2)
-			((primitive-procedure-abstract-procedure u1) u2))
+			((primitive-procedure-abstract-procedure u1) u2 bs))
 		       (closed-proto-abstract-values v2))
 		  (empty-abstract-value)))
 	 ((closure? u1)
@@ -5468,12 +5476,42 @@
       abstract-analysis-union
       (map
        (lambda (u1)
-	(cond ((primitive-procedure? u1) (empty-abstract-analysis))
-	      ((closure? u1)
-	       (abstract-apply-closure
-		(lambda (e vs) (abstract-eval1-prime e vs bs)) u1 v2))
-	      (else (compile-time-warning "Target might not be a procedure" u1)
-		    (empty-abstract-analysis))))
+	(cond
+	 ((primitive-procedure? u1)
+	  ;; needs work: should put this into slots of the primitive
+	  ;;             procedures
+	  (if (eq? (primitive-procedure-name u1) 'if-procedure)
+	      (reduce abstract-analysis-union
+		      (map (lambda (u2)
+			    ((abstract-ternary-prime-u->v
+			      (lambda (u1 u2 u3 bs)
+			       (unless (and (nonrecursive-closure? u2)
+					    (nonrecursive-closure? u3))
+				(run-time-error "You used if-procedure"))
+			       (if u1
+				   (abstract-apply-closure
+				    (lambda (e vs)
+				     (abstract-eval1-prime e vs bs))
+				    u2
+				    (abstract-tagged-null
+				     (nonrecursive-closure-tags u2)))
+				   (abstract-apply-closure
+				    (lambda (e vs)
+				     (abstract-eval1-prime e vs bs))
+				    u3
+				    (abstract-tagged-null
+				     (nonrecursive-closure-tags u3)))))
+			      "if-procedure")
+			     u2
+			     bs))
+			   (closed-proto-abstract-values v2))
+		      (empty-abstract-analysis))
+	      (empty-abstract-analysis)))
+	 ((closure? u1)
+	  (abstract-apply-closure
+	   (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 v2))
+	 (else (compile-time-warning "Target might not be a procedure" u1)
+	       (empty-abstract-analysis))))
        (closed-proto-abstract-values v1))
       (empty-abstract-analysis))))
 
@@ -5706,6 +5744,15 @@
 	 (unimplemented "abstract-vlad-cdr-u for Church pairs")
 	 (tagged-pair-cdr u))
      (compile-time-warning "Might attempt to take cdr of a non-pair" u)))
+
+(define (abstract-tagged-null tags)
+ (if (null? tags)
+     '(())
+     (case (first tags)
+      ((forward)
+       (let ((v (tagged-null (rest tags)))) (abstract-bundle v (zero v))))
+      ((reverse) (abstract-*j-v (tagged-null (rest tags))))
+      (else (internal-error)))))
 
 (define (abstract-zero-v v)
  (if (up? v)
@@ -6165,27 +6212,29 @@
 
 ;;; Abstract Basis Generators
 
-(define (abstract-unary f s) (lambda (u) (list (f u))))
+(define (abstract-unary-u->v f s) (lambda (u bs) (f u)))
+
+(define (abstract-unary f s) (lambda (u bs) (list (f u))))
 
 (define (abstract-unary-real f s)
- (lambda (u)
+ (lambda (u bs)
   (cond ((real? u) (list (f u)))
 	((abstract-real? u) '(real))
 	(else (compile-time-warning
 	       (format #f "Argument to ~a might be invalid" s) u)))))
 
 (define (abstract-unary-predicate f s)
- (lambda (u) (list (if (f u) vlad-true vlad-false))))
+ (lambda (u bs) (list (if (f u) vlad-true vlad-false))))
 
 (define (abstract-unary-real-predicate f s)
- (lambda (u)
+ (lambda (u bs)
   (cond ((real? u) (list (if (f u) vlad-true vlad-false)))
 	((abstract-real? u) (list vlad-true vlad-false))
 	(else (compile-time-warning
 	       (format #f "Argument to ~a might be invalid" s) u)))))
 
 (define (abstract-binary f s)
- (lambda (u)
+ (lambda (u bs)
   (cond
    ((vlad-pair? u '())
     (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
@@ -6199,8 +6248,8 @@
    (else (compile-time-warning
 	  (format #f "Argument to ~a might be invalid" s) u)))))
 
-(define (abstract-binary-u->v f s)
- (lambda (u)
+(define (abstract-binary-v->v f s)
+ (lambda (u bs)
   (if (vlad-pair? u '())
       (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
 	 (closed-proto-abstract-values (abstract-vlad-cdr-u u '())))
@@ -6208,7 +6257,7 @@
        (format #f "Argument to ~a might be invalid" s) u))))
 
 (define (abstract-binary-real f s)
- (lambda (u)
+ (lambda (u bs)
   (if (vlad-pair? u '())
       (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
        (reduce
@@ -6231,7 +6280,7 @@
        (format #f "Argument to ~a might be invalid" s) u))))
 
 (define (abstract-binary-real-predicate f s)
- (lambda (u)
+ (lambda (u bs)
   (if (vlad-pair? u '())
       (let ((v2 (closed-proto-abstract-values (abstract-vlad-cdr-u u '()))))
        (reduce
@@ -6255,8 +6304,8 @@
       (compile-time-warning
        (format #f "Argument to ~a might be invalid" s) u))))
 
-(define (abstract-ternary f s)
- (lambda (u123)
+(define (abstract-ternary-u->v f s)
+ (lambda (u123 bs)
   (if (vlad-pair? u123 '())
       (let ((v23
 	     (closed-proto-abstract-values (abstract-vlad-cdr-u u123 '()))))
@@ -6266,25 +6315,60 @@
 	 (lambda (u1)
 	  (reduce
 	   abstract-value-union
-	   (map (lambda (u23)
-		 (if (vlad-pair? u23 '())
-		     (let ((v3 (closed-proto-abstract-values
-				(abstract-vlad-cdr-u u23 '()))))
-		      (reduce
-		       abstract-value-union
-		       (map (lambda (u2)
-			     (reduce abstract-value-union
-				     (map (lambda (u3) (list (f u1 u2 u3))) v3)
-				     (empty-abstract-value)))
-			    (closed-proto-abstract-values
-			     (abstract-vlad-car-u u23 '())))
-		       (empty-abstract-value)))
-		     (compile-time-warning
-		      (format #f "Argument to ~a might be invalid" s) u123)))
-		v23)
+	   (map
+	    (lambda (u23)
+	     (if (vlad-pair? u23 '())
+		 (let ((v3 (closed-proto-abstract-values
+			    (abstract-vlad-cdr-u u23 '()))))
+		  (reduce
+		   abstract-value-union
+		   (map (lambda (u2)
+			 (reduce abstract-value-union
+				 (map (lambda (u3) (f u1 u2 u3 bs)) v3)
+				 (empty-abstract-value)))
+			(closed-proto-abstract-values
+			 (abstract-vlad-car-u u23 '())))
+		   (empty-abstract-value)))
+		 (compile-time-warning
+		  (format #f "Argument to ~a might be invalid" s) u123)))
+	    v23)
 	   (empty-abstract-value)))
 	 (closed-proto-abstract-values (abstract-vlad-car-u u123 '())))
 	(empty-abstract-value)))
+      (compile-time-warning
+       (format #f "Argument to ~a might be invalid" s) u123))))
+
+(define (abstract-ternary-prime-u->v f s)
+ (lambda (u123 bs)
+  (if (vlad-pair? u123 '())
+      (let ((v23
+	     (closed-proto-abstract-values (abstract-vlad-cdr-u u123 '()))))
+       (reduce
+	abstract-analysis-union
+	(map
+	 (lambda (u1)
+	  (reduce
+	   abstract-analysis-union
+	   (map
+	    (lambda (u23)
+	     (if (vlad-pair? u23 '())
+		 (let ((v3 (closed-proto-abstract-values
+			    (abstract-vlad-cdr-u u23 '()))))
+		  (reduce
+		   abstract-analysis-union
+		   (map (lambda (u2)
+			 (reduce abstract-analysis-union
+				 (map (lambda (u3) (f u1 u2 u3 bs)) v3)
+				 (empty-abstract-analysis)))
+			(closed-proto-abstract-values
+			 (abstract-vlad-car-u u23 '())))
+		   (empty-abstract-analysis)))
+		 (compile-time-warning
+		  (format #f "Argument to ~a might be invalid" s) u123)))
+	    v23)
+	   (empty-abstract-analysis)))
+	 (closed-proto-abstract-values (abstract-vlad-car-u u123 '())))
+	(empty-abstract-analysis)))
       (compile-time-warning
        (format #f "Argument to ~a might be invalid" s) u123))))
 
@@ -6388,7 +6472,9 @@
 
 (define (real-pair) (list (vlad-cons '(real) '(real))))
 
-(define (if-value? v) (and (= (length v) 2) (every nonrecursive-closure? v)))
+(define (if-value? v)
+ ;; needs work: there are no more if-values
+ (and (= (length v) 2) (every nonrecursive-closure? v)))
 
 (define (void? v)
  (when (up? v) (internal-error))
@@ -6717,36 +6803,45 @@
   v1v2s))
 
 (define (if? e vs bs)
- ;; needs work: We don't check that the callee argument is a cons expression
+ ;; needs work: We don't check that the argument is a cons expression
  ;;             whose cdr is a cons expression, that the consequent and
- ;;             alternate are lambda expressions, that their arguments are
- ;;             never used, and that the expression passed to those unused
- ;;             arguments is ().
+ ;;             alternate are nonrecursive closures, that their arguments are
+ ;;             never used, and that all free variables of the closures are
+ ;;             in scope at the call to if-procedure.
  (and (application? e)
-      (application? (application-callee e))
       (let ((v (abstract-eval1
-		(application-callee (application-callee e))
+		(application-callee e)
 		(restrict-environment
-		 vs
-		 (free-variables e)
-		 (free-variables (application-callee (application-callee e))))
+		 vs (free-variables e) (free-variables (application-callee e)))
 		bs)))
        (and (= (length v) 1)
 	    (primitive-procedure? (first v))
 	    (eq? (primitive-procedure-name (first v)) 'if-procedure)))))
 
 (define (if-antecedent e)
- (cons-expression-car (application-argument (application-callee e))))
+ (cons-expression-car (application-argument e)))
 
-(define (if-consequent e)
- (lambda-expression-body
-  (cons-expression-car
-   (cons-expression-cdr (application-argument (application-callee e))))))
+(define (if-consequent e vs bs)
+ (closure-body
+  (abstract-eval1
+   (cons-expression-car (cons-expression-cdr (application-argument e)))
+   (restrict-environment
+    vs
+    (free-variables e)
+    (free-variables
+     (cons-expression-car (cons-expression-cdr (application-argument e)))))
+   bs)))
 
-(define (if-alternate e)
- (lambda-expression-body
-  (cons-expression-cdr
-   (cons-expression-cdr (application-argument (application-callee e))))))
+(define (if-alternate e vs bs)
+ (closure-body
+  (abstract-eval1
+   (cons-expression-cdr (cons-expression-cdr (application-argument e)))
+   (restrict-environment
+    vs
+    (free-variables e)
+    (free-variables
+     (cons-expression-cdr (cons-expression-cdr (application-argument e)))))
+   bs)))
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
@@ -6792,14 +6887,18 @@
 	       bs)))
      (if (boolean-value? v1)
 	 (let ((v2 (abstract-eval1
-		    (if-consequent e)
+		    (if-consequent e vs bs)
 		    (restrict-environment
-		     vs (free-variables e) (free-variables (if-consequent e)))
+		     vs
+		     (free-variables e)
+		     (free-variables (if-consequent e vs bs)))
 		    bs))
 	       (v3 (abstract-eval1
-		    (if-alternate e)
+		    (if-alternate e vs bs)
 		    (restrict-environment
-		     vs (free-variables e) (free-variables (if-alternate e)))
+		     vs
+		     (free-variables e)
+		     (free-variables (if-alternate e vs bs)))
 		    bs)))
 	  (list "("
 		(generate-expression
@@ -6814,9 +6913,11 @@
 		 v1v2s)
 		"?"
 		(generate-expression
-		 (if-consequent e)
+		 (if-consequent e vs bs)
 		 (restrict-environment
-		  vs (free-variables e) (free-variables (if-consequent e)))
+		  vs
+		  (free-variables e)
+		  (free-variables (if-consequent e vs bs)))
 		 xs
 		 xs2
 		 bs
@@ -6825,9 +6926,11 @@
 		 v1v2s)
 		":"
 		(generate-expression
-		 (if-alternate e)
+		 (if-alternate e vs bs)
 		 (restrict-environment
-		  vs (free-variables e) (free-variables (if-alternate e)))
+		  vs
+		  (free-variables e)
+		  (free-variables (if-alternate e vs bs)))
 		 xs
 		 xs2
 		 bs
@@ -6839,9 +6942,9 @@
 	  (unless (= (length v1) 1) (internal-error))
 	  (if (first v1)
 	      (generate-expression
-	       (if-consequent e)
+	       (if-consequent e vs bs)
 	       (restrict-environment
-		vs (free-variables e) (free-variables (if-consequent e)))
+		vs (free-variables e) (free-variables (if-consequent e vs bs)))
 	       xs
 	       xs2
 	       bs
@@ -6849,9 +6952,9 @@
 	       vs1
 	       v1v2s)
 	      (generate-expression
-	       (if-alternate e)
+	       (if-alternate e vs bs)
 	       (restrict-environment
-		vs (free-variables e) (free-variables (if-alternate e)))
+		vs (free-variables e) (free-variables (if-alternate e vs bs)))
 	       xs
 	       xs2
 	       bs
@@ -7020,15 +7123,33 @@
 	       bs)))
      (if (boolean-value? v1)
 	 (let ((v2 (abstract-eval1
-		    (if-consequent e)
+		    (if-consequent e vs bs)
 		    (restrict-environment
-		     vs (free-variables e) (free-variables (if-consequent e)))
+		     vs
+		     (free-variables e)
+		     (free-variables (if-consequent e vs bs)))
 		    bs))
 	       (v3 (abstract-eval1
-		    (if-alternate e)
+		    (if-alternate e vs bs)
 		    (restrict-environment
-		     vs (free-variables e) (free-variables (if-alternate e)))
+		     vs
+		     (free-variables e)
+		     (free-variables (if-alternate e vs bs)))
 		    bs)))
+	  ;; debugging
+	  (when #t
+	   (unless (subsetp? variable=?
+			     (free-variables (if-consequent e vs bs))
+			     (free-variables e))
+	    (pp (list (free-variables (if-consequent e vs bs))
+		      (free-variables e)
+		      (abstract->concrete e))))
+	   (unless (subsetp? variable=?
+			     (free-variables (if-alternate e vs bs))
+			     (free-variables e))
+	    (pp (list (free-variables (if-alternate e vs bs))
+		      (free-variables e)
+		      (abstract->concrete e)))))
 	  (list (generate-letrec-bindings
 		 (if-antecedent e)
 		 (restrict-environment
@@ -7040,9 +7161,11 @@
 		 vs1
 		 v1v2s)
 		(generate-letrec-bindings
-		 (if-consequent e)
+		 (if-consequent e vs bs)
 		 (restrict-environment
-		  vs (free-variables e) (free-variables (if-consequent e)))
+		  vs
+		  (free-variables e)
+		  (free-variables (if-consequent e vs bs)))
 		 xs
 		 xs2
 		 bs
@@ -7050,9 +7173,11 @@
 		 vs1
 		 v1v2s)
 		(generate-letrec-bindings
-		 (if-alternate e)
+		 (if-alternate e vs bs)
 		 (restrict-environment
-		  vs (free-variables e) (free-variables (if-alternate e)))
+		  vs
+		  (free-variables e)
+		  (free-variables (if-alternate e vs bs)))
 		 xs
 		 xs2
 		 bs
@@ -7061,11 +7186,26 @@
 		 v1v2s)))
 	 (begin
 	  (unless (= (length v1) 1) (internal-error))
+	  ;; debugging
+	  (when #t
+	   (if (first v1)
+	       (unless (subsetp? variable=?
+				 (free-variables (if-consequent e vs bs))
+				 (free-variables e))
+		(pp (list (free-variables (if-consequent e vs bs))
+			  (free-variables e)
+			  (abstract->concrete e))))
+	       (unless (subsetp? variable=?
+				 (free-variables (if-alternate e vs bs))
+				 (free-variables e))
+		(pp (list (free-variables (if-alternate e vs bs))
+			  (free-variables e)
+			  (abstract->concrete e))))))
 	  (if (first v1)
 	      (generate-letrec-bindings
-	       (if-consequent e)
+	       (if-consequent e vs bs)
 	       (restrict-environment
-		vs (free-variables e) (free-variables (if-consequent e)))
+		vs (free-variables e) (free-variables (if-consequent e vs bs)))
 	       xs
 	       xs2
 	       bs
@@ -7073,9 +7213,9 @@
 	       vs1
 	       v1v2s)
 	      (generate-letrec-bindings
-	       (if-alternate e)
+	       (if-alternate e vs bs)
 	       (restrict-environment
-		vs (free-variables e) (free-variables (if-alternate e)))
+		vs (free-variables e) (free-variables (if-alternate e vs bs)))
 	       xs
 	       xs2
 	       bs
@@ -8092,8 +8232,28 @@
      (cons (*j (reverse? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
  (unless *church-booleans?*
   (define-primitive-procedure 'if-procedure
-   (ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
-   (abstract-ternary (lambda (x1 x2 x3) (if x1 x2 x3)) "if-procedure")
+   (ternary (lambda (x1 x2 x3)
+	     (unless (and (nonrecursive-closure? x2)
+			  (nonrecursive-closure? x3))
+	      (run-time-error "You used if-procedure"))
+	     (if x1
+		 (call x2 (tagged-null (nonrecursive-closure-tags x2)))
+		 (call x3 (tagged-null (nonrecursive-closure-tags x3)))))
+	    "if-procedure")
+   (abstract-ternary-u->v
+    (lambda (u1 u2 u3 bs)
+     (unless (and (nonrecursive-closure? u2) (nonrecursive-closure? u3))
+      (run-time-error "You used if-procedure"))
+     (if u1
+	 (abstract-apply-closure
+	  (lambda (e vs) (abstract-eval1 e vs bs))
+	  u2
+	  (abstract-tagged-null (nonrecursive-closure-tags u2)))
+	 (abstract-apply-closure
+	  (lambda (e vs) (abstract-eval1 e vs bs))
+	  u3
+	  (abstract-tagged-null (nonrecursive-closure-tags u3)))))
+    "if-procedure")
    (lambda (v vs) (compile-time-error "You used if-procedure"))
    '(lambda ((forward x))
      (let (((cons* x1 x2 x3) (primal (forward x)))
@@ -8101,6 +8261,7 @@
 	    (tangent (forward x))))
       (if-procedure
        x1 (bundle x2 (perturbation x2)) (bundle x3 (perturbation x3)))))
+   ;; needs work: this is wrong now
    '(lambda ((reverse x))
      (let (((cons* x1 x2 x3) (*j-inverse (reverse x))))
       (if-procedure
@@ -8114,7 +8275,7 @@
  (unless *church-pairs?*
   (define-primitive-procedure 'car
    (unary (lambda (x) (vlad-car x '())) "car")
-   (unary (lambda (u) (abstract-vlad-car-u u '())) "car")
+   (abstract-unary-u->v (lambda (u) (abstract-vlad-car-u u '())) "car")
    (lambda (v vs) "car")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
@@ -8127,7 +8288,7 @@
 	     (cons '() (cons (sensitivity y) (zero x2))))))))
   (define-primitive-procedure 'cdr
    (unary (lambda (x) (vlad-cdr x '())) "cdr")
-   (unary (lambda (u) (abstract-vlad-cdr-u u '())) "cdr")
+   (abstract-unary-u->v (lambda (u) (abstract-vlad-cdr-u u '())) "cdr")
    (lambda (v vs) "cdr")
    '(lambda ((forward x))
      (let (((cons x1 x2) (primal (forward x)))
@@ -8139,8 +8300,8 @@
 	    (lambda ((sensitivity y))
 	     (cons '() (cons (zero x1) (sensitivity y)))))))))
  (define-primitive-procedure 'read-real
-  (lambda (x) (read-real))
-  (lambda (u) '(real))
+  (unary (lambda (x) (read-real)) "read-real")
+  (abstract-unary-u->v (lambda (u) '(real)) "read-real")
   (lambda (v vs) "read_real")
   ;; needs work: is this right?
   '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
@@ -8175,7 +8336,7 @@
 	   (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
  (define-primitive-procedure 'zero
   (unary zero "zero")
-  (unary abstract-zero-u "zero")
+  (abstract-unary-u->v abstract-zero-u "zero")
   (lambda (v vs) (unimplemented "zero"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -8198,7 +8359,7 @@
 	    (cons '() (cons (sensitivity y) (sensitivity y))))))))
  (define-primitive-procedure 'primal
   (unary primal "primal")
-  (unary abstract-primal-u "primal")
+  (abstract-unary-u->v abstract-primal-u "primal")
   (lambda (v vs) (generate-builtin-name "p" v vs))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
@@ -8211,7 +8372,7 @@
 	   (lambda ((sensitivity y)) (cons '() (j* (sensitivity y))))))))
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
-  (unary abstract-tangent-u "tangent")
+  (abstract-unary-u->v abstract-tangent-u "tangent")
   (lambda (v vs) (generate-builtin-name "t" v vs))
   '(lambda ((forward x-forward))
     (let ((x-forward (primal (forward x-forward)))
@@ -8226,7 +8387,7 @@
 			  (sensitivity (perturbation y)))))))))
  (define-primitive-procedure 'bundle
   (binary bundle "bundle")
-  (abstract-binary-u->v abstract-bundle "bundle")
+  (abstract-binary-v->v abstract-bundle "bundle")
   (lambda (v vs) (generate-builtin-name "b" v vs))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
@@ -8243,7 +8404,7 @@
 			(tangent (sensitivity (forward y))))))))))
  (define-primitive-procedure '*j
   (unary *j "*j")
-  (unary abstract-*j-u "*j")
+  (abstract-unary-u->v abstract-*j-u "*j")
   (lambda (v vs) (unimplemented "*j"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -8256,7 +8417,7 @@
 	    (cons '() (*j-inverse (sensitivity (reverse y)))))))))
  (define-primitive-procedure '*j-inverse
   (unary *j-inverse "*j-inverse")
-  (unary abstract-*j-inverse-u "*j-inverse")
+  (abstract-unary-u->v abstract-*j-inverse-u "*j-inverse")
   (lambda (v vs) (unimplemented "*j-inverse"))
   '(lambda ((forward x-reverse))
     (let ((x-reverse (primal (forward x-reverse)))
