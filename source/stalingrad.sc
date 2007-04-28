@@ -194,7 +194,7 @@
   (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
  (when remove-redundant-proto-abstract-values-using-subset?
   (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
- (set! *union-free?* union-free?)
+ (set! *union-free?* (or compile? union-free?))
  (set! *verbose?* verbose?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
