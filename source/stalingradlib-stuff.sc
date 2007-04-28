@@ -5775,7 +5775,7 @@
  ;; See the note in zero.
  (cond ((null? u) (list u))
        ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
-       ((abstract-real? u) '(0))
+       ((abstract-real? u) '(real))
        ((primitive-procedure? u) (list u))
        ((nonrecursive-closure? u)
 	(make-abstract-nonrecursive-closure
