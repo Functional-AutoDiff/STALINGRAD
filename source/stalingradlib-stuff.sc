@@ -99,7 +99,7 @@
  variable
  body)
 
-(define-structure application callee argument free-variable-indices)
+(define-structure application callee argument free-variables)
 
 (define-structure letrec-expression
  bodies-free-variables
@@ -111,7 +111,7 @@
  bodies
  body)
 
-(define-structure cons-expression tags car cdr free-variable-indices)
+(define-structure cons-expression tags car cdr free-variables)
 
 (define-structure variable-binding variable expression)
 
@@ -1062,9 +1062,15 @@
  (make-variable-access-expression x #f))
 
 (define (new-lambda-expression x e)
+ ;; No need to sort here because (free-variables e) is sorted and removing
+ ;; a variable does not disturb that.
  (make-lambda-expression (removep variable=? x (free-variables e)) #f x e))
 
-(define (new-application e1 e2) (make-application e1 e2 #f))
+(define (new-application e1 e2)
+ (make-application
+  e1
+  e2
+  (sort-variables (union-variables (free-variables e1) (free-variables e2)))))
 
 (define (create-application bs tags e . es)
  (new-application e (make-cons* bs tags es)))
@@ -1073,7 +1079,7 @@
  (if (null? xs)
      e
      (new-application
-      ;; needs work
+      ;; needs work: This disables vestigial let*-expressions.
       (if #f
 	  (make-lambda-expression #f
 				  #f
@@ -1209,10 +1215,14 @@
 	      (list-ref xs2 (positionp variable=? x xs1))
 	      (list-ref es (positionp variable=? x xs1))))))))))
 
-(define (create-cons-expression tags e1 e2)
- (make-cons-expression tags e1 e2 #f))
+(define (new-cons-expression tags e1 e2)
+ (make-cons-expression
+  tags
+  e1
+  e2
+  (sort-variables (union-variables (free-variables e1) (free-variables e2)))))
 
-(define (new-cons-expression e1 e2) (create-cons-expression '() e1 e2))
+(define (create-cons-expression e1 e2) (new-cons-expression '() e1 e2))
 
 ;;; LET*
 
@@ -1426,7 +1436,7 @@
      (let* ((result1 (outer (cons-expression-car e) xs bs))
 	    (result2 (outer (cons-expression-cdr e) (first result1) bs)))
       (list (first result2)
-	    (create-cons-expression
+	    (new-cons-expression
 	     (cons-expression-tags e) (second result1) (second result2)))))
     (else (internal-error))))))
 
@@ -1492,26 +1502,17 @@
    xs1)))
 
 (define (free-variables e)
- (sort-variables
-  (let loop ((e e))
-   (cond ((constant-expression? e) '())
-	 ((variable-access-expression? e)
-	  (list (variable-access-expression-variable e)))
-	 ((lambda-expression? e)
-	  ;; This is a vestigial let*-expression.
-	  (if (eq? (lambda-expression-free-variables e) #f)
-	      (removep variable=?
-		       (lambda-expression-variable e)
-		       (loop (lambda-expression-body e)))
-	      (lambda-expression-free-variables e)))
-	 ((application? e)
-	  (union-variables (loop (application-callee e))
-			   (loop (application-argument e))))
-	 ((letrec-expression? e) (letrec-expression-body-free-variables e))
-	 ((cons-expression? e)
-	  (union-variables (loop (cons-expression-car e))
-			   (loop (cons-expression-cdr e))))
-	 (else (internal-error))))))
+ (cond ((constant-expression? e) '())
+       ((variable-access-expression? e)
+	(list (variable-access-expression-variable e)))
+       ((lambda-expression? e)
+	(if (eq? (lambda-expression-free-variables e) #f)
+	    (unimplemented "vestigial let*-expressions")
+	    (lambda-expression-free-variables e)))
+       ((application? e) (application-free-variables e))
+       ((letrec-expression? e) (letrec-expression-body-free-variables e))
+       ((cons-expression? e) (cons-expression-free-variables e))
+       (else (internal-error))))
 
 (define (vector-append . vss)
  (list->vector (reduce append (map vector->list vss) '())))
@@ -1577,9 +1578,9 @@
 		   (letrec-expression-body-free-variables e))
 	   (letrec-expression-body e))))
   ((cons-expression? e)
-   (create-cons-expression (cons-expression-tags e)
-			   (index x xs (cons-expression-car e))
-			   (index x xs (cons-expression-cdr e))))
+   (new-cons-expression (cons-expression-tags e)
+			(index x xs (cons-expression-car e))
+			(index x xs (cons-expression-cdr e))))
   (else (internal-error))))
 
 ;;; ANF conversion
@@ -1721,7 +1722,7 @@
 	    x
 	    (cons (make-variable-binding
 		   x
-		   (create-cons-expression
+		   (new-cons-expression
 		    (cons-expression-tags e)
 		    (new-variable-access-expression (second result1))
 		    (new-variable-access-expression (second result2))))
@@ -1780,9 +1781,9 @@
        ;; ANF should never have letrec.
        ((letrec-expression? e) (internal-error))
        ((cons-expression? e)
-	(create-cons-expression (cons-expression-tags e)
-				(substitute x1 x2 (cons-expression-car e))
-				(substitute x1 x2 (cons-expression-cdr e))))
+	(new-cons-expression (cons-expression-tags e)
+			     (substitute x1 x2 (cons-expression-car e))
+			     (substitute x1 x2 (cons-expression-cdr e))))
        (else (internal-error))))
 
 (define (copy-propagate e)
@@ -1934,9 +1935,9 @@
 	      (letrec-expression-bodies e))
 	 (constant-convert bs (letrec-expression-body e))))
        ((cons-expression? e)
-	(create-cons-expression (cons-expression-tags e)
-				(constant-convert bs (cons-expression-car e))
-				(constant-convert bs (cons-expression-cdr e))))
+	(new-cons-expression (cons-expression-tags e)
+			     (constant-convert bs (cons-expression-car e))
+			     (constant-convert bs (cons-expression-cdr e))))
        (else (internal-error))))
 
 ;;; Concrete->Abstract
@@ -2166,8 +2167,8 @@
     ((cons)
      (if *church-pairs?*
 	 (concrete->abstract-expression (macro-expand e))
-	 (new-cons-expression (concrete->abstract-expression (second e))
-			      (concrete->abstract-expression (third e)))))
+	 (create-cons-expression (concrete->abstract-expression (second e))
+				 (concrete->abstract-expression (third e)))))
     ((cons*) (concrete->abstract-expression (macro-expand e)))
     ((list) (concrete->abstract-expression (macro-expand e)))
     ((cond) (concrete->abstract-expression (macro-expand e)))
@@ -2416,9 +2417,9 @@
 	 (map forward-transform (letrec-expression-bodies e))
 	 (forward-transform (letrec-expression-body e))))
        ((cons-expression? e)
-	(create-cons-expression (cons 'forward (cons-expression-tags e))
-				(forward-transform (cons-expression-car e))
-				(forward-transform (cons-expression-cdr e))))
+	(new-cons-expression (cons 'forward (cons-expression-tags e))
+			     (forward-transform (cons-expression-car e))
+			     (forward-transform (cons-expression-cdr e))))
        (else (internal-error))))
 
 (define (forward-transform-inverse e)
@@ -2441,7 +2442,7 @@
    (unless (and (not (null? (cons-expression-tags e)))
 		(eq? (first (cons-expression-tags e)) 'forward))
     (internal-error))
-   (create-cons-expression
+   (new-cons-expression
     (rest (cons-expression-tags e))
     (forward-transform-inverse (cons-expression-car e))
     (forward-transform-inverse (cons-expression-cdr e))))
@@ -2977,7 +2978,7 @@
 					 (make-*j-inverse bs e1)
 					 (make-*j-inverse bs e2))))
 	  (else (internal-error))))
-     (create-cons-expression tags e1 e2)))
+     (new-cons-expression tags e1 e2)))
 
 (define (make-cons* bs tags es)
  (cond ((null? es) (tagify bs tags (added-variable bs 'null)))
@@ -3193,7 +3194,7 @@
 	      ((cons-expression? e)
 	       (list (make-variable-binding
 		      (reverseify x)
-		      (create-cons-expression
+		      (new-cons-expression
 		       (cons 'reverse (cons-expression-tags e))
 		       (reverseify-access (cons-expression-car e))
 		       (reverseify-access (cons-expression-cdr e))))))
@@ -3389,7 +3390,7 @@
     (loop (rest xs)
 	  (rest es)
 	  (cons (unreverseify (first xs)) xs0)
-	  (cons (create-cons-expression
+	  (cons (new-cons-expression
 		 (rest (cons-expression-tags (first es)))
 		 (unreverseify-access (cons-expression-car (first es)))
 		 (unreverseify-access (cons-expression-cdr (first es))))
@@ -4072,13 +4073,12 @@
        ((lambda-expression? e)
 	(let ((vs (map-vector
 		   lookup (lambda-expression-free-variable-indices e))))
-	 (make-nonrecursive-closure
-	  (free-variables e)
-	  vs
-	  (lambda-expression-variable e)
-	  (lambda-expression-body e)
-	  e
-	  vs)))
+	 (make-nonrecursive-closure (free-variables e)
+				    vs
+				    (lambda-expression-variable e)
+				    (lambda-expression-body e)
+				    e
+				    vs)))
        ;; This is a vestigial let*-expression.
        ((let*? e)
 	(let ((x? (and *x* (variable=? (first (let*-variables e)) *x*))))
@@ -4278,13 +4278,12 @@
 (define (make-abstract-nonrecursive-closure vs e index-environment)
  (if (some-vector empty-abstract-value? vs)
      (empty-abstract-value)
-     (list (make-nonrecursive-closure
-	    (free-variables e)
-	    vs
-	    (lambda-expression-variable e)
-	    (lambda-expression-body e)
-	    e
-	    index-environment))))
+     (list (make-nonrecursive-closure (free-variables e)
+				      vs
+				      (lambda-expression-variable e)
+				      (lambda-expression-body e)
+				      e
+				      index-environment))))
 
 (define (recursive-closure-extensional-match? u1 u2)
  (if (eq? *expression-equality* 'alpha)
@@ -4634,11 +4633,17 @@
 
 ;;; Abstract Environments
 
-(define (restrict-environment vs xs xs-new)
- (list->vector
-  (map (lambda (x-new)
-	(vector-ref vs (position-if (lambda (x) (variable=? x x-new)) xs)))
-       xs-new)))
+(define (restrict-environment vs e f)
+ (let ((xs (free-variables e)))
+  (list->vector
+   (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
+	(free-variables (f e))))))
+
+(define (letrec-restrict-environment vs e)
+ (let ((xs (free-variables e)))
+  (list->vector
+   (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
+	(letrec-expression-bodies-free-variables e)))))
 
 (define (abstract-environment-subset? vs1 vs2)
  (every-vector abstract-value-subset? vs1 vs2))
@@ -5297,9 +5302,10 @@
  (if (some-vector empty-abstract-value? vs)
      (empty-abstract-analysis)
      (list (make-expression-binding
-	    e (list (make-environment-binding
-		     vs
-		     (widen-abstract-value (abstract-eval1 e vs bs) bs)))))))
+	    ;; It doesn't help to initialize the value to
+	    ;; (widen-abstract-value (abstract-eval1 e vs bs) bs)
+	    ;; because that will always be an empty abstract value.
+	    e (list (make-environment-binding vs (empty-abstract-value)))))))
 
 (define (initial-abstract-analysis e bs)
  ;; This (like update-analysis-domains) only makes domains.
@@ -5410,60 +5416,52 @@
       (empty-abstract-value))))
 
 (define (abstract-eval e vs bs)
- (let ((xs (free-variables e)))
-  (cond
-   ((variable-access-expression? e)
-    (vector-ref
-     vs (positionp variable=? (variable-access-expression-variable e) xs)))
-   ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
-   ((application? e)
-    (abstract-apply
-     (abstract-eval1
-      (application-callee e)
-      (restrict-environment vs xs (free-variables (application-callee e)))
-      bs)
-     (abstract-eval1
-      (application-argument e)
-      (restrict-environment vs xs (free-variables (application-argument e)))
-      bs)
-     bs))
-   ((letrec-expression? e)
-    (abstract-eval1
-     (letrec-expression-body e)
-     (list->vector
-      (map (lambda (x)
-	    (if (memp variable=? x (letrec-expression-procedure-variables e))
-		(let ((vs (restrict-environment
-			   vs
-			   xs
-			   (letrec-expression-bodies-free-variables e))))
-		 (make-abstract-recursive-closure
-		  (letrec-expression-bodies-free-variables e)
-		  vs
-		  (list->vector (letrec-expression-procedure-variables e))
-		  (list->vector (letrec-expression-argument-variables e))
-		  (list->vector (letrec-expression-bodies e))
-		  (positionp
-		   variable=? x (letrec-expression-procedure-variables e))
-		  e
-		  vs))
-		(vector-ref vs (positionp variable=? x xs))))
-	   (free-variables (letrec-expression-body e))))
-     bs))
-   ((cons-expression? e)
-    (make-abstract-tagged-pair
-     (cons-expression-tags e)
-     (abstract-eval1
-      (cons-expression-car e)
-      (restrict-environment vs xs (free-variables (cons-expression-car e)))
-      bs)
-     (abstract-eval1
-      (cons-expression-cdr e)
-      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
-      bs)
-     e
-     vs))
-   (else (internal-error)))))
+ (cond
+  ((variable-access-expression? e)
+   (unless (= (length (free-variables e)) 1) (internal-error))
+   (vector-ref vs 0))
+  ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
+  ((application? e)
+   (abstract-apply
+    (abstract-eval1 (application-callee e)
+		    (restrict-environment vs e application-callee)
+		    bs)
+    (abstract-eval1 (application-argument e)
+		    (restrict-environment vs e application-argument)
+		    bs)
+    bs))
+  ((letrec-expression? e)
+   (abstract-eval1
+    (letrec-expression-body e)
+    (list->vector
+     (map (lambda (x)
+	   (if (memp variable=? x (letrec-expression-procedure-variables e))
+	       (let ((vs (letrec-restrict-environment vs e)))
+		(make-abstract-recursive-closure
+		 (letrec-expression-bodies-free-variables e)
+		 vs
+		 (list->vector (letrec-expression-procedure-variables e))
+		 (list->vector (letrec-expression-argument-variables e))
+		 (list->vector (letrec-expression-bodies e))
+		 (positionp
+		  variable=? x (letrec-expression-procedure-variables e))
+		 e
+		 vs))
+	       (vector-ref vs (positionp variable=? x (free-variables e)))))
+	  (free-variables (letrec-expression-body e))))
+    bs))
+  ((cons-expression? e)
+   (make-abstract-tagged-pair
+    (cons-expression-tags e)
+    (abstract-eval1 (cons-expression-car e)
+		    (restrict-environment vs e cons-expression-car)
+		    bs)
+    (abstract-eval1 (cons-expression-cdr e)
+		    (restrict-environment vs e cons-expression-cdr)
+		    bs)
+    e
+    vs))
+  (else (internal-error))))
 
 (define (abstract-eval1-prime e vs bs)
  (let ((b (lookup-environment-binding e vs bs)))
@@ -5524,94 +5522,103 @@
       (empty-abstract-analysis))))
 
 (define (abstract-eval-prime e vs bs)
- (let ((xs (free-variables e)))
-  (cond
-   ((variable-access-expression? e) (empty-abstract-analysis))
-   ((lambda-expression? e) (empty-abstract-analysis))
-   ((application? e)
+ (cond
+  ((variable-access-expression? e) (empty-abstract-analysis))
+  ((lambda-expression? e) (empty-abstract-analysis))
+  ((application? e)
+   (abstract-analysis-union
     (abstract-analysis-union
-     (abstract-analysis-union
-      (abstract-eval1-prime
-       (application-callee e)
-       (restrict-environment vs xs (free-variables (application-callee e)))
-       bs)
-      (abstract-eval1-prime
-       (application-argument e)
-       (restrict-environment vs xs (free-variables (application-argument e)))
-       bs))
-     (abstract-apply-prime
-      (abstract-eval1
-       (application-callee e)
-       (restrict-environment vs xs (free-variables (application-callee e)))
-       bs)
-      (abstract-eval1
-       (application-argument e)
-       (restrict-environment vs xs (free-variables (application-argument e)))
-       bs)
-      bs)))
-   ((letrec-expression? e)
-    (abstract-eval1-prime
-     (letrec-expression-body e)
-     (list->vector
-      (map (lambda (x)
-	    (if (memp variable=? x (letrec-expression-procedure-variables e))
-		(let ((vs (restrict-environment
-			   vs
-			   xs
-			   (letrec-expression-bodies-free-variables e))))
-		 (make-abstract-recursive-closure
-		  (letrec-expression-bodies-free-variables e)
-		  vs
-		  (list->vector (letrec-expression-procedure-variables e))
-		  (list->vector (letrec-expression-argument-variables e))
-		  (list->vector (letrec-expression-bodies e))
-		  (positionp
-		   variable=? x (letrec-expression-procedure-variables e))
-		  e
-		  vs))
-		(vector-ref vs (positionp variable=? x xs))))
-	   (free-variables (letrec-expression-body e))))
-     bs))
-   ((cons-expression? e)
-    (abstract-analysis-union
-     (abstract-eval1-prime
-      (cons-expression-car e)
-      (restrict-environment vs xs (free-variables (cons-expression-car e)))
-      bs)
-     (abstract-eval1-prime
-      (cons-expression-cdr e)
-      (restrict-environment vs xs (free-variables (cons-expression-cdr e)))
-      bs)))
-   (else (internal-error)))))
+     (abstract-eval1-prime (application-callee e)
+			   (restrict-environment vs e application-callee)
+			   bs)
+     (abstract-eval1-prime (application-argument e)
+			   (restrict-environment vs e application-argument)
+			   bs))
+    (abstract-apply-prime
+     (abstract-eval1 (application-callee e)
+		     (restrict-environment vs e application-callee)
+		     bs)
+     (abstract-eval1 (application-argument e)
+		     (restrict-environment vs e application-argument)
+		     bs)
+     bs)))
+  ((letrec-expression? e)
+   (abstract-eval1-prime
+    (letrec-expression-body e)
+    (list->vector
+     (map (lambda (x)
+	   (if (memp variable=? x (letrec-expression-procedure-variables e))
+	       (let ((vs (letrec-restrict-environment vs e)))
+		(make-abstract-recursive-closure
+		 (letrec-expression-bodies-free-variables e)
+		 vs
+		 (list->vector (letrec-expression-procedure-variables e))
+		 (list->vector (letrec-expression-argument-variables e))
+		 (list->vector (letrec-expression-bodies e))
+		 (positionp
+		  variable=? x (letrec-expression-procedure-variables e))
+		 e
+		 vs))
+	       (vector-ref vs (positionp variable=? x (free-variables e)))))
+	  (free-variables (letrec-expression-body e))))
+    bs))
+  ((cons-expression? e)
+   (abstract-analysis-union
+    (abstract-eval1-prime (cons-expression-car e)
+			  (restrict-environment vs e cons-expression-car)
+			  bs)
+    (abstract-eval1-prime (cons-expression-cdr e)
+			  (restrict-environment vs e cons-expression-cdr)
+			  bs)))
+  (else (internal-error))))
 
 (define (update-analysis-ranges bs)
  (map (lambda (b1)
        (make-expression-binding
 	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (make-environment-binding
-	       (environment-binding-values b2)
-	       (widen-abstract-value
-		(abstract-eval (expression-binding-expression b1)
-			       (environment-binding-values b2)
-			       bs)
-		bs)))
+	      ;; needs work: to do one final pass without this optimization
+	      ;;             to check for errors
+	      (if (or #t		;debugging
+		      (not *union-free?*)
+		      (empty-abstract-value? (environment-binding-value b2))
+		      (and (= (length (environment-binding-value b2)) 1)
+			   (boolean? (first (environment-binding-value b2)))))
+		  (make-environment-binding
+		   (environment-binding-values b2)
+		   ;; Might consider unioning with previous value here.
+		   (widen-abstract-value
+		    (abstract-eval (expression-binding-expression b1)
+				   (environment-binding-values b2)
+				   bs)
+		    bs))
+		  b2))
 	     (expression-binding-flow b1))))
       bs))
 
 (define (update-analysis-domains bs)
- (reduce abstract-analysis-union
-	 (map (lambda (b1)
-	       (reduce abstract-analysis-union
-		       (map (lambda (b2)
-			     (abstract-eval-prime
-			      (expression-binding-expression b1)
-			      (environment-binding-values b2)
-			      bs))
-			    (expression-binding-flow b1))
-		       (empty-abstract-analysis)))
-	      bs)
+ (reduce
+  abstract-analysis-union
+  (map (lambda (b1)
+	(reduce
+	 abstract-analysis-union
+	 (map (lambda (b2)
+	       ;; needs work: to do one final pass without this optimization
+	       ;;             to check for errors
+	       (if (or #t		;debugging
+		       (not *union-free?*)
+		       (empty-abstract-value? (environment-binding-value b2))
+		       (and (= (length (environment-binding-value b2)) 1)
+			    (boolean? (first (environment-binding-value b2)))))
+		   (abstract-eval-prime
+		    (expression-binding-expression b1)
+		    (environment-binding-values b2)
+		    bs)
+		   (empty-abstract-analysis)))
+	      (expression-binding-flow b1))
 	 (empty-abstract-analysis)))
+       bs)
+  (empty-abstract-analysis)))
 
 (define (has-nonboolean-union? v)
  (and (not (up? v))
@@ -5686,7 +5693,7 @@
 		    '()))
 		  bs)
 	     '())))
-   (when (or *compile?* *union-free?*)
+   (when *union-free?*
     (when (some (lambda (b)
 		 (some (lambda (b)
 			(has-nonboolean-union? (environment-binding-value b)))
@@ -5765,7 +5772,7 @@
  ;; See the note in zero.
  (cond ((null? u) (list u))
        ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
-       ((abstract-real? u) '(0))
+       ((abstract-real? u) '(real))
        ((primitive-procedure? u) (list u))
        ((nonrecursive-closure? u)
 	(make-abstract-nonrecursive-closure
@@ -6666,23 +6673,21 @@
 	      (removeq
 	       #f
 	       (map (lambda (b)
-		     (let ((v1 (abstract-eval1
-				(application-callee e)
-				(restrict-environment
-				 (environment-binding-values b)
-				 (free-variables e)
-				 (free-variables (application-callee e)))
-				bs)))
+		     (let ((v1 (abstract-eval1 (application-callee e)
+					       (restrict-environment
+						(environment-binding-values b)
+						e
+						application-callee)
+					       bs)))
 		      (if (and (= (length v1) 1)
 			       (primitive-procedure? (first v1))
 			       (eq? (primitive-procedure-name (first v1)) s))
-			  (abstract-eval1
-			   (application-argument e)
-			   (restrict-environment
-			    (environment-binding-values b)
-			    (free-variables e)
-			    (free-variables (application-argument e)))
-			   bs)
+			  (abstract-eval1 (application-argument e)
+					  (restrict-environment
+					   (environment-binding-values b)
+					   e
+					   application-argument)
+					  bs)
 			  #f)))
 		    (expression-binding-flow b))))
 	     '())))
@@ -6985,24 +6990,22 @@
 		       v1v2sa
 		       v2v2sb))
 	      (map (lambda (b)
-		    (let ((v1 (abstract-eval1
-			       (application-callee e)
-			       (restrict-environment
-				(environment-binding-values b)
-				(free-variables e)
-				(free-variables (application-callee e)))
-			       bs)))
+		    (let ((v1 (abstract-eval1 (application-callee e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-callee)
+					      bs)))
 		     (cond
 		      ((and (= (length v1) 1) (closure? (first v1)))
 		       (list
 			(list v1
-			      (abstract-eval1
-			       (application-argument e)
-			       (restrict-environment
-				(environment-binding-values b)
-				(free-variables e)
-				(free-variables (application-argument e)))
-			       bs))))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument)
+					      bs))))
 		      ((and (= (length v1) 1)
 			    (primitive-procedure? (first v1))
 			    (eq? (primitive-procedure-name (first v1))
@@ -7011,8 +7014,8 @@
 				  (application-argument e)
 				  (restrict-environment
 				   (environment-binding-values b)
-				   (free-variables e)
-				   (free-variables (application-argument e)))
+				   e
+				   application-argument)
 				  bs)))
 			(unless (= (length v) 1) (internal-error))
 			(let* ((v1 (abstract-vlad-car-u (first v) '()))
@@ -7132,17 +7135,12 @@
 	   (aggregate-value-values (first v))))
      ")"))
    ((application? e)
-    (let ((v1 (abstract-eval1
-	       (application-callee e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (application-callee e)))
-	       bs))
-	  (v2
-	   (abstract-eval1
-	    (application-argument e)
-	    (restrict-environment
-	     vs (free-variables e) (free-variables (application-argument e)))
-	    bs)))
+    (let ((v1 (abstract-eval1 (application-callee e)
+			      (restrict-environment vs e application-callee)
+			      bs))
+	  (v2 (abstract-eval1 (application-argument e)
+			      (restrict-environment vs e application-argument)
+			      bs)))
      ;; needs work: To give an error on improper call.
      (unless (= (length v1) 1) (internal-error))
      (if (primitive-procedure? (first v1))
@@ -7156,9 +7154,7 @@
 	      '()
 	      (generate-expression
 	       (application-argument e)
-	       (restrict-environment vs
-				     (free-variables e)
-				     (free-variables (application-argument e)))
+	       (restrict-environment vs e application-argument)
 	       xs
 	       xs2
 	       bs
@@ -7175,10 +7171,7 @@
 			  #f
 			  (generate-expression
 			   (application-callee e)
-			   (restrict-environment
-			    vs
-			    (free-variables e)
-			    (free-variables (application-callee e)))
+			   (restrict-environment vs e application-callee)
 			   xs
 			   xs2
 			   bs
@@ -7189,10 +7182,7 @@
 			  #f
 			  (generate-expression
 			   (application-argument e)
-			   (restrict-environment
-			    vs
-			    (free-variables e)
-			    (free-variables (application-argument e)))
+			   (restrict-environment vs e application-argument)
 			   xs
 			   xs2
 			   bs
@@ -7203,26 +7193,22 @@
    ((letrec-expression? e)
     (generate-expression
      (letrec-expression-body e)
-     (let ((xs (free-variables e)))
-      (list->vector
-       (map (lambda (x)
-	     (if (memp variable=? x (letrec-expression-procedure-variables e))
-		 (let ((vs (restrict-environment
-			    vs
-			    xs
-			    (letrec-expression-bodies-free-variables e))))
-		  (make-abstract-recursive-closure
-		   (letrec-expression-bodies-free-variables e)
-		   vs
-		   (list->vector (letrec-expression-procedure-variables e))
-		   (list->vector (letrec-expression-argument-variables e))
-		   (list->vector (letrec-expression-bodies e))
-		   (positionp
-		    variable=? x (letrec-expression-procedure-variables e))
-		   e
-		   vs))
-		 (vector-ref vs (positionp variable=? x xs))))
-	    (free-variables (letrec-expression-body e)))))
+     (list->vector
+      (map (lambda (x)
+	    (if (memp variable=? x (letrec-expression-procedure-variables e))
+		(let ((vs (letrec-restrict-environment vs e)))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-bodies-free-variables e)
+		  vs
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))
+		(vector-ref vs (positionp variable=? x (free-variables e)))))
+	   (free-variables (letrec-expression-body e))))
      xs
      xs2
      bs
@@ -7231,48 +7217,40 @@
      v1v2s))
    ((cons-expression? e)
     (unless (= (length v) 1) (internal-error))
-    (let ((v1 (abstract-eval1
-	       (cons-expression-car e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (cons-expression-car e)))
-	       bs))
-	  (v2 (abstract-eval1
-	       (cons-expression-cdr e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (cons-expression-cdr e)))
-	       bs)))
-     (list
-      (generate-builtin-name "m" v vs1)
-      "("
-      (commas-between
-       ;; needs work: This unsoundly removes code that might do I/O, signal an
-       ;;             error, or not terminate.
-       (list
-	(if (void? v1)
-	    #f
-	    (generate-expression
-	     (cons-expression-car e)
-	     (restrict-environment
-	      vs (free-variables e) (free-variables (cons-expression-car e)))
-	     xs
-	     xs2
-	     bs
-	     xs1
-	     vs1
-	     v1v2s))
-	(if (void? v2)
-	    #f
-	    (generate-expression
-	     (cons-expression-cdr e)
-	     (restrict-environment
-	      vs (free-variables e) (free-variables (cons-expression-cdr e)))
-	     xs
-	     xs2
-	     bs
-	     xs1
-	     vs1
-	     v1v2s))))
-      ")")))
+    (let ((v1 (abstract-eval1 (cons-expression-car e)
+			      (restrict-environment vs e cons-expression-car)
+			      bs))
+	  (v2 (abstract-eval1 (cons-expression-cdr e)
+			      (restrict-environment vs e cons-expression-cdr)
+			      bs)))
+     (list (generate-builtin-name "m" v vs1)
+	   "("
+	   (commas-between
+	    ;; needs work: This unsoundly removes code that might do I/O,
+	    ;;             signal an error, or not terminate.
+	    (list (if (void? v1)
+		      #f
+		      (generate-expression
+		       (cons-expression-car e)
+		       (restrict-environment vs e cons-expression-car)
+		       xs
+		       xs2
+		       bs
+		       xs1
+		       vs1
+		       v1v2s))
+		  (if (void? v2)
+		      #f
+		      (generate-expression
+		       (cons-expression-cdr e)
+		       (restrict-environment vs e cons-expression-cdr)
+		       xs
+		       xs2
+		       bs
+		       xs1
+		       vs1
+		       v1v2s))))
+	   ")")))
    (else (internal-error)))))
 
 (define (generate-letrec-bindings  e vs xs xs2 bs xs1 vs1 v1v2s)
@@ -7283,17 +7261,12 @@
    ((variable-access-expression? e) '())
    ((lambda-expression? e) '())
    ((application? e)
-    (let ((v1 (abstract-eval1
-	       (application-callee e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (application-callee e)))
-	       bs))
-	  (v2
-	   (abstract-eval1
-	    (application-argument e)
-	    (restrict-environment
-	     vs (free-variables e) (free-variables (application-argument e)))
-	    bs)))
+    (let ((v1 (abstract-eval1 (application-callee e)
+			      (restrict-environment vs e application-callee)
+			      bs))
+	  (v2 (abstract-eval1 (application-argument e)
+			      (restrict-environment vs e application-argument)
+			      bs)))
      ;; needs work: To give an error on improper call.
      (unless (= (length v1) 1) (internal-error))
      (if (primitive-procedure? (first v1))
@@ -7304,9 +7277,7 @@
 	     '()
 	     (generate-letrec-bindings
 	      (application-argument e)
-	      (restrict-environment vs
-				    (free-variables e)
-				    (free-variables (application-argument e)))
+	      (restrict-environment vs e application-argument)
 	      xs
 	      xs2
 	      bs
@@ -7319,10 +7290,7 @@
 		   '()
 		   (generate-letrec-bindings
 		    (application-callee e)
-		    (restrict-environment
-		     vs
-		     (free-variables e)
-		     (free-variables (application-callee e)))
+		    (restrict-environment vs e application-callee)
 		    xs
 		    xs2
 		    bs
@@ -7333,10 +7301,7 @@
 		   '()
 		   (generate-letrec-bindings
 		    (application-argument e)
-		    (restrict-environment
-		     vs
-		     (free-variables e)
-		     (free-variables (application-argument e)))
+		    (restrict-environment vs e application-argument)
 		    xs
 		    xs2
 		    bs
@@ -7347,19 +7312,17 @@
     (list
      (map
       (lambda (x)
-       (let ((v (make-abstract-recursive-closure
-		 (letrec-expression-bodies-free-variables e)
-		 (restrict-environment
+       (let ((v (let ((vs (letrec-restrict-environment vs e)))
+		 (make-abstract-recursive-closure
+		  (letrec-expression-bodies-free-variables e)
 		  vs
-		  (free-variables e)
-		  (letrec-expression-bodies-free-variables e))
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-argument-variables e))
-		 (list->vector (letrec-expression-bodies e))
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e))
-		 e
-		 vs)))
+		  (list->vector (letrec-expression-procedure-variables e))
+		  (list->vector (letrec-expression-argument-variables e))
+		  (list->vector (letrec-expression-bodies e))
+		  (positionp
+		   variable=? x (letrec-expression-procedure-variables e))
+		  e
+		  vs))))
 	(unless (= (length v) 1) (internal-error))
 	(if (void? v)
 	    '()
@@ -7379,26 +7342,22 @@
       (letrec-expression-procedure-variables e))
      (generate-letrec-bindings
       (letrec-expression-body e)
-      (let ((xs (free-variables e)))
-       (list->vector
-	(map (lambda (x)
-	      (if (memp variable=? x (letrec-expression-procedure-variables e))
-		  (let ((vs (restrict-environment
-			     vs
-			     xs
-			     (letrec-expression-bodies-free-variables e))))
-		   (make-abstract-recursive-closure
-		    (letrec-expression-bodies-free-variables e)
-		    vs
-		    (list->vector (letrec-expression-procedure-variables e))
-		    (list->vector (letrec-expression-argument-variables e))
-		    (list->vector (letrec-expression-bodies e))
-		    (positionp
-		     variable=? x (letrec-expression-procedure-variables e))
-		    e
-		    vs))
-		  (vector-ref vs (positionp variable=? x xs))))
-	     (free-variables (letrec-expression-body e)))))
+      (list->vector
+       (map (lambda (x)
+	     (if (memp variable=? x (letrec-expression-procedure-variables e))
+		 (let ((vs (letrec-restrict-environment vs e)))
+		  (make-abstract-recursive-closure
+		   (letrec-expression-bodies-free-variables e)
+		   vs
+		   (list->vector (letrec-expression-procedure-variables e))
+		   (list->vector (letrec-expression-argument-variables e))
+		   (list->vector (letrec-expression-bodies e))
+		   (positionp
+		    variable=? x (letrec-expression-procedure-variables e))
+		   e
+		   vs))
+		 (vector-ref vs (positionp variable=? x (free-variables e)))))
+	    (free-variables (letrec-expression-body e))))
       xs
       xs2
       bs
@@ -7407,43 +7366,36 @@
       v1v2s)))
    ((cons-expression? e)
     (unless (= (length v) 1) (internal-error))
-    (let ((v1 (abstract-eval1
-	       (cons-expression-car e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (cons-expression-car e)))
-	       bs))
-	  (v2 (abstract-eval1
-	       (cons-expression-cdr e)
-	       (restrict-environment
-		vs (free-variables e) (free-variables (cons-expression-cdr e)))
-	       bs)))
+    (let ((v1 (abstract-eval1 (cons-expression-car e)
+			      (restrict-environment vs e cons-expression-car)
+			      bs))
+	  (v2 (abstract-eval1 (cons-expression-cdr e)
+			      (restrict-environment vs e cons-expression-cdr)
+			      bs)))
      ;; needs work: This unsoundly removes code that might do I/O, signal an
      ;;             error, or not terminate.
-     (list
-      (if (void? v1)
-	  '()
-	  (generate-letrec-bindings
-	   (cons-expression-car e)
-	   (restrict-environment
-	    vs (free-variables e) (free-variables (cons-expression-car e)))
-	   xs
-	   xs2
-	   bs
-	   xs1
-	   vs1
-	   v1v2s))
-      (if (void? v2)
-	  '()
-	  (generate-letrec-bindings
-	   (cons-expression-cdr e)
-	   (restrict-environment
-	    vs (free-variables e) (free-variables (cons-expression-cdr e)))
-	   xs
-	   xs2
-	   bs
-	   xs1
-	   vs1
-	   v1v2s)))))
+     (list (if (void? v1)
+	       '()
+	       (generate-letrec-bindings
+		(cons-expression-car e)
+		(restrict-environment vs e cons-expression-car)
+		xs
+		xs2
+		bs
+		xs1
+		vs1
+		v1v2s))
+	   (if (void? v2)
+	       '()
+	       (generate-letrec-bindings
+		(cons-expression-cdr e)
+		(restrict-environment vs e cons-expression-cdr)
+		xs
+		xs2
+		bs
+		xs1
+		vs1
+		v1v2s)))))
    (else (internal-error)))))
 
 (define (generate-function-definitions bs xs vs v1v2s)
@@ -7519,19 +7471,18 @@
 				  (application-callee e)
 				  (restrict-environment
 				   (environment-binding-values b)
-				   (free-variables e)
-				   (free-variables (application-callee e)))
+				   e
+				   application-callee)
 				  bs)))
 			(if (and (= (length v1) 1)
 				 (primitive-procedure? (first v1))
 				 (eq? (primitive-procedure-name (first v1)) s))
-			    (abstract-eval1
-			     (application-argument e)
-			     (restrict-environment
-			      (environment-binding-values b)
-			      (free-variables e)
-			      (free-variables (application-argument e)))
-			     bs)
+			    (abstract-eval1 (application-argument e)
+					    (restrict-environment
+					     (environment-binding-values b)
+					     e
+					     application-argument)
+					    bs)
 			    #f)))
 		      (expression-binding-flow b))))
 	       '())))
@@ -7564,20 +7515,19 @@
 				   (application-callee e)
 				   (restrict-environment
 				    (environment-binding-values b)
-				    (free-variables e)
-				    (free-variables (application-callee e)))
+				    e
+				    application-callee)
 				   bs)))
 			 (if (and (= (length v1) 1)
 				  (primitive-procedure? (first v1))
 				  (eq? (primitive-procedure-name (first v1))
 				       'bundle))
-			     (abstract-eval1
-			      (application-argument e)
-			      (restrict-environment
-			       (environment-binding-values b)
-			       (free-variables e)
-			       (free-variables (application-argument e)))
-			      bs)
+			     (abstract-eval1 (application-argument e)
+					     (restrict-environment
+					      (environment-binding-values b)
+					      e
+					      application-argument)
+					     bs)
 			     #f)))
 		       (expression-binding-flow b))))
 		'())))
