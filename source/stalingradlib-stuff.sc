@@ -4501,7 +4501,8 @@
   ((identity) (remove-duplicatesq v))
   ((structural) (remove-duplicatesp equalq? v))
   ((equality) (remove-duplicatesp proto-abstract-value=? v))
-  ((subset) (maximal-elements proto-abstract-value-subset? v))
+  ((subset) (maximal-elements proto-abstract-value-subset?
+			      (remove-duplicatesp proto-abstract-value=? v)))
   (else (internal-error))))
 
 ;;; (Proto-)Abstract-Value Subset, Equality, and Union
@@ -5322,6 +5323,8 @@
 
 (define (lookup-environment-binding e vs bs)
  (let ((b (lookup-expression-binding e bs)))
+  ;; needs work: Why don't we select the minimal abstract-value-subset?
+  ;;             of environment-binding-value?
   (cond (b (let ((bs (minimal-elements
 		      (lambda (b1 b2)
 		       (abstract-environment-subset?
@@ -5772,7 +5775,7 @@
  ;; See the note in zero.
  (cond ((null? u) (list u))
        ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
-       ((abstract-real? u) '(real))
+       ((abstract-real? u) '(0))
        ((primitive-procedure? u) (list u))
        ((nonrecursive-closure? u)
 	(make-abstract-nonrecursive-closure
