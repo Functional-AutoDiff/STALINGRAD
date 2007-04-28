@@ -1,7 +1,4 @@
-(define (abs x) (if (negative? x) (- 0 x) x))
-
-(define (derivative-using-j* f)
- (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+(include "math")
 
 (define (nr-sqrt x)
  (letrec ((loop (lambda (y)

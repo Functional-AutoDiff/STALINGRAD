@@ -1,4 +1,4 @@
-(define ((derivative-using-j* f) x) (tangent ((j* f) (bundle x 1))))
+(include "math")
 
 (define (dn-using-j* n f)
  (if (zero? n) f (dn-using-j* (- n 1) (derivative-using-j* f))))

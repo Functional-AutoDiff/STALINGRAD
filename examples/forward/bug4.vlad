@@ -1,5 +1,4 @@
-(define (derivative-using-j* f)
- (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+(include "math")
 
 (define (bug x) (letrec ((g (lambda (y) x)) (f (lambda (y) (g 0)))) (f 0)))
 
