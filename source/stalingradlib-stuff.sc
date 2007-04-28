@@ -4178,6 +4178,13 @@
    (some (lambda (e-prime) (and (not (eq? e-prime e)) (<=? e-prime e))) s))
   s))
 
+(define (maximal-elements <=? s)
+ ;; belongs in QobiScheme
+ (remove-if
+  (lambda (e)
+   (some (lambda (e-prime) (and (not (eq? e-prime e)) (<=? e e-prime))) s))
+  s))
+
 (define (positionp-vector p x v)
  ;; belongs in QobiScheme
  (let loop ((i 0))
@@ -4491,14 +4498,12 @@
  ;; Using a conservative approximation is sound since proto abstract values are
  ;; removed only when the predicate returns #t which is a precise result for
  ;; all of the approximations.
- (remove-duplicatesp
-  (case *method-for-removing-redundant-proto-abstract-values*
-   ((identity) eq?)
-   ((structural) equalq?)
-   ((equality) proto-abstract-value=?)
-   ((subset) proto-abstract-value-subset?)
-   (else (internal-error)))
-  v))
+ (case *method-for-removing-redundant-proto-abstract-values*
+  ((identity) (remove-duplicatesq v))
+  ((structural) (remove-duplicatesp equalq? v))
+  ((equality) (remove-duplicatesp proto-abstract-value=? v))
+  ((subset) (maximal-elements proto-abstract-value-subset? v))
+  (else (internal-error))))
 
 ;;; (Proto-)Abstract-Value Subset, Equality, and Union
 
