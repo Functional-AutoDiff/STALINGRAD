@@ -278,6 +278,8 @@
 
 (define *method-for-removing-redundant-proto-abstract-values* 'structural)
 
+(define *imprecise-zero?* #f)
+
 (define *union-free?* #f)
 
 (define *verbose?* #f)
@@ -5775,7 +5777,7 @@
  ;; See the note in zero.
  (cond ((null? u) (list u))
        ((and (not *church-booleans?*) (vlad-boolean? u)) (list u))
-       ((abstract-real? u) '(real))
+       ((abstract-real? u) (if *imprecise-zero?* '(real) '(0)))
        ((primitive-procedure? u) (list u))
        ((nonrecursive-closure? u)
 	(make-abstract-nonrecursive-closure
@@ -6261,6 +6263,9 @@
 (define (abstract-binary-v->v f s)
  (lambda (u bs)
   (if (vlad-pair? u '())
+      ;; needs work: I'm not sure that this should call
+      ;;             closed-proto-abstract-values. In any case need to redo
+      ;;             the implementation of bundle.
       (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
 	 (closed-proto-abstract-values (abstract-vlad-cdr-u u '())))
       (compile-time-warning
@@ -6477,7 +6482,7 @@
 ;;; Identifiers
 ;;; x  argument for add#, minus#, times#, divide#, atantwo#, eq#, lt#
 ;;;    gt#, le#, ge#, iszero#, positive#, negative#, if_procedure#,
-;;;    real#, write_real, write#, primal#, tangent#, and bundle#
+;;;    real#, write_real, write#, zero#, primal#, tangent#, and bundle#
 ;;; x  result value in read_real
 ;;; x# variable name; # is index in xs
 ;;; x# variable slot of closure struct; # is index in xs
@@ -6510,6 +6515,7 @@
 ;;; real#
 ;;; write_real
 ;;; write#
+;;; zero#
 ;;; primal#
 ;;; tangent#
 ;;; bundle#
@@ -6638,9 +6644,11 @@
  (cons (list (vlad-cons v v-perturbation))
        (if (or (and (boolean-value? v) (boolean-value? v-perturbation))
 	       (and (abstract-real-value? v)
-		    (or (abstract-real-value? v) (void? v-perturbation)))
+		    (or (abstract-real-value? v-perturbation)
+			(void? v-perturbation)))
 	       (and (void? v)
-		    (or (abstract-real-value? v) (void? v-perturbation))))
+		    (or (abstract-real-value? v-perturbation)
+			(void? v-perturbation))))
 	   '()
 	   (begin (unless (and (= (length v) 1) (= (length v-perturbation) 1))
 		   (internal-error))
@@ -6880,6 +6888,17 @@
 	   (v4 (abstract-vlad-cdr-u (first v2) '())))
      (unless (= (length v3) 1) (internal-error))
      (unless (= (length v4) 1) (internal-error))
+     (when (and (boolean-value? v1)
+		(not (abstract-value=?
+		      (abstract-apply v3
+				      (abstract-tagged-null
+				       (nonrecursive-closure-tags (first v3)))
+				      bs)
+		      (abstract-apply v4
+				      (abstract-tagged-null
+				       (nonrecursive-closure-tags (first v4)))
+				      bs))))
+      (unimplemented "balancing"))
      (let ((v5 (if (or (boolean-value? v1)
 		       (begin (unless (= (length v1) 1) (internal-error))
 			      (first v1)))
@@ -6914,6 +6933,17 @@
 	   (v4 (abstract-vlad-cdr-u (first v2) '())))
      (unless (= (length v3) 1) (internal-error))
      (unless (= (length v4) 1) (internal-error))
+     (when (and (boolean-value? v1)
+		(not (abstract-value=?
+		      (abstract-apply v3
+				      (abstract-tagged-null
+				       (nonrecursive-closure-tags (first v3)))
+				      bs)
+		      (abstract-apply v4
+				      (abstract-tagged-null
+				       (nonrecursive-closure-tags (first v4)))
+				      bs))))
+      (unimplemented "balancing"))
      (let ((v5 (if (or (boolean-value? v1)
 		       (begin (unless (= (length v1) 1) (internal-error))
 			      (first v1)))
@@ -7538,6 +7568,21 @@
      '()))
    '())))
 
+(define (generate-zero-declarations bs vs)
+ (map (lambda (v)
+       (let ((v1 (abstract-zero-v v)))
+	(if (void? v1)
+	    '()
+	    (list "static inline "
+		  (generate-specifier v1 vs)
+		  " "
+		  (generate-builtin-name "zero" v vs)
+		  "("
+		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
+		  ");"
+		  #\newline))))
+      (all-ad 'zero bs)))
+
 (define (generate-ad-declarations f s s1 bs vs)
  (map (lambda (v)
        (if (or (void? v) (boolean-value? v) (abstract-real-value? v))
@@ -7571,6 +7616,40 @@
 		  " x);"
 		  #\newline))))
       (all-bundles bs)))
+
+(define (generate-zero-definitions bs xs vs)
+ (map (lambda (v)
+       (let ((v1 (abstract-zero-v v)))
+	(if (void? v1)
+	    '()
+	    (list
+	     "static inline "
+	     (generate-specifier v1 vs)
+	     " "
+	     (generate-builtin-name "zero" v vs)
+	     "("
+	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
+	     "){return "
+	     (cond ((boolean-value? v1) "x")
+		   ((abstract-real-value? v1) "0.0")
+		   (else
+		    (unless (= (length v) 1) (internal-error))
+		    (list (generate-builtin-name "m" v1 vs)
+			  "("
+			  (commas-between
+			   (map (lambda (s v)
+				 (if (void? (abstract-zero-v v))
+				     #f
+				     (list (generate-builtin-name "zero" v vs)
+					   "("
+					   (if (void? v) '() (list "x." s))
+					   ")")))
+				(generate-slot-names (first v) xs)
+				(aggregate-value-values (first v))))
+			  ")")))
+	     ";}"
+	     #\newline))))
+      (all-ad 'zero bs)))
 
 (define (generate-primal-definitions bs xs vs)
  (map
@@ -7666,6 +7745,8 @@
 	     (generate-builtin-name "m" v3 vs)
 	     "("
 	     (commas-between
+	      ;; needs work: If the primal and or tangent are abstract booleans
+	      ;;             we don't check legitimacy.
 	      (if (or (boolean-value? v1)
 		      (begin (unless (= (length v1) 1) (internal-error))
 			     (scalar-proto-abstract-value? (first v1))))
@@ -7728,6 +7809,7 @@
 	"static inline double read_real(void);" #\newline
 	(generate-real-primitive-declarations 'real "double" "real" bs vs)
 	(generate-real-primitive-declarations 'write "double" "write" bs vs)
+	(generate-zero-declarations bs vs)
 	(generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)
 	(generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)
 	(generate-bundle-declarations bs vs)
@@ -7763,6 +7845,7 @@
 	(generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
 	(generate-real-primitive-definitions
 	 'write "double" "write" "write_real(~a)" bs vs)
+	(generate-zero-definitions bs xs vs)
 	(generate-primal-definitions bs xs vs)
 	(generate-tangent-definitions bs xs vs)
 	(generate-bundle-definitions bs xs vs)
@@ -8359,7 +8442,7 @@
  (define-primitive-procedure 'zero
   (unary zero "zero")
   (abstract-unary-u->v abstract-zero-u "zero")
-  (lambda (v vs) (unimplemented "zero"))
+  (lambda (v vs) (generate-builtin-name "zero" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (zero x) (zero (perturbation x)))))
