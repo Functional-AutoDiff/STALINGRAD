@@ -140,6 +140,7 @@
 		   remove-redundant-proto-abstract-values-using-equality?)
 		  ("remove-redundant-proto-abstract-values-using-subset"
 		   remove-redundant-proto-abstract-values-using-subset?))
+		 (at-most-one ("imprecise-zero" imprecise-zero?))
 		 (at-most-one ("union-free" union-free?))
 		 (at-most-one ("verbose" verbose?))
 		 (required (pathname "pathname" string-argument)))
@@ -194,6 +195,7 @@
   (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
  (when remove-redundant-proto-abstract-values-using-subset?
   (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
+ (set! *imprecise-zero?* imprecise-zero?)
  (set! *union-free?* (or compile? union-free?))
  (set! *verbose?* verbose?)
  (initialize-basis!)
