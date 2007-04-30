@@ -7602,19 +7602,22 @@
 
 (define (generate-bundle-declarations bs vs)
  (map (lambda (v)
-       (unless (= (length v) 1) (internal-error))
-       (let ((v1 (abstract-bundle (abstract-vlad-car-u (first v) '())
-				  (abstract-vlad-cdr-u (first v) '()))))
-	(if (void? v1)
-	    '()
-	    (list "static inline "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name "bundle" v vs)
-		  "("
-		  (generate-specifier v vs)
-		  " x);"
-		  #\newline))))
+       (if (void? v)
+	   '()
+	   (begin
+	    (unless (= (length v) 1) (internal-error))
+	    (let ((v1 (abstract-bundle (abstract-vlad-car-u (first v) '())
+				       (abstract-vlad-cdr-u (first v) '()))))
+	     (if (void? v1)
+		 '()
+		 (list "static inline "
+		       (generate-specifier v1 vs)
+		       " "
+		       (generate-builtin-name "bundle" v vs)
+		       "("
+		       (generate-specifier v vs)
+		       " x);"
+		       #\newline))))))
       (all-bundles bs)))
 
 (define (generate-zero-definitions bs xs vs)
@@ -7726,54 +7729,59 @@
   (all-ad 'tangent bs)))
 
 (define (generate-bundle-definitions bs xs vs)
- (map (lambda (v)
-       (unless (= (length v) 1) (internal-error))
-       (let* ((v1 (abstract-vlad-car-u (first v) '()))
-	      (v2 (abstract-vlad-cdr-u (first v) '()))
-	      (v3 (abstract-bundle v1 v2)))
-	(unless (= (length v3) 1) (internal-error))
-	(if (void? v3)
-	    '()
-	    (list
-	     "static inline "
-	     (generate-specifier v3 vs)
-	     " "
-	     (generate-builtin-name "bundle" v vs)
-	     "("
-	     (generate-specifier v vs)
-	     " x){return "
-	     (generate-builtin-name "m" v3 vs)
-	     "("
-	     (commas-between
-	      ;; needs work: If the primal and or tangent are abstract booleans
-	      ;;             we don't check legitimacy.
-	      (if (or (boolean-value? v1)
-		      (begin (unless (= (length v1) 1) (internal-error))
-			     (scalar-proto-abstract-value? (first v1))))
-		  (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d"))
-		  (map
-		   (lambda (s4a s4b v4)
-		    (if (void? v4)
-			#f
-			(let ((v5 (list (vlad-cons (abstract-primal-v v4)
-						   (abstract-tangent-v v4)))))
-			 (list (generate-builtin-name "bundle" v5 vs)
-			       "("
-			       (generate-builtin-name "m" v5 vs)
-			       "("
-			       (commas-between
-				(map (lambda (s4 s6 v6)
-				      (if (void? v6) #f (list "x." s6 "." s4)))
-				     (list s4a s4b)
-				     (generate-slot-names (first v5) xs)
-				     (aggregate-value-values (first v5))))
-			       "))"))))
-		   (generate-slot-names (first v1) xs)
-		   (generate-slot-names (first v2) xs)
-		   (aggregate-value-values (first v3)))))
-	     ");}"
-	     #\newline))))
-      (all-bundles bs)))
+ (map
+  (lambda (v)
+   (if (void? v)
+       '()
+       (begin
+	(unless (= (length v) 1) (internal-error))
+	(let* ((v1 (abstract-vlad-car-u (first v) '()))
+	       (v2 (abstract-vlad-cdr-u (first v) '()))
+	       (v3 (abstract-bundle v1 v2)))
+	 (unless (= (length v3) 1) (internal-error))
+	 (if (void? v3)
+	     '()
+	     (list
+	      "static inline "
+	      (generate-specifier v3 vs)
+	      " "
+	      (generate-builtin-name "bundle" v vs)
+	      "("
+	      (generate-specifier v vs)
+	      " x){return "
+	      (generate-builtin-name "m" v3 vs)
+	      "("
+	      (commas-between
+	       ;; needs work: If the primal and or tangent are abstract
+	       ;;             booleans we don't check legitimacy.
+	       (if (or (boolean-value? v1)
+		       (begin (unless (= (length v1) 1) (internal-error))
+			      (scalar-proto-abstract-value? (first v1))))
+		   (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d"))
+		   (map
+		    (lambda (s4a s4b v4)
+		     (if (void? v4)
+			 #f
+			 (let ((v5 (list (vlad-cons (abstract-primal-v v4)
+						    (abstract-tangent-v v4)))))
+			  (list
+			   (generate-builtin-name "bundle" v5 vs)
+			   "("
+			   (generate-builtin-name "m" v5 vs)
+			   "("
+			   (commas-between
+			    (map (lambda (s4 s6 v6)
+				  (if (void? v6) #f (list "x." s6 "." s4)))
+				 (list s4a s4b)
+				 (generate-slot-names (first v5) xs)
+				 (aggregate-value-values (first v5))))
+			   "))"))))
+		    (generate-slot-names (first v1) xs)
+		    (generate-slot-names (first v2) xs)
+		    (aggregate-value-values (first v3)))))
+	      ");}"
+	      #\newline))))))
+  (all-bundles bs)))
 
 (define (generate e bs)
  (let* ((xs (all-variables bs))
