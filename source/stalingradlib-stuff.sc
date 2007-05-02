@@ -339,6 +339,9 @@
 
 ;;; VLAD datastructures
 
+(define (scalar-value? v)
+ (or (null? v) (boolean? v) (real? v) (primitive-procedure? v)))
+
 (define vlad-true #t)
 
 (define vlad-false #f)
@@ -2553,10 +2556,14 @@
 		       ;;             the primal
 		       (recursive-closure-index-expression x-forward)
 		       (recursive-closure-index-environment x-forward))))))
-	       ((bundle? x-forward) (bundle-primal x-forward))
+	       ((bundle? x-forward)
+		(if (scalar-value? (bundle-primal x-forward))
+		    (bundle-primal x-forward)
+		    (make-bundle (primal (bundle-primal x-forward))
+				 (primal (bundle-tangent x-forward)))))
 	       ((reverse-tagged-value? x-forward)
-		(run-time-error
-		 "Attempt to take primal of a non-forward value" x-forward))
+		(make-reverse-tagged-value
+		 (primal (reverse-tagged-value-primal x-forward))))
 	       ((and (not *church-pairs?*) (tagged-pair? x-forward))
 		(unless (and
 			 (not (null? (tagged-pair-tags x-forward)))
@@ -2690,10 +2697,14 @@
 		       ;;             the primal
 		       (recursive-closure-index-expression x-forward)
 		       (recursive-closure-index-environment x-forward))))))
-	       ((bundle? x-forward) (bundle-tangent x-forward))
+	       ((bundle? x-forward)
+		(if (scalar-value? (bundle-primal x-forward))
+		    (bundle-tangent x-forward)
+		    (make-bundle (tangent (bundle-primal x-forward))
+				 (tangent (bundle-tangent x-forward)))))
 	       ((reverse-tagged-value? x-forward)
-		(run-time-error
-		 "Attempt to take tangent of a non-forward value" x-forward))
+		(make-reverse-tagged-value
+		 (tangent (reverse-tagged-value-primal x-forward))))
 	       ((and (not *church-pairs?*) (tagged-pair? x-forward))
 		(unless (and
 			 (not (null? (tagged-pair-tags x-forward)))
@@ -2859,8 +2870,14 @@
      ;;             index-environment of the primal
      (recursive-closure-index-expression x)
      (recursive-closure-index-environment x))))
-  ((bundle? x) (make-bundle x x-perturbation))
-  ((reverse-tagged-value? x) (make-bundle x x-perturbation))
+  ((bundle? x)
+   (make-bundle
+    (bundle-internal (bundle-primal x) (bundle-primal x-perturbation))
+    (bundle-internal (bundle-tangent x) (bundle-tangent x-perturbation))))
+  ((reverse-tagged-value? x)
+   (make-reverse-tagged-value
+    (bundle-internal (reverse-tagged-value-primal x)
+		     (reverse-tagged-value-primal x-perturbation))))
   ((and (not *church-pairs?*) (tagged-pair? x))
    ;; needs work: tangent of bundle gives the index-expression and
    ;;             index-environment of the primal
@@ -5903,10 +5920,20 @@
 		   ;;             and index-environment of the primal
 		   (recursive-closure-index-expression u-forward)
 		   (recursive-closure-index-environment u-forward)))))))
-       ((bundle? u-forward) (bundle-primal u-forward))
+       ((bundle? u-forward)
+	(unless (or (every scalar-proto-abstract-value?
+			   (bundle-primal u-forward))
+		    (not (some scalar-proto-abstract-value?
+			       (bundle-primal u-forward))))
+	 (unimplemented))
+	(if (every scalar-proto-abstract-value? (bundle-primal u-forward))
+	    (bundle-primal u-forward)
+	    (make-abstract-bundle
+	     (abstract-primal-v (bundle-primal u-forward))
+	     (abstract-primal-v (bundle-tangent u-forward)))))
        ((reverse-tagged-value? u-forward)
-	(compile-time-warning
-	 "Might attempt to take primal of a non-forward value" u-forward))
+	(make-abstract-reverse-tagged-value
+	 (abstract-primal-v (reverse-tagged-value-primal u-forward))))
        ((and (not *church-pairs?*) (tagged-pair? u-forward))
 	(if (or (null? (tagged-pair-tags u-forward))
 		(not (eq? (first (tagged-pair-tags u-forward)) 'forward)))
@@ -6008,10 +6035,20 @@
 		   ;;             and index-environment of the primal
 		   (recursive-closure-index-expression u-forward)
 		   (recursive-closure-index-environment u-forward)))))))
-       ((bundle? u-forward) (bundle-tangent u-forward))
+       ((bundle? u-forward)
+	(unless (or (every scalar-proto-abstract-value?
+			   (bundle-primal u-forward))
+		    (not (some scalar-proto-abstract-value?
+			       (bundle-primal u-forward))))
+	 (unimplemented))
+	(if (every scalar-proto-abstract-value? (bundle-tangent u-forward))
+	    (bundle-tangent u-forward)
+	    (make-abstract-bundle
+	     (abstract-tangent-v (bundle-primal u-forward))
+	     (abstract-tangent-v (bundle-tangent u-forward)))))
        ((reverse-tagged-value? u-forward)
-	(compile-time-warning
-	 "Might attempt to take tangent of a non-forward value" u-forward))
+	(make-abstract-reverse-tagged-value
+	 (abstract-tangent-v (reverse-tagged-value-primal u-forward))))
        ((and (not *church-pairs?*) (tagged-pair? u-forward))
 	(if (or (null? (tagged-pair-tags u-forward))
 		(not (eq? (first (tagged-pair-tags u-forward)) 'forward)))
@@ -6168,12 +6205,28 @@
 		  (recursive-closure-index-expression u)
 		  (recursive-closure-index-environment u))))
 	       ((and (bundle? u) (bundle? u-perturbation))
-		;; needs work: doesn't check legitimacy
-		(make-abstract-bundle (list u) (list u-perturbation)))
+		(make-abstract-bundle
+		 (abstract-bundle-internal
+		  (bundle-primal u)
+		  (bundle-primal u-perturbation)
+		  (cons v vs1-above)
+		  (cons v-perturbation vs2-above)
+		  (cons (cons v v-perturbation) cs))
+		 (abstract-bundle-internal
+		  (bundle-tangent u)
+		  (bundle-tangent u-perturbation)
+		  (cons v vs1-above)
+		  (cons v-perturbation vs2-above)
+		  (cons (cons v v-perturbation) cs))))
 	       ((and (reverse-tagged-value? u)
 		     (reverse-tagged-value? u-perturbation))
-		;; needs work: doesn't check legitimacy
-		(make-abstract-bundle (list u) (list u-perturbation)))
+		(make-abstract-reverse-tagged-value
+		 (abstract-bundle-internal
+		  (reverse-tagged-value-primal u)
+		  (reverse-tagged-value-primal u-perturbation)
+		  (cons v vs1-above)
+		  (cons v-perturbation vs2-above)
+		  (cons (cons v v-perturbation) cs))))
 	       ((and (not *church-pairs?*)
 		     (tagged-pair? u)
 		     (tagged-pair? u-perturbation)
@@ -6208,6 +6261,10 @@
 	(make-up i))))))
 
 (define (abstract-bundle v v-perturbation)
+ ;; needs work: This should be rewritten (like all of the others) to have a
+ ;;             u version that takes u and u-perturbation and a v version that
+ ;;             takes v and v-perturbation. And then should change
+ ;;             abstract-binary-v->v to abstract-binary-u->v
  (abstract-bundle-internal v v-perturbation '() '() '()))
 
 ;;; Reverse Mode
@@ -6265,7 +6322,7 @@
   (if (vlad-pair? u '())
       ;; needs work: I'm not sure that this should call
       ;;             closed-proto-abstract-values. In any case need to redo
-      ;;             the implementation of bundle.
+      ;;             the implementation of abstract-bundle. See the note there.
       (f (closed-proto-abstract-values (abstract-vlad-car-u u '()))
 	 (closed-proto-abstract-values (abstract-vlad-cdr-u u '())))
       (compile-time-warning
@@ -7602,63 +7659,19 @@
 
 (define (generate-bundle-declarations bs vs)
  (map (lambda (v)
-       ;; debugging
-       (let loop ((v9 v))
-	(when (up? v9)
-	 (display "a")
-	 (newline)
-	 (pp (externalize-abstract-value v))
-	 (newline)
-	 (internal-error))
-	(and (not (boolean-value? v9))
-	     (not (abstract-real-value? v9))
-	     (begin (unless (= (length v9) 1)
-		     (display "b")
-		     (newline)
-		     (pp (externalize-abstract-value v))
-		     (newline)
-		     (internal-error))
-		    (or (scalar-proto-abstract-value? (first v9))
-			(every loop (aggregate-value-values (first v9)))))))
-       (if (void? v)
-	   '()
-	   (begin
-	    (unless (= (length v) 1) (internal-error))
-	    (let ((v1 (abstract-bundle (abstract-vlad-car-u (first v) '())
-				       (abstract-vlad-cdr-u (first v) '()))))
-	     ;; debugging
-	     (let loop ((v9 v1))
-	      (when (up? v9)
-	       (display "c")
-	       (newline)
-	       (pp (externalize-abstract-value v))
-	       (newline)
-	       (pp (externalize-abstract-value v1))
-	       (newline)
-	       (internal-error))
-	      (and
-	       (not (boolean-value? v9))
-	       (not (abstract-real-value? v9))
-	       (begin (unless (= (length v9) 1)
-		       (display "d")
-		       (newline)
-		       (pp (externalize-abstract-value v))
-		       (newline)
-		       (pp (externalize-abstract-value v1))
-		       (newline)
-		       (internal-error))
-		      (or (scalar-proto-abstract-value? (first v9))
-			  (every loop (aggregate-value-values (first v9)))))))
-	     (if (void? v1)
-		 '()
-		 (list "static inline "
-		       (generate-specifier v1 vs)
-		       " "
-		       (generate-builtin-name "bundle" v vs)
-		       "("
-		       (generate-specifier v vs)
-		       " x);"
-		       #\newline))))))
+       (unless (= (length v) 1) (internal-error))
+       (let ((v1 (abstract-bundle (abstract-vlad-car-u (first v) '())
+				  (abstract-vlad-cdr-u (first v) '()))))
+	(if (void? v1)
+	    '()
+	    (list "static inline "
+		  (generate-specifier v1 vs)
+		  " "
+		  (generate-builtin-name "bundle" v vs)
+		  "("
+		  (generate-specifier v vs)
+		  " x);"
+		  #\newline))))
       (all-bundles bs)))
 
 (define (generate-zero-definitions bs xs vs)
@@ -7772,56 +7785,51 @@
 (define (generate-bundle-definitions bs xs vs)
  (map
   (lambda (v)
-   (if (void? v)
-       '()
-       (begin
-	(unless (= (length v) 1) (internal-error))
-	(let* ((v1 (abstract-vlad-car-u (first v) '()))
-	       (v2 (abstract-vlad-cdr-u (first v) '()))
-	       (v3 (abstract-bundle v1 v2)))
-	 (unless (= (length v3) 1) (internal-error))
-	 (if (void? v3)
-	     '()
-	     (list
-	      "static inline "
-	      (generate-specifier v3 vs)
-	      " "
-	      (generate-builtin-name "bundle" v vs)
-	      "("
-	      (generate-specifier v vs)
-	      " x){return "
-	      (generate-builtin-name "m" v3 vs)
-	      "("
-	      (commas-between
-	       ;; needs work: If the primal and or tangent are abstract
-	       ;;             booleans we don't check legitimacy.
-	       (if (or (boolean-value? v1)
-		       (begin (unless (= (length v1) 1) (internal-error))
-			      (scalar-proto-abstract-value? (first v1))))
-		   (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d"))
-		   (map
-		    (lambda (s4a s4b v4)
-		     (if (void? v4)
-			 #f
-			 (let ((v5 (list (vlad-cons (abstract-primal-v v4)
-						    (abstract-tangent-v v4)))))
-			  (list
-			   (generate-builtin-name "bundle" v5 vs)
-			   "("
-			   (generate-builtin-name "m" v5 vs)
-			   "("
-			   (commas-between
-			    (map (lambda (s4 s6 v6)
-				  (if (void? v6) #f (list "x." s6 "." s4)))
-				 (list s4a s4b)
-				 (generate-slot-names (first v5) xs)
-				 (aggregate-value-values (first v5))))
-			   "))"))))
-		    (generate-slot-names (first v1) xs)
-		    (generate-slot-names (first v2) xs)
-		    (aggregate-value-values (first v3)))))
-	      ");}"
-	      #\newline))))))
+   (unless (= (length v) 1) (internal-error))
+   (let* ((v1 (abstract-vlad-car-u (first v) '()))
+	  (v2 (abstract-vlad-cdr-u (first v) '()))
+	  (v3 (abstract-bundle v1 v2)))
+    (unless (= (length v3) 1) (internal-error))
+    (if (void? v3)
+	'()
+	(list
+	 "static inline "
+	 (generate-specifier v3 vs)
+	 " "
+	 (generate-builtin-name "bundle" v vs)
+	 "("
+	 (generate-specifier v vs)
+	 " x){return "
+	 (generate-builtin-name "m" v3 vs)
+	 "("
+	 (commas-between
+	  ;; needs work: If the primal and or tangent are abstract
+	  ;;             booleans we don't check legitimacy.
+	  (if (or (boolean-value? v1)
+		  (begin (unless (= (length v1) 1) (internal-error))
+			 (scalar-proto-abstract-value? (first v1))))
+	      (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d"))
+	      (map (lambda (s4a s4b v4)
+		    (if (void? v4)
+			#f
+			(let ((v5 (list (vlad-cons (abstract-primal-v v4)
+						   (abstract-tangent-v v4)))))
+			 (list (generate-builtin-name "bundle" v5 vs)
+			       "("
+			       (generate-builtin-name "m" v5 vs)
+			       "("
+			       (commas-between
+				(map (lambda (s4 s6 v6)
+				      (if (void? v6) #f (list "x." s6 "." s4)))
+				     (list s4a s4b)
+				     (generate-slot-names (first v5) xs)
+				     (aggregate-value-values (first v5))))
+			       "))"))))
+		   (generate-slot-names (first v1) xs)
+		   (generate-slot-names (first v2) xs)
+		   (aggregate-value-values (first v3)))))
+	 ");}"
+	 #\newline))))
   (all-bundles bs)))
 
 (define (generate e bs)
@@ -7899,18 +7907,30 @@
 	(generate-tangent-definitions bs xs vs)
 	(generate-bundle-definitions bs xs vs)
 	(generate-function-definitions bs xs vs v1v2s)
-	(list "int main(void){"
-	      (generate-letrec-bindings
+	(list
+	 "int main(void){"
+	 (generate-letrec-bindings
+	  e
+	  (environment-binding-values
+	   (first
+	    (expression-binding-flow (lookup-expression-binding e bs))))
+	  (free-variables e)
+	  '()
+	  bs
+	  xs
+	  vs
+	  v1v2s)
+	 ;; needs work: This unsoundly removes code that might do I/O, signal
+	 ;;             an error, or not terminate.
+	 (if (void?
+	      (abstract-eval1
 	       e
 	       (environment-binding-values
 		(first
 		 (expression-binding-flow (lookup-expression-binding e bs))))
-	       (free-variables e)
-	       '()
-	       bs
-	       xs
-	       vs
-	       v1v2s)
+	       bs))
+	     '()
+	     (list
 	      (generate-expression
 	       e
 	       (environment-binding-values
@@ -7922,8 +7942,9 @@
 	       xs
 	       vs
 	       v1v2s)
-	      ";return 0;}"
-	      #\newline))))
+	      ";"))
+	 "return 0;}"
+	 #\newline))))
 
 (define (generate-file code pathname)
  (call-with-output-file (replace-extension pathname "c")
