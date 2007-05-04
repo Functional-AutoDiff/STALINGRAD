@@ -7627,7 +7627,7 @@
 
 (define (generate-zero-declarations bs vs)
  (map (lambda (v)
-       (let ((v1 (abstract-zero-v v)))
+       (let ((v1 (widen-abstract-value (abstract-zero-v v) bs)))
 	(if (void? v1)
 	    '()
 	    (list "static inline "
@@ -7644,7 +7644,7 @@
  (map (lambda (v)
        (if (or (void? v) (boolean-value? v) (abstract-real-value? v))
 	   '()
-	   (let ((v1 (f v)))
+	   (let ((v1 (widen-abstract-value (f v) bs)))
 	    (if (void? v1)
 		'()
 		(list "static inline "
@@ -7660,8 +7660,10 @@
 (define (generate-bundle-declarations bs vs)
  (map (lambda (v)
        (unless (= (length v) 1) (internal-error))
-       (let ((v1 (abstract-bundle (abstract-vlad-car-u (first v) '())
-				  (abstract-vlad-cdr-u (first v) '()))))
+       (let ((v1 (widen-abstract-value
+		  (abstract-bundle (abstract-vlad-car-u (first v) '())
+				   (abstract-vlad-cdr-u (first v) '()))
+		  bs)))
 	(if (void? v1)
 	    '()
 	    (list "static inline "
@@ -7676,7 +7678,7 @@
 
 (define (generate-zero-definitions bs xs vs)
  (map (lambda (v)
-       (let ((v1 (abstract-zero-v v)))
+       (let ((v1 (widen-abstract-value (abstract-zero-v v) bs)))
 	(if (void? v1)
 	    '()
 	    (list
@@ -7695,7 +7697,8 @@
 			  "("
 			  (commas-between
 			   (map (lambda (s v)
-				 (if (void? (abstract-zero-v v))
+				 (if (void? (widen-abstract-value
+					     (abstract-zero-v v) bs))
 				     #f
 				     (list (generate-builtin-name "zero" v vs)
 					   "("
@@ -7715,7 +7718,7 @@
        '()
        (begin
 	(unless (= (length v) 1) (internal-error))
-	(let ((v1 (abstract-primal-v v)))
+	(let ((v1 (widen-abstract-value (abstract-primal-v v) bs)))
 	 (if (void? v1)
 	     '()
 	     (list
@@ -7732,7 +7735,8 @@
 			"("
 			(commas-between
 			 (map (lambda (s v)
-			       (if (void? (abstract-primal-v v))
+			       (if (void? (widen-abstract-value
+					   (abstract-primal-v v) bs))
 				   #f
 				   (list (generate-builtin-name "primal" v vs)
 					 "(x."
@@ -7752,7 +7756,7 @@
        '()
        (begin
 	(unless (= (length v) 1) (internal-error))
-	(let ((v1 (abstract-tangent-v v)))
+	(let ((v1 (widen-abstract-value (abstract-tangent-v v) bs)))
 	 (if (void? v1)
 	     '()
 	     (list
@@ -7769,7 +7773,8 @@
 			"("
 			(commas-between
 			 (map (lambda (s v)
-			       (if (void? (abstract-tangent-v v))
+			       (if (void? (widen-abstract-value
+					   (abstract-tangent-v v) bs))
 				   #f
 				   (list (generate-builtin-name "tangent" v vs)
 					 "(x."
@@ -7788,7 +7793,7 @@
    (unless (= (length v) 1) (internal-error))
    (let* ((v1 (abstract-vlad-car-u (first v) '()))
 	  (v2 (abstract-vlad-cdr-u (first v) '()))
-	  (v3 (abstract-bundle v1 v2)))
+	  (v3 (widen-abstract-value (abstract-bundle v1 v2) bs)))
     (unless (= (length v3) 1) (internal-error))
     (if (void? v3)
 	'()
@@ -7812,8 +7817,12 @@
 	      (map (lambda (s4a s4b v4)
 		    (if (void? v4)
 			#f
-			(let ((v5 (list (vlad-cons (abstract-primal-v v4)
-						   (abstract-tangent-v v4)))))
+			(let ((v5 (list (vlad-cons (widen-abstract-value
+						    (abstract-primal-v v4)
+						    bs)
+						   (widen-abstract-value
+						    (abstract-tangent-v v4)
+						    bs)))))
 			 (list (generate-builtin-name "bundle" v5 vs)
 			       "("
 			       (generate-builtin-name "m" v5 vs)
