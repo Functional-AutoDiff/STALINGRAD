@@ -67,8 +67,8 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
-		 (at-most-one ("church-booleans" church-booleans?))
-		 (at-most-one ("church-pairs" church-pairs?))
+		 (at-most-one ("encoded-booleans" encoded-booleans?))
+		 (at-most-one ("scott-pairs" scott-pairs?))
 		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one
 		  ("flow-analysis" flow-analysis?)
@@ -92,13 +92,11 @@
 			       unabbreviate-nonrecursive-closures?))
 		 (at-most-one ("unabbreviate-recursive-closures"
 			       unabbreviate-recursive-closures?))
-		 (at-most-one ("not-anal" not-anal?))
 		 (at-most-one ("level" level? (level "n" integer-argument #f)))
 		 (at-most-one
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
-		 (at-most-one ("memoized" memoized?))
 		 (at-most-one ("flow-size-limit"
 			       flow-size-limit?
 			       (flow-size-limit "n" integer-argument #f)))
@@ -148,12 +146,12 @@
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
- (when (and church-booleans? (not church-pairs?))
-  (compile-time-error "When you specify -church-booleans you must specify -church-pairs"))
+ (when (and encoded-booleans? (not scott-pairs?))
+  (compile-time-error "When you specify -encoded-booleans you must specify -scott-pairs"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
- (set! *church-booleans?* church-booleans?)
- (set! *church-pairs?* church-pairs?)
+ (set! *encoded-booleans?* encoded-booleans?)
+ (set! *scott-pairs?* scott-pairs?)
  (set! *letrec-as-y?* letrec-as-y?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
@@ -169,10 +167,8 @@
  (set! *unabbreviate-nonrecursive-closures?*
        unabbreviate-nonrecursive-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
- (set! *anal?* (not not-anal?))
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
- (set! *memoized?* memoized?)
  (set! *flow-size-limit* flow-size-limit)
  (set! *real-limit* real-limit)
  (set! *closure-limit* closure-limit)
