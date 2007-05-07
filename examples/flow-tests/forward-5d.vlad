@@ -63,7 +63,7 @@
  (let ((f-forward-forward (j* (j* f))))
   (lambda (x u v)
    (tangent (tangent (f-forward-forward
-		      (bundle (bundle x u) (bundle v (zero x)))))))))
+		      (bundle (bundle x u) (bundle v (forward-zero x)))))))))
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 

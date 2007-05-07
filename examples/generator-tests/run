@@ -85,3 +85,6 @@ stalingrad -compile t15
 ./t15 <<EOF
 7
 EOF
+echo Compiling t16
+stalingrad -compile t16
+./t16

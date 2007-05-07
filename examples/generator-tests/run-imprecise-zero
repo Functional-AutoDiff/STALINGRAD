@@ -1,0 +1,90 @@
+#!/bin/tcsh -f
+echo Compiling t1
+stalingrad -compile -imprecise-zero t1
+./t1
+echo Compiling t2
+stalingrad -compile -imprecise-zero t2
+./t2 <<EOF
+2
+EOF
+echo Compiling t3
+stalingrad -compile -imprecise-zero t3
+./t3 <<EOF
+2
+EOF
+echo Compiling t4
+stalingrad -compile -imprecise-zero t4
+./t4 <<EOF
+3
+4
+EOF
+echo Compiling t5
+stalingrad -compile -imprecise-zero t5
+./t5 <<EOF
+4
+EOF
+echo Compiling t5a
+stalingrad -compile -imprecise-zero t5a
+./t5a <<EOF
+4
+EOF
+echo Compiling t6
+stalingrad -compile -imprecise-zero t6
+./t6
+echo Compiling t6a
+stalingrad -compile -imprecise-zero t6a
+./t6a
+echo Compiling t7
+stalingrad -compile -imprecise-zero t7
+./t7 <<EOF
+0
+EOF
+echo Compiling t8
+stalingrad -compile -imprecise-zero t8
+./t8 <<EOF
+0
+EOF
+echo Compiling t9
+stalingrad -compile -imprecise-zero t9
+./t9 <<EOF
+0
+EOF
+echo Compiling t10
+stalingrad -compile -imprecise-zero t10
+./t10 <<EOF
+3
+4
+0
+EOF
+echo Compiling t11
+stalingrad -compile -imprecise-zero t11
+./t11 <<EOF
+5
+EOF
+echo Compiling t12
+stalingrad -compile -imprecise-zero t12
+./t12 <<EOF
+3
+4
+EOF
+echo Compiling t13
+stalingrad -compile -imprecise-zero t13
+./t13 <<EOF
+3
+4
+5
+6
+EOF
+echo Compiling t14
+stalingrad -compile -imprecise-zero t14
+./t14 <<EOF
+7
+EOF
+echo Compiling t15
+stalingrad -compile -imprecise-zero t15
+./t15 <<EOF
+7
+EOF
+echo Compiling t16
+stalingrad -compile -imprecise-zero t16
+./t16

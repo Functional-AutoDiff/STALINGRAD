@@ -97,7 +97,7 @@
 
 ;;; Derivatives
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (forward-zero x)))
 
 (define ((derivative f) x) (tangent ((j* f) (bundle x (real 1)))))
 
