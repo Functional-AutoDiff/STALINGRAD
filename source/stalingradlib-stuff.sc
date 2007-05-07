@@ -292,19 +292,17 @@
  (exit -1))
 
 (define (run-time-error message . vs)
- ;; debugging
- (when #f
-  (format stderr-port "Stack trace~%")
-  (for-each (lambda (record)
-	     (display "Procedure: " stderr-port)
-	     ((if *pp?* pp write) (externalize (first record)) stderr-port)
-	     (newline stderr-port)
-	     (display "Argument: " stderr-port)
-	     ((if *pp?* pp write) (externalize (second record)) stderr-port)
-	     (newline stderr-port)
-	     (newline stderr-port))
-	    *stack*)
-  (newline stderr-port))
+ (format stderr-port "Stack trace~%")
+ (for-each (lambda (record)
+	    (display "Procedure: " stderr-port)
+	    ((if *pp?* pp write) (externalize (first record)) stderr-port)
+	    (newline stderr-port)
+	    (display "Argument: " stderr-port)
+	    ((if *pp?* pp write) (externalize (second record)) stderr-port)
+	    (newline stderr-port)
+	    (newline stderr-port))
+	   *stack*)
+ (newline stderr-port)
  (for-each (lambda (v)
 	    ((if *pp?* pp write) (externalize v) stderr-port)
 	    (newline stderr-port))
@@ -2299,87 +2297,85 @@
 			(forward-transform-inverse (cons-expression-cdr e))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (forward-zero x)
+(define (forward-zero v)
  (cond
-  ((null? x) (make-perturbation-tagged-value x))
-  ((and (not *encoded-booleans?*) (boolean? x))
-   (make-perturbation-tagged-value x))
-  ((real? x) 0)
-  ((primitive-procedure? x) (make-perturbation-tagged-value x))
-  ((nonrecursive-closure? x)
+  ((null? v) (make-perturbation-tagged-value v))
+  ((and (not *encoded-booleans?*) (boolean? v))
+   (make-perturbation-tagged-value v))
+  ((real? v) (make-perturbation-tagged-value 0))
+  ((primitive-procedure? v) (make-perturbation-tagged-value v))
+  ((nonrecursive-closure? v)
    (let ((e (perturbation-transform
-	     (new-lambda-expression (closure-variable x) (closure-body x)))))
+	     (new-lambda-expression (closure-variable v) (closure-body v)))))
     (make-nonrecursive-closure
      (free-variables e)
      ;; This assumes that the closure variables are in the same order.
-     (map-vector forward-zero (closure-values x))
+     (map-vector forward-zero (closure-values v))
      (lambda-expression-variable e)
      (lambda-expression-body e)
-     (nonrecursive-closure-index-expression x)
-     (nonrecursive-closure-index-environment x))))
-  ((recursive-closure? x)
+     (nonrecursive-closure-index-expression v)
+     (nonrecursive-closure-index-environment v))))
+  ((recursive-closure? v)
    (let ((es (map-vector (lambda (x e)
 			  (perturbation-transform (new-lambda-expression x e)))
-			 (recursive-closure-argument-variables x)
-			 (recursive-closure-bodies x))))
+			 (recursive-closure-argument-variables v)
+			 (recursive-closure-bodies v))))
     (make-recursive-closure
      ;; This assumes that the closure variables are in the same order.
-     (map perturbationify (closure-variables x))
-     (map-vector forward-zero (closure-values x))
-     (map-vector perturbationify (recursive-closure-procedure-variables x))
+     (map perturbationify (closure-variables v))
+     (map-vector forward-zero (closure-values v))
+     (map-vector perturbationify (recursive-closure-procedure-variables v))
      (map-vector lambda-expression-variable es)
      (map-vector lambda-expression-body es)
-     (recursive-closure-index x)
-     (recursive-closure-index-expression x)
-     (recursive-closure-index-environment x))))
-  ((perturbation-tagged-value? x)
+     (recursive-closure-index v)
+     (recursive-closure-index-expression v)
+     (recursive-closure-index-environment v))))
+  ((perturbation-tagged-value? v)
    (make-perturbation-tagged-value
-    (forward-zero (perturbation-tagged-value-primal x))))
-  ((bundle? x)
-   (make-bundle (forward-zero (bundle-primal x))
-		(forward-zero (bundle-tangent x))))
-  ((sensitivity-tagged-value? x)
+    (forward-zero (perturbation-tagged-value-primal v))))
+  ((bundle? v)
+   (make-bundle (forward-zero (bundle-primal v))
+		(forward-zero (bundle-tangent v))))
+  ((sensitivity-tagged-value? v)
    (make-sensitivity-tagged-value
-    (forward-zero (sensitivity-tagged-value-primal x))))
-  ((reverse-tagged-value? x)
-   (make-reverse-tagged-value (forward-zero (reverse-tagged-value-primal x))))
-  ((and (not *scott-pairs?*) (tagged-pair? x))
-   (create-tagged-pair (cons 'perturbation (tagged-pair-tags x))
-		       (forward-zero (vlad-car x (tagged-pair-tags x)))
-		       (forward-zero (vlad-cdr x (tagged-pair-tags x)))))
+    (forward-zero (sensitivity-tagged-value-primal v))))
+  ((reverse-tagged-value? v)
+   (make-reverse-tagged-value (forward-zero (reverse-tagged-value-primal v))))
+  ((and (not *scott-pairs?*) (tagged-pair? v))
+   (create-tagged-pair (cons 'perturbation (tagged-pair-tags v))
+		       (forward-zero (vlad-car v (tagged-pair-tags v)))
+		       (forward-zero (vlad-cdr v (tagged-pair-tags v)))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (perturb x)
+(define (perturb v)
  (cond
-  ((null? x) (make-perturbation-tagged-value x))
-  ((and (not *encoded-booleans?*) (boolean? x))
-   (make-perturbation-tagged-value x))
-  ((real? x) x)
-  ((primitive-procedure? x) (make-perturbation-tagged-value x))
-  ((nonrecursive-closure? x)
-   (let* ((e (perturbation-transform
-	      (new-lambda-expression (closure-variable x) (closure-body x))))
-	  (x (lambda-expression-variable e))
-	  (xs (free-variables e)))
+  ((null? v) (make-perturbation-tagged-value v))
+  ((and (not *encoded-booleans?*) (boolean? v))
+   (make-perturbation-tagged-value v))
+  ((real? v) (make-perturbation-tagged-value v))
+  ((primitive-procedure? v) (make-perturbation-tagged-value v))
+  ((nonrecursive-closure? v)
+   (let ((e (perturbation-transform
+	     (new-lambda-expression (closure-variable v) (closure-body v)))))
     (make-nonrecursive-closure
-     xs
+     (free-variables e)
      ;; This assumes that the closure variables are in the same order.
-     (map-vector perturb (closure-values x))
-     x
-     (index x xs (lambda-expression-body e))
-     (nonrecursive-closure-index-expression x)
-     (nonrecursive-closure-index-environment x))))
-  ((recursive-closure? x)
+     (map-vector perturb (closure-values v))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e)
+	    (free-variables e)
+	    (lambda-expression-body e))
+     (nonrecursive-closure-index-expression v)
+     (nonrecursive-closure-index-environment v))))
+  ((recursive-closure? v)
    (let* ((es (vector->list
 	       (map-vector
 		(lambda (x e)
 		 (perturbation-transform (new-lambda-expression x e)))
-		(recursive-closure-argument-variables x)
-		(recursive-closure-bodies x))))
+		(recursive-closure-argument-variables v)
+		(recursive-closure-bodies v))))
 	  (xs1 (map-vector
-		perturbationify (recursive-closure-procedure-variables x)))
+		perturbationify (recursive-closure-procedure-variables v)))
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
@@ -2388,7 +2384,7 @@
     (make-recursive-closure
      xs
      ;; This assumes that the closure variables are in the same order.
-     (map-vector perturb (closure-values x))
+     (map-vector perturb (closure-values v))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -2396,70 +2392,69 @@
        (lambda (e)
 	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
        es))
-     (recursive-closure-index x)
-     (recursive-closure-index-expression x)
-     (recursive-closure-index-environment x))))
-  ((perturbation-tagged-value? x)
+     (recursive-closure-index v)
+     (recursive-closure-index-expression v)
+     (recursive-closure-index-environment v))))
+  ((perturbation-tagged-value? v)
    (make-perturbation-tagged-value
-    (perturb (perturbation-tagged-value-primal x))))
-  ((bundle? x)
-   (make-bundle (perturb (bundle-primal x)) (perturb (bundle-tangent x))))
-  ((sensitivity-tagged-value? x)
+    (perturb (perturbation-tagged-value-primal v))))
+  ((bundle? v)
+   (make-bundle (perturb (bundle-primal v)) (perturb (bundle-tangent v))))
+  ((sensitivity-tagged-value? v)
    (make-sensitivity-tagged-value
-    (perturb (sensitivity-tagged-value-primal x))))
-  ((reverse-tagged-value? x)
-   (make-reverse-tagged-value (perturb (reverse-tagged-value-primal x))))
-  ((and (not *scott-pairs?*) (tagged-pair? x))
-   (create-tagged-pair (cons 'perturbation (tagged-pair-tags x))
-		       (perturb (tagged-pair-car x))
-		       (perturb (tagged-pair-cdr x))))
+    (perturb (sensitivity-tagged-value-primal v))))
+  ((reverse-tagged-value? v)
+   (make-reverse-tagged-value (perturb (reverse-tagged-value-primal v))))
+  ((and (not *scott-pairs?*) (tagged-pair? v))
+   (create-tagged-pair (cons 'perturbation (tagged-pair-tags v))
+		       (perturb (tagged-pair-car v))
+		       (perturb (tagged-pair-cdr v))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (unperturb x-perturbation)
+(define (unperturb v-perturbation)
  (cond
-  ((null? x-perturbation)
+  ((null? v-perturbation)
    (run-time-error
-    "Attempt to unperturb a non-perturbation value" x-perturbation))
-  ((and (not *encoded-booleans?*) (boolean? x-perturbation))
+    "Attempt to unperturb a non-perturbation value" v-perturbation))
+  ((and (not *encoded-booleans?*) (boolean? v-perturbation))
    (run-time-error
-    "Attempt to unperturb a non-perturbation value" x-perturbation))
-  ((real? x-perturbation)
+    "Attempt to unperturb a non-perturbation value" v-perturbation))
+  ((real? v-perturbation)
    (run-time-error
-    "Attempt to unperturb a non-perturbation value" x-perturbation))
-  ((primitive-procedure? x-perturbation)
+    "Attempt to unperturb a non-perturbation value" v-perturbation))
+  ((primitive-procedure? v-perturbation)
    (run-time-error
-    "Attempt to unperturb a non-perturbation value" x-perturbation))
-  ((nonrecursive-closure? x-perturbation)
-   (unless (perturbation-variable? (closure-variable x-perturbation))
+    "Attempt to unperturb a non-perturbation value" v-perturbation))
+  ((nonrecursive-closure? v-perturbation)
+   (unless (perturbation-variable? (closure-variable v-perturbation))
     (run-time-error
-     "Attempt to unperturb a non-perturbation value" x-perturbation))
-   (let* ((e (perturbation-transform-inverse
-	      (new-lambda-expression (closure-variable x-perturbation)
-				     (closure-body x-perturbation))))
-	  (x (lambda-expression-variable e))
-	  (xs (free-variables e)))
+     "Attempt to unperturb a non-perturbation value" v-perturbation))
+   (let ((e (perturbation-transform-inverse
+	     (new-lambda-expression (closure-variable v-perturbation)
+				    (closure-body v-perturbation)))))
     (make-nonrecursive-closure
-     xs
+     (free-variables e)
      ;; This assumes that the closure variables are in the same order.
-     (map-vector unperturb (closure-values x-perturbation))
-     x
-     (index x xs (lambda-expression-body e))
-     (nonrecursive-closure-index-expression x-perturbation)
-     (nonrecursive-closure-index-environment x-perturbation))))
-  ((recursive-closure? x-perturbation)
-   (unless (perturbation-variable? (closure-variable x-perturbation))
+     (map-vector unperturb (closure-values v-perturbation))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e)
+	    (free-variables e)
+	    (lambda-expression-body e))
+     (nonrecursive-closure-index-expression v-perturbation)
+     (nonrecursive-closure-index-environment v-perturbation))))
+  ((recursive-closure? v-perturbation)
+   (unless (perturbation-variable? (closure-variable v-perturbation))
     (run-time-error
-     "Attempt to unperturb a non-perturbation value" x-perturbation))
+     "Attempt to unperturb a non-perturbation value" v-perturbation))
    (let* ((es (vector->list
 	       (map-vector
 		(lambda (x e)
 		 (perturbation-transform-inverse (new-lambda-expression x e)))
-		(recursive-closure-argument-variables x-perturbation)
-		(recursive-closure-bodies x-perturbation))))
+		(recursive-closure-argument-variables v-perturbation)
+		(recursive-closure-bodies v-perturbation))))
 	  (xs1 (map-vector
 		unperturbationify
-		(recursive-closure-procedure-variables x-perturbation)))
+		(recursive-closure-procedure-variables v-perturbation)))
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
@@ -2468,7 +2463,7 @@
     (make-recursive-closure
      xs
      ;; This assumes that the closure variables are in the same order.
-     (map-vector unperturb (closure-values x-perturbation))
+     (map-vector unperturb (closure-values v-perturbation))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -2476,72 +2471,73 @@
        (lambda (e)
 	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
        es))
-     (recursive-closure-index x-perturbation)
-     (recursive-closure-index-expression x-perturbation)
-     (recursive-closure-index-environment x-perturbation))))
-  ((perturbation-tagged-value? x-perturbation)
-   (make-perturbation-tagged-value
-    (unperturb (perturbation-tagged-value-primal x-perturbation))))
-  ((bundle? x-perturbation)
-   (make-bundle (unperturb (bundle-primal x-perturbation))
-		(unperturb (bundle-tangent x-perturbation))))
-  ((sensitivity-tagged-value? x-perturbation)
+     (recursive-closure-index v-perturbation)
+     (recursive-closure-index-expression v-perturbation)
+     (recursive-closure-index-environment v-perturbation))))
+  ((perturbation-tagged-value? v-perturbation)
+   (if (scalar-value? (perturbation-tagged-value-primal v-perturbation))
+       (perturbation-tagged-value-primal v-perturbation)
+       (make-perturbation-tagged-value
+	(unperturb (perturbation-tagged-value-primal v-perturbation)))))
+  ((bundle? v-perturbation)
+   (make-bundle (unperturb (bundle-primal v-perturbation))
+		(unperturb (bundle-tangent v-perturbation))))
+  ((sensitivity-tagged-value? v-perturbation)
    (make-sensitivity-tagged-value
-    (unperturb (sensitivity-tagged-value-primal x-perturbation))))
-  ((reverse-tagged-value? x-perturbation)
+    (unperturb (sensitivity-tagged-value-primal v-perturbation))))
+  ((reverse-tagged-value? v-perturbation)
    (make-reverse-tagged-value
-    (unperturb (reverse-tagged-value-primal x-perturbation))))
-  ((and (not *scott-pairs?*) (tagged-pair? x-perturbation))
-   (unless (memq 'perturbation (tagged-pair-tags x-perturbation))
+    (unperturb (reverse-tagged-value-primal v-perturbation))))
+  ((and (not *scott-pairs?*) (tagged-pair? v-perturbation))
+   (unless (memq 'perturbation (tagged-pair-tags v-perturbation))
     (run-time-error
-     "Attempt to unperturb a non-perturbation value" x-perturbation))
+     "Attempt to unperturb a non-perturbation value" v-perturbation))
    (create-tagged-pair
-    (remove-oneq 'perturbation (tagged-pair-tags x-perturbation))
-    (unperturb (tagged-pair-car x-perturbation))
-    (unperturb (tagged-pair-cdr x-perturbation))))
+    (remove-oneq 'perturbation (tagged-pair-tags v-perturbation))
+    (unperturb (tagged-pair-car v-perturbation))
+    (unperturb (tagged-pair-cdr v-perturbation))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (primal x-forward)
+(define (primal v-forward)
  (cond
-  ((null? x-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" x-forward))
-  ((and (not *encoded-booleans?*) (boolean? x-forward))
-   (run-time-error "Attempt to take primal of a non-forward value" x-forward))
-  ((real? x-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" x-forward))
-  ((primitive-procedure? x-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" x-forward))
-  ((nonrecursive-closure? x-forward)
-   (unless (forward-variable? (closure-variable x-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" x-forward))
+  ((null? v-forward)
+   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
+  ((and (not *encoded-booleans?*) (boolean? v-forward))
+   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
+  ((real? v-forward)
+   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
+  ((primitive-procedure? v-forward)
+   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
+  ((nonrecursive-closure? v-forward)
+   (unless (forward-variable? (closure-variable v-forward))
+    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
    (let ((b (find-if (lambda (b)
-		      (vlad-equal? x-forward
+		      (vlad-equal? v-forward
 				   (primitive-procedure-forward
 				    (value-binding-value b))))
 		     *value-bindings*)))
     (if b
 	(value-binding-value b)
-	(let* ((e (forward-transform-inverse
-		   (new-lambda-expression
-		    (closure-variable x-forward) (closure-body x-forward))))
-	       (x (lambda-expression-variable e))
-	       (xs (free-variables e)))
+	(let ((e (forward-transform-inverse
+		  (new-lambda-expression
+		   (closure-variable v-forward) (closure-body v-forward)))))
 	 (make-nonrecursive-closure
-	  xs
+	  (free-variables e)
 	  ;; This assumes that the closure variables are in the same order.
-	  (map-vector primal (closure-values x-forward))
-	  x
-	  (index x xs (lambda-expression-body e))
+	  (map-vector primal (closure-values v-forward))
+	  (lambda-expression-variable e)
+	  (index (lambda-expression-variable e)
+		 (free-variables e)
+		 (lambda-expression-body e))
 	  ;; needs work: tangent of bundle gives the index-expression and
 	  ;;             index-environment of the primal
-	  (nonrecursive-closure-index-expression x-forward)
-	  (nonrecursive-closure-index-environment x-forward))))))
-  ((recursive-closure? x-forward)
-   (unless (forward-variable? (closure-variable x-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" x-forward))
+	  (nonrecursive-closure-index-expression v-forward)
+	  (nonrecursive-closure-index-environment v-forward))))))
+  ((recursive-closure? v-forward)
+   (unless (forward-variable? (closure-variable v-forward))
+    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
    (let ((b (find-if (lambda (b)
-		      (vlad-equal? x-forward
+		      (vlad-equal? v-forward
 				   (primitive-procedure-forward
 				    (value-binding-value b))))
 		     *value-bindings*)))
@@ -2551,11 +2547,11 @@
 		    (map-vector
 		     (lambda (x e)
 		      (forward-transform-inverse (new-lambda-expression x e)))
-		     (recursive-closure-argument-variables x-forward)
-		     (recursive-closure-bodies x-forward))))
+		     (recursive-closure-argument-variables v-forward)
+		     (recursive-closure-bodies v-forward))))
 	       (xs1 (map-vector
 		     unforwardify
-		     (recursive-closure-procedure-variables x-forward)))
+		     (recursive-closure-procedure-variables v-forward)))
 	       (xs (letrec-recursive-closure-variables
 		    (vector->list xs1)
 		    (map lambda-expression-variable es)
@@ -2564,7 +2560,7 @@
 	 (make-recursive-closure
 	  xs
 	  ;; This assumes that the closure variables are in the same order.
-	  (map-vector primal (closure-values x-forward))
+	  (map-vector primal (closure-values v-forward))
 	  xs1
 	  (list->vector (map lambda-expression-variable es))
 	  (list->vector
@@ -2573,79 +2569,78 @@
 			xs2
 			(lambda-expression-body e)))
 		es))
-	  (recursive-closure-index x-forward)
+	  (recursive-closure-index v-forward)
 	  ;; needs work: tangent of bundle gives the index-expression and
 	  ;;             index-environment of the primal
-	  (recursive-closure-index-expression x-forward)
-	  (recursive-closure-index-environment x-forward))))))
-  ((perturbation-tagged-value? x-forward)
+	  (recursive-closure-index-expression v-forward)
+	  (recursive-closure-index-environment v-forward))))))
+  ((perturbation-tagged-value? v-forward)
    (make-perturbation-tagged-value
-    (primal (perturbation-tagged-value-primal x-forward))))
-  ((bundle? x-forward)
-   (if (scalar-value? (bundle-primal x-forward))
-       (bundle-primal x-forward)
-       (make-bundle (primal (bundle-primal x-forward))
-		    (primal (bundle-tangent x-forward)))))
-  ((sensitivity-tagged-value? x-forward)
+    (primal (perturbation-tagged-value-primal v-forward))))
+  ((bundle? v-forward)
+   (if (scalar-value? (bundle-primal v-forward))
+       (bundle-primal v-forward)
+       (make-bundle (primal (bundle-primal v-forward))
+		    (primal (bundle-tangent v-forward)))))
+  ((sensitivity-tagged-value? v-forward)
    (make-sensitivity-tagged-value
-    (primal (sensitivity-tagged-value-primal x-forward))))
-  ((reverse-tagged-value? x-forward)
+    (primal (sensitivity-tagged-value-primal v-forward))))
+  ((reverse-tagged-value? v-forward)
    (make-reverse-tagged-value
-    (primal (reverse-tagged-value-primal x-forward))))
-  ((and (not *scott-pairs?*) (tagged-pair? x-forward))
-   (unless (memq 'forward (tagged-pair-tags x-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" x-forward))
+    (primal (reverse-tagged-value-primal v-forward))))
+  ((and (not *scott-pairs?*) (tagged-pair? v-forward))
+   (unless (memq 'forward (tagged-pair-tags v-forward))
+    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
    ;; needs work: tangent of bundle gives the index-expression and
    ;;             index-environment of the primal
-   (create-tagged-pair (remove-oneq 'forward (tagged-pair-tags x-forward))
-		       (primal (tagged-pair-car x-forward))
-		       (primal (tagged-pair-cdr x-forward))))
+   (create-tagged-pair (remove-oneq 'forward (tagged-pair-tags v-forward))
+		       (primal (tagged-pair-car v-forward))
+		       (primal (tagged-pair-cdr v-forward))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (tangent x-forward)
+(define (tangent v-forward)
  (cond
-  ((null? x-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" x-forward))
-  ((and (not *encoded-booleans?*) (boolean? x-forward))
-   (run-time-error "Attempt to take tangent of a non-forward value" x-forward))
-  ((real? x-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" x-forward))
-  ((primitive-procedure? x-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" x-forward))
-  ((nonrecursive-closure? x-forward)
-   (unless (forward-variable? (closure-variable x-forward))
+  ((null? v-forward)
+   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
+  ((and (not *encoded-booleans?*) (boolean? v-forward))
+   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
+  ((real? v-forward)
+   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
+  ((primitive-procedure? v-forward)
+   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
+  ((nonrecursive-closure? v-forward)
+   (unless (forward-variable? (closure-variable v-forward))
     (run-time-error
-     "Attempt to take tangent of a non-forward value" x-forward))
+     "Attempt to take tangent of a non-forward value" v-forward))
    (let ((b (find-if (lambda (b)
-		      (vlad-equal? x-forward
+		      (vlad-equal? v-forward
 				   (primitive-procedure-forward
 				    (value-binding-value b))))
 		     *value-bindings*)))
     (if b
 	(value-binding-value b)
-	(let* ((e (perturbation-transform
-		   (forward-transform-inverse
-		    (new-lambda-expression
-		     (closure-variable x-forward) (closure-body x-forward)))))
-	       (x (lambda-expression-variable e))
-	       (xs (free-variables e)))
+	(let ((e (perturbation-transform
+		  (forward-transform-inverse
+		   (new-lambda-expression
+		    (closure-variable v-forward) (closure-body v-forward))))))
 	 (make-nonrecursive-closure
-	  xs
+	  (free-variables e)
 	  ;; This assumes that the closure variables are in the same order.
-	  (map-vector tangent (closure-values x-forward))
-	  x
-	  (index x xs (lambda-expression-body e))
+	  (map-vector tangent (closure-values v-forward))
+	  (lambda-expression-variable e)
+	  (index (lambda-expression-variable e)
+		 (free-variables e)
+		 (lambda-expression-body e))
 	  ;; needs work: tangent of bundle gives the index-expression and
 	  ;;             index-environment of the primal
-	  (nonrecursive-closure-index-expression x-forward)
-	  (nonrecursive-closure-index-environment x-forward))))))
-  ((recursive-closure? x-forward)
-   (unless (forward-variable? (closure-variable x-forward))
+	  (nonrecursive-closure-index-expression v-forward)
+	  (nonrecursive-closure-index-environment v-forward))))))
+  ((recursive-closure? v-forward)
+   (unless (forward-variable? (closure-variable v-forward))
     (run-time-error
-     "Attempt to take tangent of a non-forward value" x-forward))
+     "Attempt to take tangent of a non-forward value" v-forward))
    (let ((b (find-if (lambda (b)
-		      (vlad-equal? x-forward
+		      (vlad-equal? v-forward
 				   (primitive-procedure-forward
 				    (value-binding-value b))))
 		     *value-bindings*)))
@@ -2657,11 +2652,11 @@
 		      (perturbation-transform
 		       (forward-transform-inverse
 			(new-lambda-expression x e))))
-		     (recursive-closure-argument-variables x-forward)
-		     (recursive-closure-bodies x-forward))))
+		     (recursive-closure-argument-variables v-forward)
+		     (recursive-closure-bodies v-forward))))
 	       (xs1 (map-vector
 		     (lambda (x) (perturbationify (unforwardify x)))
-		     (recursive-closure-procedure-variables x-forward)))
+		     (recursive-closure-procedure-variables v-forward)))
 	       (xs (letrec-recursive-closure-variables
 		    (vector->list xs1)
 		    (map lambda-expression-variable es)
@@ -2670,7 +2665,7 @@
 	 (make-recursive-closure
 	  xs
 	  ;; This assumes that the closure variables are in the same order.
-	  (map-vector tangent (closure-values x-forward))
+	  (map-vector tangent (closure-values v-forward))
 	  xs1
 	  (list->vector (map lambda-expression-variable es))
 	  (list->vector
@@ -2679,85 +2674,86 @@
 			xs2
 			(lambda-expression-body e)))
 		es))
-	  (recursive-closure-index x-forward)
+	  (recursive-closure-index v-forward)
 	  ;; needs work: tangent of bundle gives the index-expression and
 	  ;;             index-environment of the primal
-	  (recursive-closure-index-expression x-forward)
-	  (recursive-closure-index-environment x-forward))))))
-  ((perturbation-tagged-value? x-forward)
+	  (recursive-closure-index-expression v-forward)
+	  (recursive-closure-index-environment v-forward))))))
+  ((perturbation-tagged-value? v-forward)
    (make-perturbation-tagged-value
-    (tangent (perturbation-tagged-value-primal x-forward))))
-  ((bundle? x-forward)
-   (if (scalar-value? (bundle-primal x-forward))
-       (bundle-tangent x-forward)
-       (make-bundle (tangent (bundle-primal x-forward))
-		    (tangent (bundle-tangent x-forward)))))
-  ((sensitivity-tagged-value? x-forward)
+    (tangent (perturbation-tagged-value-primal v-forward))))
+  ((bundle? v-forward)
+   (if (scalar-value? (bundle-primal v-forward))
+       (bundle-tangent v-forward)
+       (make-bundle (tangent (bundle-primal v-forward))
+		    (tangent (bundle-tangent v-forward)))))
+  ((sensitivity-tagged-value? v-forward)
    (make-sensitivity-tagged-value
-    (tangent (sensitivity-tagged-value-primal x-forward))))
-  ((reverse-tagged-value? x-forward)
+    (tangent (sensitivity-tagged-value-primal v-forward))))
+  ((reverse-tagged-value? v-forward)
    (make-reverse-tagged-value
-    (tangent (reverse-tagged-value-primal x-forward))))
-  ((and (not *scott-pairs?*) (tagged-pair? x-forward))
-   (unless (memq 'forward (tagged-pair-tags x-forward))
+    (tangent (reverse-tagged-value-primal v-forward))))
+  ((and (not *scott-pairs?*) (tagged-pair? v-forward))
+   (unless (memq 'forward (tagged-pair-tags v-forward))
     (run-time-error
-     "Attempt to take tangent of a non-forward value" x-forward))
+     "Attempt to take tangent of a non-forward value" v-forward))
    ;; needs work: tangent of bundle gives the index-expression and
    ;;             index-environment of the primal
    (create-tagged-pair
-    (cons 'perturbation (remove-oneq 'forward (tagged-pair-tags x-forward)))
-    (tangent (tagged-pair-car x-forward))
-    (tangent (tagged-pair-cdr x-forward))))
+    (cons 'perturbation (remove-oneq 'forward (tagged-pair-tags v-forward)))
+    (tangent (tagged-pair-car v-forward))
+    (tangent (tagged-pair-cdr v-forward))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (legitimate? x x-perturbation)
- (or (and (null? x)
-	  (perturbation-tagged-value? x-perturbation)
-	  (null? (perturbation-tagged-value-primal x-perturbation)))
+(define (legitimate? v v-perturbation)
+ (or (and (null? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (null? (perturbation-tagged-value-primal v-perturbation)))
      (and (not *encoded-booleans?*)
-	  (boolean? x)
-	  (perturbation-tagged-value? x-perturbation)
-	  (boolean? (perturbation-tagged-value-primal x-perturbation))
-	  (eq? x (perturbation-tagged-value-primal x-perturbation)))
-     (and (real? x) (real? x-perturbation))
-     (and (primitive-procedure? x)
-	  (perturbation-tagged-value? x-perturbation)
+	  (boolean? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (boolean? (perturbation-tagged-value-primal v-perturbation))
+	  (eq? v (perturbation-tagged-value-primal v-perturbation)))
+     (and (real? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (real? (perturbation-tagged-value-primal v-perturbation)))
+     (and (primitive-procedure? v)
+	  (perturbation-tagged-value? v-perturbation)
 	  (primitive-procedure?
-	   (perturbation-tagged-value-primal x-perturbation))
-	  (eq? x (perturbation-tagged-value-primal x-perturbation)))
-     (and (nonrecursive-closure? x)
-	  (nonrecursive-closure? x-perturbation)
-	  (= (vector-length (closure-values x))
-	     (vector-length (closure-values x-perturbation)))
-	  ;; This assumes that the corresponding closure variables in x and
-	  ;; x-perturbation are in the same order. See the note in vlad-equal?.
+	   (perturbation-tagged-value-primal v-perturbation))
+	  (eq? v (perturbation-tagged-value-primal v-perturbation)))
+     (and (nonrecursive-closure? v)
+	  (nonrecursive-closure? v-perturbation)
+	  (= (vector-length (closure-values v))
+	     (vector-length (closure-values v-perturbation)))
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in vlad-equal?.
 	  (let ((e (perturbation-transform
 		    (new-lambda-expression
-		     (closure-variable x) (closure-body x))))
+		     (closure-variable v) (closure-body v))))
 		(e-perturbation
-		 (new-lambda-expression (closure-variable x-perturbation)
-					(closure-body x-perturbation))))
+		 (new-lambda-expression (closure-variable v-perturbation)
+					(closure-body v-perturbation))))
 	   (alpha-equivalent?
 	    (lambda-expression-body e)
 	    (lambda-expression-body e-perturbation)
 	    (cons (lambda-expression-variable e) (free-variables e))
 	    (cons (lambda-expression-variable e-perturbation)
 		  (free-variables e-perturbation))))
-	  ;; This assumes that the corresponding closure variables in x and
-	  ;; x-perturbation are in the same order. See the note in vlad-equal?.
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in vlad-equal?.
 	  (every-vector
-	   legitimate? (closure-values x) (closure-values x-perturbation)))
-     (and (recursive-closure? x)
-	  (recursive-closure? x-perturbation)
-	  (= (vector-length (recursive-closure-bodies x))
-	     (vector-length (recursive-closure-bodies x-perturbation)))
-	  (= (recursive-closure-index x)
-	     (recursive-closure-index x-perturbation))
-	  (= (vector-length (closure-values x))
-	     (vector-length (closure-values x-perturbation)))
-	  ;; This assumes that the corresponding closure variables in x and
-	  ;; x-perturbation are in the same order. See the note in vlad-equal?.
+	   legitimate? (closure-values v) (closure-values v-perturbation)))
+     (and (recursive-closure? v)
+	  (recursive-closure? v-perturbation)
+	  (= (vector-length (recursive-closure-bodies v))
+	     (vector-length (recursive-closure-bodies v-perturbation)))
+	  (= (recursive-closure-index v)
+	     (recursive-closure-index v-perturbation))
+	  (= (vector-length (closure-values v))
+	     (vector-length (closure-values v-perturbation)))
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in vlad-equal?.
 	  (every-vector
 	   (lambda (x1 x2 e1 e2)
 	    (let ((e (perturbation-transform (new-lambda-expression x1 e1)))
@@ -2769,81 +2765,79 @@
 	       (lambda-expression-variable e)
 	       (map perturbationify
 		    (append
-		     (vector->list (recursive-closure-procedure-variables x))
-		     (closure-variables x))))
+		     (vector->list (recursive-closure-procedure-variables v))
+		     (closure-variables v))))
 	      (cons (lambda-expression-variable e-perturbation)
 		    (append
 		     (vector->list
-		      (recursive-closure-procedure-variables x-perturbation))
-		     (closure-variables x-perturbation))))))
-	   (recursive-closure-argument-variables x)
-	   (recursive-closure-argument-variables x-perturbation)
-	   (recursive-closure-bodies x)
-	   (recursive-closure-bodies x-perturbation))
-	  ;; This assumes that the corresponding closure variables in x and
-	  ;; x-perturbation are in the same order. See the note in vlad-equal?.
+		      (recursive-closure-procedure-variables v-perturbation))
+		     (closure-variables v-perturbation))))))
+	   (recursive-closure-argument-variables v)
+	   (recursive-closure-argument-variables v-perturbation)
+	   (recursive-closure-bodies v)
+	   (recursive-closure-bodies v-perturbation))
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in vlad-equal?.
 	  (every-vector
-	   legitimate? (closure-values x) (closure-values x-perturbation)))
-     (and (perturbation-tagged-value? x)
-	  (perturbation-tagged-value? x-perturbation)
-	  (legitimate? (perturbation-tagged-value-primal x)
-		       (perturbation-tagged-value-primal x-perturbation)))
-     (and (bundle? x)
-	  (bundle? x-perturbation)
-	  (legitimate? (bundle-primal x)
-		       (bundle-primal x-perturbation))
-	  (legitimate? (bundle-tangent x)
-		       (bundle-tangent x-perturbation)))
-     (and (sensitivity-tagged-value? x)
-	  (sensitivity-tagged-value? x-perturbation)
-	  (legitimate? (sensitivity-tagged-value-primal x)
-		       (sensitivity-tagged-value-primal x-perturbation)))
-     (and (reverse-tagged-value? x)
-	  (reverse-tagged-value? x-perturbation)
-	  (legitimate? (reverse-tagged-value-primal x)
-		       (reverse-tagged-value-primal x-perturbation)))
+	   legitimate? (closure-values v) (closure-values v-perturbation)))
+     (and (perturbation-tagged-value? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (legitimate? (perturbation-tagged-value-primal v)
+		       (perturbation-tagged-value-primal v-perturbation)))
+     (and (bundle? v)
+	  (bundle? v-perturbation)
+	  (legitimate? (bundle-primal v)
+		       (bundle-primal v-perturbation))
+	  (legitimate? (bundle-tangent v)
+		       (bundle-tangent v-perturbation)))
+     (and (sensitivity-tagged-value? v)
+	  (sensitivity-tagged-value? v-perturbation)
+	  (legitimate? (sensitivity-tagged-value-primal v)
+		       (sensitivity-tagged-value-primal v-perturbation)))
+     (and (reverse-tagged-value? v)
+	  (reverse-tagged-value? v-perturbation)
+	  (legitimate? (reverse-tagged-value-primal v)
+		       (reverse-tagged-value-primal v-perturbation)))
      (and (not *scott-pairs?*)
-	  (tagged-pair? x)
-	  (tagged-pair? x-perturbation)
-	  (equal-tags? (tagged-pair-tags x) (tagged-pair-tags x-perturbation))
-	  (legitimate? (tagged-pair-car x) (tagged-pair-car x-perturbation))
-	  (legitimate? (tagged-pair-cdr x)
-		       (tagged-pair-cdr x-perturbation)))))
+	  (tagged-pair? v)
+	  (tagged-pair? v-perturbation)
+	  (equal-tags? (tagged-pair-tags v) (tagged-pair-tags v-perturbation))
+	  (legitimate? (tagged-pair-car v) (tagged-pair-car v-perturbation))
+	  (legitimate? (tagged-pair-cdr v)
+		       (tagged-pair-cdr v-perturbation)))))
 
-;;; needs work: rename x->v
-(define (bundle-internal x x-perturbation)
+(define (bundle-internal v v-perturbation)
  (cond
-  ((null? x) (make-bundle x (perturbation-tagged-value-primal x-perturbation)))
-  ((and (not *encoded-booleans?*) (boolean? x))
-   (make-bundle x (perturbation-tagged-value-primal x-perturbation)))
-  ((real? x) (make-bundle x x-perturbation))
-  ((primitive-procedure? x) (primitive-procedure-forward x))
-  ((nonrecursive-closure? x)
-   (let* ((e (forward-transform
-	      (new-lambda-expression (closure-variable x) (closure-body x))))
-	  (x1 (lambda-expression-variable e))
-	  (xs (free-variables e)))
+  ((null? v) (make-bundle v v-perturbation))
+  ((and (not *encoded-booleans?*) (boolean? v)) (make-bundle v v-perturbation))
+  ((real? v) (make-bundle v v-perturbation))
+  ((primitive-procedure? v) (primitive-procedure-forward v))
+  ((nonrecursive-closure? v)
+   (let ((e (forward-transform
+	     (new-lambda-expression (closure-variable v) (closure-body v)))))
     (make-nonrecursive-closure
-     xs
-     ;; This assumes that the corresponding closure variables in x,
-     ;; x-perturbation, and x-forward are in the same order. See the note in
+     (free-variables e)
+     ;; This assumes that the corresponding closure variables in v,
+     ;; v-perturbation, and v-forward are in the same order. See the note in
      ;; vlad-equal?.
      (map-vector
-      bundle-internal (closure-values x) (closure-values x-perturbation))
-     x1
-     (index x1 xs (lambda-expression-body e))
+      bundle-internal (closure-values v) (closure-values v-perturbation))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e)
+	    (free-variables e)
+	    (lambda-expression-body e))
      ;; needs work: tangent of bundle gives the index-expression and
      ;;             index-environment of the primal
-     (nonrecursive-closure-index-expression x)
-     (nonrecursive-closure-index-environment x))))
-  ((recursive-closure? x)
+     (nonrecursive-closure-index-expression v)
+     (nonrecursive-closure-index-environment v))))
+  ((recursive-closure? v)
    (let* ((es (vector->list
 	       (map-vector
 		(lambda (x e) (forward-transform (new-lambda-expression x e)))
-		(recursive-closure-argument-variables x)
-		(recursive-closure-bodies x))))
+		(recursive-closure-argument-variables v)
+		(recursive-closure-bodies v))))
 	  (xs1 (map-vector forwardify
-			   (recursive-closure-procedure-variables x)))
+			   (recursive-closure-procedure-variables v)))
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
@@ -2851,11 +2845,11 @@
 	  (xs2 (append (vector->list xs1) xs)))
     (make-recursive-closure
      xs
-     ;; This assumes that the corresponding closure variables in x,
-     ;; x-perturbation, and x-forward are in the same order. See the note in
+     ;; This assumes that the corresponding closure variables in v,
+     ;; v-perturbation, and v-forward are in the same order. See the note in
      ;; vlad-equal?.
      (map-vector
-      bundle-internal (closure-values x) (closure-values x-perturbation))
+      bundle-internal (closure-values v) (closure-values v-perturbation))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -2863,42 +2857,41 @@
        (lambda (e)
 	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
        es))
-     (recursive-closure-index x)
+     (recursive-closure-index v)
      ;; needs work: tangent of bundle gives the index-expression and
      ;;             index-environment of the primal
-     (recursive-closure-index-expression x)
-     (recursive-closure-index-environment x))))
-  ((perturbation-tagged-value? x)
+     (recursive-closure-index-expression v)
+     (recursive-closure-index-environment v))))
+  ((perturbation-tagged-value? v)
    (make-perturbation-tagged-value
-    (bundle-internal (perturbation-tagged-value-primal x)
-		     (perturbation-tagged-value-primal x-perturbation))))
-  ((bundle? x)
+    (bundle-internal (perturbation-tagged-value-primal v)
+		     (perturbation-tagged-value-primal v-perturbation))))
+  ((bundle? v)
    (make-bundle
-    (bundle-internal (bundle-primal x) (bundle-primal x-perturbation))
-    (bundle-internal (bundle-tangent x) (bundle-tangent x-perturbation))))
-  ((sensitivity-tagged-value? x)
+    (bundle-internal (bundle-primal v) (bundle-primal v-perturbation))
+    (bundle-internal (bundle-tangent v) (bundle-tangent v-perturbation))))
+  ((sensitivity-tagged-value? v)
    (make-sensitivity-tagged-value
-    (bundle-internal (sensitivity-tagged-value-primal x)
-		     (sensitivity-tagged-value-primal x-perturbation))))
-  ((reverse-tagged-value? x)
+    (bundle-internal (sensitivity-tagged-value-primal v)
+		     (sensitivity-tagged-value-primal v-perturbation))))
+  ((reverse-tagged-value? v)
    (make-reverse-tagged-value
-    (bundle-internal (reverse-tagged-value-primal x)
-		     (reverse-tagged-value-primal x-perturbation))))
-  ((and (not *scott-pairs?*) (tagged-pair? x))
+    (bundle-internal (reverse-tagged-value-primal v)
+		     (reverse-tagged-value-primal v-perturbation))))
+  ((and (not *scott-pairs?*) (tagged-pair? v))
    ;; needs work: tangent of bundle gives the index-expression and
    ;;             index-environment of the primal
    (create-tagged-pair
-    (cons 'forward (tagged-pair-tags x))
-    (bundle-internal (tagged-pair-car x) (tagged-pair-car x-perturbation))
-    (bundle-internal (tagged-pair-cdr x) (tagged-pair-cdr x-perturbation))))
+    (cons 'forward (tagged-pair-tags v))
+    (bundle-internal (tagged-pair-car v) (tagged-pair-car v-perturbation))
+    (bundle-internal (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (bundle x x-perturbation)
- (unless (legitimate? x x-perturbation)
+(define (bundle v v-perturbation)
+ (unless (legitimate? v v-perturbation)
   (run-time-error
-   "The arguments to bundle are illegitimate" x x-perturbation))
- (bundle-internal x x-perturbation))
+   "The arguments to bundle are illegitimate" v v-perturbation))
+ (bundle-internal v v-perturbation))
 
 ;;; Base variables
 ;;; needs work: This whole section will be removed when we update reverse mode.
@@ -3482,7 +3475,6 @@
 	(reverse-transform-inverse-internal (letrec-expression-body e)))
        (reverse-transform-inverse-internal e)))))
 
-;;; needs work: rename x->v
 (define (added-value x)
  (if *scott-pairs?*
      (case x
@@ -3522,108 +3514,116 @@
 		  (list 'null))
 	      (map value-binding-variable *value-bindings*))))
 
-;;; needs work: rename x->v
-(define (reverse-zero x)
- ;; needs work: This is really broken and needs to be updated to be like
- ;;             forward zero.
- (cond ((null? x) x)
-       ((and (not *encoded-booleans?*) (boolean? x)) x)
-       ((real? x) 0)
-       ((primitive-procedure? x) x)
-       ((nonrecursive-closure? x)
-	(make-nonrecursive-closure
-	 (closure-variables x)
-	 (map-vector reverse-zero (closure-values x))
-	 (closure-variable x)
-	 (closure-body x)
-	 (nonrecursive-closure-index-expression x)
-	 (nonrecursive-closure-index-environment x)))
-       ((recursive-closure? x)
-	(make-recursive-closure
-	 (closure-variables x)
-	 (map-vector reverse-zero (closure-values x))
-	 (recursive-closure-procedure-variables x)
-	 (recursive-closure-argument-variables x)
-	 (recursive-closure-bodies x)
-	 (recursive-closure-index x)
-	 (recursive-closure-index-expression x)
-	 (recursive-closure-index-environment x)))
-       ((bundle? x)
-	(make-bundle (reverse-zero (bundle-primal x))
-		     (reverse-zero (bundle-tangent x))))
-       ((reverse-tagged-value? x)
-	(make-reverse-tagged-value
-	 (reverse-zero (reverse-tagged-value-primal x))))
-       ((and (not *scott-pairs?*) (tagged-pair? x))
-	(create-tagged-pair (tagged-pair-tags x)
-			    (reverse-zero (vlad-car x (tagged-pair-tags x)))
-			    (reverse-zero (vlad-cdr x (tagged-pair-tags x)))))
-       (else (internal-error))))
-
-;;; needs work: rename x->v
-(define (conform? x1 x2)
- (or (and (vlad-forward? x1)
-	  (vlad-forward? x2)
-	  (conform? (primal x1) (primal x2))
-	  (conform? (tangent x1) (tangent x2)))
-     (and (vlad-reverse? x1)
-	  (vlad-reverse? x2)
-	  (conform? (*j-inverse x1) (*j-inverse x2)))
-     (and (null? x1) (null? x2))
-     (and (real? x1) (real? x2))
-     (and (vlad-pair? x1 '())
-	  (vlad-pair? x2 '())
-	  (conform? (vlad-car x1 '()) (vlad-car x2 '()))
-	  (conform? (vlad-cdr x1 '()) (vlad-cdr x2 '())))))
-
-;;; needs work: rename x->v
-(define (plus-internal x1 x2)
+(define (reverse-zero v)
  (cond
-  ((vlad-forward? x1)
-   (bundle (plus-internal (primal x1) (primal x2))
-	   (plus-internal (tangent x1) (tangent x2))))
-  ((vlad-reverse? x1) (*j (plus-internal (*j-inverse x1) (*j-inverse x2))))
-  ((null? x1) '())
-  ((real? x1) (+ x1 x2))
-  (else (vlad-cons (plus-internal (vlad-car x1 '()) (vlad-car x2 '()))
-		   (plus-internal (vlad-cdr x1 '()) (vlad-cdr x2 '()))))))
-
-;;; needs work: rename x->v
-(define (plus x1 x2)
- (unless (conform? x1 x2)
-  (run-time-error "The arguments to plus are nonconformant" x1 x2))
- (plus-internal x1 x2))
-
-;;; needs work: rename x->v
-(define (sensitize x)
- (cond
-  ((null? x) (make-sensitivity-tagged-value x))
-  ((and (not *encoded-booleans?*) (boolean? x))
-   (make-sensitivity-tagged-value x))
-  ((real? x) x)
-  ((primitive-procedure? x) (make-sensitivity-tagged-value x))
-  ((nonrecursive-closure? x)
-   (let* ((e (sensitivity-transform
-	      (new-lambda-expression (closure-variable x) (closure-body x))))
-	  (x (lambda-expression-variable e))
-	  (xs (free-variables e)))
+  ((null? v) (make-sensitivity-tagged-value v))
+  ((and (not *encoded-booleans?*) (boolean? v))
+   (make-sensitivity-tagged-value v))
+  ((real? v) 0)
+  ((primitive-procedure? v) (make-sensitivity-tagged-value v))
+  ((nonrecursive-closure? v)
+   (let ((e (sensitivity-transform
+	     (new-lambda-expression (closure-variable v) (closure-body v)))))
     (make-nonrecursive-closure
-     xs
+     (free-variables e)
      ;; This assumes that the closure variables are in the same order.
-     (map-vector sensitize (closure-values x))
-     x
-     (index x xs (lambda-expression-body e))
-     (nonrecursive-closure-index-expression x)
-     (nonrecursive-closure-index-environment x))))
-  ((recursive-closure? x)
+     (map-vector reverse-zero (closure-values v))
+     (lambda-expression-variable e)
+     (lambda-expression-body e)
+     (nonrecursive-closure-index-expression v)
+     (nonrecursive-closure-index-environment v))))
+  ((recursive-closure? v)
+   (let ((es (map-vector (lambda (x e)
+			  (sensitivity-transform (new-lambda-expression x e)))
+			 (recursive-closure-argument-variables v)
+			 (recursive-closure-bodies v))))
+    (make-recursive-closure
+     ;; This assumes that the closure variables are in the same order.
+     (map sensitivityify (closure-variables v))
+     (map-vector reverse-zero (closure-values v))
+     (map-vector sensitivityify (recursive-closure-procedure-variables v))
+     (map-vector lambda-expression-variable es)
+     (map-vector lambda-expression-body es)
+     (recursive-closure-index v)
+     (recursive-closure-index-expression v)
+     (recursive-closure-index-environment v))))
+  ((perturbation-tagged-value? v)
+   (make-perturbation-tagged-value
+    (reverse-zero (perturbation-tagged-value-primal v))))
+  ((bundle? v)
+   (make-bundle (reverse-zero (bundle-primal v))
+		(reverse-zero (bundle-tangent v))))
+  ((sensitivity-tagged-value? v)
+   (make-sensitivity-tagged-value
+    (reverse-zero (sensitivity-tagged-value-primal v))))
+  ((reverse-tagged-value? v)
+   (make-reverse-tagged-value (reverse-zero (reverse-tagged-value-primal v))))
+  ((and (not *scott-pairs?*) (tagged-pair? v))
+   (create-tagged-pair (cons 'sensitivity (tagged-pair-tags v))
+		       (reverse-zero (vlad-car v (tagged-pair-tags v)))
+		       (reverse-zero (vlad-cdr v (tagged-pair-tags v)))))
+  (else (internal-error))))
+
+(define (conform? v1 v2)
+ (or (and (vlad-forward? v1)
+	  (vlad-forward? v2)
+	  (conform? (primal v1) (primal v2))
+	  (conform? (tangent v1) (tangent v2)))
+     (and (vlad-reverse? v1)
+	  (vlad-reverse? v2)
+	  (conform? (*j-inverse v1) (*j-inverse v2)))
+     (and (null? v1) (null? v2))
+     (and (real? v1) (real? v2))
+     (and (vlad-pair? v1 '())
+	  (vlad-pair? v2 '())
+	  (conform? (vlad-car v1 '()) (vlad-car v2 '()))
+	  (conform? (vlad-cdr v1 '()) (vlad-cdr v2 '())))))
+
+(define (plus-internal v1 v2)
+ (cond
+  ((vlad-forward? v1)
+   (bundle (plus-internal (primal v1) (primal v2))
+	   (plus-internal (tangent v1) (tangent v2))))
+  ((vlad-reverse? v1) (*j (plus-internal (*j-inverse v1) (*j-inverse v2))))
+  ((null? v1) '())
+  ((real? v1) (+ v1 v2))
+  (else (vlad-cons (plus-internal (vlad-car v1 '()) (vlad-car v2 '()))
+		   (plus-internal (vlad-cdr v1 '()) (vlad-cdr v2 '()))))))
+
+(define (plus v1 v2)
+ (unless (conform? v1 v2)
+  (run-time-error "The arguments to plus are nonconformant" v1 v2))
+ (plus-internal v1 v2))
+
+(define (sensitize v)
+ (cond
+  ((null? v) (make-sensitivity-tagged-value v))
+  ((and (not *encoded-booleans?*) (boolean? v))
+   (make-sensitivity-tagged-value v))
+  ((real? v) (make-sensitivity-tagged-value v))
+  ((primitive-procedure? v) (make-sensitivity-tagged-value v))
+  ((nonrecursive-closure? v)
+   (let ((e (sensitivity-transform
+	     (new-lambda-expression (closure-variable v) (closure-body v)))))
+    (make-nonrecursive-closure
+     (free-variables e)
+     ;; This assumes that the closure variables are in the same order.
+     (map-vector sensitize (closure-values v))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e)
+	    (free-variables e)
+	    (lambda-expression-body e))
+     (nonrecursive-closure-index-expression v)
+     (nonrecursive-closure-index-environment v))))
+  ((recursive-closure? v)
    (let* ((es (vector->list
 	       (map-vector
 		(lambda (x e)
 		 (sensitivity-transform (new-lambda-expression x e)))
-		(recursive-closure-argument-variables x)
-		(recursive-closure-bodies x))))
+		(recursive-closure-argument-variables v)
+		(recursive-closure-bodies v))))
 	  (xs1 (map-vector
-		sensitivityify (recursive-closure-procedure-variables x)))
+		sensitivityify (recursive-closure-procedure-variables v)))
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
@@ -3632,7 +3632,7 @@
     (make-recursive-closure
      xs
      ;; This assumes that the closure variables are in the same order.
-     (map-vector sensitize (closure-values x))
+     (map-vector sensitize (closure-values v))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -3640,70 +3640,69 @@
        (lambda (e)
 	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
        es))
-     (recursive-closure-index x)
-     (recursive-closure-index-expression x)
-     (recursive-closure-index-environment x))))
-  ((perturbation-tagged-value? x)
+     (recursive-closure-index v)
+     (recursive-closure-index-expression v)
+     (recursive-closure-index-environment v))))
+  ((perturbation-tagged-value? v)
    (make-perturbation-tagged-value
-    (sensitize (perturbation-tagged-value-primal x))))
-  ((bundle? x)
-   (make-bundle (sensitize (bundle-primal x)) (sensitize (bundle-tangent x))))
-  ((sensitivity-tagged-value? x)
+    (sensitize (perturbation-tagged-value-primal v))))
+  ((bundle? v)
+   (make-bundle (sensitize (bundle-primal v)) (sensitize (bundle-tangent v))))
+  ((sensitivity-tagged-value? v)
    (make-sensitivity-tagged-value
-    (sensitize (sensitivity-tagged-value-primal x))))
-  ((reverse-tagged-value? x)
-   (make-reverse-tagged-value (sensitize (reverse-tagged-value-primal x))))
-  ((and (not *scott-pairs?*) (tagged-pair? x))
-   (create-tagged-pair (cons 'sensitivity (tagged-pair-tags x))
-		       (sensitize (tagged-pair-car x))
-		       (sensitize (tagged-pair-cdr x))))
+    (sensitize (sensitivity-tagged-value-primal v))))
+  ((reverse-tagged-value? v)
+   (make-reverse-tagged-value (sensitize (reverse-tagged-value-primal v))))
+  ((and (not *scott-pairs?*) (tagged-pair? v))
+   (create-tagged-pair (cons 'sensitivity (tagged-pair-tags v))
+		       (sensitize (tagged-pair-car v))
+		       (sensitize (tagged-pair-cdr v))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (unsensitize x-sensitivity)
+(define (unsensitize v-sensitivity)
  (cond
-  ((null? x-sensitivity)
+  ((null? v-sensitivity)
    (run-time-error
-    "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
-  ((and (not *encoded-booleans?*) (boolean? x-sensitivity))
+    "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
+  ((and (not *encoded-booleans?*) (boolean? v-sensitivity))
    (run-time-error
-    "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
-  ((real? x-sensitivity)
+    "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
+  ((real? v-sensitivity)
    (run-time-error
-    "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
-  ((primitive-procedure? x-sensitivity)
+    "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
+  ((primitive-procedure? v-sensitivity)
    (run-time-error
-    "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
-  ((nonrecursive-closure? x-sensitivity)
-   (unless (sensitivity-variable? (closure-variable x-sensitivity))
+    "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
+  ((nonrecursive-closure? v-sensitivity)
+   (unless (sensitivity-variable? (closure-variable v-sensitivity))
     (run-time-error
-     "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
-   (let* ((e (sensitivity-transform-inverse
-	      (new-lambda-expression (closure-variable x-sensitivity)
-				     (closure-body x-sensitivity))))
-	  (x (lambda-expression-variable e))
-	  (xs (free-variables e)))
+     "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
+   (let ((e (sensitivity-transform-inverse
+	     (new-lambda-expression (closure-variable v-sensitivity)
+				    (closure-body v-sensitivity)))))
     (make-nonrecursive-closure
-     xs
+     (free-variables e)
      ;; This assumes that the closure variables are in the same order.
-     (map-vector unsensitize (closure-values x-sensitivity))
-     x
-     (index x xs (lambda-expression-body e))
-     (nonrecursive-closure-index-expression x-sensitivity)
-     (nonrecursive-closure-index-environment x-sensitivity))))
-  ((recursive-closure? x-sensitivity)
-   (unless (sensitivity-variable? (closure-variable x-sensitivity))
+     (map-vector unsensitize (closure-values v-sensitivity))
+     (lambda-expression-variable e)
+     (index (lambda-expression-variable e)
+	    (free-variables e)
+	    (lambda-expression-body e))
+     (nonrecursive-closure-index-expression v-sensitivity)
+     (nonrecursive-closure-index-environment v-sensitivity))))
+  ((recursive-closure? v-sensitivity)
+   (unless (sensitivity-variable? (closure-variable v-sensitivity))
     (run-time-error
-     "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
+     "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
    (let* ((es (vector->list
 	       (map-vector
 		(lambda (x e)
 		 (sensitivity-transform-inverse (new-lambda-expression x e)))
-		(recursive-closure-argument-variables x-sensitivity)
-		(recursive-closure-bodies x-sensitivity))))
+		(recursive-closure-argument-variables v-sensitivity)
+		(recursive-closure-bodies v-sensitivity))))
 	  (xs1 (map-vector
 		unsensitivityify
-		(recursive-closure-procedure-variables x-sensitivity)))
+		(recursive-closure-procedure-variables v-sensitivity)))
 	  (xs (letrec-recursive-closure-variables
 	       (vector->list xs1)
 	       (map lambda-expression-variable es)
@@ -3712,7 +3711,7 @@
     (make-recursive-closure
      xs
      ;; This assumes that the closure variables are in the same order.
-     (map-vector unsensitize (closure-values x-sensitivity))
+     (map-vector unsensitize (closure-values v-sensitivity))
      xs1
      (list->vector (map lambda-expression-variable es))
      (list->vector
@@ -3720,29 +3719,31 @@
        (lambda (e)
 	(index (lambda-expression-variable e) xs2 (lambda-expression-body e)))
        es))
-     (recursive-closure-index x-sensitivity)
-     (recursive-closure-index-expression x-sensitivity)
-     (recursive-closure-index-environment x-sensitivity))))
-  ((perturbation-tagged-value? x-sensitivity)
+     (recursive-closure-index v-sensitivity)
+     (recursive-closure-index-expression v-sensitivity)
+     (recursive-closure-index-environment v-sensitivity))))
+  ((perturbation-tagged-value? v-sensitivity)
    (make-perturbation-tagged-value
-    (unsensitize (perturbation-tagged-value-primal x-sensitivity))))
-  ((bundle? x-sensitivity)
-   (make-bundle (unsensitize (bundle-primal x-sensitivity))
-		(unsensitize (bundle-tangent x-sensitivity))))
-  ((sensitivity-tagged-value? x-sensitivity)
-   (make-sensitivity-tagged-value
-    (unsensitize (sensitivity-tagged-value-primal x-sensitivity))))
-  ((reverse-tagged-value? x-sensitivity)
+    (unsensitize (perturbation-tagged-value-primal v-sensitivity))))
+  ((bundle? v-sensitivity)
+   (make-bundle (unsensitize (bundle-primal v-sensitivity))
+		(unsensitize (bundle-tangent v-sensitivity))))
+  ((sensitivity-tagged-value? v-sensitivity)
+   (if (scalar-value? (sensitivity-tagged-value-primal v-sensitivity))
+       (sensitivity-tagged-value-primal v-sensitivity)
+       (make-sensitivity-tagged-value
+	(unsensitize (sensitivity-tagged-value-primal v-sensitivity)))))
+  ((reverse-tagged-value? v-sensitivity)
    (make-reverse-tagged-value
-    (unsensitize (reverse-tagged-value-primal x-sensitivity))))
-  ((and (not *scott-pairs?*) (tagged-pair? x-sensitivity))
-   (unless (memq 'sensitivity (tagged-pair-tags x-sensitivity))
+    (unsensitize (reverse-tagged-value-primal v-sensitivity))))
+  ((and (not *scott-pairs?*) (tagged-pair? v-sensitivity))
+   (unless (memq 'sensitivity (tagged-pair-tags v-sensitivity))
     (run-time-error
-     "Attempt to unsensitize a non-sensitivity value" x-sensitivity))
+     "Attempt to unsensitize a non-sensitivity value" v-sensitivity))
    (create-tagged-pair
-    (remove-oneq 'sensitivity (tagged-pair-tags x-sensitivity))
-    (unsensitize (tagged-pair-car x-sensitivity))
-    (unsensitize (tagged-pair-cdr x-sensitivity))))
+    (remove-oneq 'sensitivity (tagged-pair-tags v-sensitivity))
+    (unsensitize (tagged-pair-car v-sensitivity))
+    (unsensitize (tagged-pair-cdr v-sensitivity))))
   (else (internal-error))))
 
 (define (*j v)
@@ -3820,60 +3821,59 @@
 		       (*j (tagged-pair-cdr v))))
   (else (internal-error))))
 
-;;; needs work: rename x->v
-(define (*j-inverse x-reverse)
+(define (*j-inverse v-reverse)
  (cond
-  ((null? x-reverse)
+  ((null? v-reverse)
    (run-time-error
-    "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-  ((and (not *encoded-booleans?*) (boolean? x-reverse))
+    "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+  ((and (not *encoded-booleans?*) (boolean? v-reverse))
    (run-time-error
-    "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-  ((real? x-reverse)
+    "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+  ((real? v-reverse)
    (run-time-error
-    "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-  ((primitive-procedure? x-reverse)
+    "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+  ((primitive-procedure? v-reverse)
    (run-time-error
-    "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-  ((nonrecursive-closure? x-reverse)
-   (unless (and (not (null? (closure-tags x-reverse)))
-		(eq? (first (closure-tags x-reverse)) 'reverse))
+    "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+  ((nonrecursive-closure? v-reverse)
+   (unless (and (not (null? (closure-tags v-reverse)))
+		(eq? (first (closure-tags v-reverse)) 'reverse))
     (run-time-error
-     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
+     "Attempt to take *j-inverse of a non-reverse value" v-reverse))
    (let ((b (find-if
 	     (lambda (b)
 	      (vlad-equal?
-	       x-reverse
+	       v-reverse
 	       (primitive-procedure-reverse (value-binding-value b))))
 	     *value-bindings*)))
     (if b
 	(value-binding-value b)
 	(let* ((e (reverse-transform-inverse
 		   (new-lambda-expression
-		    (closure-variable x-reverse) (closure-body x-reverse))))
+		    (closure-variable v-reverse) (closure-body v-reverse))))
 	       (x (lambda-expression-variable e))
 	       (xs (free-variables e)))
 	 (make-nonrecursive-closure
 	  xs
 	  (add/remove-slots
 	   *j-inverse
-	   (map lax-unreverseify (closure-variables x-reverse))
+	   (map lax-unreverseify (closure-variables v-reverse))
 	   xs
-	   (closure-values x-reverse)
+	   (closure-values v-reverse)
 	   '())
 	  x
 	  (index x xs (copy-propagate (lambda-expression-body e)))
-	  (nonrecursive-closure-index-expression x-reverse)
-	  (nonrecursive-closure-index-environment x-reverse))))))
-  ((recursive-closure? x-reverse)
-   (unless (and (not (null? (closure-tags x-reverse)))
-		(eq? (first (closure-tags x-reverse)) 'reverse))
+	  (nonrecursive-closure-index-expression v-reverse)
+	  (nonrecursive-closure-index-environment v-reverse))))))
+  ((recursive-closure? v-reverse)
+   (unless (and (not (null? (closure-tags v-reverse)))
+		(eq? (first (closure-tags v-reverse)) 'reverse))
     (run-time-error
-     "Attempt to take *j-inverse of a non-reverse value" x-reverse))
+     "Attempt to take *j-inverse of a non-reverse value" v-reverse))
    (let ((b (find-if
 	     (lambda (b)
 	      (vlad-equal?
-	       x-reverse
+	       v-reverse
 	       (primitive-procedure-reverse (value-binding-value b))))
 	     *value-bindings*)))
     (if b
@@ -3882,11 +3882,11 @@
 		    (map-vector
 		     (lambda (x e)
 		      (reverse-transform-inverse (new-lambda-expression x e)))
-		     (recursive-closure-argument-variables x-reverse)
-		     (recursive-closure-bodies x-reverse))))
+		     (recursive-closure-argument-variables v-reverse)
+		     (recursive-closure-bodies v-reverse))))
 	       (xs1 (map-vector
 		     unreverseify
-		     (recursive-closure-procedure-variables x-reverse)))
+		     (recursive-closure-procedure-variables v-reverse)))
 	       (xs (letrec-recursive-closure-variables
 		    (vector->list xs1)
 		    (map lambda-expression-variable es)
@@ -3895,9 +3895,9 @@
 	  xs
 	  (add/remove-slots
 	   *j-inverse
-	   (map lax-unreverseify (closure-variables x-reverse))
+	   (map lax-unreverseify (closure-variables v-reverse))
 	   xs
-	   (closure-values x-reverse)
+	   (closure-values v-reverse)
 	   '())
 	  xs1
 	  (list->vector (map lambda-expression-variable es))
@@ -3907,22 +3907,22 @@
 			(append (vector->list xs1) xs)
 			(copy-propagate (lambda-expression-body e))))
 		es))
-	  (recursive-closure-index x-reverse)
-	  (recursive-closure-index-expression x-reverse)
-	  (recursive-closure-index-environment x-reverse))))))
-  ((bundle? x-reverse)
+	  (recursive-closure-index v-reverse)
+	  (recursive-closure-index-expression v-reverse)
+	  (recursive-closure-index-environment v-reverse))))))
+  ((bundle? v-reverse)
    (run-time-error
-    "Attempt to take *j-inverse of a non-reverse value" x-reverse))
-  ((reverse-tagged-value? x-reverse)
-   (reverse-tagged-value-primal x-reverse))
-  ((and (not *scott-pairs?*) (tagged-pair? x-reverse))
-   (unless (and (not (null? (tagged-pair-tags x-reverse)))
-		(eq? (first (tagged-pair-tags x-reverse)) 'reverse))
+    "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+  ((reverse-tagged-value? v-reverse)
+   (reverse-tagged-value-primal v-reverse))
+  ((and (not *scott-pairs?*) (tagged-pair? v-reverse))
+   (unless (and (not (null? (tagged-pair-tags v-reverse)))
+		(eq? (first (tagged-pair-tags v-reverse)) 'reverse))
     (run-time-error
-     "Attempt to take primal of a non-reverse value" x-reverse))
-   (create-tagged-pair (rest (tagged-pair-tags x-reverse))
-		       (*j-inverse (tagged-pair-car x-reverse))
-		       (*j-inverse (tagged-pair-cdr x-reverse))))
+     "Attempt to take primal of a non-reverse value" v-reverse))
+   (create-tagged-pair (rest (tagged-pair-tags v-reverse))
+		       (*j-inverse (tagged-pair-car v-reverse))
+		       (*j-inverse (tagged-pair-cdr v-reverse))))
   (else (internal-error))))
 
 ;;; Pretty printer
