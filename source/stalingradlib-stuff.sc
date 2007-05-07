@@ -292,7 +292,8 @@
  (exit -1))
 
 (define (run-time-error message . vs)
- (when #f				;debugging
+ ;; debugging
+ (when #f
   (format stderr-port "Stack trace~%")
   (for-each (lambda (record)
 	     (display "Procedure: " stderr-port)
@@ -303,11 +304,11 @@
 	     (newline stderr-port)
 	     (newline stderr-port))
 	    *stack*)
-  (newline stderr-port)
-  (for-each (lambda (v)
-	     ((if *pp?* pp write) (externalize v) stderr-port)
-	     (newline stderr-port))
-	    vs))
+  (newline stderr-port))
+ (for-each (lambda (v)
+	    ((if *pp?* pp write) (externalize v) stderr-port)
+	    (newline stderr-port))
+	   vs)
  (display "Error: ")
  (display message stderr-port)
  (newline stderr-port)
@@ -3523,31 +3524,26 @@
 
 ;;; needs work: rename x->v
 (define (reverse-zero x)
+ ;; needs work: This is really broken and needs to be updated to be like
+ ;;             forward zero.
  (cond ((null? x) x)
        ((and (not *encoded-booleans?*) (boolean? x)) x)
        ((real? x) 0)
        ((primitive-procedure? x) x)
        ((nonrecursive-closure? x)
 	(make-nonrecursive-closure
-	 ;; We don't sensitivityify.
 	 (closure-variables x)
 	 (map-vector reverse-zero (closure-values x))
-	 ;; We don't sensitivityify.
 	 (closure-variable x)
-	 ;; We don't sensitivity-transform.
 	 (closure-body x)
 	 (nonrecursive-closure-index-expression x)
 	 (nonrecursive-closure-index-environment x)))
        ((recursive-closure? x)
 	(make-recursive-closure
-	 ;; We don't sensitivityify.
 	 (closure-variables x)
 	 (map-vector reverse-zero (closure-values x))
-	 ;; We don't sensitivityify.
 	 (recursive-closure-procedure-variables x)
-	 ;; We don't sensitivityify.
 	 (recursive-closure-argument-variables x)
-	 ;; We don't sensitivity-transform.
 	 (recursive-closure-bodies x)
 	 (recursive-closure-index x)
 	 (recursive-closure-index-expression x)
