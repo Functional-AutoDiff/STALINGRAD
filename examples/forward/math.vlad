@@ -59,7 +59,7 @@
 
 ;;; Derivatives
 
-(define (j* x) (bundle x (forward-zero x)))
+(define (j* x) (bundle x (zero x)))
 
 (define (derivative-using-j* f)
  (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))

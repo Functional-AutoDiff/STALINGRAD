@@ -1,3 +1,3 @@
 (define (box a) (lambda (m) a))
 
-(forward-zero (box (box 1)))
+(zero (box (box 1)))
