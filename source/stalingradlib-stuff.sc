@@ -6481,14 +6481,38 @@
 	  (not (scalar-proto-abstract-value? (first v2)))
 	  (memp component? v1 (aggregate-value-values (first v2))))))
 
+(define (cached-topological-sort p l)
+ (let ((cache (map (lambda (x1)
+		    (cons x1 (map (lambda (x2) (cons x2 (p x1 x2))) l)))
+		   l)))
+  (let loop ((l l) (c '()))
+   (if (null? l)
+       (reverse c)
+       (let ((x (find-if
+		 (lambda (x1)
+		  (every (lambda (x2)
+			  (or (eq? x2 x1)
+			      (not (cdr (assq x1 (cdr (assq x2 cache)))))))
+			 l))
+		 l)))
+	(unless x (fuck-up))
+	(loop (removeq x l) (cons x c)))))))
+
 (define (all-nested-abstract-values bs)
- (topological-sort
-  (lambda (v1 v2) (and (not (abstract-value=? v1 v2)) (component? v1 v2)))
-  (unionp abstract-value=?
-	  (all-bundles bs)
-	  (reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		  (map all-abstract-subvalues (all-abstract-values bs))
-		  '()))))
+ (let* ((x1 (time "~a all-abstract-values~%"
+		  (lambda () (all-abstract-values bs))))
+	(x2 (time "~a map all-abstract-subvalues~%"
+		  (lambda () (map all-abstract-subvalues x1))))
+	(x3 (time
+	     "~a reduce~%"
+	     (lambda ()
+	      (reduce
+	       (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2)) x2 '()))))
+	(x4 (time "~a all-bundles~%" (lambda () (all-bundles bs))))
+	(x5 (time "~a unionp abstract-value=?~%"
+		  (lambda () (unionp abstract-value=? x4 x3)))))
+  (time "~a cached-topological-sort~%"
+	(lambda () (cached-topological-sort component? x5)))))
 
 (define (all-primitives s bs)
  (reduce
@@ -7561,9 +7585,9 @@
   (all-bundles bs)))
 
 (define (generate e bs)
- (let* ((xs (all-variables bs))
-	(vs (all-nested-abstract-values bs))
-	(v1v2s (all-functions bs)))
+ (let* ((xs (time "~a all-variables~%" (lambda () (all-variables bs))))
+	(vs (time "~a all-nested-abstract-values~%" (lambda () (all-nested-abstract-values bs))))
+	(v1v2s (time "~a all-functions~%" (lambda () (all-functions bs)))))
   (list "#include <math.h>" #\newline
 	"#include <stdio.h>" #\newline
 	"#define car(x) x.a" #\newline
@@ -7572,69 +7596,159 @@
 	"#define FALSE (0!=0)" #\newline
 	"static inline double write_real(double x){printf(\"%lf\\n\",x);return x;}"
 	#\newline
-	(generate-struct-declarations xs vs)
-	(generate-constructor-declarations xs vs)
-	(generate-real*real-primitive-declarations '+ "double" "add" bs vs)
-	(generate-real*real-primitive-declarations '- "double" "minus" bs vs)
-	(generate-real*real-primitive-declarations '* "double" "times" bs vs)
-	(generate-real*real-primitive-declarations '/ "double" "divide" bs vs)
-	(generate-real*real-primitive-declarations
-	 'atan "double" "atantwo" bs vs)
-	(generate-real*real-primitive-declarations '= "int" "eq" bs vs)
-	(generate-real*real-primitive-declarations '< "int" "lt" bs vs)
-	(generate-real*real-primitive-declarations '> "int" "gt" bs vs)
-	(generate-real*real-primitive-declarations '<= "int" "le" bs vs)
-	(generate-real*real-primitive-declarations '>= "int" "ge" bs vs)
-	(generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)
-	(generate-real-primitive-declarations
-	 'positive? "int" "positive" bs vs)
-	(generate-real-primitive-declarations
-	 'negative? "int" "negative" bs vs)
-	(generate-if-declarations bs vs)
+	(time "~a generate-struct-declarations~%"
+	      (lambda ()
+	       (generate-struct-declarations xs vs)))
+	(time "~a generate-constructor-declarations~%"
+	      (lambda ()
+	       (generate-constructor-declarations xs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '+ "double" "add" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '- "double" "minus" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '* "double" "times" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '/ "double" "divide" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations
+		'atan "double" "atantwo" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '= "int" "eq" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '< "int" "lt" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '> "int" "gt" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '<= "int" "le" bs vs)))
+	(time "~a generate-real*real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real*real-primitive-declarations '>= "int" "ge" bs vs)))
+	(time "~a generate-real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)))
+	(time "~a generate-real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real-primitive-declarations
+		'positive? "int" "positive" bs vs)))
+	(time "~a generate-real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real-primitive-declarations
+		'negative? "int" "negative" bs vs)))
+	(time "~a generate-if-declarations~%"
+	      (lambda ()
+	       (generate-if-declarations bs vs)))
 	"static inline double read_real(void);" #\newline
-	(generate-real-primitive-declarations 'real "double" "real" bs vs)
-	(generate-real-primitive-declarations 'write "double" "write" bs vs)
-	(generate-zero-declarations bs vs)
-	(generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)
-	(generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)
-	(generate-bundle-declarations bs vs)
-	(generate-function-declarations bs xs vs v1v2s)
+	(time "~a generate-real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real-primitive-declarations 'real "double" "real" bs vs)))
+	(time "~a generate-real-primitive-declarations~%"
+	      (lambda ()
+	       (generate-real-primitive-declarations 'write "double" "write" bs vs)))
+	(time "~a generate-zero-declarations~%"
+	      (lambda ()
+	       (generate-zero-declarations bs vs)))
+	(time "~a generate-ad-declarations~%"
+	      (lambda ()
+	       (generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)))
+	(time "~a generate-ad-declarations~%"
+	      (lambda ()
+	       (generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)))
+	(time "~a generate-bundle-declarations~%"
+	      (lambda ()
+	       (generate-bundle-declarations bs vs)))
+	(time "~a generate-function-declarations~%"
+	      (lambda ()
+	       (generate-function-declarations bs xs vs v1v2s)))
 	"int main(void);" #\newline
-	(generate-constructor-definitions xs vs)
-	(generate-real*real-primitive-definitions
-	 '+ "double" "add" "~a+~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 '- "double" "minus" "~a-~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 '* "double" "times" "~a*~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 '/ "double" "divide" "~a/~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 'atan "double" "atantwo" "atan2(~a,~a)" bs vs)
-	(generate-real*real-primitive-definitions '= "int" "eq" "~a==~a" bs vs)
-	(generate-real*real-primitive-definitions '< "int" "lt" "~a<~a" bs vs)
-	(generate-real*real-primitive-definitions '> "int" "gt" "~a>~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 '<= "int" "le" "~a<=~a" bs vs)
-	(generate-real*real-primitive-definitions
-	 '>= "int" "ge" "~a>=~a" bs vs)
-	(generate-real-primitive-definitions
-	 'zero? "int" "iszero" "~a==0.0" bs vs)
-	(generate-real-primitive-definitions
-	 'positive? "int" "positive" "~a>0.0" bs vs)
-	(generate-real-primitive-definitions
-	 'negative? "int" "negative" "~a<0.0" bs vs)
-	(generate-if-definitions bs vs v1v2s)
+	(time "~a generate-constructor-definitions~%"
+	      (lambda ()
+	       (generate-constructor-definitions xs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'+ "double" "add" "~a+~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'- "double" "minus" "~a-~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'* "double" "times" "~a*~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'/ "double" "divide" "~a/~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'atan "double" "atantwo" "atan2(~a,~a)" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions '= "int" "eq" "~a==~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions '< "int" "lt" "~a<~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions '> "int" "gt" "~a>~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'<= "int" "le" "~a<=~a" bs vs)))
+	(time "~a generate-real*real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real*real-primitive-definitions
+		'>= "int" "ge" "~a>=~a" bs vs)))
+	(time "~a generate-real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real-primitive-definitions
+		'zero? "int" "iszero" "~a==0.0" bs vs)))
+	(time "~a generate-real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real-primitive-definitions
+		'positive? "int" "positive" "~a>0.0" bs vs)))
+	(time "~a generate-real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real-primitive-definitions
+		'negative? "int" "negative" "~a<0.0" bs vs)))
+	(time "~a generate-if-definitions~%"
+	      (lambda ()
+	       (generate-if-definitions bs vs v1v2s)))
 	"static inline double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
 	#\newline
-	(generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
-	(generate-real-primitive-definitions
-	 'write "double" "write" "write_real(~a)" bs vs)
-	(generate-zero-definitions bs xs vs)
-	(generate-primal-definitions bs xs vs)
-	(generate-tangent-definitions bs xs vs)
-	(generate-bundle-definitions bs xs vs)
-	(generate-function-definitions bs xs vs v1v2s)
+	(time "~a generate-real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)))
+	(time "~a generate-real-primitive-definitions~%"
+	      (lambda ()
+	       (generate-real-primitive-definitions
+		'write "double" "write" "write_real(~a)" bs vs)))
+	(time "~a generate-zero-definitions~%"
+	      (lambda ()
+	       (generate-zero-definitions bs xs vs)))
+	(time "~a generate-primal-definitions~%"
+	      (lambda ()
+	       (generate-primal-definitions bs xs vs)))
+	(time "~a generate-tangent-definitions~%"
+	      (lambda ()
+	       (generate-tangent-definitions bs xs vs)))
+	(time "~a generate-bundle-definitions~%"
+	      (lambda ()
+	       (generate-bundle-definitions bs xs vs)))
+	(time "~a generate-function-definitions~%"
+	      (lambda ()
+	       (generate-function-definitions bs xs vs v1v2s)))
 	(list
 	 "int main(void){"
 	 (generate-letrec-bindings
@@ -7832,8 +7946,7 @@
 	    #f
 	    '#())
 	   #f))
- ;; In the following, all real constants are wrapped in real yielding (real 0)
- ;; and (real 2).
+ ;; In the following, all real constants are wrapped in real yielding (real 0).
  (define-primitive-procedure '+
   (binary-real + "+")
   (abstract-binary-real + "+")
@@ -7899,12 +8012,12 @@
   (lambda (v vs) "sqrt")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (sqrt x) (/ (perturbation x) (* (real 2) (sqrt x))))))
+     (bundle (sqrt x) (/ (perturbation x) (+ (sqrt x) (sqrt x))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (sqrt x))
 	   (lambda ((sensitivity y))
-	    (cons '() (/ (sensitivity y) (* (real 2) (sqrt x)))))))))
+	    (cons '() (/ (sensitivity y) (+ (sqrt x) (sqrt x)))))))))
  (define-primitive-procedure 'exp
   (unary-real exp "exp")
   (abstract-unary-real exp "exp")
