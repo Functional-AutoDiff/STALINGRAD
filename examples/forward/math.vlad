@@ -61,16 +61,13 @@
 
 (define (j* x) (bundle x (zero x)))
 
-(define (derivative-using-j* f)
- (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+(define ((derivative-using-j* f) x) (tangent ((j* f) (bundle x 1))))
 
 (define (derivative f) (derivative-using-j* f))
 
-(define (gradient-using-j* f)
- (let ((f-forward (j* f)))
-  (lambda (x)
-   (let ((n (length x)))
-    (map-n (lambda (i) (tangent (f-forward (bundle x (e i n))))) n)))))
+(define ((gradient-using-j* f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i) (tangent ((j* f) (bundle x (e i n))))) n)))
 
 (define (gradient f) (gradient-using-j* f))
 
