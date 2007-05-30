@@ -420,7 +420,12 @@ publish: release
 
 # Compilation rules and dependencies
 # ----------------------------------
-stalingradlib = stalingradlib-stuff.o
+stalingradlib = stalingradlib-stuff.o\
+                stalingradlib-double-c.o
+
+stalingradlib-double-c.o: stalingradlib-double-c.c
+	$(CC) $(CFLAGS) -o stalingradlib-double-c.o\
+	      -c stalingradlib-double-c.c
 
 stalingradlib-stuff.sch: stalingradlib-*.sc
 	sch stalingradlib-stuff stalingradlib-*.sc

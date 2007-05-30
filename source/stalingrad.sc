@@ -74,6 +74,7 @@
 		  ("flow-analysis" flow-analysis?)
 		  ("flow-analysis-result" flow-analysis-result?)
 		  ("compile" compile?))
+		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
@@ -204,40 +205,64 @@
 	(let ((result (parse e)))
 	 (cond
 	  (flow-analysis?
-	   (let* ((bs (flow-analysis (first result) (second result)))
-		  (bs1 (expression-binding-flow
-			(lookup-expression-binding (first result) bs))))
-	    (unless (= (length bs1) 1) (internal-error))
-	    (pp (externalize-abstract-value
-		 (environment-binding-value (first bs1))))
-	    (newline)
-	    (pp (externalize-abstract-analysis bs))
-	    (newline)))
+	   (if from-ebs?
+	       (let* ((ebs (read-ebs-from-file pathname))
+		      (bs (second ebs))
+		      (bs1 (expression-binding-flow
+			    (lookup-expression-binding (first ebs) bs))))
+		(unless (= (length bs1) 1) (internal-error))
+		(pp (externalize-abstract-value
+		     (environment-binding-value (first bs1))))
+		(newline)
+		(pp (externalize-abstract-analysis bs))
+		(newline))
+	       (let* ((bs (flow-analysis (first result) (second result)))
+		      (bs1 (expression-binding-flow
+			    (lookup-expression-binding (first result) bs))))
+		(unless (= (length bs1) 1) (internal-error))
+		(pp (externalize-abstract-value
+		     (environment-binding-value (first bs1))))
+		(newline)
+		(pp (externalize-abstract-analysis bs))
+		(newline))))
 	  (flow-analysis-result?
-	   (let ((bs (expression-binding-flow
-		      (lookup-expression-binding
-		       (first result)
-		       (flow-analysis (first result) (second result))))))
-	    (unless (= (length bs) 1) (internal-error))
-	    (pp (externalize-abstract-value
-		 (environment-binding-value (first bs))))
-	    (newline)))
+	   (if from-ebs?
+	       (let* ((ebs (read-ebs-from-file pathname))
+		      (bs (expression-binding-flow
+			   (lookup-expression-binding
+			    (first ebs) (second ebs)))))
+		(unless (= (length bs) 1) (internal-error))
+		(pp (externalize-abstract-value
+		     (environment-binding-value (first bs))))
+		(newline))
+	       (let ((bs (expression-binding-flow
+			  (lookup-expression-binding
+			   (first result)
+			   (flow-analysis (first result) (second result))))))
+		(unless (= (length bs) 1) (internal-error))
+		(pp (externalize-abstract-value
+		     (environment-binding-value (first bs))))
+		(newline))))
 	  (compile?
-	   (let ((bs (flow-analysis (first result) (second result))))
-	    ;; needs work: This overwrites the code file and the database file
-	    ;;             for all but the last top-level expression. And it
-	    ;;             fails to delete those files if there is no
-	    ;;             top-level expression.
-	    ;; needs work: -db
-	    (call-with-output-file (replace-extension pathname "db")
-	     (lambda (output-port)
-	      (pp (externalize-abstract-analysis bs) output-port)
-	      (newline output-port)))
-	    (generate-file (generate (first result) bs) pathname)
-	    ;; needs work: -c -k -cc -copt
-	    (system (format #f "gcc -o ~a -Wall ~a -lm"
-			    (strip-extension pathname)
-			    (replace-extension pathname "c")))))
+	   (if from-ebs?
+	       (let ((ebs (read-ebs-from-file pathname)))
+		(generate-file (generate (first ebs) (second ebs)) pathname)
+		;; needs work: -c -k -cc -copt
+		(system (format #f "gcc -o ~a -Wall ~a -lm"
+				(strip-extension pathname)
+				(replace-extension pathname "c"))))
+	       (let ((bs (flow-analysis (first result) (second result))))
+		;; needs work: This overwrites the code file and the ebs file
+		;;             for all but the last top-level expression. And
+		;;             it fails to delete those files if there is no
+		;;             top-level expression.
+		;; needs work: -ebs
+		(write-ebs-to-file (list (first result) bs) pathname)
+		(generate-file (generate (first result) bs) pathname)
+		;; needs work: -c -k -cc -copt
+		(system (format #f "gcc -o ~a -Wall ~a -lm"
+				(strip-extension pathname)
+				(replace-extension pathname "c"))))))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)

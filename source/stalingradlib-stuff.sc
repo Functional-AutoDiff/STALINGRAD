@@ -698,13 +698,13 @@
 (define (gensym)
  (let ((gensym *gensym*))
   (set! *gensym* (+ *gensym* 1))
-  (string->uninterned-symbol
+  (string->symbol			;debugging: was uninterned
    (format #f "G~a" (number->padded-string-of-length gensym 9)))))
 
 (define (hensym)
  (let ((gensym *gensym*))
   (set! *gensym* (+ *gensym* 1))
-  (string->uninterned-symbol
+  (string->symbol			;debugging: was uninterned
    (format #f "H~a" (number->padded-string-of-length gensym 9)))))
 
 (define (variable? x)
@@ -6499,20 +6499,13 @@
 	(loop (removeq x l) (cons x c)))))))
 
 (define (all-nested-abstract-values bs)
- (let* ((x1 (time "~a all-abstract-values~%"
-		  (lambda () (all-abstract-values bs))))
-	(x2 (time "~a map all-abstract-subvalues~%"
-		  (lambda () (map all-abstract-subvalues x1))))
-	(x3 (time
-	     "~a reduce~%"
-	     (lambda ()
-	      (reduce
-	       (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2)) x2 '()))))
-	(x4 (time "~a all-bundles~%" (lambda () (all-bundles bs))))
-	(x5 (time "~a unionp abstract-value=?~%"
-		  (lambda () (unionp abstract-value=? x4 x3)))))
-  (time "~a cached-topological-sort~%"
-	(lambda () (cached-topological-sort component? x5)))))
+ (cached-topological-sort
+  component?
+  (unionp abstract-value=?
+	  (all-bundles bs)
+	  (reduce
+	   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+	   (map all-abstract-subvalues (all-abstract-values bs))'()))))
 
 (define (all-primitives s bs)
  (reduce
@@ -7585,173 +7578,98 @@
   (all-bundles bs)))
 
 (define (generate e bs)
- (let* ((xs (time "~a all-variables~%" (lambda () (all-variables bs))))
-	(vs (time "~a all-nested-abstract-values~%" (lambda () (all-nested-abstract-values bs))))
-	(v1v2s (time "~a all-functions~%" (lambda () (all-functions bs)))))
-  (list "#include <math.h>" #\newline
-	"#include <stdio.h>" #\newline
-	"#define car(x) x.a" #\newline
-	"#define cdr(x) x.d" #\newline
-	"#define TRUE (0==0)" #\newline
-	"#define FALSE (0!=0)" #\newline
-	"static inline double write_real(double x){printf(\"%lf\\n\",x);return x;}"
-	#\newline
-	(time "~a generate-struct-declarations~%"
-	      (lambda ()
-	       (generate-struct-declarations xs vs)))
-	(time "~a generate-constructor-declarations~%"
-	      (lambda ()
-	       (generate-constructor-declarations xs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '+ "double" "add" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '- "double" "minus" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '* "double" "times" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '/ "double" "divide" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations
-		'atan "double" "atantwo" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '= "int" "eq" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '< "int" "lt" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '> "int" "gt" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '<= "int" "le" bs vs)))
-	(time "~a generate-real*real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real*real-primitive-declarations '>= "int" "ge" bs vs)))
-	(time "~a generate-real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)))
-	(time "~a generate-real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real-primitive-declarations
-		'positive? "int" "positive" bs vs)))
-	(time "~a generate-real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real-primitive-declarations
-		'negative? "int" "negative" bs vs)))
-	(time "~a generate-if-declarations~%"
-	      (lambda ()
-	       (generate-if-declarations bs vs)))
-	"static inline double read_real(void);" #\newline
-	(time "~a generate-real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real-primitive-declarations 'real "double" "real" bs vs)))
-	(time "~a generate-real-primitive-declarations~%"
-	      (lambda ()
-	       (generate-real-primitive-declarations 'write "double" "write" bs vs)))
-	(time "~a generate-zero-declarations~%"
-	      (lambda ()
-	       (generate-zero-declarations bs vs)))
-	(time "~a generate-ad-declarations~%"
-	      (lambda ()
-	       (generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)))
-	(time "~a generate-ad-declarations~%"
-	      (lambda ()
-	       (generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)))
-	(time "~a generate-bundle-declarations~%"
-	      (lambda ()
-	       (generate-bundle-declarations bs vs)))
-	(time "~a generate-function-declarations~%"
-	      (lambda ()
-	       (generate-function-declarations bs xs vs v1v2s)))
-	"int main(void);" #\newline
-	(time "~a generate-constructor-definitions~%"
-	      (lambda ()
-	       (generate-constructor-definitions xs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'+ "double" "add" "~a+~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'- "double" "minus" "~a-~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'* "double" "times" "~a*~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'/ "double" "divide" "~a/~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'atan "double" "atantwo" "atan2(~a,~a)" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions '= "int" "eq" "~a==~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions '< "int" "lt" "~a<~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions '> "int" "gt" "~a>~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'<= "int" "le" "~a<=~a" bs vs)))
-	(time "~a generate-real*real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real*real-primitive-definitions
-		'>= "int" "ge" "~a>=~a" bs vs)))
-	(time "~a generate-real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real-primitive-definitions
-		'zero? "int" "iszero" "~a==0.0" bs vs)))
-	(time "~a generate-real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real-primitive-definitions
-		'positive? "int" "positive" "~a>0.0" bs vs)))
-	(time "~a generate-real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real-primitive-definitions
-		'negative? "int" "negative" "~a<0.0" bs vs)))
-	(time "~a generate-if-definitions~%"
-	      (lambda ()
-	       (generate-if-definitions bs vs v1v2s)))
-	"static inline double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
-	#\newline
-	(time "~a generate-real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)))
-	(time "~a generate-real-primitive-definitions~%"
-	      (lambda ()
-	       (generate-real-primitive-definitions
-		'write "double" "write" "write_real(~a)" bs vs)))
-	(time "~a generate-zero-definitions~%"
-	      (lambda ()
-	       (generate-zero-definitions bs xs vs)))
-	(time "~a generate-primal-definitions~%"
-	      (lambda ()
-	       (generate-primal-definitions bs xs vs)))
-	(time "~a generate-tangent-definitions~%"
-	      (lambda ()
-	       (generate-tangent-definitions bs xs vs)))
-	(time "~a generate-bundle-definitions~%"
-	      (lambda ()
-	       (generate-bundle-definitions bs xs vs)))
-	(time "~a generate-function-definitions~%"
-	      (lambda ()
-	       (generate-function-definitions bs xs vs v1v2s)))
+ (let* ((xs (all-variables bs))
+	(vs (all-nested-abstract-values bs))
+	(v1v2s (all-functions bs)))
+  (list
+   "#include <math.h>" #\newline
+   "#include <stdio.h>" #\newline
+   "#define car(x) x.a" #\newline
+   "#define cdr(x) x.d" #\newline
+   "#define TRUE (0==0)" #\newline
+   "#define FALSE (0!=0)" #\newline
+   "static inline double write_real(double x){printf(\"%lf\\n\",x);return x;}"
+   #\newline
+   (generate-struct-declarations xs vs)
+   (generate-constructor-declarations xs vs)
+   (generate-real*real-primitive-declarations '+ "double" "add" bs vs)
+   (generate-real*real-primitive-declarations '- "double" "minus" bs vs)
+   (generate-real*real-primitive-declarations '* "double" "times" bs vs)
+   (generate-real*real-primitive-declarations '/ "double" "divide" bs vs)
+   (generate-real*real-primitive-declarations
+    'atan "double" "atantwo" bs vs)
+   (generate-real*real-primitive-declarations '= "int" "eq" bs vs)
+   (generate-real*real-primitive-declarations '< "int" "lt" bs vs)
+   (generate-real*real-primitive-declarations '> "int" "gt" bs vs)
+   (generate-real*real-primitive-declarations '<= "int" "le" bs vs)
+   (generate-real*real-primitive-declarations '>= "int" "ge" bs vs)
+   (generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)
+   (generate-real-primitive-declarations 'positive? "int" "positive" bs vs)
+   (generate-real-primitive-declarations 'negative? "int" "negative" bs vs)
+   (generate-if-declarations bs vs)
+   "static inline double read_real(void);" #\newline
+   (generate-real-primitive-declarations 'real "double" "real" bs vs)
+   (generate-real-primitive-declarations 'write "double" "write" bs vs)
+   (generate-zero-declarations bs vs)
+   (generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)
+   (generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)
+   (generate-bundle-declarations bs vs)
+   (generate-function-declarations bs xs vs v1v2s)
+   "int main(void);" #\newline
+   (generate-constructor-definitions xs vs)
+   (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
+   (generate-real*real-primitive-definitions '- "double" "minus" "~a-~a" bs vs)
+   (generate-real*real-primitive-definitions '* "double" "times" "~a*~a" bs vs)
+   (generate-real*real-primitive-definitions
+    '/ "double" "divide" "~a/~a" bs vs)
+   (generate-real*real-primitive-definitions
+    'atan "double" "atantwo" "atan2(~a,~a)" bs vs)
+   (generate-real*real-primitive-definitions '= "int" "eq" "~a==~a" bs vs)
+   (generate-real*real-primitive-definitions '< "int" "lt" "~a<~a" bs vs)
+   (generate-real*real-primitive-definitions '> "int" "gt" "~a>~a" bs vs)
+   (generate-real*real-primitive-definitions '<= "int" "le" "~a<=~a" bs vs)
+   (generate-real*real-primitive-definitions '>= "int" "ge" "~a>=~a" bs vs)
+   (generate-real-primitive-definitions 'zero? "int" "iszero" "~a==0.0" bs vs)
+   (generate-real-primitive-definitions
+    'positive? "int" "positive" "~a>0.0" bs vs)
+   (generate-real-primitive-definitions
+    'negative? "int" "negative" "~a<0.0" bs vs)
+   (generate-if-definitions bs vs v1v2s)
+   "static inline double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
+   #\newline
+   (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
+   (generate-real-primitive-definitions
+    'write "double" "write" "write_real(~a)" bs vs)
+   (generate-zero-definitions bs xs vs)
+   (generate-primal-definitions bs xs vs)
+   (generate-tangent-definitions bs xs vs)
+   (generate-bundle-definitions bs xs vs)
+   (generate-function-definitions bs xs vs v1v2s)
+   (list
+    "int main(void){"
+    (generate-letrec-bindings
+     e
+     (environment-binding-values
+      (first
+       (expression-binding-flow (lookup-expression-binding e bs))))
+     (free-variables e)
+     '()
+     bs
+     xs
+     vs
+     v1v2s)
+    ;; needs work: This unsoundly removes code that might do I/O, signal
+    ;;             an error, or not terminate.
+    (if (void?
+	 (abstract-eval1
+	  e
+	  (environment-binding-values
+	   (first
+	    (expression-binding-flow (lookup-expression-binding e bs))))
+	  bs))
+	'()
 	(list
-	 "int main(void){"
-	 (generate-letrec-bindings
+	 (generate-expression
 	  e
 	  (environment-binding-values
 	   (first
@@ -7762,31 +7680,9 @@
 	  xs
 	  vs
 	  v1v2s)
-	 ;; needs work: This unsoundly removes code that might do I/O, signal
-	 ;;             an error, or not terminate.
-	 (if (void?
-	      (abstract-eval1
-	       e
-	       (environment-binding-values
-		(first
-		 (expression-binding-flow (lookup-expression-binding e bs))))
-	       bs))
-	     '()
-	     (list
-	      (generate-expression
-	       e
-	       (environment-binding-values
-		(first
-		 (expression-binding-flow (lookup-expression-binding e bs))))
-	       (free-variables e)
-	       '()
-	       bs
-	       xs
-	       vs
-	       v1v2s)
-	      ";"))
-	 "return 0;}"
-	 #\newline))))
+	 ";"))
+    "return 0;}"
+    #\newline))))
 
 (define (generate-file code pathname)
  (call-with-output-file (replace-extension pathname "c")
@@ -7798,6 +7694,103 @@
 	  ((pair? code) (loop (car code)) (loop (cdr code)))
 	  ((null? code) #f)
 	  (else (internal-error)))))))
+
+;;; Serialization
+
+(define (all-subobjects object)
+ (let ((objects '()))
+  (let loop ((object object))
+   (cond ((primitive-procedure? object) #f)
+	 ((string? object)
+	  (unless (memq object objects) (set! objects (cons object objects))))
+	 ((pair? object)
+	  (unless (memq object objects)
+	   (set! objects (cons object objects))
+	   (loop (car object))
+	   (loop (cdr object))))
+	 ((vector? object)
+	  (unless (memq object objects)
+	   (set! objects (cons object objects))
+	   (for-each-vector loop object)))))
+  objects))
+
+(define (serialize-object object objects)
+ (cond ((primitive-procedure? object)
+	`(primitive-procedure
+	  ,(positionq object (map value-binding-value *value-bindings*))))
+       ((or (null? object)
+	    (boolean? object)
+	    (char? object)
+	    (and (number? object) (exact? object))
+	    (symbol? object))
+	object)
+       ((and (number? object) (inexact? object))
+	`(double ,(double-part object 0)
+		 ,(double-part object 1)
+		 ,(double-part object 2)
+		 ,(double-part object 3)))
+       ((or (string? object) (pair? object) (vector? object))
+	`(table ,(positionq object objects)))
+       (else (internal-error "Cannot serialize this object"))))
+
+(define (serialize object)
+ (let ((objects (all-subobjects object)))
+  (cons
+   (serialize-object object objects)
+   (map (lambda (object)
+	 (cond ((primitive-procedure? object) (internal-error))
+	       ((string? object) object)
+	       ((pair? object)
+		(cons (serialize-object (car object) objects)
+		      (serialize-object (cdr object) objects)))
+	       ((vector? object)
+		(map-vector (lambda (object) (serialize-object object objects))
+			    object))
+	       (else (internal-error))))
+	objects))))
+
+(define (unserialize-object object objects)
+ (cond ((or (null? object)
+	    (boolean? object)
+	    (char? object)
+	    (and (number? object) (exact? object))
+	    (symbol? object))
+	object)
+       ((pair? object)
+	(case (first object)
+	 ((primitive-procedure)
+	  (value-binding-value (list-ref *value-bindings* (second object))))
+	 ((double)
+	  (make-double
+	   (second object) (third object) (fourth object) (fifth object)))
+	 ((table) (list-ref objects (second object)))
+	 (else (internal-error "Cannot unserialize this object"))))
+       (else (internal-error "Cannot unserialize this object"))))
+
+(define (unserialize objects)
+ (for-each
+  (lambda (object)
+   (cond
+    ((string? object) #f)
+    ((pair? object)
+     (set-car! object (unserialize-object (car object) (rest objects)))
+     (set-cdr! object (unserialize-object (cdr object) (rest objects))))
+    ((vector? object)
+     (for-each-n
+      (lambda (i)
+       (vector-set!
+	object i (unserialize-object (vector-ref object i) (rest objects))))
+      (vector-length object)))
+    (else (internal-error))))
+  (rest objects))
+ (unserialize-object (first objects) (rest objects)))
+
+(define (write-ebs-to-file bs pathname)
+ (call-with-output-file (replace-extension pathname "ebs")
+  (lambda (port) (write (serialize bs) port) (newline port))))
+
+(define (read-ebs-from-file pathname)
+ (unserialize (read-object-from-file (replace-extension pathname "ebs"))))
 
 ;;; Primitives
 
