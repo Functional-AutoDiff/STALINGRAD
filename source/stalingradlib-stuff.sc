@@ -261,6 +261,8 @@
 
 (define *imprecise-zero?* #f)
 
+(define *imprecise-inexacts?* #f)
+
 (define *union-free?* #f)
 
 (define *verbose?* #f)
@@ -633,7 +635,9 @@
      (and (not *encoded-booleans?*)
 	  (or (and (vlad-true? v1) (vlad-true? v2))
 	      (and (vlad-false? v1) (vlad-false? v2))))
-     (and (real? v1) (real? v2) (= v1 v2))
+     ;; This was = but then it equates exact values with inexact values and
+     ;; this breaks -imprecise-inexacts.
+     (and (real? v1) (real? v2) (equal? v1 v2))
      (and (primitive-procedure? v1)
 	  (primitive-procedure? v2)
 	  (eq? v1 v2))
@@ -1932,112 +1936,120 @@
        (else (internal-error))))
 
 (define (macro-expand e)
- (case (first e)
-  ((lambda)
-   (unless (and (= (length e) 3) (list? (second e)))
-    (compile-time-error "Invalid expression: ~s" e))
-   (case (length (second e))
-    ((0) `(lambda ((cons* ,@(second e))) ,(third e)))
-    ((1)
-     (let ((p (first (second e))))
-      (cond
-       ((variable? p) e)
-       ((and (list? p) (not (null? p)))
-	(case (first p)
-	 ((cons)
-	  (unless (= (length p) 3)
-	   (compile-time-error "Invalid parameter: ~s" p))
-	  (let ((x (parameter->consvar p)))
-	   `(lambda (,x)
-	     ;; needs work: to ensure that you don't shadow car and cdr
-	     (let* ((,(second p) (car ,x)) (,(third p) (cdr ,x)))
-	      ,(third e)))))
-	 ((cons*)
-	  (case (length (rest p))
-	   ((0) `(lambda ((ignore)) ,(third e)))
-	   ((1) `(lambda (,(second p)) ,(third e)))
-	   (else `(lambda ((cons ,(second p) (cons* ,@(rest (rest p)))))
-		   ,(third e)))))
-	 ((list)
-	  (if (null? (rest p))
-	      `(lambda ((ignore)) ,(third e))
-	      `(lambda ((cons ,(second p) (list ,@(rest (rest p)))))
-		,(third e))))
-	 (else (compile-time-error "Invalid parameter: ~s" p))))
-       (else (compile-time-error "Invalid parameter: ~s" p)))))
-    (else `(lambda ((cons* ,@(second e))) ,(third e)))))
-  ((letrec)
-   (unless (and (= (length e) 3)
-		(list? (second e))
-		(every (lambda (b)
-			(and (list? b) (= (length b) 2) (variable? (first b))))
-		       (second e)))
-    (compile-time-error "Invalid expression: ~s" e))
-   `(let (((list ,@(map first (second e)))
-	   ;; needs work: to ensure that you don't shadow ys
-	   (ys (list ,@(map (lambda (b)
-			     `(lambda ((list ,@(map first (second e))))
-			       ,(second b)))
-			    (second e))))))
-     ,(third e)))
-  ((let) (unless (and (= (length e) 3)
-		      (list? (second e))
-		      (every (lambda (b) (and (list? b) (= (length b) 2)))
-			     (second e)))
-	  (compile-time-error "Invalid expression: ~s" e))
-	 `((lambda ,(map first (second e)) ,(third e))
-	   ,@(map second (second e))))
-  ((let*)
-   (unless (and (= (length e) 3)
-		(list? (second e))
-		(every (lambda (b) (and (list? b) (= (length b) 2)))
-		       (second e)))
-    (compile-time-error "Invalid expression: ~s" e))
-   (case (length (second e))
-    ((0) (third e))
-    ((1) `(let ,(second e) ,(third e)))
-    (else `(let (,(first (second e))) (let* ,(rest (second e)) ,(third e))))))
-  ((if)
-   (unless (= (length e) 4) (compile-time-error "Invalid expression: ~s" e))
-   (if *encoded-booleans?*
-       `((,(second e) (cons (lambda () ,(third e)) (lambda () ,(fourth e)))))
-       ;; needs work: to ensure that you don't shadow if-procedure
-       `(if-procedure
-	 ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e)))))
-  ;; needs work: to ensure that you don't shadow cons-procedure
-  ((cons)
-   (unless (= (length e) 3) (compile-time-error "Invalid expression: ~s" e))
-   `((cons-procedure ,(second e)) ,(third e)))
-  ((cons*) (case (length (rest e))
-	    ((0) ''())
-	    ((1) (second e))
-	    (else `(cons ,(second e) (cons* ,@(rest (rest e)))))))
-  ((list)
-   (if (null? (rest e)) ''() `(cons ,(second e) (list ,@(rest (rest e))))))
-  ;; We don't allow (cond ... (e) ...) or (cond ... (e1 => e2) ...).
-  ((cond) (unless (and (>= (length e) 2)
-		       (every (lambda (b) (and (list? b) (= (length b) 2)))
-			      (rest e))
-		       (eq? (first (last e)) 'else))
-	   (compile-time-error "Invalid expression: ~s" e))
-	  (if (null? (rest (rest e)))
-	      (second (second e))
-	      `(if ,(first (second e))
-		   ,(second (second e))
-		   (cond ,@(rest (rest e))))))
-  ((and) (case (length (rest e))
-	  ((0) #t)
-	  ((1) (second e))
-	  (else `(if ,(second e) (and ,@(rest (rest e))) #f))))
-  ((or) (case (length (rest e))
-	 ((0) #f)
-	 ((1) (second e))
-	 (else (let ((x (gensym)))
-		`(let ((,x ,(second e))) (if ,x ,x (or ,@(rest (rest e)))))))))
-  (else (case (length (rest e))
-	 ((0) `(,(first e) (cons* ,@(rest e))))
-	 ((1) e)
-	 (else `(,(first e) (cons* ,@(rest e))))))))
+ (if (list? e)
+     (case (first e)
+      ((lambda)
+       (unless (and (= (length e) 3) (list? (second e)))
+	(compile-time-error "Invalid expression: ~s" e))
+       (case (length (second e))
+	((0) `(lambda ((cons* ,@(second e))) ,(third e)))
+	((1)
+	 (let ((p (first (second e))))
+	  (cond
+	   ((variable? p) e)
+	   ((and (list? p) (not (null? p)))
+	    (case (first p)
+	     ((cons)
+	      (unless (= (length p) 3)
+	       (compile-time-error "Invalid parameter: ~s" p))
+	      (let ((x (parameter->consvar p)))
+	       `(lambda (,x)
+		 ;; needs work: to ensure that you don't shadow car and cdr
+		 (let* ((,(second p) (car ,x)) (,(third p) (cdr ,x)))
+		  ,(third e)))))
+	     ((cons*)
+	      (case (length (rest p))
+	       ((0) `(lambda ((ignore)) ,(third e)))
+	       ((1) `(lambda (,(second p)) ,(third e)))
+	       (else `(lambda ((cons ,(second p) (cons* ,@(rest (rest p)))))
+		       ,(third e)))))
+	     ((list)
+	      (if (null? (rest p))
+		  `(lambda ((ignore)) ,(third e))
+		  `(lambda ((cons ,(second p) (list ,@(rest (rest p)))))
+		    ,(third e))))
+	     (else (compile-time-error "Invalid parameter: ~s" p))))
+	   (else (compile-time-error "Invalid parameter: ~s" p)))))
+	(else `(lambda ((cons* ,@(second e))) ,(third e)))))
+      ((letrec)
+       (unless (and (= (length e) 3)
+		    (list? (second e))
+		    (every
+		     (lambda (b)
+		      (and (list? b) (= (length b) 2) (variable? (first b))))
+		     (second e)))
+	(compile-time-error "Invalid expression: ~s" e))
+       `(let (((list ,@(map first (second e)))
+	       ;; needs work: to ensure that you don't shadow ys
+	       (ys (list ,@(map (lambda (b)
+				 `(lambda ((list ,@(map first (second e))))
+				   ,(second b)))
+				(second e))))))
+	 ,(third e)))
+      ((let) (unless (and (= (length e) 3)
+			  (list? (second e))
+			  (every (lambda (b) (and (list? b) (= (length b) 2)))
+				 (second e)))
+	      (compile-time-error "Invalid expression: ~s" e))
+	     `((lambda ,(map first (second e)) ,(third e))
+	       ,@(map second (second e))))
+      ((let*)
+       (unless (and (= (length e) 3)
+		    (list? (second e))
+		    (every (lambda (b) (and (list? b) (= (length b) 2)))
+			   (second e)))
+	(compile-time-error "Invalid expression: ~s" e))
+       (case (length (second e))
+	((0) (third e))
+	((1) `(let ,(second e) ,(third e)))
+	(else
+	 `(let (,(first (second e))) (let* ,(rest (second e)) ,(third e))))))
+      ((if)
+       (unless (= (length e) 4)
+	(compile-time-error "Invalid expression: ~s" e))
+       (if *encoded-booleans?*
+	   `((,(second e)
+	      (cons (lambda () ,(third e)) (lambda () ,(fourth e)))))
+	   ;; needs work: to ensure that you don't shadow if-procedure
+	   `(if-procedure
+	     ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e)))))
+      ;; needs work: to ensure that you don't shadow cons-procedure
+      ((cons)
+       (unless (= (length e) 3)
+	(compile-time-error "Invalid expression: ~s" e))
+       `((cons-procedure ,(second e)) ,(third e)))
+      ((cons*) (case (length (rest e))
+		((0) ''())
+		((1) (second e))
+		(else `(cons ,(second e) (cons* ,@(rest (rest e)))))))
+      ((list)
+       (if (null? (rest e)) ''() `(cons ,(second e) (list ,@(rest (rest e))))))
+      ;; We don't allow (cond ... (e) ...) or (cond ... (e1 => e2) ...).
+      ((cond) (unless (and (>= (length e) 2)
+			   (every (lambda (b) (and (list? b) (= (length b) 2)))
+				  (rest e))
+			   (eq? (first (last e)) 'else))
+	       (compile-time-error "Invalid expression: ~s" e))
+	      (if (null? (rest (rest e)))
+		  (second (second e))
+		  `(if ,(first (second e))
+		       ,(second (second e))
+		       (cond ,@(rest (rest e))))))
+      ((and) (case (length (rest e))
+	      ((0) #t)
+	      ((1) (second e))
+	      (else `(if ,(second e) (and ,@(rest (rest e))) #f))))
+      ((or) (case (length (rest e))
+	     ((0) #f)
+	     ((1) (second e))
+	     (else
+	      (let ((x (gensym)))
+	       `(let ((,x ,(second e))) (if ,x ,x (or ,@(rest (rest e)))))))))
+      (else (case (length (rest e))
+	     ((0) `(,(first e) (cons* ,@(rest e))))
+	     ((1) e)
+	     (else `(,(first e) (cons* ,@(rest e)))))))
+     e))
 
 (define (syntax-check-expression! e)
  (let loop ((e e) (xs (map value-binding-variable *value-bindings*)))
@@ -4246,6 +4258,15 @@
      (list (make-aggregate-value-with-new-values
 	    v (map vlad-value->abstract-value (aggregate-value-values v))))))
 
+(define (potentially-imprecise-vlad-value->abstract-value v)
+ (if (scalar-proto-abstract-value? v)
+     (list (if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
+     ;; needs work: this doesn't fill in the index-expression and
+     ;;             index-environment slots
+     (list (make-aggregate-value-with-new-values
+	    v (map potentially-imprecise-vlad-value->abstract-value
+		   (aggregate-value-values v))))))
+
 (define (remove-redundant-proto-abstract-values v)
  ;; This does not affect the extension of the abstract value but can yield
  ;; a smaller representation. Thus this is just an optimization. Since
@@ -5073,7 +5094,7 @@
   (list->vector
    (map
     (lambda (x)
-     (vlad-value->abstract-value
+     (potentially-imprecise-vlad-value->abstract-value
       (value-binding-value
        (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
     (free-variables e)))
@@ -7577,7 +7598,7 @@
 	 #\newline))))
   (all-bundles bs)))
 
-(define (generate e bs)
+(define (generate e bs bs0)
  (let* ((xs (all-variables bs))
 	(vs (all-nested-abstract-values bs))
 	(v1v2s (all-functions bs)))
@@ -7588,7 +7609,7 @@
    "#define cdr(x) x.d" #\newline
    "#define TRUE (0==0)" #\newline
    "#define FALSE (0!=0)" #\newline
-   "static inline double write_real(double x){printf(\"%lf\\n\",x);return x;}"
+   "static inline double write_real(double x){printf(\"%.18lg\\n\",x);return x;}"
    #\newline
    (generate-struct-declarations xs vs)
    (generate-constructor-declarations xs vs)
@@ -7647,6 +7668,49 @@
    (generate-function-definitions bs xs vs v1v2s)
    (list
     "int main(void){"
+    (let ((vs
+	   (vector->list
+	    (environment-binding-values
+	     (first
+	      (expression-binding-flow (lookup-expression-binding e bs)))))))
+     (if (every void? vs)
+	 '()
+	 ;; needs work: to fill in slots
+	 (list
+	  "struct {"
+	  (map (lambda (v x)
+		(if (void? v)
+		    '()
+		    (list (generate-specifier v vs)
+			  " "
+			  (generate-variable-name x xs)
+			  ";")))
+	       vs
+	       (free-variables e))
+	  "} c;"
+	  (map (lambda (v x)
+		(let loop ((u (value-binding-value
+			       (find-if
+				(lambda (b)
+				 (variable=? x (value-binding-variable b)))
+				bs0)))
+			   (c (list "c." (generate-variable-name x xs)))
+			   (v v))
+		 (if (void? v)
+		     '()
+		     (cond
+		      ((boolean-value? v) (list c "=" (if u "1" "0") ";"))
+		      ((abstract-real-value? v) (list c "=" u ";"))
+		      ((and (= (length v) 1) (vlad-pair? (first v) '()))
+		       (list (loop (vlad-car u '())
+				   (list c ".a")
+				   (abstract-vlad-car-u (first v) '()))
+			     (loop (vlad-cdr u '())
+				   (list c ".a")
+				   (abstract-vlad-car-u (first v) '()))))
+		      (else (internal-error))))))
+	       vs
+	       (free-variables e)))))
     (generate-letrec-bindings
      e
      (environment-binding-values
@@ -7939,7 +8003,8 @@
 	    #f
 	    '#())
 	   #f))
- ;; In the following, all real constants are wrapped in real yielding (real 0).
+ ;; In the following, all real constants are inexact so that they are
+ ;; imprecise under -imprecise-inexacts.
  (define-primitive-procedure '+
   (binary-real + "+")
   (abstract-binary-real + "+")
@@ -7965,7 +8030,7 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (- x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons '() (cons (sensitivity y) (- (real 0) (sensitivity y)))))))))
+	    (cons '() (cons (sensitivity y) (- 0.0 (sensitivity y)))))))))
  (define-primitive-procedure '*
   (binary-real * "*")
   (abstract-binary-real * "*")
@@ -7998,7 +8063,7 @@
       (lambda ((sensitivity y))
        (cons '()
 	     (cons (/ (sensitivity y) x2)
-		   (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
+		   (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
@@ -8052,12 +8117,12 @@
   (lambda (v vs) "cos")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (cos x) (- (real 0) (* (sin x) (perturbation x))))))
+     (bundle (cos x) (- 0.0 (* (sin x) (perturbation x))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (cos x))
 	   (lambda ((sensitivity y))
-	    (cons '() (- (real 0) (* (sin x) (sensitivity y)))))))))
+	    (cons '() (- 0.0 (* (sin x) (sensitivity y)))))))))
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (abstract-binary-real atan "atan")
@@ -8073,7 +8138,7 @@
      (cons (*j (atan x2 x1))
 	   (lambda ((sensitivity y))
 	    (cons '()
-		  (cons (- (real 0)
+		  (cons (- 0.0
 			   (/ (* x2 (sensitivity y))
 			      (+ (* x1 x1) (* x2 x2))))
 			(/ (* x1 (sensitivity y))

@@ -1,74 +1,74 @@
 #!/bin/tcsh -f
 echo Compiling t1
-stalingrad -compile t1
+stalingrad -compile -imprecise-inexacts t1
 ./t1
 echo Compiling t2
-stalingrad -compile t2
+stalingrad -compile -imprecise-inexacts t2
 ./t2 <<EOF
 2
 EOF
 echo Compiling t3
-stalingrad -compile t3
+stalingrad -compile -imprecise-inexacts t3
 ./t3 <<EOF
 2
 EOF
 echo Compiling t4
-stalingrad -compile t4
+stalingrad -compile -imprecise-inexacts t4
 ./t4 <<EOF
 3
 4
 EOF
 echo Compiling t5
-stalingrad -compile t5
+stalingrad -compile -imprecise-inexacts t5
 ./t5 <<EOF
 4
 EOF
 echo Compiling t5a
-stalingrad -compile t5a
+stalingrad -compile -imprecise-inexacts t5a
 ./t5a <<EOF
 4
 EOF
 echo Compiling t6
-stalingrad -compile t6
+stalingrad -compile -imprecise-inexacts t6
 ./t6
 echo Compiling t6a
-stalingrad -compile t6a
+stalingrad -compile -imprecise-inexacts t6a
 ./t6a
 echo Compiling t7
-stalingrad -compile t7
+stalingrad -compile -imprecise-inexacts t7
 ./t7 <<EOF
 0
 EOF
 echo Compiling t8
-stalingrad -compile t8
+stalingrad -compile -imprecise-inexacts t8
 ./t8 <<EOF
 0
 EOF
 echo Compiling t9
-stalingrad -compile t9
+stalingrad -compile -imprecise-inexacts t9
 ./t9 <<EOF
 0
 EOF
 echo Compiling t10
-stalingrad -compile t10
+stalingrad -compile -imprecise-inexacts t10
 ./t10 <<EOF
 3
 4
 0
 EOF
 echo Compiling t11
-stalingrad -compile t11
+stalingrad -compile -imprecise-inexacts t11
 ./t11 <<EOF
 5
 EOF
 echo Compiling t12
-stalingrad -compile t12
+stalingrad -compile -imprecise-inexacts t12
 ./t12 <<EOF
 3
 4
 EOF
 echo Compiling t13
-stalingrad -compile t13
+stalingrad -compile -imprecise-inexacts t13
 ./t13 <<EOF
 3
 4
@@ -76,15 +76,15 @@ stalingrad -compile t13
 6
 EOF
 echo Compiling t14
-stalingrad -compile t14
+stalingrad -compile -imprecise-inexacts t14
 ./t14 <<EOF
 7
 EOF
 echo Compiling t15
-stalingrad -compile t15
+stalingrad -compile -imprecise-inexacts t15
 ./t15 <<EOF
 7
 EOF
 echo Compiling t16
-stalingrad -compile t16
+stalingrad -compile -imprecise-inexacts t16
 ./t16

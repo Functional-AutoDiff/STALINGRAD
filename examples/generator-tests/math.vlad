@@ -2,7 +2,7 @@
 
 (define (not x) (if x #f #t))
 
-(define (abs x) (if (negative? x) (- (real 0) x) x))
+(define (abs x) (if (negative? x) (- 0.0 x) x))
 
 (define (sqr x) (* x x))
 
@@ -38,7 +38,7 @@
 
 ;;; Vectors
 
-(define (dot u v) ((reduce + (real 0)) ((map2 *) u v)))
+(define (dot u v) ((reduce + 0.0) ((map2 *) u v)))
 
 (define (v+ u v) ((map2 +) u v))
 
@@ -46,7 +46,7 @@
 
 (define (k*v k v) ((map (lambda (x) (* k x))) v))
 
-(define (magnitude-squared x) ((reduce + (real 0)) ((map sqr) x)))
+(define (magnitude-squared x) ((reduce + 0.0) ((map sqr) x)))
 
 (define (magnitude x) (sqrt (magnitude-squared x)))
 
@@ -55,7 +55,7 @@
 (define (distance u v) (sqrt (distance-squared u v)))
 
 ;;; The ith n-dimensional basis vector.
-(define (e i n) ((map-n (lambda (j) (if (= j i) (real 1) (real 0)))) n))
+(define (e i n) ((map-n (lambda (j) (if (= j i) 1.0 0.0))) n))
 
 ;;; Matrices
 
@@ -99,7 +99,7 @@
 
 (define (j* x) (bundle x (zero x)))
 
-(define ((derivative f) x) (tangent ((j* f) (bundle x (real 1)))))
+(define ((derivative f) x) (tangent ((j* f) (bundle x 1.0))))
 
 (define ((gradient f) x)
  (let ((n (length x)))

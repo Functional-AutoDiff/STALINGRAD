@@ -1,1 +1,1 @@
-(bundle (bundle 1 2) (bundle 3 (real 4)))
+(bundle (bundle 1 2) (bundle 3 4.0))

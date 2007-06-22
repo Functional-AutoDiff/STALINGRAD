@@ -140,6 +140,7 @@
 		  ("remove-redundant-proto-abstract-values-using-subset"
 		   remove-redundant-proto-abstract-values-using-subset?))
 		 (at-most-one ("imprecise-zero" imprecise-zero?))
+		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (at-most-one ("union-free" union-free?))
 		 (at-most-one ("verbose" verbose?))
 		 (required (pathname "pathname" string-argument)))
@@ -193,6 +194,7 @@
  (when remove-redundant-proto-abstract-values-using-subset?
   (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
  (set! *imprecise-zero?* imprecise-zero?)
+ (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *union-free?* (or compile? union-free?))
  (set! *verbose?* verbose?)
  (initialize-basis!)
@@ -246,7 +248,9 @@
 	  (compile?
 	   (if from-ebs?
 	       (let ((ebs (read-ebs-from-file pathname)))
-		(generate-file (generate (first ebs) (second ebs)) pathname)
+		(generate-file
+		 (generate (first ebs) (second ebs) (second result))
+		 pathname)
 		;; needs work: -c -k -cc -copt
 		(system (format #f "gcc -o ~a -Wall ~a -lm"
 				(strip-extension pathname)
@@ -258,7 +262,8 @@
 		;;             top-level expression.
 		;; needs work: -ebs
 		(write-ebs-to-file (list (first result) bs) pathname)
-		(generate-file (generate (first result) bs) pathname)
+		(generate-file
+		 (generate (first result) bs (second result)) pathname)
 		;; needs work: -c -k -cc -copt
 		(system (format #f "gcc -o ~a -Wall ~a -lm"
 				(strip-extension pathname)
