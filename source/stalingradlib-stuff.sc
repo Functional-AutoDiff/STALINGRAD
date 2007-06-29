@@ -7076,57 +7076,6 @@
   ;; their uses as required by gcc.
   (cached-topological-sort
    (lambda (thing1 thing2)
-    ;; debugging
-    (when #f
-     (when (and
-	    (eq? (first thing1) 'function)
-	    (eq? (first thing2) 'if)
-	    (or
-	     (abstract-value=?
-	      (first (second thing1))
-	      (abstract-vlad-car-u
-	       (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))
-	     (abstract-value=?
-	      (first (second thing1))
-	      (abstract-vlad-cdr-u
-	       (first
-		(abstract-vlad-cdr-u (first (second thing2)) '())) '()))))
-      (display (generate-function-name
-		(first (second thing1)) (second (second thing1)) v1v2s))
-      (display " ")
-      (display (generate-builtin-name "if_procedure" (second thing2) vs))
-      (newline))
-     (when (and (eq? (first thing1) 'if)
-		(eq? (first thing2) 'function)
-		(calls-if-procedure?
-		 (closure-body (first (first (second thing2))))
-		 (second thing1)
-		 (abstract-apply-closure (lambda (e vs) vs)
-					 (first (first (second thing2)))
-					 (second (second thing2)))
-		 bs))
-      (display (generate-builtin-name "if_procedure" (second thing1) vs))
-      (display " ")
-      (display (generate-function-name
-		(first (second thing2)) (second (second thing2)) v1v2s))
-      (newline))
-     (when (and (eq? (first thing1) 'function)
-		(eq? (first thing2) 'function)
-		(nonrecursive-closure? (first (first (second thing1))))
-		(calls?
-		 (closure-body (first (first (second thing2))))
-		 (first (second thing1))
-		 (second (second thing1))
-		 (abstract-apply-closure (lambda (e vs) vs)
-					 (first (first (second thing2)))
-					 (second (second thing2)))
-		 bs))
-      (display (generate-function-name
-		(first (second thing1)) (second (second thing1)) v1v2s))
-      (display " ")
-      (display (generate-function-name
-		(first (second thing2)) (second (second thing2)) v1v2s))
-      (newline)))
     (or
      (and
       (eq? (first thing1) 'function)
