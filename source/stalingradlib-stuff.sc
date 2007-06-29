@@ -6597,7 +6597,7 @@
        '()
        (begin
 	(unless (= (length v) 1) (internal-error))
-	(list "static inline "
+	(list "static INLINE "
 	      (generate-specifier v vs)
 	      " "
 	      (generate-builtin-name "m" v vs)
@@ -6618,7 +6618,7 @@
        '()
        (begin
 	(unless (= (length v) 1) (internal-error))
-	(list "static inline "
+	(list "static INLINE "
 	      (generate-specifier v vs)
 	      " "
 	      (generate-builtin-name "m" v vs)
@@ -6642,7 +6642,7 @@
  (map (lambda (v)
        (unless (and (= (length v) 1) (abstract-real? (first v)))
 	(internal-error))
-       (list "static inline "
+       (list "static INLINE "
 	     s1
 	     " "
 	     (generate-builtin-name s2 v vs)
@@ -6656,7 +6656,7 @@
  (map (lambda (v)
        (unless (and (= (length v) 1) (abstract-real? (first v)))
 	(internal-error))
-       (list "static inline "
+       (list "static INLINE "
 	     s1
 	     " "
 	     (generate-builtin-name s2 v vs)
@@ -6678,7 +6678,7 @@
 		     (= (length v2) 1)
 		     (abstract-real? (first v2)))
 	 (internal-error))
-	(list "static inline "
+	(list "static INLINE "
 	      s1
 	      " "
 	      (generate-builtin-name s2 v vs)
@@ -6698,7 +6698,7 @@
 		     (= (length v2) 1)
 		     (abstract-real? (first v2)))
 	 (internal-error))
-	(list "static inline "
+	(list "static INLINE "
 	      s1
 	      " "
 	      (generate-builtin-name s2 v vs)
@@ -6741,7 +6741,7 @@
 		    v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
       (if (void? v5)
 	  '()
-	  (list "static inline "
+	  (list "static INLINE "
 		(generate-specifier v5 vs)
 		" "
 		(generate-builtin-name "if_procedure" v vs)
@@ -6780,7 +6780,7 @@
       (if (void? v5)
 	  '()
 	  (list
-	   "static inline "
+	   "static INLINE "
 	   (generate-specifier v5 vs)
 	   " "
 	   (generate-builtin-name "if_procedure" v vs)
@@ -6928,6 +6928,7 @@
     (if (void? v3)
 	'()
 	(list "static "
+	      (if (nonrecursive-closure? (first v1)) "inline " '())
 	      (generate-specifier v3 vs)
 	      " "
 	      (generate-function-name v1 v2 v1v2s)
@@ -7255,6 +7256,7 @@
     (if (void? v3)
 	'()
 	(list "static "
+	      (if (nonrecursive-closure? (first v1)) "inline " '())
 	      (generate-specifier v3 vs)
 	      " "
 	      (generate-function-name v1 v2 v1v2s)
@@ -7387,7 +7389,7 @@
        (let ((v1 (widen-abstract-value (abstract-zero-v v) bs)))
 	(if (void? v1)
 	    '()
-	    (list "static inline "
+	    (list "static INLINE "
 		  (generate-specifier v1 vs)
 		  " "
 		  (generate-builtin-name "zero" v vs)
@@ -7404,7 +7406,7 @@
 	   (let ((v1 (widen-abstract-value (f v) bs)))
 	    (if (void? v1)
 		'()
-		(list "static inline "
+		(list "static INLINE "
 		      (generate-specifier v1 vs)
 		      " "
 		      (generate-builtin-name s1 v vs)
@@ -7423,7 +7425,7 @@
 		  bs)))
 	(if (void? v1)
 	    '()
-	    (list "static inline "
+	    (list "static INLINE "
 		  (generate-specifier v1 vs)
 		  " "
 		  (generate-builtin-name "bundle" v vs)
@@ -7439,7 +7441,7 @@
 	(if (void? v1)
 	    '()
 	    (list
-	     "static inline "
+	     "static INLINE "
 	     (generate-specifier v1 vs)
 	     " "
 	     (generate-builtin-name "zero" v vs)
@@ -7479,7 +7481,7 @@
 	 (if (void? v1)
 	     '()
 	     (list
-	      "static inline "
+	      "static INLINE "
 	      (generate-specifier v1 vs)
 	      " "
 	      (generate-builtin-name "primal" v vs)
@@ -7517,7 +7519,7 @@
 	 (if (void? v1)
 	     '()
 	     (list
-	      "static inline "
+	      "static INLINE "
 	      (generate-specifier v1 vs)
 	      " "
 	      (generate-builtin-name "tangent" v vs)
@@ -7555,7 +7557,7 @@
     (if (void? v3)
 	'()
 	(list
-	 "static inline "
+	 "static INLINE "
 	 (generate-specifier v3 vs)
 	 " "
 	 (generate-builtin-name "bundle" v vs)
@@ -7609,7 +7611,8 @@
    "#define cdr(x) x.d" #\newline
    "#define TRUE (0==0)" #\newline
    "#define FALSE (0!=0)" #\newline
-   "static inline double write_real(double x){printf(\"%.18lg\\n\",x);return x;}"
+   "#define INLINE inline __attribute__ ((always_inline))" #\newline
+   "static INLINE double write_real(double x){printf(\"%.18lg\\n\",x);return x;}"
    #\newline
    (generate-struct-declarations xs vs)
    (generate-constructor-declarations xs vs)
@@ -7628,7 +7631,7 @@
    (generate-real-primitive-declarations 'positive? "int" "positive" bs vs)
    (generate-real-primitive-declarations 'negative? "int" "negative" bs vs)
    (generate-if-declarations bs vs)
-   "static inline double read_real(void);" #\newline
+   "static INLINE double read_real(void);" #\newline
    (generate-real-primitive-declarations 'real "double" "real" bs vs)
    (generate-real-primitive-declarations 'write "double" "write" bs vs)
    (generate-zero-declarations bs vs)
@@ -7637,7 +7640,9 @@
    (generate-bundle-declarations bs vs)
    (generate-function-declarations bs xs vs v1v2s)
    "int main(void);" #\newline
-   (generate-constructor-definitions xs vs)
+   ;; This call to reverse is a crude attempt to force all inline references to
+   ;; be backward to comply with gcc restrictions.
+   (reverse (generate-constructor-definitions xs vs))
    (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
    (generate-real*real-primitive-definitions '- "double" "minus" "~a-~a" bs vs)
    (generate-real*real-primitive-definitions '* "double" "times" "~a*~a" bs vs)
@@ -7656,15 +7661,16 @@
    (generate-real-primitive-definitions
     'negative? "int" "negative" "~a<0.0" bs vs)
    (generate-if-definitions bs vs v1v2s)
-   "static inline double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
+   "static INLINE double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
    #\newline
    (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
    (generate-real-primitive-definitions
     'write "double" "write" "write_real(~a)" bs vs)
-   (generate-zero-definitions bs xs vs)
-   (generate-primal-definitions bs xs vs)
-   (generate-tangent-definitions bs xs vs)
-   (generate-bundle-definitions bs xs vs)
+   ;; ditto
+   (reverse (generate-zero-definitions bs xs vs))
+   (reverse (generate-primal-definitions bs xs vs))
+   (reverse (generate-tangent-definitions bs xs vs))
+   (reverse (generate-bundle-definitions bs xs vs))
    (generate-function-definitions bs xs vs v1v2s)
    (list
     "int main(void){"
@@ -8026,11 +8032,18 @@
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
      (bundle (- x1 x2) (- (perturbation x1) (perturbation x2)))))
-  '(lambda ((reverse x))
-    (let (((cons x1 x2) (*j-inverse (reverse x))))
-     (cons (*j (- x1 x2))
-	   (lambda ((sensitivity y))
-	    (cons '() (cons (sensitivity y) (- 0.0 (sensitivity y)))))))))
+  (if *imprecise-inexacts?*
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons (*j (- x1 x2))
+	       (lambda ((sensitivity y))
+		(cons '() (cons (sensitivity y) (- 0.0 (sensitivity y))))))))
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons
+	  (*j (- x1 x2))
+	  (lambda ((sensitivity y))
+	   (cons '() (cons (sensitivity y) (- (real 0) (sensitivity y))))))))))
  (define-primitive-procedure '*
   (binary-real * "*")
   (abstract-binary-real * "*")
@@ -8056,14 +8069,24 @@
      (bundle
       (/ x1 x2)
       (/ (- (* x2 (perturbation x1)) (* x1 (perturbation x2))) (* x2 x2)))))
-  '(lambda ((reverse x))
-    (let (((cons x1 x2) (*j-inverse (reverse x))))
-     (cons
-      (*j (/ x1 x2))
-      (lambda ((sensitivity y))
-       (cons '()
-	     (cons (/ (sensitivity y) x2)
-		   (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
+  (if *imprecise-inexacts?*
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons
+	  (*j (/ x1 x2))
+	  (lambda ((sensitivity y))
+	   (cons '()
+		 (cons (/ (sensitivity y) x2)
+		       (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2)))))))))
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons
+	  (*j (/ x1 x2))
+	  (lambda ((sensitivity y))
+	   (cons
+	    '()
+	    (cons (/ (sensitivity y) x2)
+		  (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2)))))))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
@@ -8115,14 +8138,26 @@
   (unary-real cos "cos")
   (abstract-unary-real cos "cos")
   (lambda (v vs) "cos")
-  '(lambda ((forward x))
-    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
-     (bundle (cos x) (- 0.0 (* (sin x) (perturbation x))))))
-  '(lambda ((reverse x))
-    (let ((x (*j-inverse (reverse x))))
-     (cons (*j (cos x))
-	   (lambda ((sensitivity y))
-	    (cons '() (- 0.0 (* (sin x) (sensitivity y)))))))))
+  (if *imprecise-inexacts?*
+      '(lambda ((forward x))
+	(let ((x (primal (forward x)))
+	      ((perturbation x) (tangent (forward x))))
+	 (bundle (cos x) (- 0.0 (* (sin x) (perturbation x))))))
+      '(lambda ((forward x))
+	(let ((x (primal (forward x)))
+	      ((perturbation x) (tangent (forward x))))
+	 (bundle (cos x) (- (real 0) (* (sin x) (perturbation x)))))))
+  (if *imprecise-inexacts?*
+      '(lambda ((reverse x))
+	(let ((x (*j-inverse (reverse x))))
+	 (cons (*j (cos x))
+	       (lambda ((sensitivity y))
+		(cons '() (- 0.0 (* (sin x) (sensitivity y))))))))
+      '(lambda ((reverse x))
+	(let ((x (*j-inverse (reverse x))))
+	 (cons (*j (cos x))
+	       (lambda ((sensitivity y))
+		(cons '() (- (real 0) (* (sin x) (sensitivity y))))))))))
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (abstract-binary-real atan "atan")
@@ -8133,16 +8168,27 @@
      (bundle (atan x2 x1)
 	     (/ (- (* x1 (perturbation x2)) (* x2 (perturbation x1)))
 		(+ (* x1 x1) (* x2 x2))))))
-  '(lambda ((reverse x))
-    (let (((cons x1 x2) (*j-inverse (reverse x))))
-     (cons (*j (atan x2 x1))
-	   (lambda ((sensitivity y))
-	    (cons '()
-		  (cons (- 0.0
-			   (/ (* x2 (sensitivity y))
-			      (+ (* x1 x1) (* x2 x2))))
-			(/ (* x1 (sensitivity y))
-			   (+ (* x1 x1) (* x2 x2))))))))))
+  (if *imprecise-inexacts?*
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons (*j (atan x2 x1))
+	       (lambda ((sensitivity y))
+		(cons '()
+		      (cons (- 0.0
+			       (/ (* x2 (sensitivity y))
+				  (+ (* x1 x1) (* x2 x2))))
+			    (/ (* x1 (sensitivity y))
+			       (+ (* x1 x1) (* x2 x2)))))))))
+      '(lambda ((reverse x))
+	(let (((cons x1 x2) (*j-inverse (reverse x))))
+	 (cons (*j (atan x2 x1))
+	       (lambda ((sensitivity y))
+		(cons '()
+		      (cons (- (real 0)
+			       (/ (* x2 (sensitivity y))
+				  (+ (* x1 x1) (* x2 x2))))
+			    (/ (* x1 (sensitivity y))
+			       (+ (* x1 x1) (* x2 x2)))))))))))
  (define-primitive-procedure '=
   (binary-real-predicate = "=")
   (abstract-binary-real-predicate = "=")
