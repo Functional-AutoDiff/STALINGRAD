@@ -4425,6 +4425,24 @@
    (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
 	(letrec-expression-bodies-free-variables e)))))
 
+(define (letrec-nested-environment vs e)
+ (list->vector
+  (map (lambda (x)
+	(if (memp variable=? x (letrec-expression-procedure-variables e))
+	    (let ((vs (letrec-restrict-environment vs e)))
+	     (make-abstract-recursive-closure
+	      (letrec-expression-bodies-free-variables e)
+	      vs
+	      (list->vector (letrec-expression-procedure-variables e))
+	      (list->vector (letrec-expression-argument-variables e))
+	      (list->vector (letrec-expression-bodies e))
+	      (positionp
+	       variable=? x (letrec-expression-procedure-variables e))
+	      e
+	      vs))
+	    (vector-ref vs (positionp variable=? x (free-variables e)))))
+       (free-variables (letrec-expression-body e)))))
+
 (define (abstract-environment-subset? vs1 vs2)
  (every-vector abstract-value-subset? vs1 vs2))
 
@@ -5206,24 +5224,7 @@
     bs))
   ((letrec-expression? e)
    (abstract-eval1
-    (letrec-expression-body e)
-    (list->vector
-     (map (lambda (x)
-	   (if (memp variable=? x (letrec-expression-procedure-variables e))
-	       (let ((vs (letrec-restrict-environment vs e)))
-		(make-abstract-recursive-closure
-		 (letrec-expression-bodies-free-variables e)
-		 vs
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-argument-variables e))
-		 (list->vector (letrec-expression-bodies e))
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e))
-		 e
-		 vs))
-	       (vector-ref vs (positionp variable=? x (free-variables e)))))
-	  (free-variables (letrec-expression-body e))))
-    bs))
+    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
   ((cons-expression? e)
    (make-abstract-tagged-pair
     (cons-expression-tags e)
@@ -5316,24 +5317,7 @@
      bs)))
   ((letrec-expression? e)
    (abstract-eval1-prime
-    (letrec-expression-body e)
-    (list->vector
-     (map (lambda (x)
-	   (if (memp variable=? x (letrec-expression-procedure-variables e))
-	       (let ((vs (letrec-restrict-environment vs e)))
-		(make-abstract-recursive-closure
-		 (letrec-expression-bodies-free-variables e)
-		 vs
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-argument-variables e))
-		 (list->vector (letrec-expression-bodies e))
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e))
-		 e
-		 vs))
-	       (vector-ref vs (positionp variable=? x (free-variables e)))))
-	  (free-variables (letrec-expression-body e))))
-    bs))
+    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
   ((cons-expression? e)
    (abstract-analysis-union
     (abstract-eval1-prime (cons-expression-car e)
@@ -6516,7 +6500,7 @@
 			      (not (cdr (assq x1 (cdr (assq x2 cache)))))))
 			 l))
 		 l)))
-	(unless x (fuck-up))
+	(unless x (internal-error))
 	(loop (removeq x l) (cons x c)))))))
 
 (define (all-nested-abstract-values bs)
@@ -6751,75 +6735,6 @@
 		#\newline))))))
   (all-primitives 'if-procedure bs)))
 
-(define (generate-if-definitions bs vs v1v2s)
- (map
-  (lambda (v)
-   (unless (= (length v) 1) (internal-error))
-   (let* ((v1 (abstract-vlad-car-u (first v) '()))
-	  (v2 (abstract-vlad-cdr-u (first v) '())))
-    (unless (= (length v2) 1) (internal-error))
-    (let* ((v3 (abstract-vlad-car-u (first v2) '()))
-	   (v4 (abstract-vlad-cdr-u (first v2) '())))
-     (unless (= (length v3) 1) (internal-error))
-     (unless (= (length v4) 1) (internal-error))
-     (when (and (boolean-value? v1)
-		(not
-		 (abstract-value=?
-		  (abstract-apply
-		   v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
-		  (abstract-apply
-		   v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
-      (unimplemented "balancing"))
-     (let ((v5 (if (or (boolean-value? v1)
-		       (begin (unless (= (length v1) 1) (internal-error))
-			      (first v1)))
-		   (abstract-apply
-		    v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
-		   (abstract-apply
-		    v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
-      (if (void? v5)
-	  '()
-	  (list
-	   "static INLINE "
-	   (generate-specifier v5 vs)
-	   " "
-	   (generate-builtin-name "if_procedure" v vs)
-	   "("
-	   (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	   "){return "
-	   (if (boolean-value? v1)
-	       (list
-		"x.a?"
-		(generate-function-name
-		 v3 (abstract-tagged-null (abstract-closure-tags v3)) v1v2s)
-		"("
-		(if (void? v3) '() "x.d.a")
-		")"
-		":"
-		(generate-function-name
-		 v4 (abstract-tagged-null (abstract-closure-tags v4)) v1v2s)
-		"("
-		(if (void? v4) '() "x.d.d")
-		")")
-	       (if (first v1)
-		   (list (generate-function-name
-			  v3
-			  (abstract-tagged-null (abstract-closure-tags v3))
-			  v1v2s)
-			 "("
-			 (if (void? v3) '() "x.d.a")
-			 ")")
-		   (list (generate-function-name
-			  v4
-			  (abstract-tagged-null (abstract-closure-tags v4))
-			  v1v2s)
-			 "("
-			 (if (void? v4) '() "x.d.d")
-			 ")")))
-	   ";}"
-	   #\newline))))))
-  (all-primitives 'if-procedure bs)))
-
 (define (all-functions bs)
  (reduce
   (lambda (v1v2sa v2v2sb)
@@ -6928,7 +6843,7 @@
     (if (void? v3)
 	'()
 	(list "static "
-	      (if (nonrecursive-closure? (first v1)) "inline " '())
+	      (if (nonrecursive-closure? (first v1)) "INLINE " '())
 	      (generate-specifier v3 vs)
 	      " "
 	      (generate-function-name v1 v2 v1v2s)
@@ -6944,6 +6859,307 @@
 	      ");"
 	      #\newline))))
   v1v2s))
+
+(define (calls-if-procedure? e v2 vs bs)
+ (or
+  (and (application? e)
+       (or (and (let ((v1 (abstract-eval1
+			   (application-callee e)
+			   (restrict-environment vs e application-callee)
+			   bs)))
+		 (and
+		  (= (length v1) 1)
+		  (primitive-procedure? (first v1))
+		  (eq? (primitive-procedure-name (first v1)) 'if-procedure)))
+		(abstract-value=?
+		 (abstract-eval1
+		  (application-argument e)
+		  (restrict-environment vs e application-argument)
+		  bs)
+		 v2))
+	   (calls-if-procedure?
+	    (application-callee e)
+	    v2
+	    (restrict-environment vs e application-callee)
+	    bs)
+	   (calls-if-procedure?
+	    (application-argument e)
+	    v2
+	    (restrict-environment vs e application-argument)
+	    bs)))
+  (and (letrec-expression? e)
+       (calls-if-procedure? (letrec-expression-body e)
+			    v2
+			    (letrec-nested-environment vs e)
+			    bs))
+  (and (cons-expression? e)
+       (or (calls-if-procedure?
+	    (cons-expression-car e)
+	    v2
+	    (restrict-environment vs e cons-expression-car)
+	    bs)
+	   (calls-if-procedure?
+	    (cons-expression-cdr e)
+	    v2
+	    (restrict-environment vs e cons-expression-cdr)
+	    bs)))))
+
+(define (calls? e v1 v2 vs bs)
+ (or (and (application? e)
+	  (or (and (abstract-value=?
+		    (abstract-eval1
+		     (application-callee e)
+		     (restrict-environment vs e application-callee)
+		     bs)
+		    v1)
+		   (abstract-value=?
+		    (abstract-eval1
+		     (application-argument e)
+		     (restrict-environment vs e application-argument)
+		     bs)
+		    v2))
+	      (calls? (application-callee e)
+		      v1
+		      v2
+		      (restrict-environment vs e application-callee)
+		      bs)
+	      (calls? (application-argument e)
+		      v1
+		      v2
+		      (restrict-environment vs e application-argument)
+		      bs)))
+     (and (letrec-expression? e)
+	  (calls? (letrec-expression-body e)
+		  v1
+		  v2
+		  (letrec-nested-environment vs e)
+		  bs))
+     (and (cons-expression? e)
+	  (or (calls? (cons-expression-car e)
+		      v1
+		      v2
+		      (restrict-environment vs e cons-expression-car)
+		      bs)
+	      (calls? (cons-expression-cdr e)
+		      v1
+		      v2
+		      (restrict-environment vs e cons-expression-cdr)
+		      bs)))))
+
+(define (generate-if-and-function-definitions bs xs vs v1v2s)
+ (map
+  (lambda (thing)
+   (case (first thing)
+    ((if)
+     (let ((v (second thing)))
+      (unless (= (length v) 1) (internal-error))
+      (let* ((v1 (abstract-vlad-car-u (first v) '()))
+	     (v2 (abstract-vlad-cdr-u (first v) '())))
+       (unless (= (length v2) 1) (internal-error))
+       (let* ((v3 (abstract-vlad-car-u (first v2) '()))
+	      (v4 (abstract-vlad-cdr-u (first v2) '())))
+	(unless (= (length v3) 1) (internal-error))
+	(unless (= (length v4) 1) (internal-error))
+	(when (and
+	       (boolean-value? v1)
+	       (not
+		(abstract-value=?
+		 (abstract-apply
+		  v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
+		 (abstract-apply
+		  v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
+	 (unimplemented "balancing"))
+	(let ((v5
+	       (if (or (boolean-value? v1)
+		       (begin (unless (= (length v1) 1) (internal-error))
+			      (first v1)))
+		   (abstract-apply
+		    v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
+		   (abstract-apply
+		    v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
+	 (if (void? v5)
+	     '()
+	     (list
+	      "static INLINE "
+	      (generate-specifier v5 vs)
+	      " "
+	      (generate-builtin-name "if_procedure" v vs)
+	      "("
+	      (if (void? v) "void" (list (generate-specifier v vs) " x"))
+	      "){return "
+	      (if (boolean-value? v1)
+		  (list
+		   "x.a?"
+		   (generate-function-name
+		    v3 (abstract-tagged-null (abstract-closure-tags v3)) v1v2s)
+		   "("
+		   (if (void? v3) '() "x.d.a")
+		   ")"
+		   ":"
+		   (generate-function-name
+		    v4 (abstract-tagged-null (abstract-closure-tags v4)) v1v2s)
+		   "("
+		   (if (void? v4) '() "x.d.d")
+		   ")")
+		  (if (first v1)
+		      (list (generate-function-name
+			     v3
+			     (abstract-tagged-null (abstract-closure-tags v3))
+			     v1v2s)
+			    "("
+			    (if (void? v3) '() "x.d.a")
+			    ")")
+		      (list (generate-function-name
+			     v4
+			     (abstract-tagged-null (abstract-closure-tags v4))
+			     v1v2s)
+			    "("
+			    (if (void? v4) '() "x.d.d")
+			    ")")))
+	      ";}"
+	      #\newline)))))))
+    ((function)
+     (let* ((v1v2 (second thing))
+	    (v1 (first v1v2))
+	    (v2 (second v1v2))
+	    (v3 (abstract-apply v1 v2 bs)))
+      (unless (= (length v1) 1) (internal-error))
+      (if (void? v3)
+	  '()
+	  (list
+	   "static "
+	   (if (nonrecursive-closure? (first v1)) "INLINE " '())
+	   (generate-specifier v3 vs)
+	   " "
+	   (generate-function-name v1 v2 v1v2s)
+	   "("
+	   (commas-between-void
+	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+		  (if (void? v2)
+		      #f
+		      (list (generate-specifier v2 vs)
+			    " "
+			    (generate-variable-name
+			     (abstract-closure-variable v1) xs)))))
+	   "){"
+	   (generate-letrec-bindings
+	    (abstract-closure-body v1)
+	    (abstract-apply-closure (lambda (e vs) vs) (first v1) v2)
+	    (closure-variables (first v1))
+	    (cond ((nonrecursive-closure? (first v1)) '())
+		  ((recursive-closure? (first v1))
+		   (vector->list
+		    (recursive-closure-procedure-variables (first v1))))
+		  (else (internal-error)))
+	    bs
+	    xs
+	    vs
+	    v1v2s)
+	   "return "
+	   (generate-expression
+	    (abstract-closure-body v1)
+	    (abstract-apply-closure (lambda (e vs) vs) (first v1) v2)
+	    (closure-variables (first v1))
+	    (cond ((nonrecursive-closure? (first v1)) '())
+		  ((recursive-closure? (first v1))
+		   (vector->list
+		    (recursive-closure-procedure-variables (first v1))))
+		  (else (internal-error)))
+	    bs
+	    xs
+	    vs
+	    v1v2s)
+	   ";}"
+	   #\newline))))
+    (else (internal-error))))
+  ;; This topological sort is needed so that all INLINE definitions come before
+  ;; their uses as required by gcc.
+  (cached-topological-sort
+   (lambda (thing1 thing2)
+    ;; debugging
+    (when #f
+     (when (and
+	    (eq? (first thing1) 'function)
+	    (eq? (first thing2) 'if)
+	    (or
+	     (abstract-value=?
+	      (first (second thing1))
+	      (abstract-vlad-car-u
+	       (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))
+	     (abstract-value=?
+	      (first (second thing1))
+	      (abstract-vlad-cdr-u
+	       (first
+		(abstract-vlad-cdr-u (first (second thing2)) '())) '()))))
+      (display (generate-function-name
+		(first (second thing1)) (second (second thing1)) v1v2s))
+      (display " ")
+      (display (generate-builtin-name "if_procedure" (second thing2) vs))
+      (newline))
+     (when (and (eq? (first thing1) 'if)
+		(eq? (first thing2) 'function)
+		(calls-if-procedure?
+		 (closure-body (first (first (second thing2))))
+		 (second thing1)
+		 (abstract-apply-closure (lambda (e vs) vs)
+					 (first (first (second thing2)))
+					 (second (second thing2)))
+		 bs))
+      (display (generate-builtin-name "if_procedure" (second thing1) vs))
+      (display " ")
+      (display (generate-function-name
+		(first (second thing2)) (second (second thing2)) v1v2s))
+      (newline))
+     (when (and (eq? (first thing1) 'function)
+		(eq? (first thing2) 'function)
+		(nonrecursive-closure? (first (first (second thing1))))
+		(calls?
+		 (closure-body (first (first (second thing2))))
+		 (first (second thing1))
+		 (second (second thing1))
+		 (abstract-apply-closure (lambda (e vs) vs)
+					 (first (first (second thing2)))
+					 (second (second thing2)))
+		 bs))
+      (display (generate-function-name
+		(first (second thing1)) (second (second thing1)) v1v2s))
+      (display " ")
+      (display (generate-function-name
+		(first (second thing2)) (second (second thing2)) v1v2s))
+      (newline)))
+    (or
+     (and
+      (eq? (first thing1) 'function)
+      (eq? (first thing2) 'if)
+      (or (abstract-value=?
+	   (first (second thing1))
+	   (abstract-vlad-car-u
+	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))
+	  (abstract-value=?
+	   (first (second thing1))
+	   (abstract-vlad-cdr-u
+	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))))
+     (and (eq? (first thing1) 'if)
+	  (eq? (first thing2) 'function)
+	  (calls-if-procedure?
+	   (closure-body (first (first (second thing2))))
+	   (second thing1)
+	   (abstract-apply-closure (lambda (e vs) vs)
+				   (first (first (second thing2)))
+				   (second (second thing2)))
+	   bs))
+     (and (eq? (first thing1) 'function)
+	  (eq? (first thing2) 'function)
+	  (nonrecursive-closure? (first (first (second thing1))))
+	  (calls? (closure-body (first (first (second thing2))))
+		  (first (second thing1))
+		  (second (second thing1))
+		  (abstract-apply-closure (lambda (e vs) vs)
+					  (first (first (second thing2)))
+					  (second (second thing2)))
+		  bs))))
+   (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure bs))
+	   (map (lambda (v1v2) (list 'function v1v2)) v1v2s)))))
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
@@ -7041,22 +7257,7 @@
    ((letrec-expression? e)
     (generate-expression
      (letrec-expression-body e)
-     (list->vector
-      (map (lambda (x)
-	    (if (memp variable=? x (letrec-expression-procedure-variables e))
-		(let ((vs (letrec-restrict-environment vs e)))
-		 (make-abstract-recursive-closure
-		  (letrec-expression-bodies-free-variables e)
-		  vs
-		  (list->vector (letrec-expression-procedure-variables e))
-		  (list->vector (letrec-expression-argument-variables e))
-		  (list->vector (letrec-expression-bodies e))
-		  (positionp
-		   variable=? x (letrec-expression-procedure-variables e))
-		  e
-		  vs))
-		(vector-ref vs (positionp variable=? x (free-variables e)))))
-	   (free-variables (letrec-expression-body e))))
+     (letrec-nested-environment vs e)
      xs
      xs2
      bs
@@ -7190,22 +7391,7 @@
       (letrec-expression-procedure-variables e))
      (generate-letrec-bindings
       (letrec-expression-body e)
-      (list->vector
-       (map (lambda (x)
-	     (if (memp variable=? x (letrec-expression-procedure-variables e))
-		 (let ((vs (letrec-restrict-environment vs e)))
-		  (make-abstract-recursive-closure
-		   (letrec-expression-bodies-free-variables e)
-		   vs
-		   (list->vector (letrec-expression-procedure-variables e))
-		   (list->vector (letrec-expression-argument-variables e))
-		   (list->vector (letrec-expression-bodies e))
-		   (positionp
-		    variable=? x (letrec-expression-procedure-variables e))
-		   e
-		   vs))
-		 (vector-ref vs (positionp variable=? x (free-variables e)))))
-	    (free-variables (letrec-expression-body e))))
+      (letrec-nested-environment vs e)
       xs
       xs2
       bs
@@ -7245,61 +7431,6 @@
 		vs1
 		v1v2s)))))
    (else (internal-error)))))
-
-(define (generate-function-definitions bs xs vs v1v2s)
- (map
-  (lambda (v1v2)
-   (let* ((v1 (first v1v2))
-	  (v2 (second v1v2))
-	  (v3 (abstract-apply v1 v2 bs)))
-    (unless (= (length v1) 1) (internal-error))
-    (if (void? v3)
-	'()
-	(list "static "
-	      (if (nonrecursive-closure? (first v1)) "inline " '())
-	      (generate-specifier v3 vs)
-	      " "
-	      (generate-function-name v1 v2 v1v2s)
-	      "("
-	      (commas-between-void
-	       (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		     (if (void? v2)
-			 #f
-			 (list (generate-specifier v2 vs)
-			       " "
-			       (generate-variable-name
-				(abstract-closure-variable v1) xs)))))
-	      "){"
-	      (generate-letrec-bindings
-	       (abstract-closure-body v1)
-	       (abstract-apply-closure (lambda (e vs) vs) (first v1) v2)
-	       (closure-variables (first v1))
-	       (cond ((nonrecursive-closure? (first v1)) '())
-		     ((recursive-closure? (first v1))
-		      (vector->list
-		       (recursive-closure-procedure-variables (first v1))))
-		     (else (internal-error)))
-	       bs
-	       xs
-	       vs
-	       v1v2s)
-	      "return "
-	      (generate-expression
-	       (abstract-closure-body v1)
-	       (abstract-apply-closure (lambda (e vs) vs) (first v1) v2)
-	       (closure-variables (first v1))
-	       (cond ((nonrecursive-closure? (first v1)) '())
-		     ((recursive-closure? (first v1))
-		      (vector->list
-		       (recursive-closure-procedure-variables (first v1))))
-		     (else (internal-error)))
-	       bs
-	       xs
-	       vs
-	       v1v2s)
-	      ";}"
-	      #\newline))))
-  v1v2s))
 
 (define (all-ad s bs)
  ;; This topological sort is needed so that all INLINE definitions come before
@@ -7676,7 +7807,6 @@
     'positive? "int" "positive" "~a>0.0" bs vs)
    (generate-real-primitive-definitions
     'negative? "int" "negative" "~a<0.0" bs vs)
-   (generate-if-definitions bs vs v1v2s)
    "static INLINE double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
    #\newline
    (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
@@ -7686,7 +7816,7 @@
    (generate-primal-definitions bs xs vs)
    (generate-tangent-definitions bs xs vs)
    (generate-bundle-definitions bs xs vs)
-   (generate-function-definitions bs xs vs v1v2s)
+   (generate-if-and-function-definitions bs xs vs v1v2s)
    (list
     "int main(void){"
     (let ((vs
