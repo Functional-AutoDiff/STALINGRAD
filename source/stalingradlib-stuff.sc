@@ -7302,87 +7302,104 @@
   v1v2s))
 
 (define (all-ad s bs)
- (reduce
-  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-  (map all-abstract-subvalues
-       (reduce
-	(lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-	(map
-	 (lambda (b)
-	  (let ((e (expression-binding-expression b)))
-	   (if (application? e)
-	       (remove-duplicatesp
-		abstract-value=?
-		(removeq
-		 #f
-		 (map (lambda (b)
-		       (let ((v1 (abstract-eval1
-				  (application-callee e)
-				  (restrict-environment
-				   (environment-binding-values b)
-				   e
-				   application-callee)
-				  bs)))
-			(if (and (= (length v1) 1)
-				 (primitive-procedure? (first v1))
-				 (eq? (primitive-procedure-name (first v1)) s))
-			    (abstract-eval1 (application-argument e)
-					    (restrict-environment
-					     (environment-binding-values b)
-					     e
-					     application-argument)
-					    bs)
-			    #f)))
-		      (expression-binding-flow b))))
-	       '())))
-	 bs)
-	'()))
-  '()))
-
-(define (all-bundles bs)
- (remove-if
-  void?
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (cached-topological-sort
+  component?
   (reduce
    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
    (map
-    (lambda (v)
-     (unless (= (length v) 1) (internal-error))
-     (all-abstract-subvalues-for-bundle
-      (abstract-vlad-car-u (first v) '())
-      (abstract-vlad-cdr-u (first v) '())))
+    all-abstract-subvalues
     (reduce
      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-     (map (lambda (b)
-	   (let ((e (expression-binding-expression b)))
-	    (if (application? e)
-		(remove-duplicatesp
-		 abstract-value=?
-		 (removeq
-		  #f
-		  (map (lambda (b)
-			(let ((v1 (abstract-eval1
-				   (application-callee e)
-				   (restrict-environment
-				    (environment-binding-values b)
-				    e
-				    application-callee)
-				   bs)))
-			 (if (and (= (length v1) 1)
-				  (primitive-procedure? (first v1))
-				  (eq? (primitive-procedure-name (first v1))
-				       'bundle))
-			     (abstract-eval1 (application-argument e)
-					     (restrict-environment
-					      (environment-binding-values b)
-					      e
-					      application-argument)
-					     bs)
-			     #f)))
-		       (expression-binding-flow b))))
-		'())))
-	  bs)
+     (map
+      (lambda (b)
+       (let ((e (expression-binding-expression b)))
+	(if (application? e)
+	    (remove-duplicatesp
+	     abstract-value=?
+	     (removeq
+	      #f
+	      (map (lambda (b)
+		    (let ((v1 (abstract-eval1
+			       (application-callee e)
+			       (restrict-environment
+				(environment-binding-values b)
+				e
+				application-callee)
+			       bs)))
+		     (if (and (= (length v1) 1)
+			      (primitive-procedure? (first v1))
+			      (eq? (primitive-procedure-name (first v1)) s))
+			 (abstract-eval1 (application-argument e)
+					 (restrict-environment
+					  (environment-binding-values b)
+					  e
+					  application-argument)
+					 bs)
+			 #f)))
+		   (expression-binding-flow b))))
+	    '())))
+      bs)
      '()))
    '())))
+
+(define (all-bundles bs)
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (cached-topological-sort
+  (lambda (v1 v2)
+   (component? (widen-abstract-value
+		(abstract-bundle (abstract-vlad-car-u (first v1) '())
+				 (abstract-vlad-cdr-u (first v1) '()))
+		bs)
+	       (widen-abstract-value
+		(abstract-bundle (abstract-vlad-car-u (first v2) '())
+				 (abstract-vlad-cdr-u (first v2) '()))
+		bs)))
+  (remove-if
+   void?
+   (reduce
+    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+    (map
+     (lambda (v)
+      (unless (= (length v) 1) (internal-error))
+      (all-abstract-subvalues-for-bundle
+       (abstract-vlad-car-u (first v) '())
+       (abstract-vlad-cdr-u (first v) '())))
+     (reduce
+      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+      (map (lambda (b)
+	    (let ((e (expression-binding-expression b)))
+	     (if (application? e)
+		 (remove-duplicatesp
+		  abstract-value=?
+		  (removeq
+		   #f
+		   (map (lambda (b)
+			 (let ((v1 (abstract-eval1
+				    (application-callee e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-callee)
+				    bs)))
+			  (if (and (= (length v1) 1)
+				   (primitive-procedure? (first v1))
+				   (eq? (primitive-procedure-name (first v1))
+					'bundle))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument)
+					      bs)
+			      #f)))
+			(expression-binding-flow b))))
+		 '())))
+	   bs)
+      '()))
+    '()))))
 
 (define (generate-zero-declarations bs vs)
  (map (lambda (v)
@@ -7403,17 +7420,18 @@
  (map (lambda (v)
        (if (or (void? v) (boolean-value? v) (abstract-real-value? v))
 	   '()
-	   (let ((v1 (widen-abstract-value (f v) bs)))
-	    (if (void? v1)
-		'()
-		(list "static INLINE "
-		      (generate-specifier v1 vs)
-		      " "
-		      (generate-builtin-name s1 v vs)
-		      "("
-		      (generate-specifier v vs)
-		      " x);"
-		      #\newline)))))
+	   (begin (unless (= (length v) 1) (internal-error))
+		  (let ((v1 (widen-abstract-value (f v) bs)))
+		   (if (void? v1)
+		       '()
+		       (list "static INLINE "
+			     (generate-specifier v1 vs)
+			     " "
+			     (generate-builtin-name s1 v vs)
+			     "("
+			     (generate-specifier v vs)
+			     " x);"
+			     #\newline))))))
       (all-ad s bs)))
 
 (define (generate-bundle-declarations bs vs)
@@ -7640,9 +7658,7 @@
    (generate-bundle-declarations bs vs)
    (generate-function-declarations bs xs vs v1v2s)
    "int main(void);" #\newline
-   ;; This call to reverse is a crude attempt to force all inline references to
-   ;; be backward to comply with gcc restrictions.
-   (reverse (generate-constructor-definitions xs vs))
+   (generate-constructor-definitions xs vs)
    (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
    (generate-real*real-primitive-definitions '- "double" "minus" "~a-~a" bs vs)
    (generate-real*real-primitive-definitions '* "double" "times" "~a*~a" bs vs)
@@ -7666,11 +7682,10 @@
    (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
    (generate-real-primitive-definitions
     'write "double" "write" "write_real(~a)" bs vs)
-   ;; ditto
-   (reverse (generate-zero-definitions bs xs vs))
-   (reverse (generate-primal-definitions bs xs vs))
-   (reverse (generate-tangent-definitions bs xs vs))
-   (reverse (generate-bundle-definitions bs xs vs))
+   (generate-zero-definitions bs xs vs)
+   (generate-primal-definitions bs xs vs)
+   (generate-tangent-definitions bs xs vs)
+   (generate-bundle-definitions bs xs vs)
    (generate-function-definitions bs xs vs v1v2s)
    (list
     "int main(void){"
