@@ -74,6 +74,7 @@
 		  ("flow-analysis" flow-analysis?)
 		  ("flow-analysis-result" flow-analysis-result?)
 		  ("compile" compile?))
+		 (at-most-one ("ebs" ebs?))
 		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("show-access-indices" show-access-indices?))
@@ -260,8 +261,8 @@
 		;;             for all but the last top-level expression. And
 		;;             it fails to delete those files if there is no
 		;;             top-level expression.
-		;; needs work: -ebs
-		(write-ebs-to-file (list (first result) bs) pathname)
+		(when ebs?
+		 (write-ebs-to-file (list (first result) bs) pathname))
 		(generate-file
 		 (generate (first result) bs (second result)) pathname)
 		;; needs work: -c -k -cc -copt

@@ -6501,67 +6501,30 @@
      (aggregate-value-values (first v2))
      '()))
 
-(define (cached-topological-sort string p l)
- (display "entering") (newline)		;debugging
+(define (cached-topological-sort p l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
- (let ((graph
-	(time
-	 (string-append "~a graph " string "~%")
-	 (lambda ()
-	  (reduce append
-		  (map (lambda (x1)
-			(reduce append
-				(map (lambda (x2)
-				      (if (and (not (eq? x1 x2)) (p x1 x2))
-					  (list (list x1 x2))
-					  '()))
-				     l)
-				'()))
-		       l)
-		  '())))))
-  (time
-   (string-append "~a sort " string "~%")
-   (lambda ()
-    (let loop ((l l) (c '()) (graph graph))
-     (if (null? l)
-	 (reverse c)
-	 (let ((xs (set-differenceq l (map second graph))))
-	  (when (null? xs) (internal-error))
-	  (loop (set-differenceq l xs)
-		(append xs c)
-		(remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))))
-
-(define (new-cached-topological-sort string same? before l)
- ;; A list of pairs (x1 x2) where x1 must come before x2.
- (define (hash x1)
-  (let ((x (find-if (lambda (x) (same? x x1)) l)))
-   (unless x (internal-error "debugging"))
-   x))
- (let ((graph
-	(time
-	 (string-append "~a graph " string "~%")
-	 (lambda ()
-	  (reduce
-	   append
-	   (map
-	    (lambda (x2) (map (lambda (x1) (list (hash x1) x2)) (before x2)))
-	    l)
-	   '())))))
-  (time
-   (string-append "~a sort " string "~%")
-   (lambda ()
-    (let loop ((l l) (c '()) (graph graph))
-     (if (null? l)
-	 (reverse c)
-	 (let ((xs (set-differenceq l (map second graph))))
-	  (when (null? xs) (internal-error))
-	  (loop (set-differenceq l xs)
-		(append xs c)
-		(remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))))
+ (let ((graph (reduce append
+		      (map (lambda (x1)
+			    (reduce append
+				    (map (lambda (x2)
+					  (if (and (not (eq? x1 x2)) (p x1 x2))
+					      (list (list x1 x2))
+					      '()))
+					 l)
+				    '()))
+			   l)
+		      '())))
+  (let loop ((l l) (c '()) (graph graph))
+   (if (null? l)
+       (reverse c)
+       (let ((xs (set-differenceq l (map second graph))))
+	(when (null? xs) (internal-error))
+	(loop (set-differenceq l xs)
+	      (append xs c)
+	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
 
 (define (all-nested-abstract-values bs)
  (cached-topological-sort
-  "all-nested-abstract-values"
   component?
   (unionp abstract-value=?
 	  (all-bundles bs)
@@ -7132,7 +7095,6 @@
   ;; This topological sort is needed so that all INLINE definitions come before
   ;; their uses as required by gcc.
   (cached-topological-sort
-   "generate-if-and-function-definitions"
    (lambda (thing1 thing2)
     (or
      (and
@@ -7443,7 +7405,6 @@
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
-  "all-ad"
   component?
   (reduce
    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
@@ -7487,7 +7448,6 @@
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
-  "all-bundles"
   (lambda (v1 v2)
    (component? (widen-abstract-value
 		(abstract-bundle (abstract-vlad-car-u (first v1) '())
