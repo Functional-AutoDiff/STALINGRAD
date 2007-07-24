@@ -2312,22 +2312,7 @@
 	  (eq? v v-perturbation))
      (and (nonrecursive-closure? v)
 	  (nonrecursive-closure? v-perturbation)
-	  (= (vector-length (closure-values v))
-	     (vector-length (closure-values v-perturbation)))
-	  ;; This assumes that the corresponding closure variables in v and
-	  ;; v-perturbation are in the same order. See the note in
-	  ;; abstract-environment-subset?.
-	  (let ((e (new-lambda-expression
-		    (closure-variable v) (closure-body v)))
-		(e-perturbation
-		 (new-lambda-expression (closure-variable v-perturbation)
-					(closure-body v-perturbation))))
-	   (alpha-equivalent?
-	    (lambda-expression-body e)
-	    (lambda-expression-body e-perturbation)
-	    (cons (lambda-expression-variable e) (free-variables e))
-	    (cons (lambda-expression-variable e-perturbation)
-		  (free-variables e-perturbation))))
+	  (nonrecursive-closure-match? v v-perturbation)
 	  ;; This assumes that the corresponding closure variables in v and
 	  ;; v-perturbation are in the same order. See the note in
 	  ;; abstract-environment-subset?.
@@ -2335,36 +2320,7 @@
 	   legitimate? (closure-values v) (closure-values v-perturbation)))
      (and (recursive-closure? v)
 	  (recursive-closure? v-perturbation)
-	  (= (vector-length (recursive-closure-bodies v))
-	     (vector-length (recursive-closure-bodies v-perturbation)))
-	  (= (recursive-closure-index v)
-	     (recursive-closure-index v-perturbation))
-	  (= (vector-length (closure-values v))
-	     (vector-length (closure-values v-perturbation)))
-	  ;; This assumes that the corresponding closure variables in v and
-	  ;; v-perturbation are in the same order. See the note in
-	  ;; abstract-environment-subset?.
-	  (every-vector
-	   (lambda (x1 x2 e1 e2)
-	    (let ((e (new-lambda-expression x1 e1))
-		  (e-perturbation (new-lambda-expression x2 e2)))
-	     (alpha-equivalent?
-	      (lambda-expression-body e)
-	      (lambda-expression-body e-perturbation)
-	      (cons
-	       (lambda-expression-variable e)
-	       (append
-		(vector->list (recursive-closure-procedure-variables v))
-		(closure-variables v)))
-	      (cons (lambda-expression-variable e-perturbation)
-		    (append
-		     (vector->list
-		      (recursive-closure-procedure-variables v-perturbation))
-		     (closure-variables v-perturbation))))))
-	   (recursive-closure-argument-variables v)
-	   (recursive-closure-argument-variables v-perturbation)
-	   (recursive-closure-bodies v)
-	   (recursive-closure-bodies v-perturbation))
+	  (recursive-closure-match? v v-perturbation)
 	  ;; This assumes that the corresponding closure variables in v and
 	  ;; v-perturbation are in the same order. See the note in
 	  ;; abstract-environment-subset?.
@@ -2372,10 +2328,8 @@
 	   legitimate? (closure-values v) (closure-values v-perturbation)))
      (and (bundle? v)
 	  (bundle? v-perturbation)
-	  (legitimate? (bundle-primal v)
-		       (bundle-primal v-perturbation))
-	  (legitimate? (bundle-tangent v)
-		       (bundle-tangent v-perturbation)))
+	  (legitimate? (bundle-primal v) (bundle-primal v-perturbation))
+	  (legitimate? (bundle-tangent v) (bundle-tangent v-perturbation)))
      (and (reverse-tagged-value? v)
 	  (reverse-tagged-value? v-perturbation)
 	  (legitimate? (reverse-tagged-value-primal v)
@@ -2385,8 +2339,7 @@
 	  (tagged-pair? v-perturbation)
 	  (equal-tags? (tagged-pair-tags v) (tagged-pair-tags v-perturbation))
 	  (legitimate? (tagged-pair-car v) (tagged-pair-car v-perturbation))
-	  (legitimate? (tagged-pair-cdr v)
-		       (tagged-pair-cdr v-perturbation)))))
+	  (legitimate? (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation)))))
 
 (define (bundle-internal v v-perturbation)
  (cond
@@ -3807,6 +3760,30 @@
 			   (tagged-pair-cdr v))))
        (else (internal-error))))
 
+(define (nonrecursive-closure-match? v1 v2)
+ (if (eq? *expression-equality* 'alpha)
+     (unimplemented "Alpha equivalence")
+     (and (variable=? (closure-variable v1) (closure-variable v2))
+	  (expression=? (closure-body v1) (closure-body v2)))))
+
+(define (recursive-closure-match? v1 v2)
+ (if (eq? *expression-equality* 'alpha)
+     (unimplemented "Alpha equivalence")
+     (and (= (recursive-closure-index v1) (recursive-closure-index v2))
+	  (= (vector-length (recursive-closure-procedure-variables v1))
+	     (vector-length (recursive-closure-procedure-variables v2)))
+	  (= (vector-length (recursive-closure-argument-variables v1))
+	     (vector-length (recursive-closure-argument-variables v2)))
+	  (every-vector variable=?
+			(recursive-closure-procedure-variables v1)
+			(recursive-closure-procedure-variables v2))
+	  (every-vector variable=?
+			(recursive-closure-argument-variables v1)
+			(recursive-closure-argument-variables v2))
+	  (every-vector expression=?
+			(recursive-closure-bodies v1)
+			(recursive-closure-bodies v2)))))
+
 (define (abstract-value-subset? v1 v2)
  (or
   (abstract-top? v2)
@@ -3817,49 +3794,22 @@
        (or (eq? v1 v2) (eq? v2 'boolean)))
   (and (abstract-real? v1)
        (abstract-real? v2)
-       ;; This was = but then it equates exact values with inexact values
-       ;; and this breaks -imprecise-inexacts.
+       ;; This was = but then it equates exact values with inexact values and
+       ;; this breaks -imprecise-inexacts.
        (or (equal? v1 v2) (eq? v2 'real)))
   (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
   (and (nonrecursive-closure? v1)
        (nonrecursive-closure? v2)
-       (= (vector-length (closure-values v1))
-	  (vector-length (closure-values v2)))
-       (alpha-equivalent? (closure-body v1)
-			  (closure-body v2)
-			  (cons (closure-variable v1) (closure-variables v1))
-			  (cons (closure-variable v2) (closure-variables v2)))
-       (abstract-environment-subset?
-	(closure-values v1) (closure-values v2)))
+       (nonrecursive-closure-match? v1 v2)
+       (abstract-environment-subset? (closure-values v1) (closure-values v2)))
   (and (recursive-closure? v1)
        (recursive-closure? v2)
-       (= (vector-length (recursive-closure-bodies v1))
-	  (vector-length (recursive-closure-bodies v2)))
-       (= (recursive-closure-index v1) (recursive-closure-index v2))
-       (= (vector-length (closure-values v1))
-	  (vector-length (closure-values v2)))
-       (every-vector
-	(lambda (x1 x2 e1 e2)
-	 (alpha-equivalent?
-	  e1
-	  e2
-	  (cons x1
-		(append
-		 (vector->list (recursive-closure-procedure-variables v1))
-		 (closure-variables v1)))
-	  (cons x2
-		(append
-		 (vector->list (recursive-closure-procedure-variables v2))
-		 (closure-variables v2)))))
-	(recursive-closure-argument-variables v1)
-	(recursive-closure-argument-variables v2)
-	(recursive-closure-bodies v1)
-	(recursive-closure-bodies v2))
-       (abstract-environment-subset?
-	(closure-values v1) (closure-values v2)))
+       (recursive-closure-match? v1 v2)
+       (abstract-environment-subset? (closure-values v1) (closure-values v2)))
   (and (bundle? v1)
        (bundle? v2)
-       (abstract-value-subset? (bundle-primal v1) (bundle-primal v2)))
+       (abstract-value-subset? (bundle-primal v1) (bundle-primal v2))
+       (abstract-value-subset? (bundle-tangent v1) (bundle-tangent v2)))
   (and (reverse-tagged-value? v1)
        (reverse-tagged-value? v2)
        (abstract-value-subset? (reverse-tagged-value-primal v1)
@@ -3886,13 +3836,7 @@
 	v1)
        ((and (nonrecursive-closure? v1)
 	     (nonrecursive-closure? v2)
-	     (= (vector-length (closure-values v1))
-		(vector-length (closure-values v2)))
-	     (alpha-equivalent?
-	      (closure-body v1)
-	      (closure-body v2)
-	      (cons (closure-variable v1) (closure-variables v1))
-	      (cons (closure-variable v2) (closure-variables v2))))
+	     (nonrecursive-closure-match? v1 v2))
 	(let ((vs (abstract-environment-union
 		   (closure-values v1) (closure-values v2))))
 	 (if (some-vector abstract-top? vs)
@@ -3904,30 +3848,7 @@
 					(closure-body v1)))))
        ((and (recursive-closure? v1)
 	     (recursive-closure? v2)
-	     (= (vector-length (recursive-closure-bodies v1))
-		(vector-length (recursive-closure-bodies v2)))
-	     (= (recursive-closure-index v1) (recursive-closure-index v2))
-	     (= (vector-length (closure-values v1))
-		(vector-length (closure-values v2)))
-	     (every-vector
-	      (lambda (x1 x2 e1 e2)
-	       (alpha-equivalent?
-		e1
-		e2
-		(cons
-		 x1
-		 (append
-		  (vector->list (recursive-closure-procedure-variables v1))
-		  (closure-variables v1)))
-		(cons
-		 x2
-		 (append
-		  (vector->list (recursive-closure-procedure-variables v2))
-		  (closure-variables v2)))))
-	      (recursive-closure-argument-variables v1)
-	      (recursive-closure-argument-variables v2)
-	      (recursive-closure-bodies v1)
-	      (recursive-closure-bodies v2)))
+	     (recursive-closure-match? v1 v2))
 	(let ((vs (abstract-environment-union
 		   (closure-values v1) (closure-values v2))))
 	 (if (some-vector abstract-top? vs)
@@ -3979,13 +3900,7 @@
 	v1)
        ((and (nonrecursive-closure? v1)
 	     (nonrecursive-closure? v2)
-	     (= (vector-length (closure-values v1))
-		(vector-length (closure-values v2)))
-	     (alpha-equivalent?
-	      (closure-body v1)
-	      (closure-body v2)
-	      (cons (closure-variable v1) (closure-variables v1))
-	      (cons (closure-variable v2) (closure-variables v2))))
+	     (nonrecursive-closure-match? v1 v2))
 	;; See the note in abstract-environment-subset?.
 	(make-nonrecursive-closure (closure-variables v1)
 				   (abstract-environment-intersection
@@ -3994,30 +3909,7 @@
 				   (closure-body v1)))
        ((and (recursive-closure? v1)
 	     (recursive-closure? v2)
-	     (= (vector-length (recursive-closure-bodies v1))
-		(vector-length (recursive-closure-bodies v2)))
-	     (= (recursive-closure-index v1) (recursive-closure-index v2))
-	     (= (vector-length (closure-values v1))
-		(vector-length (closure-values v2)))
-	     (every-vector
-	      (lambda (x1 x2 e1 e2)
-	       (alpha-equivalent?
-		e1
-		e2
-		(cons
-		 x1
-		 (append
-		  (vector->list (recursive-closure-procedure-variables v1))
-		  (closure-variables v1)))
-		(cons
-		 x2
-		 (append
-		  (vector->list (recursive-closure-procedure-variables v2))
-		  (closure-variables v2)))))
-	      (recursive-closure-argument-variables v1)
-	      (recursive-closure-argument-variables v2)
-	      (recursive-closure-bodies v1)
-	      (recursive-closure-bodies v2)))
+	     (recursive-closure-match? v1 v2))
 	;; See the note in abstract-environment-subset?.
 	(make-recursive-closure (closure-variables v1)
 				(abstract-environment-intersection
@@ -4039,12 +3931,11 @@
 	     (tagged-pair? v1)
 	     (tagged-pair? v2)
 	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	(make-tagged-pair
-	 (tagged-pair-tags v1)
-	 (abstract-value-intersection (tagged-pair-car v1)
-				      (tagged-pair-car v2))
-	 (abstract-value-intersection (tagged-pair-cdr v1)
-				      (tagged-pair-cdr v2))))
+	(make-tagged-pair (tagged-pair-tags v1)
+			  (abstract-value-intersection (tagged-pair-car v1)
+						       (tagged-pair-car v2))
+			  (abstract-value-intersection (tagged-pair-cdr v1)
+						       (tagged-pair-cdr v2))))
        ((abstract-top? v1) v2)
        ((abstract-top? v2) v1)
        (else
@@ -4069,41 +3960,12 @@
      (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
      (and (nonrecursive-closure? v1)
 	  (nonrecursive-closure? v2)
-	  (= (vector-length (closure-values v1))
-	     (vector-length (closure-values v2)))
-	  (alpha-equivalent?
-	   (closure-body v1)
-	   (closure-body v2)
-	   (cons (closure-variable v1) (closure-variables v1))
-	   (cons (closure-variable v2) (closure-variables v2)))
+	  (nonrecursive-closure-match? v1 v2)
 	  (abstract-environment-nondisjoint?
 	   (closure-values v1) (closure-values v2)))
      (and (recursive-closure? v1)
 	  (recursive-closure? v2)
-	  (= (vector-length (recursive-closure-bodies v1))
-	     (vector-length (recursive-closure-bodies v2)))
-	  (= (recursive-closure-index v1) (recursive-closure-index v2))
-	  (= (vector-length (closure-values v1))
-	     (vector-length (closure-values v2)))
-	  (every-vector
-	   (lambda (x1 x2 e1 e2)
-	    (alpha-equivalent?
-	     e1
-	     e2
-	     (cons
-	      x1
-	      (append
-	       (vector->list (recursive-closure-procedure-variables v1))
-	       (closure-variables v1)))
-	     (cons
-	      x2
-	      (append
-	       (vector->list (recursive-closure-procedure-variables v2))
-	       (closure-variables v2)))))
-	   (recursive-closure-argument-variables v1)
-	   (recursive-closure-argument-variables v2)
-	   (recursive-closure-bodies v1)
-	   (recursive-closure-bodies v2))
+	  (recursive-closure-match? v1 v2)
 	  (abstract-environment-nondisjoint?
 	   (closure-values v1) (closure-values v2)))
      (and (bundle? v1)
@@ -4177,19 +4039,19 @@
 
 ;;; Abstract Flows
 
+(define (environment-binding=? b1 b2)
+ (and (abstract-environment=? (environment-binding-values b1)
+			      (environment-binding-values b2))
+      (abstract-value=? (environment-binding-value b1)
+			(environment-binding-value b2))))
+
 (define (abstract-flow=? bs1 bs2)
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp? (lambda (b1 b2)
-	       (and (abstract-environment=? (environment-binding-values b1)
-					    (environment-binding-values b2))
-		    (abstract-value=? (environment-binding-value b1)
-				      (environment-binding-value b2))))
-	      bs1
-	      bs2))
+ (set-equalp? environment-binding=? bs1 bs2))
 
-(define (abstract-flow-union bs1 bs2) (append bs1 bs2))
+(define (abstract-flow-union bs1 bs2) (unionp environment-binding=? bs1 bs2))
 
 ;;; Abstract Analyses
 ;;; It's possible that the order of expressions in abstract analyses (for the
@@ -4266,15 +4128,19 @@
 			 (not (abstract-value-nondisjoint? v1 v2)))
 			vs1))
 		 vs1)
-      (when #f
-       (pp (list (abstract->concrete e)
-		 (externalize-abstract-flow
-		  (free-variables e)
-		  (remove-if-not
-		   (lambda (b)
-		    (abstract-environment-subset?
-		     vs (environment-binding-values b)))
-		   (expression-binding-flow b)))))
+      (when #t
+       (pp (abstract->concrete e))
+       (newline)
+       (pp (externalize-abstract-environment (free-variables e) vs))
+       (newline)
+       (pp (externalize-abstract-flow
+	    (free-variables e)
+	    (remove-if-not
+	     (lambda (b)
+	      (abstract-environment-subset?
+	       vs (environment-binding-values b)))
+	     (expression-binding-flow b))))
+       (newline)
        (newline))
       (pp (externalize-abstract-analysis bs))
       (newline)))))
