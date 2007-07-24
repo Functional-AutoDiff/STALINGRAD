@@ -4207,12 +4207,11 @@
    (and (tagged-pair? u1) (tagged-pair? u2) ((tagged-pair-match? bs) u1 u2)))))
 
 (define (aggregate-value-values u)
- (cond
-  ((closure? u) (vector->list (closure-values u)))
-  ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
-  ((reverse-tagged-value? u) (list (reverse-tagged-value-primal u)))
-  ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
-  (else (internal-error))))
+ (cond ((closure? u) (vector->list (closure-values u)))
+       ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
+       ((reverse-tagged-value? u) (list (reverse-tagged-value-primal u)))
+       ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
+       (else (internal-error))))
 
 (define (make-aggregate-value-with-new-values u vs)
  ;; needs work: To check that no vs is empty-abstract-value.
@@ -4639,8 +4638,6 @@
 		      '())))
 	 (rest additions)))))
 
-;;; Matching Values
-
 ;;; needs work: To prefer widening to real instead of creating unions.
 (define (pick-closures-to-coalesce us) (sublist us 0 2))
 
@@ -4666,43 +4663,43 @@
        ((up? v2) (create-v-additions v2 v1))
        (else (list (abstract-value-union-without-unroll v1 v2) '()))))
 
-(define (limit-aggregate-values v
-				k
+(define (limit-aggregate-values k
 				target-aggregate-value?
 				match?
 				pick-us-to-coalesce)
  ;; If there were no redundant proto abstract values upon entry, there will be
  ;; none upon exit.
  ;; returns: (list v additions)
- (let ((v-additions-list
-	(map
-	 (lambda (us)
-	  (let loop ((us us) (additions '()))
-	   ;; This assumes that we have first called
-	   ;; remove-redundant-proto-abstract-values.
-	   (if (<= (length us) k)
-	       (list us additions)
-	       (let* ((u1-u2 (pick-us-to-coalesce us))
-		      (v-additions-list
-		       (map union-for-widening
-			    (aggregate-value-values (first u1-u2))
-			    (aggregate-value-values (second u1-u2)))))
-		(loop
-		 (cons (make-aggregate-value-with-new-values
-			(first u1-u2) (map first v-additions-list))
-		       (removeq (second u1-u2) (removeq (first u1-u2) us)))
-		 (merge-additions
-		  additions
-		  (reduce
-		   merge-additions (map second v-additions-list) '())))))))
-	 (transitive-equivalence-classesp
-	  match? (remove-if-not target-aggregate-value? v)))))
-  (list (abstract-value-union-without-unroll
-	 (remove-if target-aggregate-value? v)
-	 (reduce abstract-value-union-without-unroll
-		 (map first v-additions-list)
-		 (empty-abstract-value)))
-	(reduce merge-additions (map second v-additions-list) '()))))
+ (lambda (v)
+  (let ((v-additions-list
+	 (map
+	  (lambda (us)
+	   (let loop ((us us) (additions '()))
+	    ;; This assumes that we have first called
+	    ;; remove-redundant-proto-abstract-values.
+	    (if (<= (length us) k)
+		(list us additions)
+		(let* ((u1-u2 (pick-us-to-coalesce us))
+		       (v-additions-list
+			(map union-for-widening
+			     (aggregate-value-values (first u1-u2))
+			     (aggregate-value-values (second u1-u2)))))
+		 (loop
+		  (cons (make-aggregate-value-with-new-values
+			 (first u1-u2) (map first v-additions-list))
+			(removeq (second u1-u2) (removeq (first u1-u2) us)))
+		  (merge-additions
+		   additions
+		   (reduce
+		    merge-additions (map second v-additions-list) '())))))))
+	  (transitive-equivalence-classesp
+	   match? (remove-if-not target-aggregate-value? v)))))
+   (list (abstract-value-union-without-unroll
+	  (remove-if target-aggregate-value? v)
+	  (reduce abstract-value-union-without-unroll
+		  (map first v-additions-list)
+		  (empty-abstract-value)))
+	 (reduce merge-additions (map second v-additions-list) '())))))
 
 (define (limit-aggregate-values* limit v)
  (let ((v-additions
@@ -4766,36 +4763,30 @@
  (if (eq? *closure-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v)
-       (limit-aggregate-values v
-			       *closure-limit*
-			       closure?
-			       closure-extensional-match?
-			       pick-closures-to-coalesce))
+      (limit-aggregate-values *closure-limit*
+			      closure?
+			      closure-extensional-match?
+			      pick-closures-to-coalesce)
       v)))
 
 (define (limit-bundles v bs)
  (if (eq? *bundle-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v)
-       (limit-aggregate-values v
-			       *bundle-limit*
-			       bundle?
-			       bundle-extensional-match?
-			       pick-bundles-to-coalesce))
+      (limit-aggregate-values *bundle-limit*
+			      bundle?
+			      bundle-extensional-match?
+			      pick-bundles-to-coalesce)
       v)))
 
 (define (limit-tagged-pairs v bs)
  (if (eq? *tagged-pair-limit* #f)
      v
      (limit-aggregate-values*
-      (lambda (v)
-       (limit-aggregate-values v
-			       *tagged-pair-limit*
-			       tagged-pair?
-			       tagged-pair-extensional-match?
-			       pick-tagged-pairs-to-coalesce))
+      (limit-aggregate-values *tagged-pair-limit*
+			      tagged-pair?
+			      tagged-pair-extensional-match?
+			      pick-tagged-pairs-to-coalesce)
       v)))
 
 ;;; Depth
@@ -5014,15 +5005,14 @@
 	  bs)
     ;; needs work: Should abstract the choice of which environments to
     ;;             coalesce as a pick procedure.
-    (let* ((b1 (find-if
-		(lambda (b1)
-		 (some (lambda (b2)
-			(and (not (eq? b1 b2))
-			     (abstract-environment=?
-			      (environment-binding-values b1)
-			      (environment-binding-values b2))))
-		       bs))
-		bs))
+    (let* ((b1 (find-if (lambda (b1)
+			 (some (lambda (b2)
+				(and (not (eq? b1 b2))
+				     (abstract-environment=?
+				      (environment-binding-values b1)
+				      (environment-binding-values b2))))
+			       bs))
+			bs))
 	   (b2 (find-if (lambda (b2)
 			 (and (not (eq? b1 b2))
 			      (abstract-environment=?
@@ -5098,7 +5088,7 @@
 
 ;;; Abstract Interpretation
 
-(define (make-abstract-analysis e vs bs)
+(define (make-abstract-analysis e vs)
  (unless (= (vector-length vs) (length (free-variables e)))
   (internal-error
    "vs and (length (free-variables e)) should be of same length"))
@@ -5120,8 +5110,7 @@
      (potentially-imprecise-vlad-value->abstract-value
       (value-binding-value
        (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-    (free-variables e)))
-  '()))
+    (free-variables e)))))
 
 (define (lookup-environment-binding e vs bs)
  (let ((b (lookup-expression-binding e bs)))
@@ -5213,35 +5202,34 @@
       (empty-abstract-value))))
 
 (define (abstract-eval e vs bs)
- (cond
-  ((variable-access-expression? e)
-   (unless (= (length (free-variables e)) 1) (internal-error))
-   (vector-ref vs 0))
-  ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
-  ((application? e)
-   (abstract-apply
-    (abstract-eval1 (application-callee e)
-		    (restrict-environment vs e application-callee)
-		    bs)
-    (abstract-eval1 (application-argument e)
-		    (restrict-environment vs e application-argument)
-		    bs)
-    bs))
-  ((letrec-expression? e)
-   (abstract-eval1
-    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
-  ((cons-expression? e)
-   (make-abstract-tagged-pair
-    (cons-expression-tags e)
-    (abstract-eval1 (cons-expression-car e)
-		    (restrict-environment vs e cons-expression-car)
-		    bs)
-    (abstract-eval1 (cons-expression-cdr e)
-		    (restrict-environment vs e cons-expression-cdr)
-		    bs)
-    e
-    vs))
-  (else (internal-error))))
+ (cond ((variable-access-expression? e)
+	(unless (= (length (free-variables e)) 1) (internal-error))
+	(vector-ref vs 0))
+       ((lambda-expression? e) (make-abstract-nonrecursive-closure vs e vs))
+       ((application? e)
+	(abstract-apply
+	 (abstract-eval1 (application-callee e)
+			 (restrict-environment vs e application-callee)
+			 bs)
+	 (abstract-eval1 (application-argument e)
+			 (restrict-environment vs e application-argument)
+			 bs)
+	 bs))
+       ((letrec-expression? e)
+	(abstract-eval1
+	 (letrec-expression-body e) (letrec-nested-environment vs e) bs))
+       ((cons-expression? e)
+	(make-abstract-tagged-pair
+	 (cons-expression-tags e)
+	 (abstract-eval1 (cons-expression-car e)
+			 (restrict-environment vs e cons-expression-car)
+			 bs)
+	 (abstract-eval1 (cons-expression-cdr e)
+			 (restrict-environment vs e cons-expression-cdr)
+			 bs)
+	 e
+	 vs))
+       (else (internal-error))))
 
 (define (abstract-eval1-prime e vs bs)
  (let ((b (lookup-environment-binding e vs bs)))
@@ -5252,8 +5240,8 @@
 			       (lookup-expression-binding e bs)))
 		      *flow-size-limit*)))
 	  (empty-abstract-analysis)
-	  (make-abstract-analysis e vs bs))
-      (make-abstract-analysis e vs bs))))
+	  (make-abstract-analysis e vs))
+      (make-abstract-analysis e vs))))
 
 (define (abstract-apply-prime v1 v2 bs)
  (if (empty-abstract-value? v2)
@@ -6523,6 +6511,42 @@
 	      (append xs c)
 	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
 
+(define (feedback-cached-topological-sort p l)
+ ;; A list of pairs (x1 x2) where x1 must come before x2.
+ (let ((graph (reduce append
+		      (map (lambda (x1)
+			    (reduce append
+				    (map (lambda (x2)
+					  (if (and (not (eq? x1 x2)) (p x1 x2))
+					      (list (list x1 x2))
+					      '()))
+					 l)
+				    '()))
+			   l)
+		      '())))
+  (let loop ((l l) (c1 '()) (c2 '()) (graph graph))
+   (if (null? l)
+       (list (reverse c1) c2)
+       (let ((xs (set-differenceq l (map second graph))))
+	(if (null? xs)
+	    (let ((x (find-if
+		      (lambda (x)
+		       (and (eq? (first x) 'function)
+			    (recursive-closure? (first (first (second x))))))
+		      l)))
+	     (unless x (internal-error))
+	     (loop (removeq x l)
+		   c1
+		   (cons x c2)
+		   (remove-if (lambda (edge)
+			       (or (eq? (first edge) x) (eq? (second edge) x)))
+			      graph)))
+	    (loop
+	     (set-differenceq l xs)
+	     (append xs c1)
+	     c2
+	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
+
 (define (all-nested-abstract-values bs)
  (cached-topological-sort
   component?
@@ -6717,44 +6741,6 @@
 	      #\newline)))
       (all-primitives s bs)))
 
-(define (generate-if-declarations bs vs)
- (map
-  (lambda (v)
-   (unless (= (length v) 1) (internal-error))
-   (let* ((v1 (abstract-vlad-car-u (first v) '()))
-	  (v2 (abstract-vlad-cdr-u (first v) '())))
-    (unless (= (length v2) 1) (internal-error))
-    (let* ((v3 (abstract-vlad-car-u (first v2) '()))
-	   (v4 (abstract-vlad-cdr-u (first v2) '())))
-     (unless (= (length v3) 1) (internal-error))
-     (unless (= (length v4) 1) (internal-error))
-     (when (and (boolean-value? v1)
-		(not
-		 (abstract-value=?
-		  (abstract-apply
-		   v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
-		  (abstract-apply
-		   v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
-      (unimplemented "balancing"))
-     (let ((v5 (if (or (boolean-value? v1)
-		       (begin (unless (= (length v1) 1) (internal-error))
-			      (first v1)))
-		   (abstract-apply
-		    v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
-		   (abstract-apply
-		    v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
-      (if (void? v5)
-	  '()
-	  (list "static INLINE "
-		(generate-specifier v5 vs)
-		" "
-		(generate-builtin-name "if_procedure" v vs)
-		"("
-		(if (void? v) "void" (list (generate-specifier v vs) " x"))
-		");"
-		#\newline))))))
-  (all-primitives 'if-procedure bs)))
-
 (define (all-functions bs)
  (reduce
   (lambda (v1v2sa v2v2sb)
@@ -6854,32 +6840,6 @@
        bs)
   '()))
 
-(define (generate-function-declarations bs xs vs v1v2s)
- (map
-  (lambda (v1v2)
-   (let* ((v1 (first v1v2))
-	  (v2 (second v1v2))
-	  (v3 (abstract-apply v1 v2 bs)))
-    (if (void? v3)
-	'()
-	(list "static "
-	      (if (nonrecursive-closure? (first v1)) "INLINE " '())
-	      (generate-specifier v3 vs)
-	      " "
-	      (generate-function-name v1 v2 v1v2s)
-	      "("
-	      (commas-between-void
-	       (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		     (if (void? v2)
-			 #f
-			 (list (generate-specifier v2 vs)
-			       " "
-			       (generate-variable-name
-				(abstract-closure-variable v1) xs)))))
-	      ");"
-	      #\newline))))
-  v1v2s))
-
 (define (calls-if-procedure? e v2 vs bs)
  (or
   (and (application? e)
@@ -6966,7 +6926,114 @@
 		      (restrict-environment vs e cons-expression-cdr)
 		      bs)))))
 
-(define (generate-if-and-function-definitions bs xs vs v1v2s)
+(define (generate-things1-things2 bs xs vs v1v2s)
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (feedback-cached-topological-sort
+  (lambda (thing1 thing2)
+   (or
+    (and (eq? (first thing1) 'function)
+	 (eq? (first thing2) 'if)
+	 (or
+	  (abstract-value=?
+	   (first (second thing1))
+	   (abstract-vlad-car-u
+	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))
+	  (abstract-value=?
+	   (first (second thing1))
+	   (abstract-vlad-cdr-u
+	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))))
+    (and (eq? (first thing1) 'if)
+	 (eq? (first thing2) 'function)
+	 (calls-if-procedure?
+	  (closure-body (first (first (second thing2))))
+	  (second thing1)
+	  (abstract-apply-closure (lambda (e vs) vs)
+				  (first (first (second thing2)))
+				  (second (second thing2)))
+	  bs))
+    (and (eq? (first thing1) 'function)
+	 (eq? (first thing2) 'function)
+	 (calls? (closure-body (first (first (second thing2))))
+		 (first (second thing1))
+		 (second (second thing1))
+		 (abstract-apply-closure (lambda (e vs) vs)
+					 (first (first (second thing2)))
+					 (second (second thing2)))
+		 bs))))
+  (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure bs))
+	  (map (lambda (v1v2) (list 'function v1v2)) v1v2s))))
+
+(define (generate-if-and-function-declarations bs xs vs v1v2s things1-things2)
+ (map
+  (lambda (thing)
+   (case (first thing)
+    ((if)
+     (let ((v (second thing)))
+      (unless (= (length v) 1) (internal-error))
+      (let* ((v1 (abstract-vlad-car-u (first v) '()))
+	     (v2 (abstract-vlad-cdr-u (first v) '())))
+       (unless (= (length v2) 1) (internal-error))
+       (let* ((v3 (abstract-vlad-car-u (first v2) '()))
+	      (v4 (abstract-vlad-cdr-u (first v2) '())))
+	(unless (= (length v3) 1) (internal-error))
+	(unless (= (length v4) 1) (internal-error))
+	(when (and (boolean-value? v1)
+		   (not
+		    (abstract-value=?
+		     (abstract-apply
+		      v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
+		     (abstract-apply
+		      v4
+		      (abstract-tagged-null (abstract-closure-tags v4)) bs))))
+	 (unimplemented "balancing"))
+	(let ((v5
+	       (if (or (boolean-value? v1)
+		       (begin (unless (= (length v1) 1) (internal-error))
+			      (first v1)))
+		   (abstract-apply
+		    v3 (abstract-tagged-null (abstract-closure-tags v3)) bs)
+		   (abstract-apply
+		    v4 (abstract-tagged-null (abstract-closure-tags v4)) bs))))
+	 (if (void? v5)
+	     '()
+	     (list "static INLINE "
+		   (generate-specifier v5 vs)
+		   " "
+		   (generate-builtin-name "if_procedure" v vs)
+		   "("
+		   (if (void? v) "void" (list (generate-specifier v vs) " x"))
+		   ");"
+		   #\newline)))))))
+    ((function)
+     (let* ((v1v2 (second thing))
+	    (v1 (first v1v2))
+	    (v2 (second v1v2))
+	    (v3 (abstract-apply v1 v2 bs)))
+      (unless (= (length v1) 1) (internal-error))
+      (if (void? v3)
+	  '()
+	  (list
+	   "static "
+	   (if (memq thing (second things1-things2)) '() "INLINE ")
+	   (generate-specifier v3 vs)
+	   " "
+	   (generate-function-name v1 v2 v1v2s)
+	   "("
+	   (commas-between-void
+	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+		  (if (void? v2)
+		      #f
+		      (list (generate-specifier v2 vs)
+			    " "
+			    (generate-variable-name
+			     (abstract-closure-variable v1) xs)))))
+	   ");"
+	   #\newline))))
+    (else (internal-error))))
+  (append (first things1-things2) (second things1-things2))))
+
+(define (generate-if-and-function-definitions bs xs vs v1v2s things1-things2)
  (map
   (lambda (thing)
    (case (first thing)
@@ -7011,13 +7078,15 @@
 		  (list
 		   "x.a?"
 		   (generate-function-name
-		    v3 (abstract-tagged-null (abstract-closure-tags v3)) v1v2s)
+		    v3
+		    (abstract-tagged-null (abstract-closure-tags v3)) v1v2s)
 		   "("
 		   (if (void? v3) '() "x.d.a")
 		   ")"
 		   ":"
 		   (generate-function-name
-		    v4 (abstract-tagged-null (abstract-closure-tags v4)) v1v2s)
+		    v4
+		    (abstract-tagged-null (abstract-closure-tags v4)) v1v2s)
 		   "("
 		   (if (void? v4) '() "x.d.d")
 		   ")")
@@ -7048,7 +7117,7 @@
 	  '()
 	  (list
 	   "static "
-	   (if (nonrecursive-closure? (first v1)) "INLINE " '())
+	   (if (memq thing (second things1-things2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
 	   (generate-function-name v1 v2 v1v2s)
@@ -7092,43 +7161,7 @@
 	   ";}"
 	   #\newline))))
     (else (internal-error))))
-  ;; This topological sort is needed so that all INLINE definitions come before
-  ;; their uses as required by gcc.
-  (cached-topological-sort
-   (lambda (thing1 thing2)
-    (or
-     (and
-      (eq? (first thing1) 'function)
-      (eq? (first thing2) 'if)
-      (or (abstract-value=?
-	   (first (second thing1))
-	   (abstract-vlad-car-u
-	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))
-	  (abstract-value=?
-	   (first (second thing1))
-	   (abstract-vlad-cdr-u
-	    (first (abstract-vlad-cdr-u (first (second thing2)) '())) '()))))
-     (and (eq? (first thing1) 'if)
-	  (eq? (first thing2) 'function)
-	  (calls-if-procedure?
-	   (closure-body (first (first (second thing2))))
-	   (second thing1)
-	   (abstract-apply-closure (lambda (e vs) vs)
-				   (first (first (second thing2)))
-				   (second (second thing2)))
-	   bs))
-     (and (eq? (first thing1) 'function)
-	  (eq? (first thing2) 'function)
-	  (nonrecursive-closure? (first (first (second thing1))))
-	  (calls? (closure-body (first (first (second thing2))))
-		  (first (second thing1))
-		  (second (second thing1))
-		  (abstract-apply-closure (lambda (e vs) vs)
-					  (first (first (second thing2)))
-					  (second (second thing2)))
-		  bs))))
-   (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure bs))
-	   (map (lambda (v1v2) (list 'function v1v2)) v1v2s)))))
+  (append (first things1-things2) (second things1-things2))))
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
@@ -7721,7 +7754,8 @@
 (define (generate e bs bs0)
  (let* ((xs (all-variables bs))
 	(vs (all-nested-abstract-values bs))
-	(v1v2s (all-functions bs)))
+	(v1v2s (all-functions bs))
+	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
@@ -7748,7 +7782,6 @@
    (generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)
    (generate-real-primitive-declarations 'positive? "int" "positive" bs vs)
    (generate-real-primitive-declarations 'negative? "int" "negative" bs vs)
-   (generate-if-declarations bs vs)
    "static INLINE double read_real(void);" #\newline
    (generate-real-primitive-declarations 'real "double" "real" bs vs)
    (generate-real-primitive-declarations 'write "double" "write" bs vs)
@@ -7756,7 +7789,7 @@
    (generate-ad-declarations abstract-primal-v 'primal "primal" bs vs)
    (generate-ad-declarations abstract-tangent-v 'tangent "tangent" bs vs)
    (generate-bundle-declarations bs vs)
-   (generate-function-declarations bs xs vs v1v2s)
+   (generate-if-and-function-declarations bs xs vs v1v2s things1-things2)
    "int main(void);" #\newline
    (generate-constructor-definitions xs vs)
    (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
@@ -7785,7 +7818,7 @@
    (generate-primal-definitions bs xs vs)
    (generate-tangent-definitions bs xs vs)
    (generate-bundle-definitions bs xs vs)
-   (generate-if-and-function-definitions bs xs vs v1v2s)
+   (generate-if-and-function-definitions bs xs vs v1v2s things1-things2)
    (list
     "int main(void){"
     (let ((vs
@@ -7795,7 +7828,6 @@
 	      (expression-binding-flow (lookup-expression-binding e bs)))))))
      (if (every void? vs)
 	 '()
-	 ;; needs work: to fill in slots
 	 (list
 	  "struct {"
 	  (map (lambda (v x)
@@ -7819,7 +7851,8 @@
 		 (if (void? v)
 		     '()
 		     (cond
-		      ((boolean-value? v) (list c "=" (if u "1" "0") ";"))
+		      ((boolean-value? v)
+		       (list c "=" (if u "TRUE" "FALSE") ";"))
 		      ((abstract-real-value? v) (list c "=" u ";"))
 		      ((and (= (length v) 1) (vlad-pair? (first v) '()))
 		       (list (loop (vlad-car u '())
