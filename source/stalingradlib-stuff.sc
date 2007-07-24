@@ -198,8 +198,6 @@
 
 (define *expression-equality* 'structural)
 
-(define *imprecise-zero?* #f)
-
 (define *imprecise-inexacts?* #f)
 
 (define *verbose?* #f)
@@ -2322,7 +2320,7 @@
 	  (nonrecursive-closure-match? v v-perturbation)
 	  ;; This assumes that the corresponding closure variables in v and
 	  ;; v-perturbation are in the same order. See the note in
-	  ;; abstract-environment-subset?.
+	  ;; abstract-environment=?.
 	  (every-vector
 	   legitimate? (closure-values v) (closure-values v-perturbation)))
      (and (recursive-closure? v)
@@ -2330,7 +2328,7 @@
 	  (recursive-closure-match? v v-perturbation)
 	  ;; This assumes that the corresponding closure variables in v and
 	  ;; v-perturbation are in the same order. See the note in
-	  ;; abstract-environment-subset?.
+	  ;; abstract-environment=?.
 	  (every-vector
 	   legitimate? (closure-values v) (closure-values v-perturbation)))
      (and (bundle? v)
@@ -2362,7 +2360,7 @@
      (free-variables e)
      ;; This assumes that the corresponding closure variables in v,
      ;; v-perturbation, and v-forward are in the same order. See the note in
-     ;; abstract-environment-subset?.
+     ;; abstract-environment=?.
      (map-vector
       bundle-internal (closure-values v) (closure-values v-perturbation))
      (lambda-expression-variable e)
@@ -2386,7 +2384,7 @@
      xs
      ;; This assumes that the corresponding closure variables in v,
      ;; v-perturbation, and v-forward are in the same order. See the note in
-     ;; abstract-environment-subset?.
+     ;; abstract-environment=?.
      (map-vector
       bundle-internal (closure-values v) (closure-values v-perturbation))
      xs1
@@ -3117,12 +3115,11 @@
 		(eq? (first (closure-tags v-reverse)) 'reverse))
     (run-time-error
      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-   (let ((b (find-if
-	     (lambda (b)
-	      (abstract-value=?
-	       v-reverse
-	       (primitive-procedure-reverse (value-binding-value b))))
-	     *value-bindings*)))
+   (let ((b (find-if (lambda (b)
+		      (abstract-value=?
+		       v-reverse
+		       (primitive-procedure-reverse (value-binding-value b))))
+		     *value-bindings*)))
     (if b
 	(value-binding-value b)
 	(let* ((e (reverse-transform-inverse
@@ -3145,12 +3142,11 @@
 		(eq? (first (closure-tags v-reverse)) 'reverse))
     (run-time-error
      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-   (let ((b (find-if
-	     (lambda (b)
-	      (abstract-value=?
-	       v-reverse
-	       (primitive-procedure-reverse (value-binding-value b))))
-	     *value-bindings*)))
+   (let ((b (find-if (lambda (b)
+		      (abstract-value=?
+		       v-reverse
+		       (primitive-procedure-reverse (value-binding-value b))))
+		     *value-bindings*)))
     (if b
 	(value-binding-value b)
 	(let* ((es (vector->list
@@ -3791,45 +3787,41 @@
 			(recursive-closure-bodies v1)
 			(recursive-closure-bodies v2)))))
 
-(define (abstract-value-subset? v1 v2)
- (or
-  (abstract-top? v2)
-  (and (null? v1) (null? v2))
-  (and (not *encoded-booleans?*)
-       (abstract-boolean? v1)
-       (abstract-boolean? v2)
-       (or (eq? v1 v2) (eq? v2 'boolean)))
-  (and (abstract-real? v1)
-       (abstract-real? v2)
-       ;; This was = but then it equates exact values with inexact values and
-       ;; this breaks -imprecise-inexacts.
-       (or (equal? v1 v2) (eq? v2 'real)))
-  (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-  (and (nonrecursive-closure? v1)
-       (nonrecursive-closure? v2)
-       (nonrecursive-closure-match? v1 v2)
-       (abstract-environment-subset? (closure-values v1) (closure-values v2)))
-  (and (recursive-closure? v1)
-       (recursive-closure? v2)
-       (recursive-closure-match? v1 v2)
-       (abstract-environment-subset? (closure-values v1) (closure-values v2)))
-  (and (bundle? v1)
-       (bundle? v2)
-       (abstract-value-subset? (bundle-primal v1) (bundle-primal v2))
-       (abstract-value-subset? (bundle-tangent v1) (bundle-tangent v2)))
-  (and (reverse-tagged-value? v1)
-       (reverse-tagged-value? v2)
-       (abstract-value-subset? (reverse-tagged-value-primal v1)
-			       (reverse-tagged-value-primal v2)))
-  (and (not *scott-pairs?*)
-       (tagged-pair? v1)
-       (tagged-pair? v2)
-       (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
-       (abstract-value-subset? (tagged-pair-car v1) (tagged-pair-car v2))
-       (abstract-value-subset? (tagged-pair-cdr v1) (tagged-pair-cdr v2)))))
-
 (define (abstract-value=? v1 v2)
- (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
+ (or (and (null? v1) (null? v2))
+     (and (not *encoded-booleans?*)
+	  (abstract-boolean? v1)
+	  (abstract-boolean? v2)
+	  (eq? v1 v2))
+     (and (abstract-real? v1)
+	  (abstract-real? v2)
+	  ;; This was = but then it equates exact values with inexact values
+	  ;; and this breaks -imprecise-inexacts.
+	  (equal? v1 v2))
+     (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
+     (and (nonrecursive-closure? v1)
+	  (nonrecursive-closure? v2)
+	  (nonrecursive-closure-match? v1 v2)
+	  (abstract-environment=? (closure-values v1) (closure-values v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (recursive-closure-match? v1 v2)
+	  (abstract-environment=? (closure-values v1) (closure-values v2)))
+     (and (bundle? v1)
+	  (bundle? v2)
+	  (abstract-value=? (bundle-primal v1) (bundle-primal v2))
+	  (abstract-value=? (bundle-tangent v1) (bundle-tangent v2)))
+     (and (reverse-tagged-value? v1)
+	  (reverse-tagged-value? v2)
+	  (abstract-value=? (reverse-tagged-value-primal v1)
+			    (reverse-tagged-value-primal v2)))
+     (and (not *scott-pairs?*)
+	  (tagged-pair? v1)
+	  (tagged-pair? v2)
+	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
+	  (abstract-value=? (tagged-pair-car v1) (tagged-pair-car v2))
+	  (abstract-value=? (tagged-pair-cdr v1) (tagged-pair-cdr v2)))
+     (and (abstract-top? v1) (abstract-top? v2))))
 
 (define (abstract-value-union v1 v2)
  (cond ((and (null? v1) (null? v2)) '())
@@ -3848,7 +3840,7 @@
 		   (closure-values v1) (closure-values v2))))
 	 (if (some-vector abstract-top? vs)
 	     (abstract-top)
-	     ;; See the note in abstract-environment-subset?.
+	     ;; See the note in abstract-environment=?.
 	     (make-nonrecursive-closure (closure-variables v1)
 					vs
 					(closure-variable v1)
@@ -3860,7 +3852,7 @@
 		   (closure-values v1) (closure-values v2))))
 	 (if (some-vector abstract-top? vs)
 	     (abstract-top)
-	     ;; See the note in abstract-environment-subset?.
+	     ;; See the note in abstract-environment=?.
 	     (make-recursive-closure (closure-variables v1)
 				     vs
 				     (recursive-closure-procedure-variables v1)
@@ -3892,61 +3884,6 @@
 	     (make-tagged-pair (tagged-pair-tags v1) v-car v-cdr))))
        (else (abstract-top))))
 
-(define (abstract-value-intersection v1 v2)
- (cond ((and (null? v1) (null? v2)) '())
-       ((and (not *encoded-booleans?*)
-	     (abstract-boolean? v1)
-	     (abstract-boolean? v2)
-	     (or (eq? v1 'boolean) (eq? v2 'boolean) (eq? v1 v2)))
-	(if (eq? v1 'boolean) v2 v1))
-       ((and (abstract-real? v1)
-	     (abstract-real? v2)
-	     (or (eq? v1 'real) (eq? v2 'real) (equal? v1 v2)))
-	(if (eq? v1 'real) v2 v1))
-       ((and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-	v1)
-       ((and (nonrecursive-closure? v1)
-	     (nonrecursive-closure? v2)
-	     (nonrecursive-closure-match? v1 v2))
-	;; See the note in abstract-environment-subset?.
-	(make-nonrecursive-closure (closure-variables v1)
-				   (abstract-environment-intersection
-				    (closure-values v1) (closure-values v2))
-				   (closure-variable v1)
-				   (closure-body v1)))
-       ((and (recursive-closure? v1)
-	     (recursive-closure? v2)
-	     (recursive-closure-match? v1 v2))
-	;; See the note in abstract-environment-subset?.
-	(make-recursive-closure (closure-variables v1)
-				(abstract-environment-intersection
-				 (closure-values v1) (closure-values v2))
-				(recursive-closure-procedure-variables v1)
-				(recursive-closure-argument-variables v1)
-				(recursive-closure-bodies v1)
-				(recursive-closure-index v1)))
-       ((and (bundle? v1) (bundle? v2))
-	(make-bundle (abstract-value-intersection (bundle-primal v1)
-						  (bundle-primal v2))
-		     (abstract-value-intersection (bundle-tangent v1)
-						  (bundle-tangent v2))))
-       ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-	(make-reverse-tagged-value
-	 (abstract-value-intersection (reverse-tagged-value-primal v1)
-				      (reverse-tagged-value-primal v2))))
-       ((and (not *scott-pairs?*)
-	     (tagged-pair? v1)
-	     (tagged-pair? v2)
-	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	(make-tagged-pair (tagged-pair-tags v1)
-			  (abstract-value-intersection (tagged-pair-car v1)
-						       (tagged-pair-car v2))
-			  (abstract-value-intersection (tagged-pair-cdr v1)
-						       (tagged-pair-cdr v2))))
-       ((abstract-top? v1) v2)
-       ((abstract-top? v2) v1)
-       (else (internal-error))))
-
 ;;; Abstract Environments
 
 (define (restrict-environment vs e f)
@@ -3975,22 +3912,15 @@
 	    (vector-ref vs (positionp variable=? x (free-variables e)))))
        (free-variables (letrec-expression-body e)))))
 
-(define (abstract-environment-subset? vs1 vs2)
+(define (abstract-environment=? vs1 vs2)
  ;; This assumes that the free variables in two alpha-equivalent expressions
  ;; are in the same order. Note that this is a weak notion of equivalence. A
  ;; stronger notion would attempt to find a correspondence between the free
  ;; variables that would allow them to be contextually alpha equivalent.
- (every-vector abstract-value-subset? vs1 vs2))
-
-(define (abstract-environment=? v1 v2)
- (and (abstract-environment-subset? v1 v2)
-      (abstract-environment-subset? v2 v1)))
+ (every-vector abstract-value=? vs1 vs2))
 
 (define (abstract-environment-union vs1 vs2)
  (map-vector abstract-value-union vs1 vs2))
-
-(define (abstract-environment-intersection vs1 vs2)
- (map-vector abstract-value-intersection vs1 vs2))
 
 ;;; Abstract Flows
 
@@ -4070,14 +4000,11 @@
 (define (abstract-eval1 e vs bs)
  (let ((b (lookup-expression-binding e bs)))
   (if b
-      (reduce
-       abstract-value-intersection
-       (map environment-binding-value
-	    (remove-if-not
-	     (lambda (b)
-	      (abstract-environment=? vs (environment-binding-values b)))
-	     (expression-binding-flow b)))
-       (abstract-top))
+      (let ((b (find-if
+		(lambda (b)
+		 (abstract-environment=? vs (environment-binding-values b)))
+		(expression-binding-flow b))))
+       (if b (environment-binding-value b) (abstract-top)))
       (abstract-top))))
 
 (define (abstract-apply-closure p v1 v2)
@@ -4158,13 +4085,12 @@
 
 (define (abstract-eval1-prime e vs bs)
  (let ((b (lookup-expression-binding e bs)))
-  (if (or
-       (eq? b #f)
-       (not (some (lambda (b)
-		   (abstract-environment=? vs (environment-binding-values b)))
-		  (expression-binding-flow b))))
-      (make-abstract-analysis e vs)
-      (empty-abstract-analysis))))
+  (if (and b
+	   (some (lambda (b)
+		  (abstract-environment=? vs (environment-binding-values b)))
+		 (expression-binding-flow b)))
+      (empty-abstract-analysis)
+      (make-abstract-analysis e vs))))
 
 (define (abstract-apply-prime v1 v2 bs)
  (if (or (abstract-top? v1) (abstract-top? v2))
