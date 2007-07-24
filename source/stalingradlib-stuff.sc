@@ -4075,7 +4075,7 @@
        (map environment-binding-value
 	    (remove-if-not
 	     (lambda (b)
-	      (abstract-environment-subset? vs (environment-binding-values b)))
+	      (abstract-environment=? vs (environment-binding-values b)))
 	     (expression-binding-flow b)))
        (abstract-top))
       (abstract-top))))
