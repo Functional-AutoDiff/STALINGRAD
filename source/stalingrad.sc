@@ -99,50 +99,14 @@
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
-		 (at-most-one ("flow-size-limit"
-			       flow-size-limit?
-			       (flow-size-limit "n" integer-argument #f)))
-		 (at-most-one ("real-limit"
-			       real-limit?
-			       (real-limit "n" integer-argument #f)))
-		 (at-most-one ("closure-limit"
-			       closure-limit?
-			       (closure-limit "n" integer-argument #f)))
-		 (at-most-one ("closure-depth-limit"
-			       closure-depth-limit?
-			       (closure-depth-limit "n" integer-argument #f)))
-		 (at-most-one ("bundle-limit"
-			       bundle-limit?
-			       (bundle-limit "n" integer-argument #f)))
-		 (at-most-one ("bundle-depth-limit"
-			       bundle-depth-limit?
-			       (bundle-depth-limit "n" integer-argument #f)))
-		 (at-most-one ("tagged-pair-limit"
-			       tagged-pair-limit?
-			       (tagged-pair-limit "n" integer-argument #f)))
-		 (at-most-one
-		  ("tagged-pair-depth-limit"
-		   tagged-pair-depth-limit?
-		   (tagged-pair-depth-limit "n" integer-argument #f)))
-		 (at-most-one ("no-warn" no-warn?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
 			      ("expression-equality-using-structural"
 			       expression-equality-using-structural?)
 			      ("expression-equality-using-alpha"
 			       expression-equality-using-alpha?))
-		 (at-most-one
-		  ("remove-redundant-proto-abstract-values-using-identity"
-		   remove-redundant-proto-abstract-values-using-identity?)
-		  ("remove-redundant-proto-abstract-values-using-structural"
-		   remove-redundant-proto-abstract-values-using-structural?)
-		  ("remove-redundant-proto-abstract-values-using-equality"
-		   remove-redundant-proto-abstract-values-using-equality?)
-		  ("remove-redundant-proto-abstract-values-using-subset"
-		   remove-redundant-proto-abstract-values-using-subset?))
 		 (at-most-one ("imprecise-zero" imprecise-zero?))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
-		 (at-most-one ("union-free" union-free?))
 		 (at-most-one ("verbose" verbose?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -172,31 +136,13 @@
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
- (set! *flow-size-limit* flow-size-limit)
- (set! *real-limit* real-limit)
- (set! *closure-limit* closure-limit)
- (set! *closure-depth-limit* closure-depth-limit)
- (set! *bundle-limit* bundle-limit)
- (set! *bundle-depth-limit* bundle-depth-limit)
- (set! *tagged-pair-limit* tagged-pair-limit)
- (set! *tagged-pair-depth-limit* tagged-pair-depth-limit)
- (set! *warn?* (not no-warn?))
  (when expression-equality-using-identity?
   (set! *expression-equality* 'identity))
  (when expression-equality-using-structural?
   (set! *expression-equality* 'structural))
  (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
- (when remove-redundant-proto-abstract-values-using-identity?
-  (set! *method-for-removing-redundant-proto-abstract-values* 'identity))
- (when remove-redundant-proto-abstract-values-using-structural?
-  (set! *method-for-removing-redundant-proto-abstract-values* 'structural))
- (when remove-redundant-proto-abstract-values-using-equality?
-  (set! *method-for-removing-redundant-proto-abstract-values* 'equality))
- (when remove-redundant-proto-abstract-values-using-subset?
-  (set! *method-for-removing-redundant-proto-abstract-values* 'subset))
  (set! *imprecise-zero?* imprecise-zero?)
  (set! *imprecise-inexacts?* imprecise-inexacts?)
- (set! *union-free?* (or compile? union-free?))
  (set! *verbose?* verbose?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
@@ -208,14 +154,14 @@
 	(let ((result (parse e)))
 	 (cond
 	  (flow-analysis?
+	   (set! *run?* #f)
 	   (if from-ebs?
 	       (let* ((ebs (read-ebs-from-file pathname))
 		      (bs (second ebs))
 		      (bs1 (expression-binding-flow
 			    (lookup-expression-binding (first ebs) bs))))
 		(unless (= (length bs1) 1) (internal-error))
-		(pp (externalize-abstract-value
-		     (environment-binding-value (first bs1))))
+		(pp (externalize (environment-binding-value (first bs1))))
 		(newline)
 		(pp (externalize-abstract-analysis bs))
 		(newline))
@@ -223,30 +169,29 @@
 		      (bs1 (expression-binding-flow
 			    (lookup-expression-binding (first result) bs))))
 		(unless (= (length bs1) 1) (internal-error))
-		(pp (externalize-abstract-value
-		     (environment-binding-value (first bs1))))
+		(pp (externalize (environment-binding-value (first bs1))))
 		(newline)
 		(pp (externalize-abstract-analysis bs))
 		(newline))))
 	  (flow-analysis-result?
+	   (set! *run?* #f)
 	   (if from-ebs?
 	       (let* ((ebs (read-ebs-from-file pathname))
 		      (bs (expression-binding-flow
 			   (lookup-expression-binding
 			    (first ebs) (second ebs)))))
 		(unless (= (length bs) 1) (internal-error))
-		(pp (externalize-abstract-value
-		     (environment-binding-value (first bs))))
+		(pp (externalize (environment-binding-value (first bs))))
 		(newline))
 	       (let ((bs (expression-binding-flow
 			  (lookup-expression-binding
 			   (first result)
 			   (flow-analysis (first result) (second result))))))
 		(unless (= (length bs) 1) (internal-error))
-		(pp (externalize-abstract-value
-		     (environment-binding-value (first bs))))
+		(pp (externalize (environment-binding-value (first bs))))
 		(newline))))
 	  (compile?
+	   (set! *run?* #f)
 	   (if from-ebs?
 	       (let ((ebs (read-ebs-from-file pathname)))
 		(generate-file
@@ -270,6 +215,7 @@
 				(strip-extension pathname)
 				(replace-extension pathname "c"))))))
 	  (else
+	   (set! *run?* #t)
 	   (when metered?
 	    (for-each (lambda (b)
 		       (let ((v (value-binding-value b)))

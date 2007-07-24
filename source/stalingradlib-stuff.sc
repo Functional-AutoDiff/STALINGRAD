@@ -198,6 +198,8 @@
 
 (define *expression-equality* 'structural)
 
+(define *imprecise-zero?* #f)
+
 (define *imprecise-inexacts?* #f)
 
 (define *verbose?* #f)
@@ -2054,7 +2056,7 @@
  (cond
   ((null? v) v)
   ((and (not *encoded-booleans?*) (abstract-boolean? v)) v)
-  ((abstract-real? v) 0)
+  ((abstract-real? v) (if (and *run?* *imprecise-zero?*) 'real 0))
   ((primitive-procedure? v) v)
   ((nonrecursive-closure? v)
    (let ((e (new-lambda-expression (closure-variable v) (closure-body v))))
