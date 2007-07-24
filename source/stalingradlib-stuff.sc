@@ -4067,23 +4067,8 @@
        (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
     (free-variables e)))))
 
-(define *debugging?* #f)
-
 (define (abstract-eval1 e vs bs)
  (let ((b (lookup-expression-binding e bs)))
-  (when *debugging?*
-   (pp (abstract->concrete e))
-   (newline)
-   (pp (externalize-abstract-environment (free-variables e) vs))
-   (newline)
-   (pp (externalize-abstract-flow
-	(free-variables e)
-	(remove-if-not
-	 (lambda (b)
-	  (abstract-environment-subset? vs (environment-binding-values b)))
-	 (expression-binding-flow b))))
-   (newline)
-   (set! *debugging?* #f))
   (if b
       (reduce
        abstract-value-intersection
@@ -4284,6 +4269,7 @@
 (define (concrete-reals-in v)
  (cond ((real? v) (list v))
        ((scalar-value? v) '())
+       ((abstract-top? v) '())
        (else (reduce
 	      unionv (map concrete-reals-in (aggregate-value-values v)) '()))))
 
@@ -4645,9 +4631,7 @@
 			   (abstract-value=? (second v1v2a) (second v1v2b))))
 		     (list v1 v2)
 		     v1v2s)))
-  (unless i
-   (write (externalize v1)) (newline) (write (externalize v2)) (newline) ;debugging
-   (internal-error))
+  (unless i (internal-error))
   (list "f" i)))
 
 (define (commas-between-void codes)
@@ -4794,19 +4778,6 @@
 					  bs)))
 		 (cond
 		  ((closure? v1)
-		   (begin
-		    (display "debugging")
-		    (newline)
-		    (write (externalize v1))
-		    (newline)
-		    (write (externalize
-			    (abstract-eval1 (application-argument e)
-					    (restrict-environment
-					     (environment-binding-values b)
-					     e
-					     application-argument)
-					    bs)))
-		    (newline))
 		   (list (list v1
 			       (abstract-eval1 (application-argument e)
 					       (restrict-environment
@@ -5095,14 +5066,6 @@
 	    (v1 (first v1v2))
 	    (v2 (second v1v2))
 	    (v3 (abstract-apply v1 v2 bs)))
-      ;; debugging
-      (when (= (positionq v1v2 v1v2s) 23)
-       (display "bingo")
-       (newline)
-       (write (list (void? v1) (void? v2) (void? v3)))
-       (newline)
-       (set! *debugging?* #t)
-       (abstract-apply v1 v2 bs))
       (if (void? v3)
 	  '()
 	  (list
@@ -5693,21 +5656,6 @@
 	(vs (all-nested-abstract-values bs))
 	(v1v2s (all-functions bs))
 	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
-  (when #t				;debugging
-   (pp (list (externalize (first (list-ref v1v2s 107)))
-	     (externalize (second (list-ref v1v2s 107)))))
-   (newline)
-   (pp (list (externalize (first (list-ref v1v2s 93)))
-	     (externalize (second (list-ref v1v2s 93)))))
-   (newline)
-   (pp (list (externalize (first (list-ref v1v2s 34)))
-	     (externalize (second (list-ref v1v2s 34)))))
-   (newline)
-   (write (void? (second (list-ref v1v2s 34)))) (newline)
-   (pp (list (externalize (first (list-ref v1v2s 23)))
-	     (externalize (second (list-ref v1v2s 23)))))
-   (newline)
-   (write (void? (second (list-ref v1v2s 23)))) (newline))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
