@@ -2056,7 +2056,7 @@
  (cond
   ((null? v) v)
   ((and (not *encoded-booleans?*) (abstract-boolean? v)) v)
-  ((abstract-real? v) (if (and *run?* *imprecise-zero?*) 'real 0))
+  ((abstract-real? v) (if (and (not *run?*) *imprecise-zero?*) 'real 0))
   ((primitive-procedure? v) v)
   ((nonrecursive-closure? v)
    (let ((e (new-lambda-expression (closure-variable v) (closure-body v))))
@@ -2995,32 +2995,85 @@
 	      (map value-binding-variable *value-bindings*))))
 
 (define (conform? v1 v2)
- (or (and (vlad-forward? v1)
-	  (vlad-forward? v2)
-	  (conform? (primal v1) (primal v2))
-	  (conform? (tangent v1) (tangent v2)))
-     (and (vlad-reverse? v1)
-	  (vlad-reverse? v2)
-	  (conform? (*j-inverse v1) (*j-inverse v2)))
-     (and (null? v1) (null? v2))
+ (or (and (null? v1) (null? v2))
+     (and (not *encoded-booleans?*)
+	  (abstract-boolean? v1)
+	  (abstract-boolean? v1)
+	  (eq? v1 v2))
      (and (abstract-real? v1) (abstract-real? v2))
-     (and (vlad-pair? v1 '())
-	  (vlad-pair? v2 '())
-	  (conform? (vlad-car v1 '()) (vlad-car v2 '()))
-	  (conform? (vlad-cdr v1 '()) (vlad-cdr v2 '())))))
+     (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
+     (and (nonrecursive-closure? v1)
+	  (nonrecursive-closure? v2)
+	  (nonrecursive-closure-match? v1 v2)
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in
+	  ;; abstract-environment=?.
+	  (every-vector conform? (closure-values v1) (closure-values v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (recursive-closure-match? v1 v2)
+	  ;; This assumes that the corresponding closure variables in v and
+	  ;; v-perturbation are in the same order. See the note in
+	  ;; abstract-environment=?.
+	  (every-vector conform? (closure-values v1) (closure-values v2)))
+     (and (bundle? v1)
+	  (bundle? v2)
+	  (conform? (bundle-primal v1) (bundle-primal v2))
+	  (conform? (bundle-tangent v1) (bundle-tangent v2)))
+     (and (reverse-tagged-value? v1)
+	  (reverse-tagged-value? v2)
+	  (conform? (reverse-tagged-value-primal v1)
+		    (reverse-tagged-value-primal v2)))
+     (and (not *scott-pairs?*)
+	  (tagged-pair? v1)
+	  (tagged-pair? v2)
+	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
+	  (conform? (tagged-pair-car v1) (tagged-pair-car v2))
+	  (conform? (tagged-pair-cdr v1) (tagged-pair-cdr v2)))))
 
 (define (plus-internal v1 v2)
  (cond
-  ((vlad-forward? v1)
-   (bundle (plus-internal (primal v1) (primal v2))
-	   (plus-internal (tangent v1) (tangent v2))))
-  ((vlad-reverse? v1) (*j (plus-internal (*j-inverse v1) (*j-inverse v2))))
-  ((null? v1) '())
+  ((null? v1) v1)
+  ((and (not *encoded-booleans?*) (abstract-boolean? v1)) v1)
   ((eq? v1 'real) 'real)
   ((eq? v2 'real) 'real)
   ((abstract-real? v1) (+ v1 v2))
-  (else (vlad-cons (plus-internal (vlad-car v1 '()) (vlad-car v2 '()))
-		   (plus-internal (vlad-cdr v1 '()) (vlad-cdr v2 '()))))))
+  ((primitive-procedure? v1) v1)
+  ((nonrecursive-closure? v1)
+   (let ((e (new-lambda-expression (closure-variable v1) (closure-body v2))))
+    (make-nonrecursive-closure
+     (free-variables e)
+     ;; This assumes that the corresponding closure variables in v1 and
+     ;; v2 are in the same order. See the note in abstract-environment=?.
+     (map-vector plus-internal (closure-values v1) (closure-values v2))
+     (lambda-expression-variable e)
+     (lambda-expression-body e))))
+  ((recursive-closure? v1)
+   (let ((es (map-vector new-lambda-expression
+			 (recursive-closure-argument-variables v1)
+			 (recursive-closure-bodies v1))))
+    (make-recursive-closure
+     ;; This assumes that the corresponding closure variables in v1 and
+     ;; v2 are in the same order. See the note in abstract-environment=?.
+     (closure-variables v1)
+     (map-vector plus-internal (closure-values v1) (closure-values v2))
+     (recursive-closure-procedure-variables v1)
+     (map-vector lambda-expression-variable es)
+     (map-vector lambda-expression-body es)
+     (recursive-closure-index v1))))
+  ((bundle? v1)
+   (make-bundle (plus-internal (bundle-primal v1) (bundle-primal v2))
+		(plus-internal (bundle-tangent v1) (bundle-tangent v2))))
+  ((reverse-tagged-value? v1)
+   (make-reverse-tagged-value
+    (plus-internal (reverse-tagged-value-primal v1)
+		   (reverse-tagged-value-primal v2))))
+  ((and (not *scott-pairs?*) (tagged-pair? v1))
+   (make-tagged-pair
+    (tagged-pair-tags v1)
+    (plus-internal (tagged-pair-car v1) (tagged-pair-car v2))
+    (plus-internal (tagged-pair-cdr v1) (tagged-pair-cdr v2))))
+  (else (internal-error))))
 
 (define (plus v1 v2)
  (unless (conform? v1 v2)
@@ -4391,17 +4444,18 @@
 
 (define (generate-struct-declarations xs vs)
  (map (lambda (v)
-       (cond ((or (void? v) (abstract-boolean? v) (abstract-real? v)) '())
-	     (else (list (generate-specifier v vs)
-			 "{"
-			 (map (lambda (s v)
-			       (if (void? v)
-				   '()
-				   (list (generate-specifier v vs) " " s ";")))
-			      (generate-slot-names v xs)
-			      (aggregate-value-values v))
-			 "};"
-			 #\newline))))
+       (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
+	   '()
+	   (list (generate-specifier v vs)
+		 "{"
+		 (map (lambda (s v)
+		       (if (void? v)
+			   '()
+			   (list (generate-specifier v vs) " " s ";")))
+		      (generate-slot-names v xs)
+		      (aggregate-value-values v))
+		 "};"
+		 #\newline)))
       vs))
 
 (define (all-abstract-values bs)
@@ -5449,19 +5503,20 @@
 	     "){return "
 	     (cond ((abstract-boolean? v1) "x")
 		   ((abstract-real? v1) "0.0")
-		   (list (generate-builtin-name "m" v1 vs)
-			 "("
-			 (commas-between
-			  (map (lambda (s v)
-				(if (void? (zero v))
-				    #f
-				    (list (generate-builtin-name "zero" v vs)
-					  "("
-					  (if (void? v) '() (list "x." s))
-					  ")")))
-			       (generate-slot-names v xs)
-			       (aggregate-value-values v)))
-			 ")"))
+		   (else (list
+			  (generate-builtin-name "m" v1 vs)
+			  "("
+			  (commas-between
+			   (map (lambda (s v)
+				 (if (void? (zero v))
+				     #f
+				     (list (generate-builtin-name "zero" v vs)
+					   "("
+					   (if (void? v) '() (list "x." s))
+					   ")")))
+				(generate-slot-names v xs)
+				(aggregate-value-values v)))
+			  ")")))
 	     ";}"
 	     #\newline))))
       (all-ad 'zero bs)))
@@ -5875,7 +5930,7 @@
   (let ((x1 (vlad-car x '())) (x2 (vlad-cdr x '())))
    (unless (and (abstract-real? x1) (abstract-real? x2))
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   ;; needs work: This is imprecise for * and /.
+   ;; needs work: This may be imprecise for *, /, and atan.
    (if (and (real? x1) (real? x2)) (f x1 x2) 'real))))
 
 (define (binary-real-predicate f s)
@@ -6305,28 +6360,27 @@
 	 (if x1
 	     (call x2 (tagged-null (closure-tags x2)))
 	     (call x3 (tagged-null (closure-tags x3))))
-	 (cond
-	  ((eq? x1 'boolean)
-	   (let ((v2 (abstract-apply-closure
-		      (lambda (e vs) (abstract-eval1 e vs bs))
-		      x2
-		      (tagged-null (closure-tags x2))))
-		 (v3 (abstract-apply-closure
+	 (cond ((eq? x1 'boolean)
+		(let ((v2 (abstract-apply-closure
+			   (lambda (e vs) (abstract-eval1 e vs bs))
+			   x2
+			   (tagged-null (closure-tags x2))))
+		      (v3 (abstract-apply-closure
+			   (lambda (e vs) (abstract-eval1 e vs bs))
+			   x3
+			   (tagged-null (closure-tags x3)))))
+		 ;; needs work: a little hokey
+		 (cond ((abstract-top? v2) v3)
+		       ((abstract-top? v3) v2)
+		       (else (abstract-value-union v2 v3)))))
+	       (x1 (abstract-apply-closure
+		    (lambda (e vs) (abstract-eval1 e vs bs))
+		    x2
+		    (tagged-null (closure-tags x2))))
+	       (else (abstract-apply-closure
 		      (lambda (e vs) (abstract-eval1 e vs bs))
 		      x3
-		      (tagged-null (closure-tags x3)))))
-	    ;; needs work: a little hokey
-	    (cond ((abstract-top? v2) v3)
-		  ((abstract-top? v3) v2)
-		  (else (abstract-value-union v2 v3)))))
-	  (x1 (abstract-apply-closure
-	       (lambda (e vs) (abstract-eval1 e vs bs))
-	       x2
-	       (tagged-null (closure-tags x2))))
-	  (else (abstract-apply-closure
-		 (lambda (e vs) (abstract-eval1 e vs bs))
-		 x3
-		 (tagged-null (closure-tags x3)))))))
+		      (tagged-null (closure-tags x3)))))))
     "if-procedure")
    (lambda (v vs) (generate-builtin-name "if_procedure" v vs))
    '(lambda ((forward x))
@@ -6374,22 +6428,25 @@
  (define-primitive-procedure 'read-real
   (unary (lambda (x) (read-real)) "read-real")
   (lambda (v vs) "read_real")
-  ;; needs work: is this right?
-  '(lambda ((forward (ignore))) (bundle (read-real) (read-real)))
-  ;; needs work: is this right?
+  (if *imprecise-inexacts?*
+      '(lambda ((forward (ignore))) (bundle (read-real) 0.0))
+      '(lambda ((forward (ignore))) (bundle (read-real) (real 0))))
+  ;; This assumes that you call read-real on '() which is what would happen
+  ;; with (real-real).
   '(lambda ((reverse (ignore)))
-    (cons (*j (read-real))
-	  (lambda ((sensitivity y)) (cons '() (sensitivity y))))))
+    (cons (*j (read-real)) (lambda ((sensitivity (ignore))) (cons '() '())))))
  (define-primitive-procedure 'real
   (unary-real (lambda (x) (if *run?* x 'real)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
+  ;; These widen the tangent and cotangent as well. Nothing requires us to do
+  ;; so. It is just a design decision.
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
      (bundle (real x) (real (perturbation x)))))
-  ;; needs work
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j x) (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
+     (cons (*j (real x))
+	   (lambda ((sensitivity y)) (cons '() (real (sensitivity y))))))))
  (define-primitive-procedure 'write
   (unary (lambda (x)
 	  (when *run?* ((if *pp?* pp write) (externalize x)) (newline))
