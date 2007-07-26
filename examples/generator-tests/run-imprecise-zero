@@ -88,3 +88,13 @@ EOF
 echo Compiling t16
 stalingrad -compile -imprecise-zero -imprecise-inexacts t16
 ./t16
+echo Compiling t17
+stalingrad -compile -imprecise-zero -imprecise-inexacts t17
+./t17 <<EOF
+1
+1
+1
+1
+1
+1
+EOF
