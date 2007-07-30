@@ -67,17 +67,19 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
-		 (at-most-one ("encoded-booleans" encoded-booleans?))
-		 (at-most-one ("scott-pairs" scott-pairs?))
-		 (at-most-one ("letrec-as-y" letrec-as-y?))
 		 (at-most-one
 		  ("flow-analysis" flow-analysis?)
 		  ("flow-analysis-result" flow-analysis-result?)
 		  ("compile" compile?))
+		 (at-most-one ("expression-equality-using-identity"
+			       expression-equality-using-identity?)
+			      ("expression-equality-using-structural"
+			       expression-equality-using-structural?)
+			      ("expression-equality-using-alpha"
+			       expression-equality-using-alpha?))
 		 (at-most-one ("ebs" ebs?))
 		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
-		 (at-most-one ("show-access-indices" show-access-indices?))
 		 (at-most-one
 		  ("trace-primitive-procedures" trace-primitive-procedures?))
 		 (at-most-one ("trace-nonrecursive-closures"
@@ -99,31 +101,23 @@
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("x" x? (x "variable" string-argument #f)))
-		 (at-most-one ("expression-equality-using-identity"
-			       expression-equality-using-identity?)
-			      ("expression-equality-using-structural"
-			       expression-equality-using-structural?)
-			      ("expression-equality-using-alpha"
-			       expression-equality-using-alpha?))
-		 (at-most-one ("imprecise-zero" imprecise-zero?))
-		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (at-most-one ("verbose" verbose?))
+		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
- (when (and encoded-booleans? (not scott-pairs?))
-  (compile-time-error "When you specify -encoded-booleans you must specify -scott-pairs"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
- (set! *encoded-booleans?* encoded-booleans?)
- (set! *scott-pairs?* scott-pairs?)
- (set! *letrec-as-y?* letrec-as-y?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
+ (when expression-equality-using-identity?
+  (set! *expression-equality* 'identity))
+ (when expression-equality-using-structural?
+  (set! *expression-equality* 'structural))
+ (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
  (set! *metered?* metered?)
- (set! *show-access-indices?* show-access-indices?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
  (set! *trace-nonrecursive-closures?* trace-nonrecursive-closures?)
  (set! *trace-recursive-closures?* trace-recursive-closures?)
@@ -136,14 +130,8 @@
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
  (when x? (set! *x* (read-from-string x)))
- (when expression-equality-using-identity?
-  (set! *expression-equality* 'identity))
- (when expression-equality-using-structural?
-  (set! *expression-equality* 'structural))
- (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
- (set! *imprecise-zero?* imprecise-zero?)
- (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *verbose?* verbose?)
+ (set! *imprecise-inexacts?* imprecise-inexacts?)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
