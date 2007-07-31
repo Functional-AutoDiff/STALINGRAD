@@ -67,10 +67,9 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
-		 (at-most-one
-		  ("flow-analysis" flow-analysis?)
-		  ("flow-analysis-result" flow-analysis-result?)
-		  ("compile" compile?))
+		 (at-most-one ("flow-analysis" flow-analysis?)
+			      ("flow-analysis-result" flow-analysis-result?)
+			      ("compile" compile?))
 		 (at-most-one ("expression-equality-using-identity"
 			       expression-equality-using-identity?)
 			      ("expression-equality-using-structural"
@@ -80,16 +79,15 @@
 		 (at-most-one ("ebs" ebs?))
 		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
-		 (at-most-one
-		  ("trace-primitive-procedures" trace-primitive-procedures?))
+		 (at-most-one ("trace-primitive-procedures"
+			       trace-primitive-procedures?))
 		 (at-most-one ("trace-nonrecursive-closures"
 			       trace-nonrecursive-closures?))
-		 (at-most-one
-		  ("trace-recursive-closures" trace-recursive-closures?))
+		 (at-most-one ("trace-recursive-closures"
+			       trace-recursive-closures?))
 		 (at-most-one ("trace-argument/result" trace-argument/result?))
-		 (at-most-one
-		  ("unabbreviate-executably" unabbreviate-executably?)
-		  ("unabbreviate-nicely" unabbreviate-nicely?))
+		 (at-most-one ("unabbreviate-executably"
+			       unabbreviate-executably?))
 		 (at-most-one ("unabbreviate-transformed"
 			       unabbreviate-transformed?))
 		 (at-most-one ("unabbreviate-nonrecursive-closures"
@@ -100,7 +98,6 @@
 		 (at-most-one
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
-		 (at-most-one ("x" x? (x "variable" string-argument #f)))
 		 (at-most-one ("verbose" verbose?))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (required (pathname "pathname" string-argument)))
@@ -123,13 +120,11 @@
  (set! *trace-recursive-closures?* trace-recursive-closures?)
  (set! *trace-argument/result?* trace-argument/result?)
  (set! *unabbreviate-executably?* unabbreviate-executably?)
- (set! *unabbreviate-nicely?* unabbreviate-nicely?)
  (set! *unabbreviate-transformed?* unabbreviate-transformed?)
  (set! *unabbreviate-nonrecursive-closures?*
        unabbreviate-nonrecursive-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
- (when x? (set! *x* (read-from-string x)))
  (set! *verbose?* verbose?)
  (set! *imprecise-inexacts?* imprecise-inexacts?)
  (initialize-basis!)
@@ -151,7 +146,7 @@
 		(unless (= (length bs1) 1) (internal-error))
 		(pp (externalize (environment-binding-value (first bs1))))
 		(newline)
-		(pp (externalize-abstract-analysis bs))
+		(pp (externalize-analysis bs))
 		(newline))
 	       (let* ((bs (flow-analysis (first result) (second result)))
 		      (bs1 (expression-binding-flow
@@ -159,7 +154,7 @@
 		(unless (= (length bs1) 1) (internal-error))
 		(pp (externalize (environment-binding-value (first bs1))))
 		(newline)
-		(pp (externalize-abstract-analysis bs))
+		(pp (externalize-analysis bs))
 		(newline))))
 	  (flow-analysis-result?
 	   (set! *run?* #f)

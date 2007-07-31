@@ -60,7 +60,7 @@
 ;;;  p: concrete or abstract parameter
 ;;;  x: concrete variable
 ;;;  b: concrete syntactic, variable, or value binding
-;;;  v: value
+;;;  v: concrete or abstract value
 ;;;  d: definition
 ;;;  record, geysym, result, free-variables, message, callee, argument,
 ;;;  procedure
@@ -78,7 +78,7 @@
 (define-structure application free-variables callee argument)
 
 (define-structure letrec-expression
- free-variables variables lambda-expressions body)
+ free-variables procedure-variables lambda-expressions body)
 
 (define-structure cons-expression free-variables tags car cdr)
 
@@ -91,12 +91,10 @@
 (define-structure primitive-procedure
  name procedure generator forward reverse meter)
 
-(define-structure nonrecursive-closure
- values					;vector
- lambda-expression)
+(define-structure nonrecursive-closure values lambda-expression)
 
 (define-structure recursive-closure
- values					;vector
+ values
  procedure-variables			;vector
  lambda-expressions			;vector
  index)
@@ -143,8 +141,6 @@
 
 (define *unabbreviate-executably?* #f)
 
-(define *unabbreviate-nicely?* #f)
-
 (define *unabbreviate-transformed?* #t)
 
 (define *unabbreviate-nonrecursive-closures?* #f)
@@ -152,8 +148,6 @@
 (define *unabbreviate-recursive-closures?* #f)
 
 (define *pp?* #f)
-
-(define *x* #f)
 
 (define *verbose?* #f)
 
@@ -181,10 +175,6 @@
   (cond ((>= i (vector-length v)) #f)
 	((p x (vector-ref v i)) i)
 	(else (loop (+ i 1))))))
-
-(define (vector-append . vss)
- ;; belongs in QobiScheme
- (list->vector (reduce append (map vector->list vss) '())))
 
 ;;; needs work: use everywhere
 (define (map-reduce g i f l . ls)
@@ -544,6 +534,11 @@
        ((cons-expression? e) (cons-expression-free-variables e))
        (else (internal-error))))
 
+(define (recursive-closure-free-variables xs es)
+ (sort-variables
+  (set-differencep
+   variable=? (map-reduce union-variables '() free-variables es) xs)))
+
 ;;; Expression constructors
 
 (define (new-lambda-expression p e)
@@ -686,8 +681,6 @@
 
 ;;; LET*
 
-;;; here I am
-
 (define (contains-letrec? e)
  (or (letrec-expression? e)
      (and (application? e)
@@ -696,10 +689,6 @@
      (and (cons-expression? e)
 	  (or (contains-letrec? (cons-expression-car e))
 	      (contains-letrec? (cons-expression-cdr e))))))
-
-;;; needs work: The counterparts of these used to be constant-time but are no
-;;;             longer so. This has implications for vestigial
-;;;             let*-expressions.
 
 (define (let*? e)
  ;; This is a stronger check than:
@@ -710,11 +699,10 @@
       (not (contains-letrec? (lambda-expression-body (application-callee e))))
       (not (contains-letrec? (application-argument e)))))
 
-(define (let*-variables e)
+(define (let*-parameters e)
  (if (let*? e)
-     ;; needs work: parameter
      (cons (lambda-expression-parameter (application-callee e))
-	   (let*-variables (lambda-expression-body (application-callee e))))
+	   (let*-parameters (lambda-expression-body (application-callee e))))
      '()))
 
 (define (let*-expressions e)
@@ -746,11 +734,11 @@
        (expression-eqv? (application-argument e1)(application-argument e2)))
   (and (letrec-expression? e1)
        (letrec-expression? e2)
-       (= (length (letrec-expression-variables e1))
-	  (length (letrec-expression-variables e2)))
+       (= (length (letrec-expression-procedure-variables e1))
+	  (length (letrec-expression-procedure-variables e2)))
        (every variable=?
-	      (letrec-expression-variables e1)
-	      (letrec-expression-variables e2))
+	      (letrec-expression-procedure-variables e1)
+	      (letrec-expression-procedure-variables e2))
        (every expression-eqv?
 	      (letrec-expression-lambda-expressions e1)
 	      (letrec-expression-lambda-expressions e2))
@@ -791,20 +779,21 @@
 	(application-argument e1) (application-argument e2) xs1 xs2))
   (and (letrec-expression? e1)
        (letrec-expression? e2)
-       (= (length (letrec-expression-variables e1))
-	  (length (letrec-expression-variables e2)))
-       (every
-	(lambda (e3 e4)
-	 (alpha-equivalent? e3
-			    e4
-			    (append (letrec-expression-variables e1) xs1)
-			    (append (letrec-expression-variables e2) xs2)))
-	(letrec-expression-lambda-expressions e1)
-	(letrec-expression-lambda-expressions e2))
-       (alpha-equivalent? (letrec-expression-body e1)
-			  (letrec-expression-body e2)
-			  (append (letrec-expression-variables e1) xs1)
-			  (append (letrec-expression-variables e2) xs2)))
+       (= (length (letrec-expression-procedure-variables e1))
+	  (length (letrec-expression-procedure-variables e2)))
+       (every (lambda (e3 e4)
+	       (alpha-equivalent?
+		e3
+		e4
+		(append (letrec-expression-procedure-variables e1) xs1)
+		(append (letrec-expression-procedure-variables e2) xs2)))
+	      (letrec-expression-lambda-expressions e1)
+	      (letrec-expression-lambda-expressions e2))
+       (alpha-equivalent?
+	(letrec-expression-body e1)
+	(letrec-expression-body e2)
+	(append (letrec-expression-procedure-variables e1) xs1)
+	(append (letrec-expression-procedure-variables e2) xs2)))
   (and (cons-expression? e1)
        (cons-expression? e2)
        (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
@@ -886,7 +875,9 @@
  (free-variables (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-variables v)
- ...)
+ (recursive-closure-free-variables
+  (vector->list (recursive-closure-procedure-variables v))
+  (vector->list (recursive-closure-lambda-expressions v))))
 
 (define (closure-variables v)
  (cond ((nonrecursive-closure? v) (nonrecursive-closure-variables v))
@@ -966,13 +957,12 @@
      (primitive-procedure? v)))
 
 (define (aggregate-value-values v)
- (cond
-  ((nonrecursive-closure? v) (vector->list (nonrecursive-closure-values v)))
-  ((recursive-closure? v) (vector->list (recursive-closure-values v)))
-  ((bundle? v) (list (bundle-primal v) (bundle-tangent v)))
-  ((reverse-tagged-value? v) (list (reverse-tagged-value-primal v)))
-  ((tagged-pair? v) (list (tagged-pair-car v) (tagged-pair-cdr v)))
-  (else (internal-error))))
+ (cond ((nonrecursive-closure? v) (nonrecursive-closure-values v))
+       ((recursive-closure? v) (recursive-closure-values v))
+       ((bundle? v) (list (bundle-primal v) (bundle-tangent v)))
+       ((reverse-tagged-value? v) (list (reverse-tagged-value-primal v)))
+       ((tagged-pair? v) (list (tagged-pair-car v) (tagged-pair-cdr v)))
+       (else (internal-error))))
 
 ;;; Top
 
@@ -1037,7 +1027,7 @@
 	(let ((vs
 	       (abstract-environment-union (nonrecursive-closure-values v1)
 					   (nonrecursive-closure-values v2))))
-	 (if (some-vector abstract-top? vs)
+	 (if (some abstract-top? vs)
 	     (abstract-top)
 	     ;; See the note in abstract-environment=?.
 	     (make-nonrecursive-closure
@@ -1047,7 +1037,7 @@
 	     (recursive-closure-match? v1 v2))
 	(let ((vs (abstract-environment-union (recursive-closure-values v1)
 					      (recursive-closure-values v2))))
-	 (if (some-vector abstract-top? vs)
+	 (if (some abstract-top? vs)
 	     (abstract-top)
 	     ;; See the note in abstract-environment=?.
 	     (make-recursive-closure vs
@@ -1085,10 +1075,10 @@
  ;; are in the same order. Note that this is a weak notion of equivalence. A
  ;; stronger notion would attempt to find a correspondence between the free
  ;; variables that would allow them to be contextually alpha equivalent.
- (every-vector abstract-value=? vs1 vs2))
+ (every abstract-value=? vs1 vs2))
 
 (define (abstract-environment-union vs1 vs2)
- (map-vector abstract-value-union vs1 vs2))
+ (map abstract-value-union vs1 vs2))
 
 ;;; Search path
 
@@ -1205,7 +1195,7 @@
    (new-application (constant-convert bs (application-callee e))
 		    (constant-convert bs (application-argument e))))
   ((letrec-expression? e)
-   (new-letrec-expression (letrec-expression-variables e)
+   (new-letrec-expression (letrec-expression-procedure-variables e)
 			  (map (lambda (e) (constant-convert bs e))
 			       (letrec-expression-lambda-expressions e))
 			  (constant-convert bs (letrec-expression-body e))))
@@ -1476,11 +1466,11 @@
   ((primitive-procedure? v) v)
   ((nonrecursive-closure? v)
    ;; See the note in abstract-environment=?.
-   (make-nonrecursive-closure (map-vector zero (nonrecursive-closure-values v))
+   (make-nonrecursive-closure (map zero (nonrecursive-closure-values v))
 			      (nonrecursive-closure-lambda-expression v)))
   ((recursive-closure? v)
    ;; See the note in abstract-environment=?.
-   (make-recursive-closure (map-vector zero (recursive-closure-values v))
+   (make-recursive-closure (map zero (recursive-closure-values v))
 			   (recursive-closure-procedure-variables v)
 			   (recursive-closure-lambda-expressions v)
 			   (recursive-closure-index v)))
@@ -1506,7 +1496,7 @@
 			 (forward-transform (application-argument e))))
        ((letrec-expression? e)
 	(new-letrec-expression
-	 (map forwardify (letrec-expression-variables e))
+	 (map forwardify (letrec-expression-procedure-variables e))
 	 (map forward-transform (letrec-expression-lambda-expressions e))
 	 (forward-transform (letrec-expression-body e))))
        ((cons-expression? e)
@@ -1527,7 +1517,7 @@
 		    (forward-transform-inverse (application-argument e))))
   ((letrec-expression? e)
    (new-letrec-expression
-    (map unforwardify (letrec-expression-variables e))
+    (map unforwardify (letrec-expression-procedure-variables e))
     (map forward-transform-inverse (letrec-expression-lambda-expressions e))
     (forward-transform-inverse (letrec-expression-body e))))
   ((cons-expression? e)
@@ -1559,7 +1549,7 @@
 	(value-binding-value b)
 	;; See the note in abstract-environment=?.
 	(make-nonrecursive-closure
-	 (map-vector primal (nonrecursive-closure-values v-forward))
+	 (map primal (nonrecursive-closure-values v-forward))
 	 (forward-transform-inverse
 	  (nonrecursive-closure-lambda-expression v-forward))))))
   ((recursive-closure? v-forward)
@@ -1574,7 +1564,7 @@
 	(value-binding-value b)
 	;; See the note in abstract-environment=?.
 	(make-recursive-closure
-	 (map-vector primal (recursive-closure-values v-forward))
+	 (map primal (recursive-closure-values v-forward))
 	 (map-vector unforwardify
 		     (recursive-closure-procedure-variables v-forward))
 	 (map-vector forward-transform-inverse
@@ -1619,7 +1609,7 @@
 	(value-binding-value b)
 	;; See the note in abstract-environment=?.
 	(make-nonrecursive-closure
-	 (map-vector tangent (nonrecursive-closure-values v-forward))
+	 (map tangent (nonrecursive-closure-values v-forward))
 	 (forward-transform-inverse
 	  (nonrecursive-closure-lambda-expression v-forward))))))
   ((recursive-closure? v-forward)
@@ -1635,7 +1625,7 @@
 	(value-binding-value b)
 	;; See the note in abstract-environment=?.
 	(make-recursive-closure
-	 (map-vector tangent (recursive-closure-values v-forward))
+	 (map  tangent (recursive-closure-values v-forward))
 	 (map-vector unforwardify
 		     (recursive-closure-procedure-variables v-forward))
 	 (map-vector forward-transform-inverse
@@ -1675,16 +1665,16 @@
 	  (nonrecursive-closure? v-perturbation)
 	  (nonrecursive-closure-match? v v-perturbation)
 	  ;; See the note in abstract-environment=?.
-	  (every-vector legitimate?
-			(nonrecursive-closure-values v)
-			(nonrecursive-closure-values v-perturbation)))
+	  (every legitimate?
+		 (nonrecursive-closure-values v)
+		 (nonrecursive-closure-values v-perturbation)))
      (and (recursive-closure? v)
 	  (recursive-closure? v-perturbation)
 	  (recursive-closure-match? v v-perturbation)
 	  ;; See the note in abstract-environment=?.
-	  (every-vector legitimate?
-			(recursive-closure-values v)
-			(recursive-closure-values v-perturbation)))
+	  (every legitimate?
+		 (recursive-closure-values v)
+		 (recursive-closure-values v-perturbation)))
      (and (bundle? v)
 	  (bundle? v-perturbation)
 	  (legitimate? (bundle-primal v) (bundle-primal v-perturbation))
@@ -1708,16 +1698,16 @@
   ((nonrecursive-closure? v)
    ;; See the note in abstract-environment=?.
    (make-nonrecursive-closure
-    (map-vector bundle-internal
-		(nonrecursive-closure-values v)
-		(nonrecursive-closure-values v-perturbation))
+    (map bundle-internal
+	 (nonrecursive-closure-values v)
+	 (nonrecursive-closure-values v-perturbation))
     (forward-transform (nonrecursive-closure-lambda-expression v))))
   ((recursive-closure? v)
    ;; See the note in abstract-environment=?.
    (make-recursive-closure
-    (map-vector bundle-internal
-		(recursive-closure-values v)
-		(recursive-closure-values v-perturbation))
+    (map bundle-internal
+	 (recursive-closure-values v)
+	 (recursive-closure-values v-perturbation))
     (map-vector forwardify (recursive-closure-procedure-variables v))
     (map-vector forward-transform (recursive-closure-lambda-expressions v))
     (recursive-closure-index v)))
@@ -1738,13 +1728,12 @@
 
 (define (bundle v v-perturbation)
  (unless (legitimate? v v-perturbation)
-  (run-time-error
-   "The arguments to bundle are illegitimate" v v-perturbation))
+  (run-time-error "The arguments to bundle are illegitimate" v v-perturbation))
  (bundle-internal v v-perturbation))
 
 ;;; Reverse Mode
 
-;;; here I am
+;;; here I am: removed for now
 
 ;;; Pretty printer
 
@@ -1756,64 +1745,20 @@
 (define (abstract->concrete e)
  (cond
   ((let*? e)
-   (let loop ((xs (let*-variables e)) (es (let*-expressions e)) (bs '()))
-    (cond
-     ((null? xs)
-      (case (length bs)
-       ((0) (internal-error))
-       ((1) `(let ,bs ,(abstract->concrete (let*-body e))))
-       (else `(let* ,(reverse bs) ,(abstract->concrete (let*-body e))))))
-     ((and *unabbreviate-nicely?*
-	   (= (length xs) 3)
-	   (result-cons? (first xs) (second xs) (third xs)
-			 (first es) (second es) (third es)
-			 (let*-body e)))
-      (case (length bs)
-       ((0) `(cons ,(abstract->concrete (partial-cons-argument (first es)))
-		   ,(abstract->concrete (second es))))
-       ((1) `(let ,bs
-	      (cons ,(abstract->concrete (partial-cons-argument (first es)))
-		    ,(abstract->concrete (second es)))))
-       (else `(let* ,(reverse bs)
-	       (cons ,(abstract->concrete (partial-cons-argument (first es)))
-		     ,(abstract->concrete (second es)))))))
-     ((and *unabbreviate-nicely?*
-	   (= (length xs) 2)
-	   (result-cons-expression?
-	    (first xs) (second xs) (first es) (second es) (let*-body e)))
-      (case (length bs)
-       ((0) `(cons ,(abstract->concrete (cons-expression-car (second es)))
-		   ,(abstract->concrete (first es))))
-       ((1) `(let ,bs
-	      (cons ,(abstract->concrete (cons-expression-car (second es)))
-		    ,(abstract->concrete (first es)))))
-       (else `(let* ,(reverse bs)
-	       (cons ,(abstract->concrete (cons-expression-car (second es)))
-		     ,(abstract->concrete (first es)))))))
-     ((and *unabbreviate-nicely?* (partial-cons? (first es)))
-      (loop (rest xs)
-	    (rest es)
-	    (cons `(,(first xs)
-		    ;; needs work: cons-procedure
-		    (cons-procedure
-		     ,(abstract->concrete (partial-cons-argument (first es)))))
-		  bs)))
-     ((and *unabbreviate-nicely?*
-	   (>= (length xs) 3)
-	   (cons-split? (first xs) (second xs) (third xs)
-			(first es) (second es) (third es)))
-      (loop (rest (rest (rest xs)))
-	    (rest (rest (rest es)))
-	    (cons `((cons ,(second xs) ,(third xs))
-		    ,(abstract->concrete (first es)))
-		  bs)))
-     (else (loop (rest xs)
-		 (rest es)
-		 (cons `(,(first xs) ,(abstract->concrete (first es))) bs))))))
+   (let loop ((ps (let*-parameters e)) (es (let*-expressions e)) (bs '()))
+    (if (null? ps)
+	(case (length bs)
+	 ((0) (internal-error))
+	 ((1) `(let ,bs ,(abstract->concrete (let*-body e))))
+	 (else `(let* ,(reverse bs) ,(abstract->concrete (let*-body e)))))
+	(loop (rest ps)
+	      (rest es)
+	      (cons `(,(first ps) ,(abstract->concrete (first es))) bs)))))
   ((constant-expression? e)
    `',(externalize (constant-expression-value e)))
   ((variable-access-expression? e)
    (let ((x (variable-access-expression-variable e)))
+    ;; needs work: I'm not sure this is needed anymore
     (if (primitive-procedure? x) (primitive-procedure-name x) x)))
   ((lambda-expression? e)
    `(lambda (,(lambda-expression-parameter e))
@@ -1823,7 +1768,7 @@
      ,(abstract->concrete (application-argument e))))
   ((letrec-expression? e)
    `(letrec ,(map (lambda (x e) `(,x ,(abstract->concrete e)))
-		  (letrec-expression-variables e)
+		  (letrec-expression-procedure-variables e)
 		  (letrec-expression-lambda-expressions e))
      ,(abstract->concrete (letrec-expression-body e))))
   ((cons-expression? e)
@@ -1909,31 +1854,21 @@
 	     (case (length (nonrecursive-closure-variables v))
 	      ((0)
 	       (abstract->concrete (nonrecursive-closure-lambda-expression v)))
-	      ((1)
-	       `(let ,(map-indexed
-		       (lambda (x i)
-			`(,x
-			  ,(loop (vector-ref (nonrecursive-closure-values v) i)
-				 quote?)))
-		       (nonrecursive-closure-variables v))
-		 ,(abstract->concrete
-		   (nonrecursive-closure-lambda-expression v))))
-	      (else
-	       `(let ,(map-indexed
-		       (lambda (x i)
-			`(,x
-			  ,(loop (vector-ref (nonrecursive-closure-values v) i)
-				 quote?)))
-		       (nonrecursive-closure-variables v))
-		 ,(abstract->concrete
-		   (nonrecursive-closure-lambda-expression v))))))
+	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+			       (nonrecursive-closure-variables v)
+			       (nonrecursive-closure-values v))
+		     ,(abstract->concrete
+		       (nonrecursive-closure-lambda-expression v))))
+	      (else `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+				(nonrecursive-closure-variables v)
+				(nonrecursive-closure-values v))
+		      ,(abstract->concrete
+			(nonrecursive-closure-lambda-expression v))))))
 	    (*unabbreviate-nonrecursive-closures?*
 	     `(nonrecursive-closure
-	       ,(map-indexed
-		 (lambda (x i)
-		  `(,x ,(loop (vector-ref (nonrecursive-closure-values v) i)
-			      quote?)))
-		 (nonrecursive-closure-variables v))
+	       ,(map (lambda (x v) `(,x ,(loop v quote?)))
+		     (nonrecursive-closure-variables v)
+		     (nonrecursive-closure-values v))
 	       ,(abstract->concrete
 		 (nonrecursive-closure-lambda-expression v))))
 	    (else (abstract->concrete
@@ -1950,12 +1885,9 @@
 			       (recursive-closure-lambda-expressions v)))
 		     ,(vector-ref (recursive-closure-procedure-variables v)
 				  (recursive-closure-index v))))
-	      ((1) `(let ,(map-indexed
-			   (lambda (x i)
-			    `(,x ,(loop
-				   (vector-ref (recursive-closure-values v) i)
-				   quote?)))
-			   (recursive-closure-variables v))
+	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+			       (recursive-closure-variables v)
+			       (recursive-closure-values v))
 		     (letrec ,(vector->list
 			       (map-vector
 				(lambda (x e) `(,x ,(abstract->concrete e)))
@@ -1963,26 +1895,21 @@
 				(recursive-closure-lambda-expressions v)))
 		      ,(vector-ref (recursive-closure-procedure-variables v)
 				   (recursive-closure-index v)))))
-	      (else
-	       `(let ,(map-indexed
-		       (lambda (x i)
-			`(,x ,(loop (vector-ref (recursive-closure-values v) i)
-				    quote?)))
-		       (recursive-closure-variables v))
-		 (letrec ,(vector->list
-			   (map-vector
-			    (lambda (x e) `(,x ,(abstract->concrete e)))
-			    (recursive-closure-procedure-variables v)
-			    (recursive-closure-lambda-expressions v)))
-		  ,(vector-ref (recursive-closure-procedure-variables v)
-			       (recursive-closure-index v)))))))
+	      (else `(let ,(map (lambda (x i) `(,x ,(loop v quote?)))
+				(recursive-closure-variables v)
+				(recursive-closure-values v))
+		      (letrec ,(vector->list
+				(map-vector
+				 (lambda (x e) `(,x ,(abstract->concrete e)))
+				 (recursive-closure-procedure-variables v)
+				 (recursive-closure-lambda-expressions v)))
+		       ,(vector-ref (recursive-closure-procedure-variables v)
+				    (recursive-closure-index v)))))))
 	    (*unabbreviate-recursive-closures?*
 	     `(recursive-closure
-	       ,(map-indexed
-		 (lambda (x i)
-		  `(,x ,(loop (vector-ref (recursive-closure-values v) i)
-			      quote?)))
-		 (recursive-closure-variables v))
+	       ,(map (lambda (x i) `(,x ,(loop v quote?)))
+		     (recursive-closure-variables v)
+		     (recursive-closure-values v))
 	       ,(vector->list
 		 (map-vector (lambda (x e) `(,x ,(abstract->concrete e)))
 			     (recursive-closure-procedure-variables v)
@@ -2022,7 +1949,34 @@
 	,v)
       v)))
 
-;;; Evaluator
+(define (externalize-environment xs vs)
+ (unless (and (list? vs) (= (length xs) (length vs)))
+  (internal-error "Not an environment"))
+ (map (lambda (x v) (list x (externalize v))) xs vs))
+
+(define (externalize-environment-binding xs b)
+ (unless (environment-binding? b)
+  (internal-error "Not an environment binding"))
+ (list (externalize-environment xs (environment-binding-values b))
+       (externalize (environment-binding-value b))))
+
+(define (externalize-flow xs bs)
+ (unless (and (list? bs) (every environment-binding? bs))
+  (internal-error "Not a flow"))
+ (map (lambda (b) (externalize-environment-binding xs b)) bs))
+
+(define (externalize-expression-binding b)
+ (unless (expression-binding? b) (internal-error "Not an expression binding"))
+ (list (abstract->concrete (expression-binding-expression b))
+       (externalize-flow (free-variables (expression-binding-expression b))
+			 (expression-binding-flow b))))
+
+(define (externalize-analysis bs)
+ (unless (and (list? bs) (every expression-binding? bs))
+  (internal-error "Not an analysis"))
+ (map externalize-expression-binding bs))
+
+;;; Concrete Evaluator
 
 (define (with-write-level n thunk)
  (let ((m (write-level)))
@@ -2044,132 +1998,150 @@
        (and (vlad-reverse? v) (tag-check? (rest tags) (*j-inverse v))))
       (else (internal-error)))))
 
+;;; Environment Restriction/Construction
+
+(define (restrict-environment vs e f)
+ (let ((xs (free-variables e)))
+  (map (lambda (x) (list-ref vs (positionp variable=? x xs)))
+       (free-variables (f e)))))
+
+(define (letrec-restrict-environment vs e)
+ (let ((xs (free-variables e)))
+  (map (lambda (x) (list-ref vs (positionp variable=? x xs)))
+       (recursive-closure-free-variables
+	(letrec-expression-procedure-variables e)
+	(letrec-expression-lambda-expressions e)))))
+
+(define (letrec-nested-environment vs e)
+ (map (lambda (x)
+       (if (memp variable=? x (letrec-expression-procedure-variables e))
+	   (make-recursive-closure
+	    (letrec-restrict-environment vs e)
+	    (list->vector (letrec-expression-procedure-variables e))
+	    (list->vector (letrec-expression-lambda-expressions e))
+	    (positionp variable=? x (letrec-expression-procedure-variables e)))
+	   (list-ref vs (positionp variable=? x (free-variables e)))))
+      (free-variables (letrec-expression-body e))))
+
+(define (construct-nonrecursive-environment v1 v2)
+ (map (lambda (x)
+       ;; here I am: to handle destructuring
+       (if (variable=? x (nonrecursive-closure-parameter v1))
+	   v2
+	   (list-ref
+	    (nonrecursive-closure-values v1)
+	    (positionp variable=? x (nonrecursive-closure-variables v1)))))
+      (free-variables
+       (lambda-expression-body (nonrecursive-closure-lambda-expression v1)))))
+
+(define (construct-recursive-environment v1 v2)
+ (map (lambda (x)
+       (cond
+	;; here I am: to handle destructuring
+	((variable=? x (recursive-closure-parameter v1)) v2)
+	((some-vector (lambda (x1) (variable=? x x1))
+		      (recursive-closure-procedure-variables v1))
+	 (make-recursive-closure
+	  (recursive-closure-values v1)
+	  (recursive-closure-procedure-variables v1)
+	  (recursive-closure-lambda-expressions v1)
+	  (positionp-vector
+	   variable=? x (recursive-closure-procedure-variables v1))))
+	(else (list-ref
+	       (recursive-closure-values v1)
+	       (positionp variable=? x (recursive-closure-variables v1))))))
+      (free-variables (lambda-expression-body
+		       (vector-ref (recursive-closure-lambda-expressions v1)
+				   (recursive-closure-index v1))))))
+
 ;;; needs work: This evaluator is not tail recursive.
 
-(define (call callee argument)
- (unless (vlad-procedure? callee)
-  (run-time-error "Target is not a procedure" callee))
+(define (concrete-apply v1 v2 bs)
+ (unless (vlad-procedure? v1)
+  (run-time-error "Target is not a procedure" v1))
  (unless (tag-check?
-	  (cond
-	   ((primitive-procedure? callee) '())
-	   ((nonrecursive-closure? callee) (nonrecursive-closure-tags callee))
-	   ((recursive-closure? callee) (recursive-closure-tags callee))
-	   (else (internal-error)))
-	  argument)
-  (run-time-error "Argument has wrong type for target" callee argument))
- (set! *stack* (cons (list callee argument) *stack*))
- (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
-	     ((nonrecursive-closure? callee) *trace-nonrecursive-closures?*)
-	     ((recursive-closure? callee) *trace-recursive-closures?*)
+	  (cond ((primitive-procedure? v1) '())
+		((nonrecursive-closure? v1) (nonrecursive-closure-tags v1))
+		((recursive-closure? v1) (recursive-closure-tags v1))
+		(else (internal-error)))
+	  v2)
+  (run-time-error "Argument has wrong type for target" v1 v2))
+ (set! *stack* (cons (list v1 v2) *stack*))
+ (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
+	     ((nonrecursive-closure? v1) *trace-nonrecursive-closures?*)
+	     ((recursive-closure? v1) *trace-recursive-closures?*)
 	     (else (internal-error)))
   (if *trace-argument/result?*
       (format #t "~aentering ~s ~s~%"
 	      (make-string *trace-level* #\space)
-	      (externalize callee)
-	      (externalize argument))
+	      (externalize v1)
+	      (externalize v2))
       (format #t "~aentering ~s~%"
 	      (make-string *trace-level* #\space)
-	      (externalize callee)))
+	      (externalize v1)))
   (set! *trace-level* (+ *trace-level* 1)))
- (when (and *metered?* (primitive-procedure? callee))
+ (when (and *metered?* (primitive-procedure? v1))
   (set-primitive-procedure-meter!
-   callee (+ (primitive-procedure-meter callee) 1)))
- (let ((result (cond ((primitive-procedure? callee)
-		      ((primitive-procedure-procedure callee) argument #f))
-		     ((nonrecursive-closure? callee)
-		      (evaluate
-		       (lambda-expression-body
-			(nonrecursive-closure-lambda-expression callee))
-		       argument
-		       (nonrecursive-closure-values callee)))
-		     ((recursive-closure? callee)
-		      (evaluate
-		       (lambda-expression-body
-			(vector-ref
-			 (recursive-closure-lambda-expression callee)
-			 (recursive-closure-index callee)))
-		       argument
-		       (vector-append
-			(map-n-vector
-			 (lambda (i)
-			  (if (= i (recursive-closure-index callee))
-			      ;; to preserve eq?ness
-			      callee
-			      (make-recursive-closure
-			       (recursive-closure-values callee)
-			       (recursive-closure-procedure-variables callee)
-			       (recursive-closure-lambda-expressions callee)
-			       i)))
-			 (vector-length
-			  (recursive-closure-procedure-variables callee)))
-			(recursive-closure-values callee))))
-		     (else (internal-error)))))
+   v1 (+ (primitive-procedure-meter v1) 1)))
+ (let ((result
+	(cond
+	 ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2 bs))
+	 ((nonrecursive-closure? v1)
+	  (concrete-eval
+	   (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
+	   (construct-nonrecursive-environment v1 v2)
+	   bs))
+	 ((recursive-closure? v1)
+	  (concrete-eval (lambda-expression-body
+			  (vector-ref (recursive-closure-lambda-expressions v1)
+				      (recursive-closure-index v1)))
+			 (construct-recursive-environment v1 v2)
+			 bs))
+	 (else (internal-error)))))
   (set! *stack* (rest *stack*))
-  (when (cond ((primitive-procedure? callee) *trace-primitive-procedures?*)
-	      ((nonrecursive-closure? callee) *trace-nonrecursive-closures?*)
-	      ((recursive-closure? callee) *trace-recursive-closures?*)
+  (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
+	      ((nonrecursive-closure? v1) *trace-nonrecursive-closures?*)
+	      ((recursive-closure? v1) *trace-recursive-closures?*)
 	      (else (internal-error)))
    (set! *trace-level* (- *trace-level* 1))
    (if *trace-argument/result?*
        (format #t "~aexiting ~s ~s~%"
 	       (make-string *trace-level* #\space)
-	       (externalize callee)
+	       (externalize v1)
 	       (externalize result))
        (format #t "~aexiting ~s~%"
 	       (make-string *trace-level* #\space)
-	       (externalize callee))))
+	       (externalize v1))))
   result))
 
-(define (evaluate e v vs)
- (define (lookup i) (if (= i -1) v (vector-ref vs i)))
- (cond ((variable-access-expression? e)
-	(lookup (variable-access-expression-index e)))
-       ((lambda-expression? e)
-	(make-nonrecursive-closure
-	 (map-vector lookup (lambda-expression-free-variable-indices e)) e))
-       ;; This is a vestigial let*-expression.
-       ((let*? e)
-	(let ((x? (and *x* (variable=? (first (let*-variables e)) *x*))))
-	 (let loop ((es (let*-expressions e))
-		    (xs (let*-variables e))
-		    (vs vs))
-	  (if (null? es)
-	      (evaluate (let*-body e) v vs)
-	      (loop (rest es)
-		    (rest xs)
-		    ;; needs work: This is not safe-for-space because we don't
-		    ;;             remove unused elements of vs.
-		    (let ((v (evaluate (first es) v vs)))
-		     (when x?
-		      (format #t "~s=" (first xs))
-		      ((if *pp?* pp write) (externalize v))
-		      (newline))
-		     (vector-append vs (vector v))))))))
-       ((application? e)
-	;; This LET* is to specify the evaluation order.
-	(let* ((callee (evaluate (application-callee e) v vs))
-	       (argument (evaluate (application-argument e) v vs)))
-	 (call callee argument)))
-       ((letrec-expression? e)
-	(evaluate
-	 (letrec-expression-body e)
-	 v
-	 (vector-append
-	  (let ((vs (map-vector
-		     lookup
-		     (letrec-expression-bodies-free-variable-indices e)))
-		(xs (list->vector (letrec-expression-variables e)))
-		(es (list->vector (letrec-expression-lambda-expressions e))))
-	   (map-n-vector (lambda (i) (make-recursive-closure vs xs es i))
-			 (vector-length es)))
-	  (map-vector lookup
-		      (letrec-expression-body-free-variable-indices e)))))
-       ((cons-expression? e)
-	;; This LET* is to specify the evaluation order.
-	(let* ((car (evaluate (cons-expression-car e) v vs))
-	       (cdr (evaluate (cons-expression-cdr e) v vs)))
-	 (make-tagged-pair (cons-expression-tags e) car cdr)))
-       (else (internal-error))))
+(define (concrete-eval e vs bs)
+ (cond
+  ((variable-access-expression? e)
+   (unless (= (length (free-variables e)) 1) (internal-error))
+   (first vs))
+  ((lambda-expression? e) (make-nonrecursive-closure vs e))
+  ((application? e)
+   ;; This LET* is to specify the evaluation order.
+   (let* ((v1 (concrete-eval (application-callee e)
+			     (restrict-environment vs e application-callee)
+			     bs))
+	  (v2 (concrete-eval (application-argument e)
+			     (restrict-environment vs e application-argument)
+			     bs)))
+    (concrete-apply v1 v2 bs)))
+  ((letrec-expression? e)
+   (concrete-eval
+    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
+  ((cons-expression? e)
+   ;; This LET* is to specify the evaluation order.
+   (let* ((v1 (concrete-eval (cons-expression-car e)
+			     (restrict-environment vs e cons-expression-car)
+			     bs))
+	  (v2 (concrete-eval (cons-expression-cdr e)
+			     (restrict-environment vs e cons-expression-cdr)
+			     bs)))
+    (make-tagged-pair (cons-expression-tags e) v1 v2)))
+  (else (internal-error))))
 
 ;;; Flow Analysis
 
@@ -2180,13 +2152,13 @@
 	(if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
        ((nonrecursive-closure? v)
 	(make-nonrecursive-closure
-	 (map-vector potentially-imprecise-vlad-value->abstract-value
-		     (nonrecursive-closure-values v))
+	 (map potentially-imprecise-vlad-value->abstract-value
+	      (nonrecursive-closure-values v))
 	 (nonrecursive-closure-lambda-expression v)))
        ((recursive-closure? v)
 	(make-recursive-closure
-	 (map-vector potentially-imprecise-vlad-value->abstract-value
-		     (recursive-closure-values v))
+	 (map potentially-imprecise-vlad-value->abstract-value
+	      (recursive-closure-values v))
 	 (recursive-closure-procedure-variables v)
 	 (recursive-closure-lambda-expressions v)
 	 (recursive-closure-index v)))
@@ -2206,37 +2178,6 @@
 			  (potentially-imprecise-vlad-value->abstract-value
 			   (tagged-pair-cdr v))))
        (else (internal-error))))
-
-;;; Abstract Environments
-
-(define (restrict-environment vs e f)
- (let ((xs (free-variables e)))
-  (list->vector (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
-		     (free-variables (f e))))))
-
-(define (letrec-restrict-environment vs e)
- (let ((xs (free-variables e)))
-  (list->vector
-   (map (lambda (x) (vector-ref vs (positionp variable=? x xs)))
-	(sort-variables
-	 (set-differencep variable=?
-			  (map-reduce union-variables
-				      '()
-				      free-variables
-				      (letrec-expression-lambda-expressions e))
-			  (letrec-expression-variables e)))))))
-
-(define (letrec-nested-environment vs e)
- (list->vector
-  (map (lambda (x)
-	(if (memp variable=? x (letrec-expression-variables e))
-	    (make-recursive-closure
-	     (letrec-restrict-environment vs e)
-	     (list->vector (letrec-expression-variables e))
-	     (list->vector (letrec-expression-lambda-expressions e))
-	     (positionp variable=? x (letrec-expression-variables e)))
-	    (vector-ref vs (positionp variable=? x (free-variables e)))))
-       (free-variables (letrec-expression-body e)))))
 
 ;;; Abstract Flows
 
@@ -2297,7 +2238,7 @@
 ;;; Abstract Evaluator
 
 (define (make-abstract-analysis e vs)
- (unless (= (vector-length vs) (length (free-variables e))) (internal-error))
+ (unless (= (length vs) (length (free-variables e))) (internal-error))
  (list (make-expression-binding
 	e (list (make-environment-binding vs (abstract-top))))))
 
@@ -2305,13 +2246,12 @@
  ;; This (like update-analysis-domains) only makes domains.
  (make-abstract-analysis
   e
-  (list->vector
-   (map
-    (lambda (x)
-     (potentially-imprecise-vlad-value->abstract-value
-      (value-binding-value
-       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-    (free-variables e)))))
+  (map
+   (lambda (x)
+    (potentially-imprecise-vlad-value->abstract-value
+     (value-binding-value
+      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
+   (free-variables e))))
 
 (define (abstract-eval1 e vs bs)
  (let ((b (lookup-expression-binding e bs)))
@@ -2324,43 +2264,15 @@
       (abstract-top))))
 
 (define (abstract-apply-closure p v1 v2)
- (cond
-  ((nonrecursive-closure? v1)
-   (let ((e (lambda-expression-body
-	     (nonrecursive-closure-lambda-expression v1))))
-    (p e
-       (list->vector
-	(map
-	 (lambda (x)
-	  (if (variable=? x (nonrecursive-closure-parameter v1))
-	      v2
-	      (vector-ref
-	       (nonrecursive-closure-values v1)
-	       (positionp variable=? x (nonrecursive-closure-variables v1)))))
-	 (free-variables e))))))
-  ((recursive-closure? v1)
-   (let ((e (lambda-expression-body
-	     (vector-ref (recursive-closure-lambda-expressions v1)
-			 (recursive-closure-index v1)))))
-    (p e
-       (list->vector
-	(map (lambda (x)
-	      (cond
-	       ((variable=? x (recursive-closure-parameter v1)) v2)
-	       ((some-vector (lambda (x1) (variable=? x x1))
-			     (recursive-closure-procedure-variables v1))
-		(make-recursive-closure
-		 (recursive-closure-values v1)
-		 (recursive-closure-procedure-variables v1)
-		 (recursive-closure-lambda-expressions v1)
-		 (positionp-vector
-		  variable=? x (recursive-closure-procedure-variables v1))))
-	       (else
-		(vector-ref
-		 (recursive-closure-values v1)
-		 (positionp variable=? x (recursive-closure-variables v1))))))
-	     (free-variables e))))))
-  (else (internal-error))))
+ (cond ((nonrecursive-closure? v1)
+	(p (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
+	   (construct-nonrecursive-environment v1 v2)))
+       ((recursive-closure? v1)
+	(p (lambda-expression-body
+	    (vector-ref (recursive-closure-lambda-expressions v1)
+			(recursive-closure-index v1)))
+	   (construct-recursive-environment v1 v2)))
+       (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
  (if (or (abstract-top? v1) (abstract-top? v2))
@@ -2375,7 +2287,7 @@
  (cond
   ((variable-access-expression? e)
    (unless (= (length (free-variables e)) 1) (internal-error))
-   (vector-ref vs 0))
+   (first vs 0))
   ((lambda-expression? e) (make-nonrecursive-closure vs e))
   ((application? e)
    (abstract-apply
@@ -2555,10 +2467,10 @@
 		    unionv
 		    (map (lambda (b)
 			  (unionv
-			   (reduce-vector
+			   (reduce
 			    unionv
-			    (map-vector concrete-reals-in
-					(environment-binding-values b))
+			    (map concrete-reals-in
+				 (environment-binding-values b))
 			    '())
 			   (concrete-reals-in (environment-binding-value b))))
 			 (expression-binding-flow b))
@@ -2566,37 +2478,6 @@
 		  bs)
 	     '())))
    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
-
-;;; Pretty printer for abstract
-
-(define (externalize-abstract-environment xs vs)
- (unless (and (vector? vs) (= (length xs) (vector-length vs)))
-  (internal-error "Not an abstract environment"))
- (map (lambda (x v) (list x (externalize v))) xs (vector->list vs)))
-
-(define (externalize-abstract-environment-binding xs b)
- (unless (environment-binding? b)
-  (internal-error "Not an abstract environment binding"))
- (list (externalize-abstract-environment xs (environment-binding-values b))
-       (externalize (environment-binding-value b))))
-
-(define (externalize-abstract-flow xs bs)
- (unless (and (list? bs) (every environment-binding? bs))
-  (internal-error "Not an abstract flow"))
- (map (lambda (b) (externalize-abstract-environment-binding xs b)) bs))
-
-(define (externalize-abstract-expression-binding b)
- (unless (expression-binding? b)
-  (internal-error "Not an abstract expression binding"))
- (list (abstract->concrete (expression-binding-expression b))
-       (externalize-abstract-flow
-	(free-variables (expression-binding-expression b))
-	(expression-binding-flow b))))
-
-(define (externalize-abstract-analysis bs)
- (unless (and (list? bs) (every expression-binding? bs))
-  (internal-error "Not an abstract analysis"))
- (map externalize-abstract-expression-binding bs))
 
 ;;; Code Generator
 
@@ -2664,7 +2545,7 @@
        ((letrec-expression? e)
 	(unionp
 	 variable=?
-	 (letrec-expression-variables e)
+	 (letrec-expression-procedure-variables e)
 	 (unionp variable=?
 		 (reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
 			 (map all-variables-in-expression
@@ -2733,7 +2614,7 @@
 		      (remove-duplicatesp
 		       abstract-value=?
 		       (cons (environment-binding-value b)
-			     (vector->list (environment-binding-values b)))))
+			     (environment-binding-values b))))
 		     (expression-binding-flow b))
 		'()))
        bs)
@@ -3663,9 +3544,10 @@
       (lambda (x)
        (let ((v (make-recursive-closure
 		 (letrec-restrict-environment vs e)
-		 (list->vector (letrec-expression-variables e))
+		 (list->vector (letrec-expression-procedure-variables e))
 		 (list->vector (letrec-expression-lambda-expressions e))
-		 (positionp variable=? x (letrec-expression-variables e)))))
+		 (positionp
+		  variable=? x (letrec-expression-procedure-variables e)))))
 	(if (void? v)
 	    '()
 	    (list (generate-specifier v vs1)
@@ -3681,7 +3563,7 @@
 			(generate-slot-names v xs1)
 			(aggregate-value-values v)))
 		  ");"))))
-      (letrec-expression-variables e))
+      (letrec-expression-procedure-variables e))
      (generate-letrec-bindings (letrec-expression-body e)
 			       (letrec-nested-environment vs e)
 			       xs
@@ -4077,11 +3959,9 @@
    (generate-if-and-function-definitions bs xs vs v1v2s v1v2s1 things1-things2)
    (list
     "int main(void){"
-    (let ((vs
-	   (vector->list
-	    (environment-binding-values
-	     (first
-	      (expression-binding-flow (lookup-expression-binding e bs)))))))
+    (let ((vs (environment-binding-values
+	       (first
+		(expression-binding-flow (lookup-expression-binding e bs))))))
      (if (every void? vs)
 	 '()
 	 (list
@@ -4337,9 +4217,9 @@
 (define (evaluate-in-top-level-environment e)
  (syntax-check-expression! e)
  (let ((result (parse e)))
-  (evaluate (first result)
-	    'unspecified
-	    (list->vector (map value-binding-value (second result))))))
+  ;; needs work
+  (evaluate
+   (first result) 'unspecified (map value-binding-value (second result)))))
 
 (define (initialize-forwards-and-reverses!)
  (for-each (lambda (b)
