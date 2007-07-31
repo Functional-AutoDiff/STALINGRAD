@@ -213,10 +213,9 @@
 	      (lambda ()
 	       ((if *pp?* pp write)
 		(externalize
-		 (evaluate (first result)
-			   'unspecified
-			   (list->vector
-			    (map value-binding-value (second result))))))))))
+		 (concrete-eval
+		  (first result)
+		  (map value-binding-value (second result)))))))))
 	   (newline)
 	   (when metered?
 	    (for-each (lambda (b)
