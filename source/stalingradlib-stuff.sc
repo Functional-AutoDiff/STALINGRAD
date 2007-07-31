@@ -539,12 +539,20 @@
   (set-differencep
    variable=? (map-reduce union-variables '() free-variables es) xs)))
 
+(define (parameter-variables p)
+ (cond ((variable-access-expression? p) (free-variables p))
+       ((lambda-expression? p) (free-variables p))
+       ((cons-expression? p)
+	(append (parameter-variables (cons-expression-car p))
+		(parameter-variables (cons-expression-cdr p))))
+       (else (internal-error))))
+
 ;;; Expression constructors
 
 (define (new-lambda-expression p e)
  (make-lambda-expression
   (sort-variables
-   (set-differencep variable=? (free-variables e) (free-variables p)))
+   (set-differencep variable=? (free-variables e) (parameter-variables p)))
   p
   e))
 
@@ -760,17 +768,18 @@
 	  (positionp variable=? (variable-access-expression-variable e2) xs2)))
   (and (lambda-expression? e1)
        (lambda-expression? e2)
-       (= (length (free-variables (lambda-expression-parameter e1)))
-	  (length (free-variables (lambda-expression-parameter e2))))
-       (alpha-equivalent? (lambda-expression-parameter e1)
-			  (lambda-expression-parameter e2)
-			  (free-variables (lambda-expression-parameter e1))
-			  (free-variables (lambda-expression-parameter e2)))
+       (= (length (parameter-variables (lambda-expression-parameter e1)))
+	  (length (parameter-variables (lambda-expression-parameter e2))))
+       (alpha-equivalent?
+	(lambda-expression-parameter e1)
+	(lambda-expression-parameter e2)
+	(parameter-variables (lambda-expression-parameter e1))
+	(parameter-variables (lambda-expression-parameter e2)))
        (alpha-equivalent?
 	(lambda-expression-body e1)
 	(lambda-expression-body e2)
-	(append (free-variables (lambda-expression-parameter e1)) xs1)
-	(append (free-variables (lambda-expression-parameter e2)) xs2)))
+	(append (parameter-variables (lambda-expression-parameter e1)) xs1)
+	(append (parameter-variables (lambda-expression-parameter e2)) xs2)))
   (and (application? e1)
        (application? e2)
        (alpha-equivalent?
@@ -1357,7 +1366,8 @@
       (case (length (second e))
        ((0) (loop (macro-expand-expression e) xs))
        ((1) (syntax-check-parameter! (first (second e)))
-	    (let ((xs0 (parameter-variables (first (second e)))))
+	    (let ((xs0 (parameter-variables
+			(concrete->abstract-parameter (first (second e))))))
 	     (when (duplicatesp? variable=? xs0)
 	      (compile-time-error "Duplicate variables: ~s" e))
 	     (loop (third e) (append xs0 xs))))
@@ -2001,16 +2011,14 @@
 ;;; Environment Restriction/Construction
 
 (define (restrict-environment vs e f)
- (let ((xs (free-variables e)))
-  (map (lambda (x) (list-ref vs (positionp variable=? x xs)))
-       (free-variables (f e)))))
+ (map (lambda (x) (list-ref vs (positionp variable=? x (free-variables e))))
+      (free-variables (f e))))
 
 (define (letrec-restrict-environment vs e)
- (let ((xs (free-variables e)))
-  (map (lambda (x) (list-ref vs (positionp variable=? x xs)))
-       (recursive-closure-free-variables
-	(letrec-expression-procedure-variables e)
-	(letrec-expression-lambda-expressions e)))))
+ (map (lambda (x) (list-ref vs (positionp variable=? x (free-variables e))))
+      (recursive-closure-free-variables
+       (letrec-expression-procedure-variables e)
+       (letrec-expression-lambda-expressions e))))
 
 (define (letrec-nested-environment vs e)
  (map (lambda (x)
@@ -2023,36 +2031,57 @@
 	   (list-ref vs (positionp variable=? x (free-variables e)))))
       (free-variables (letrec-expression-body e))))
 
+(define (destructure p v)
+ (cond ((variable-access-expression? p)
+	(list (cons (variable-access-expression-variable p) v)))
+       ((lambda-expression? p)
+	(when (eq? *expression-equality* 'alpha)
+	 (unimplemented "Alpha equivalence"))
+	(unless (expression=? p (nonrecursive-closure-lambda-expression v))
+	 (run-time-error "Argument is not a matching nonrecursive closure" v))
+	(map cons (free-variables p) (nonrecursive-closure-values v)))
+       ((cons-expression? p)
+	(unless (vlad-pair? v (cons-expression-tags p))
+	 (run-time-error "Argument is not a matching tagged pair" v))
+	(append (destructure (cons-expression-car p)
+			     (vlad-car v (cons-expression-tags p)))
+		(destructure (cons-expression-cdr p)
+			     (vlad-cdr v (cons-expression-tags p)))))
+       (else (internal-error))))
+
 (define (construct-nonrecursive-environment v1 v2)
- (map (lambda (x)
-       ;; here I am: to handle destructuring
-       (if (variable=? x (nonrecursive-closure-parameter v1))
-	   v2
-	   (list-ref
-	    (nonrecursive-closure-values v1)
-	    (positionp variable=? x (nonrecursive-closure-variables v1)))))
-      (free-variables
-       (lambda-expression-body (nonrecursive-closure-lambda-expression v1)))))
+ (let ((alist (destructure (nonrecursive-closure-parameter v1) v2)))
+  (map
+   (lambda (x)
+    (let ((result (assp variable=? x alist)))
+     (if result
+	 (cdr result)
+	 (list-ref
+	  (nonrecursive-closure-values v1)
+	  (positionp variable=? x (nonrecursive-closure-variables v1))))))
+   (free-variables
+    (lambda-expression-body (nonrecursive-closure-lambda-expression v1))))))
 
 (define (construct-recursive-environment v1 v2)
- (map (lambda (x)
-       (cond
-	;; here I am: to handle destructuring
-	((variable=? x (recursive-closure-parameter v1)) v2)
-	((some-vector (lambda (x1) (variable=? x x1))
-		      (recursive-closure-procedure-variables v1))
-	 (make-recursive-closure
-	  (recursive-closure-values v1)
-	  (recursive-closure-procedure-variables v1)
-	  (recursive-closure-lambda-expressions v1)
-	  (positionp-vector
-	   variable=? x (recursive-closure-procedure-variables v1))))
-	(else (list-ref
-	       (recursive-closure-values v1)
-	       (positionp variable=? x (recursive-closure-variables v1))))))
-      (free-variables (lambda-expression-body
-		       (vector-ref (recursive-closure-lambda-expressions v1)
-				   (recursive-closure-index v1))))))
+ (let ((alist (destructure (recursive-closure-parameter v1) v2)))
+  (map (lambda (x)
+	(let ((result (assp variable=? x alist)))
+	 (cond
+	  (result (cdr result))
+	  ((some-vector (lambda (x1) (variable=? x x1))
+			(recursive-closure-procedure-variables v1))
+	   (make-recursive-closure
+	    (recursive-closure-values v1)
+	    (recursive-closure-procedure-variables v1)
+	    (recursive-closure-lambda-expressions v1)
+	    (positionp-vector
+	     variable=? x (recursive-closure-procedure-variables v1))))
+	  (else (list-ref
+		 (recursive-closure-values v1)
+		 (positionp variable=? x (recursive-closure-variables v1)))))))
+       (free-variables (lambda-expression-body
+			(vector-ref (recursive-closure-lambda-expressions v1)
+				    (recursive-closure-index v1)))))))
 
 ;;; needs work: This evaluator is not tail recursive.
 
@@ -2287,7 +2316,7 @@
  (cond
   ((variable-access-expression? e)
    (unless (= (length (free-variables e)) 1) (internal-error))
-   (first vs 0))
+   (first vs))
   ((lambda-expression? e) (make-nonrecursive-closure vs e))
   ((application? e)
    (abstract-apply
