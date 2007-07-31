@@ -1151,7 +1151,99 @@
 
 ;;; Alpha conversion
 
-;;; here I am: removed for now
+(define (alphaify x xs)
+ (if (memp variable=? x xs)
+     `(alpha ,x
+	     ,(+ (reduce max
+			 (map (lambda (x1)
+			       (if (and (list? x1)
+					(eq? (first x1) 'alpha)
+					(variable=? (second x1) x))
+				   (third x1)
+				   0))
+			      xs)
+			 0)
+		 1))
+     x))
+
+(define (alpha-convert-parameter p xs)
+ ;; needs work: Should have structure instead of list.
+ (cond ((variable-access-expression? p)
+	(let ((x (alphaify (variable-access-expression-variable p) xs)))
+	 (list
+	  (cons x xs)
+	  (list (make-alpha-binding (variable-access-expression-variable p) x))
+	  (make-variable-access-expression x))))
+       ((lambda-expression? p)
+	(let ((result (alpha-convert-expression p xs)))
+	 (list (first result)
+	       (map make-alpha-binding
+		    (free-variables p)
+		    (free-variables (second result)))
+	       (second result))))
+       ((cons-expression? p)
+	(let* ((result1 (alpha-convert-parameter (cons-expression-car p) xs))
+	       (result2 (alpha-convert-parameter (cons-expression-cdr p)
+						 (first result1))))
+	 (list (first result2)
+	       (append (second result1) (second result2))
+	       (new-cons-expression
+		(cons-expression-tags p) (third result1) (third result2)))))
+       (else (internal-error))))
+
+(define (alpha-convert-expression e xs)
+ ;; needs work: Should have structure instead of list.
+ (let outer ((e e) (xs xs) (bs (map make-alpha-binding xs xs)))
+  (cond
+   ((variable-access-expression? e)
+    (list xs
+	  (make-variable-access-expression
+	   (alpha-binding-variable2
+	    (find-if (lambda (b)
+		      (variable=? (alpha-binding-variable1 b)
+				  (variable-access-expression-variable e)))
+		     bs)))))
+   ((lambda-expression? e)
+    (let* ((result1
+	    (alpha-convert-parameter (lambda-expression-parameter e) xs))
+	   (result2 (outer (lambda-expression-body e)
+			   (first result1)
+			   (append (second result1) bs))))
+     (list (first result2)
+	   (new-lambda-expression (third result1) (second result2)))))
+   ((application? e)
+    (let* ((result1 (outer (application-callee e) xs bs))
+	   (result2 (outer (application-argument e) (first result1) bs)))
+     (list (first result2)
+	   (new-application (second result1) (second result2)))))
+   ((letrec-expression? e)
+    (let loop ((xs1 (letrec-expression-procedure-variables e))
+	       (xs2 '())
+	       (xs xs))
+     (if (null? xs1)
+	 (let ((bs (append (map make-alpha-binding
+				(letrec-expression-procedure-variables e)
+				(reverse xs2))
+			   bs)))
+	  (let inner ((es (letrec-expression-lambda-expressions e))
+		      (es1 '())
+		      (xs xs))
+	   (if (null? es)
+	       (let ((result (outer (letrec-expression-body e) xs bs)))
+		(list (first result)
+		      (new-letrec-expression
+		       (reverse xs2) (reverse es1) (second result))))
+	       (let ((result (outer (first es) xs bs)))
+		(inner (rest es) (cons (second result) es1) (first result))))))
+	 (let ((x (alphaify (first xs1) xs)))
+	  (loop (rest xs1) (cons x xs2) (cons x xs))))))
+   ((cons-expression? e)
+    (let* ((result1 (outer (cons-expression-car e) xs bs))
+	   (result2 (outer (cons-expression-cdr e) (first result1) bs)))
+     (list (first result2)
+	   (new-cons-expression
+	    (cons-expression-tags e) (second result1) (second result2)))))
+   (else (internal-error)))))
 
 ;;; ANF conversion
 
@@ -1455,6 +1547,7 @@
 		 (constants-in e)))
 	(e (constant-convert bs e))
 	;; needs work: (anf-convert (alpha-convert e (free-variables e)))
+	(e (second (alpha-convert-expression e (free-variables e))))
 	(xs (free-variables e))
 	(bs (append bs *value-bindings*)))
   (list
