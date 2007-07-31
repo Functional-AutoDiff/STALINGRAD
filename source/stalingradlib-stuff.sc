@@ -84,6 +84,8 @@
 
 (define-structure variable-binding variable expression)
 
+(define-structure parameter-binding parameter expression)
+
 (define-structure value-binding variable value)
 
 (define-structure alpha-binding variable1 variable2)
@@ -569,8 +571,9 @@
       (first es))))
 
 (define (create-let* bs e)
- (new-let*
-  (map variable-binding-variable bs) (map variable-binding-expression bs) e))
+ (new-let* (map parameter-binding-parameter bs)
+	   (map parameter-binding-expression bs)
+	   e))
 
 (define (new-letrec-expression xs es e)
  (if (null? xs)
@@ -1154,15 +1157,15 @@
 (define (alphaify x xs)
  (if (memp variable=? x xs)
      `(alpha ,x
-	     ,(+ (reduce max
-			 (map (lambda (x1)
-			       (if (and (list? x1)
-					(eq? (first x1) 'alpha)
-					(variable=? (second x1) x))
-				   (third x1)
-				   0))
-			      xs)
-			 0)
+	     ,(+ (map-reduce max
+			     0
+			     (lambda (x1)
+			      (if (and (list? x1)
+				       (eq? (first x1) 'alpha)
+				       (variable=? (second x1) x))
+				  (third x1)
+				  0))
+			     xs)
 		 1))
      x))
 
@@ -1247,7 +1250,173 @@
 
 ;;; ANF conversion
 
-;;; here I am: removed for now
+(define (anf-result result)
+ ;; needs work: Should have structure instead of list.
+ (when (and (not (null? (fourth result)))
+	    (not
+	     (null?
+	      (rest
+	       (remove-duplicates
+		(map (lambda (b)
+		      (lambda-expression-tags (variable-binding-expression b)))
+		     (fourth result)))))))
+  (internal-error))
+ (new-letrec-expression
+  (map variable-binding-variable (reverse (fourth result)))
+  (map variable-binding-expression (reverse (fourth result)))
+  (new-let* (map parameter-binding-parameter (reverse (third result)))
+	    (map parameter-binding-expression (reverse (third result)))
+	    (second result))))
+
+(define (anf-max e)
+ (cond
+  ((variable-access-expression? e)
+   (variable-anf-max (variable-access-expression-variable e)))
+  ((lambda-expression? e)
+   (max (anf-max (lambda-expression-parameter e))
+	(anf-max (lambda-expression-body e))))
+  ((application? e)
+   (max (anf-max (application-callee e)) (anf-max (application-argument e))))
+  ((letrec-expression? e)
+   (max (map-reduce
+	 max 0 variable-anf-max (letrec-expression-procedure-variables e))
+	(map-reduce max 0 anf-max (letrec-expression-lambda-expressions e))
+	(anf-max (letrec-expression-body e))))
+  ((cons-expression? e)
+   (max (anf-max (cons-expression-car e)) (anf-max (cons-expression-cdr e))))
+  (else (internal-error))))
+
+(define (anf-convert e)
+ ;; The soundness of our method for ANF conversion relies on two things:
+ ;;  1. E must be alpha converted.
+ ;;     This allows letrecs to be merged.
+ ;;     It also allows let*s in expressions of let*s to be merged.
+ ;;  2. No letrec nested in a let* expression or body can reference a variable
+ ;;     bound by that let*.
+ ;; needs work: Should have structure instead of list.
+ (anf-result
+  (let outer ((i (anf-max e)) (e e) (bs1 '()) (bs2 '()))
+   (cond
+    ;; result
+    ((variable-access-expression? e) (list i e bs1 bs2))
+    ((lambda-expression? e)
+     (let* ((result (outer i (lambda-expression-body e) '() '()))
+	    (i (+ (first result) 1))
+	    (p (make-variable-access-expression `(anf ,i))))
+      ;; result
+      (list i
+	    p
+	    (cons (make-parameter-binding
+		   p
+		   (new-lambda-expression
+		    ;; needs work: to convert the lambda expressions in the
+		    ;;             parameter
+		    (lambda-expression-parameter e) (anf-result result)))
+		  bs1)
+	    bs2)))
+    ((let*? e)
+     (let inner ((i i)
+		 (ps (let*-parameters e))
+		 (es (let*-expressions e))
+		 (bs1 bs1)
+		 (bs2 bs2))
+      (if (null? ps)
+	  (outer i (let*-body e) bs1 bs2)
+	  (let ((result (outer i (first es) bs1 bs2)))
+	   (inner (first result)
+		  (rest ps)
+		  (rest es)
+		  (cons (make-parameter-binding (first ps) (second result))
+			(third result))
+		  (fourth result))))))
+    ((application? e)
+     (let* ((result1 (outer i (application-callee e) bs1 bs2))
+	    (result2 (outer (first result1)
+			    (application-argument e)
+			    (third result1)
+			    (fourth result1)))
+	    (i (+ (first result2) 1))
+	    (p (make-variable-access-expression `(anf ,i))))
+      ;; result
+      (list i
+	    p
+	    (cons (make-parameter-binding
+		   p (new-application (second result1) (second result2)))
+		  (third result2))
+	    (fourth result2))))
+    ((letrec-expression? e)
+     (let inner ((i i)
+		 (xs (letrec-expression-procedure-variables e))
+		 (es (letrec-expression-lambda-expressions e))
+		 (bs2 bs2))
+      (if (null? xs)
+	  (outer i (letrec-expression-body e) bs1 bs2)
+	  (let ((result (outer i (lambda-expression-body (first es)) '() '())))
+	   (inner (first result)
+		  (rest xs)
+		  (rest es)
+		  (cons (make-variable-binding
+			 (first xs)
+			 (new-lambda-expression
+			  ;; needs work: to convert the lambda expressions in
+			  ;;             the parameter
+			  (lambda-expression-parameter (first es))
+			  (anf-result result)))
+			bs2))))))
+    ((cons-expression? e)
+     (let* ((result1 (outer i (cons-expression-car e) bs1 bs2))
+	    (result2 (outer (first result1)
+			    (cons-expression-cdr e)
+			    (third result1)
+			    (fourth result1)))
+	    (i (+ (first result2) 1))
+	    (p (make-variable-access-expression `(anf ,i))))
+      ;; result
+      (list
+       i
+       p
+       (cons (make-parameter-binding
+	      p
+	      (new-cons-expression
+	       (cons-expression-tags e) (second result1) (second result2)))
+	     (third result2))
+       (fourth result2))))
+    (else (internal-error))))))
+
+(define (anf-letrec-recursive-closure-variables e)
+ (if (letrec-expression? e)
+     (recursive-closure-free-variables
+      (letrec-expression-procedure-variables e)
+      (letrec-expression-lambda-expressions e))
+     '()))
+
+(define (anf-letrec-procedure-variables e)
+ (if (letrec-expression? e) (letrec-expression-procedure-variables e) '()))
+
+(define (anf-letrec-lambda-expressions e)
+ (if (letrec-expression? e) (letrec-expression-lambda-expressions e) '()))
+
+(define (anf-let*-parameters e)
+ (if (letrec-expression? e)
+     (if (let*? (letrec-expression-body e))
+	 (let*-parameters (letrec-expression-body e))
+	 '())
+     (if (let*? e) (let*-parameters e) '())))
+
+(define (anf-let*-expressions e)
+ (if (letrec-expression? e)
+     (if (let*? (letrec-expression-body e))
+	 (let*-expressions (letrec-expression-body e))
+	 '())
+     (if (let*? e) (let*-expressions e) '())))
+
+(define (anf-variable e)
+ (variable-access-expression-variable
+  (if (letrec-expression? e)
+      (if (let*? (letrec-expression-body e))
+	  (let*-body (letrec-expression-body e))
+	  (letrec-expression-body e))
+      (if (let*? e) (let*-body e) e))))
 
 ;;; Constant Conversion
 
@@ -1546,8 +1715,8 @@
 	(bs (map (lambda (v) (make-value-binding (gensym) v))
 		 (constants-in e)))
 	(e (constant-convert bs e))
-	;; needs work: (anf-convert (alpha-convert e (free-variables e)))
-	(e (second (alpha-convert-expression e (free-variables e))))
+	(e (anf-convert
+	    (second (alpha-convert-expression e (free-variables e)))))
 	(xs (free-variables e))
 	(bs (append bs *value-bindings*)))
   (list
