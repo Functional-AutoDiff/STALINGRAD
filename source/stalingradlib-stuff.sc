@@ -284,16 +284,12 @@
 			 else
 			 and
 			 or
-			 ignore
 			 alpha
 			 anf
 			 forward
 			 sensitivity
 			 backpropagator
 			 reverse))))
-     (and (list? x)
-	  (= (length x) 1)
-	  (eq? (first x) 'ignore))
      (and (list? x)
 	  (= (length x) 3)
 	  (eq? (first x) 'alpha)
@@ -328,7 +324,6 @@
  (cond ((symbol? x) 0)
        ((list? x)
 	(case (first x)
-	 ((ignore) 0)
 	 ((alpha) (variable-anf-max (second x)))
 	 ((anf) (second x))
 	 ((forward sensitivity backpropagator reverse)
@@ -359,15 +354,13 @@
 	 #f
 	 (if (eq? (first x1) (first x2))
 	     (case (first x1)
-	      ((ignore) #f)
 	      ((anf) (< (second x1) (second x2)))
 	      ((forward sensitivity backpropagator reverse)
 	       (variable<? (second x1) (second x2)))
 	      (else (internal-error)))
 	     (not (not (memq (first x2)
 			     (memq (first x1)
-				   '(ignore
-				     anf
+				   '(anf
 				     forward
 				     sensitivity
 				     backpropagator
@@ -508,13 +501,13 @@
 
 ;;; Parameters
 
+;;; needs work: closure conversion breaks this
 (define (parameter-tags p)
- (cond
-  ((variable-access-expression? p)
-   (variable-tags (variable-access-expression-variable p)))
-  ((lambda-expression? p) (parameter-tags (lambda-expression-parameter p)))
-  ((cons-expression? p) (cons-expression-tags p))
-  (else (internal-error))))
+ (cond ((constant-expression? p) 'needs-work) ;needs work
+       ((variable-access-expression? p)
+	(variable-tags (variable-access-expression-variable p)))
+       ((cons-expression? p) (cons-expression-tags p))
+       (else (internal-error))))
 
 (define (lambda-expression-tags e)
  (parameter-tags (lambda-expression-parameter e)))
@@ -548,8 +541,9 @@
    variable=? (map-reduce union-variables '() free-variables es) xs)))
 
 (define (parameter-variables p)
- (cond ((variable-access-expression? p) (free-variables p))
-       ((lambda-expression? p) (free-variables p))
+ (cond ((constant-expression? p) '())
+       ((variable-access-expression? p)
+	(list (variable-access-expression-variable p)))
        ((cons-expression? p)
 	(append (parameter-variables (cons-expression-car p))
 		(parameter-variables (cons-expression-cdr p))))
@@ -734,6 +728,10 @@
 
 (define (expression-eqv? e1 e2)
  (or
+  (and (constant-expression? e1)
+       (constant-expression? e2)
+       (abstract-value=? (constant-expression-value e1)
+			 (constant-expression-value e2)))
   (and (variable-access-expression? e1)
        (variable-access-expression? e2)
        (variable=? (variable-access-expression-variable e1)
@@ -770,6 +768,10 @@
  ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
  ;; is assumed to be equivalent to the corresponding ex2_i.
  (or
+  (and (constant-expression? e1)
+       (constant-expression? e2)
+       (abstract-value=? (constant-expression-value e1)
+			 (constant-expression-value e2)))
   (and (variable-access-expression? e1)
        (variable-access-expression? e2)
        (= (positionp variable=? (variable-access-expression-variable e1) xs1)
@@ -846,6 +848,8 @@
        ((forward) (let ((v (loop (rest tags)))) (bundle v (zero v))))
        ((reverse) (*j (loop (rest tags))))
        (else (internal-error))))))
+
+;;; needs work: should abstract ()
 
 ;;; Booleans
 
@@ -1176,19 +1180,13 @@
 
 (define (alpha-convert-parameter p xs)
  ;; needs work: Should have structure instead of list.
- (cond ((variable-access-expression? p)
+ (cond ((constant-expression? p) (list xs '() p))
+       ((variable-access-expression? p)
 	(let ((x (alphaify (variable-access-expression-variable p) xs)))
 	 (list
 	  (cons x xs)
 	  (list (make-alpha-binding (variable-access-expression-variable p) x))
 	  (make-variable-access-expression x))))
-       ((lambda-expression? p)
-	(let ((result (alpha-convert-expression p xs)))
-	 (list (first result)
-	       (map make-alpha-binding
-		    (free-variables p)
-		    (free-variables (second result)))
-	       (second result))))
        ((cons-expression? p)
 	(let* ((result1 (alpha-convert-parameter (cons-expression-car p) xs))
 	       (result2 (alpha-convert-parameter (cons-expression-cdr p)
@@ -1203,6 +1201,7 @@
  ;; needs work: Should have structure instead of list.
  (let outer ((e e) (xs xs) (bs (map make-alpha-binding xs xs)))
   (cond
+   ((constant-expression? e) (list xs e))
    ((variable-access-expression? e)
     (list xs
 	  (make-variable-access-expression
@@ -1253,6 +1252,74 @@
 	    (cons-expression-tags e) (second result1) (second result2)))))
    (else (internal-error)))))
 
+;;; Closure conversion
+
+(define (variables->expression xs)
+ (if (null? xs)
+     (make-constant-expression '())
+     (create-cons-expression (make-variable-access-expression (first xs))
+			     (variables->expression (rest xs)))))
+
+;;; needs work: to closure convert primitives
+
+(define (closure-convert e)
+ (cond
+  ((constant-expression? e) e)
+  ((variable-access-expression? e) e)
+  ((lambda-expression? e)
+   (let ((xs (free-variables e)))
+    (create-cons-expression
+     (variables->expression xs)
+     (new-lambda-expression
+      (create-cons-expression (variables->expression xs)
+			      (lambda-expression-parameter e))
+      (closure-convert (lambda-expression-body e))))))
+  ((application? e)
+   ;; This LET* is to specify the evaluation order.
+   (let* ((x1 (gensym)) (x2 (gensym)))
+    (new-let* (list (create-cons-expression
+		     (make-variable-access-expression x1)
+		     (make-variable-access-expression x2)))
+	      (list (closure-convert (application-callee e)))
+	      (new-application (make-variable-access-expression x2)
+			       (create-cons-expression
+				(make-variable-access-expression x1)
+				(closure-convert (application-argument e)))))))
+  ((letrec-expression? e)
+   (let ((xs (recursive-closure-free-variables
+	      (letrec-expression-procedure-variables e)
+	      (letrec-expression-lambda-expressions e))))
+    (new-letrec-expression
+     (letrec-expression-procedure-variables e)
+     (map (lambda (e)
+	   (new-lambda-expression
+	    (create-cons-expression (variables->expression xs)
+				    (lambda-expression-parameter e))
+	    ;; needs work: This could be a LET.
+	    (new-let* (map make-variable-access-expression
+			   (letrec-expression-procedure-variables e))
+		      (map (lambda (x)
+			    (create-cons-expression
+			     (variables->expression xs)
+			     (make-variable-access-expression x)))
+			   (letrec-expression-procedure-variables e))
+		      (closure-convert (lambda-expression-body e)))))
+	  (letrec-expression-lambda-expressions e))
+     ;; needs work: This could be a LET.
+     (new-let* (map make-variable-access-expression
+		    (letrec-expression-procedure-variables e))
+	       (map (lambda (x)
+		     (create-cons-expression
+		      (variables->expression xs)
+		      (make-variable-access-expression x)))
+		    (letrec-expression-procedure-variables e))
+	       (closure-convert (letrec-expression-body e))))))
+  ((cons-expression? e)
+   (new-cons-expression (cons-expression-tags e)
+			(closure-convert (cons-expression-car e))
+			(closure-convert (cons-expression-cdr e))))
+  (else (internal-error))))
+
 ;;; ANF conversion
 
 (define (anf-result result)
@@ -1276,6 +1343,7 @@
 
 (define (anf-max e)
  (cond
+  ((constant-expression? e) 0)
   ((variable-access-expression? e)
    (variable-anf-max (variable-access-expression-variable e)))
   ((lambda-expression? e)
@@ -1303,6 +1371,12 @@
  (anf-result
   (let outer ((i (anf-max e)) (e e) (bs1 '()) (bs2 '()))
    (cond
+    ;; needs work: This means that an anf-result can be a constant expression,
+    ;;             as well as the RHS of a variable binding, the callee and
+    ;;             argument of an application, and the car and cdr of a cons
+    ;;             expression.
+    ;; result
+    ((constant-expression? e) (list i e bs1 bs2))
     ;; result
     ((variable-access-expression? e) (list i e bs1 bs2))
     ((lambda-expression? e)
@@ -1315,8 +1389,6 @@
 	    (cons (make-parameter-binding
 		   p
 		   (new-lambda-expression
-		    ;; needs work: to convert the lambda expressions in the
-		    ;;             parameter
 		    (lambda-expression-parameter e) (anf-result result)))
 		  bs1)
 	    bs2)))
@@ -1364,8 +1436,6 @@
 		  (cons (make-variable-binding
 			 (first xs)
 			 (new-lambda-expression
-			  ;; needs work: to convert the lambda expressions in
-			  ;;             the parameter
 			  (lambda-expression-parameter (first es))
 			  (anf-result result)))
 			bs2))))))
@@ -1410,60 +1480,6 @@
 	 (letrec-expression-body e))
      (if (let*? e) (let*-body e) e)))
 
-;;; Constant Conversion
-
-(define (constants-in e)
- (cond ((constant-expression? e) (list (constant-expression-value e)))
-       ((variable-access-expression? e) '())
-       ((lambda-expression? e)
-	(unionp abstract-value=?
-		(constants-in (lambda-expression-parameter e))
-		(constants-in (lambda-expression-body e))))
-       ((application? e)
-	(unionp abstract-value=?
-		(constants-in (application-callee e))
-		(constants-in (application-argument e))))
-       ((letrec-expression? e)
-	(unionp abstract-value=?
-		(map-reduce
-		 (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		 '()
-		 constants-in
-		 (letrec-expression-lambda-expressions e))
-		(constants-in (letrec-expression-body e))))
-       ((cons-expression? e)
-	(unionp abstract-value=?
-		(constants-in (cons-expression-car e))
-		(constants-in (cons-expression-cdr e))))
-       (else (internal-error))))
-
-(define (constant-convert bs e)
- (cond
-  ((constant-expression? e)
-   (make-variable-access-expression
-    (value-binding-variable
-     (find-if (lambda (b)
-	       (abstract-value=? (value-binding-value b)
-				 (constant-expression-value e)))
-	      bs))))
-  ((variable-access-expression? e) e)
-  ((lambda-expression? e)
-   (new-lambda-expression (constant-convert bs (lambda-expression-parameter e))
-			  (constant-convert bs (lambda-expression-body e))))
-  ((application? e)
-   (new-application (constant-convert bs (application-callee e))
-		    (constant-convert bs (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression (letrec-expression-procedure-variables e)
-			  (map (lambda (e) (constant-convert bs e))
-			       (letrec-expression-lambda-expressions e))
-			  (constant-convert bs (letrec-expression-body e))))
-  ((cons-expression? e)
-   (new-cons-expression (cons-expression-tags e)
-			(constant-convert bs (cons-expression-car e))
-			(constant-convert bs (cons-expression-cdr e))))
-  (else (internal-error))))
-
 ;;; Concrete->Abstract
 
 (define (value? v)
@@ -1480,29 +1496,16 @@
        (else (internal-error))))
 
 ;;; needs work: to add bundle and *j parameters
-;;; needs work: Should disallow ignore, alpha, anf, forward, sensitivity,
+;;; needs work: Should disallow alpha, anf, forward, sensitivity,
 ;;;             backpropagator, and reverse variables, except when processing
 ;;;             the basis and as generated by macros. Also allow when rereading
 ;;;             printed code by way of a -wizard option. This is not done
-;;;             currently because macro expanded code uses ignore and there is
-;;;             no easy way to distinguish user code from macro expanded code.
-
-(define (macro-expand-parameter p)
- ;; We intentionally don't allow lambda expressions as parameters in the
- ;; concrete syntax.
- (case (first p)
-  ((cons*) (case (length (rest p))
-	    ((0) '(ignore))
-	    ((1) (second p))
-	    (else `(cons ,(second p) (cons* ,@(rest (rest p)))))))
-  ((list) (if (null? (rest p))
-	      '(ignore)
-	      `(cons ,(second p) (list ,@(rest (rest p))))))
-  (else (internal-error))))
+;;;             currently because macro expanded code used to use ignore and
+;;              there is no easy way to distinguish user code from macro
+;;              expanded code.
 
 (define (syntax-check-parameter! p)
- ;; We intentionally don't allow lambda expressions as parameters in the
- ;; concrete syntax.
+ ;; needs work: constant parameters
  (cond
   ((variable? p) #f)
   ((and (list? p) (not (null? p)))
@@ -1511,26 +1514,12 @@
      (unless (= (length p) 3) (compile-time-error "Invalid parameter: ~s" p))
      (syntax-check-parameter! (second p))
      (syntax-check-parameter! (third p)))
-    ((cons*) (syntax-check-parameter! (macro-expand-parameter p)))
-    ((list) (syntax-check-parameter! (macro-expand-parameter p)))
+    ((cons*) (syntax-check-parameter! (macro-expand p)))
+    ((list) (syntax-check-parameter! (macro-expand p)))
     (else (compile-time-error "Invalid parameter: ~s" p))))
   (else (compile-time-error "Invalid parameter: ~s" p))))
 
-(define (concrete->abstract-parameter p)
- ;; We intentionally don't allow lambda expressions as parameters in the
- ;; concrete syntax.
- (cond ((variable? p) (make-variable-access-expression p))
-       ((list? p)
-	(case (first p)
-	 ((cons)
-	  (create-cons-expression (concrete->abstract-parameter (second p))
-				  (concrete->abstract-parameter (third p))))
-	 ((cons*) (concrete->abstract-parameter (macro-expand-parameter p)))
-	 ((list) (concrete->abstract-parameter (macro-expand-parameter p)))
-	 (else (internal-error))))
-       (else (internal-error))))
-
-(define (macro-expand-expression e)
+(define (macro-expand e)
  (if (and (list? e) (not (null? e)))
      (case (first e)
       ((lambda) (unless (and (= (length e) 3) (list? (second e)))
@@ -1614,14 +1603,14 @@
       (unless (and (= (length e) 3) (list? (second e)))
        (compile-time-error "Invalid expression: ~s" e))
       (case (length (second e))
-       ((0) (loop (macro-expand-expression e) xs))
+       ((0) (loop (macro-expand e) xs))
        ((1) (syntax-check-parameter! (first (second e)))
 	    (let ((xs0 (parameter-variables
-			(concrete->abstract-parameter (first (second e))))))
+			(concrete->abstract (first (second e))))))
 	     (when (duplicatesp? variable=? xs0)
 	      (compile-time-error "Duplicate variables: ~s" e))
 	     (loop (third e) (append xs0 xs))))
-       (else (loop (macro-expand-expression e) xs))))
+       (else (loop (macro-expand e) xs))))
      ((letrec)
       (unless (and (= (length e) 3)
 		   (list? (second e))
@@ -1635,87 +1624,76 @@
 	(compile-time-error "Duplicate variables: ~s" e))
        (for-each
 	(lambda (b)
-	 (let ((e1 (macro-expand-expression (second b))))
+	 (let ((e1 (macro-expand (second b))))
 	  (unless (and (list? e1) (= (length e1) 3) (eq? (first e1) 'lambda))
 	   (compile-time-error "Invalid expression: ~s" e))
 	  (loop e1 (append xs0 xs))))
 	(second e))
        (loop (third e) (append xs0 xs))))
-     ((let) (loop (macro-expand-expression e) xs))
-     ((let*) (loop (macro-expand-expression e) xs))
-     ((if) (loop (macro-expand-expression e) xs))
+     ((let) (loop (macro-expand e) xs))
+     ((let*) (loop (macro-expand e) xs))
+     ((if) (loop (macro-expand e) xs))
      ((cons)
       (unless (= (length e) 3) (compile-time-error "Invalid expression: ~s" e))
       (loop (second e) xs)
       (loop (third e) xs))
-     ((cons*) (loop (macro-expand-expression e) xs))
-     ((list) (loop (macro-expand-expression e) xs))
-     ((cond) (loop (macro-expand-expression e) xs))
-     ((and) (loop (macro-expand-expression e) xs))
-     ((or) (loop (macro-expand-expression e) xs))
+     ((cons*) (loop (macro-expand e) xs))
+     ((list) (loop (macro-expand e) xs))
+     ((cond) (loop (macro-expand e) xs))
+     ((and) (loop (macro-expand e) xs))
+     ((or) (loop (macro-expand e) xs))
      (else (case (length (rest e))
-	    ((0) (loop (macro-expand-expression e) xs))
+	    ((0) (loop (macro-expand e) xs))
 	    ((1) (loop (first e) xs)
 		 (loop (second e) xs))
-	    (else (loop (macro-expand-expression e) xs))))))
+	    (else (loop (macro-expand e) xs))))))
    (else (compile-time-error "Invalid expression: ~s" e)))))
 
-(define (concrete->abstract-expression e)
+(define (concrete->abstract e)
  (cond
-  ((boolean? e) (concrete->abstract-expression `',e))
-  ((real? e) (concrete->abstract-expression `',e))
+  ((boolean? e) (concrete->abstract `',e))
+  ((real? e) (concrete->abstract `',e))
   ((variable? e) (make-variable-access-expression e))
   ((and (list? e) (not (null? e)))
    (case (first e)
     ((quote) (make-constant-expression (internalize (second e))))
     ((lambda)
      (case (length (second e))
-      ((0) (concrete->abstract-expression (macro-expand-expression e)))
-      ((1) (new-lambda-expression
-	    (concrete->abstract-parameter (first (second e)))
-	    (concrete->abstract-expression (third e))))
-      (else (concrete->abstract-expression (macro-expand-expression e)))))
-    ((letrec)
-     (create-letrec-expression
-      (map first (second e))
-      (map
-       (lambda (b)
-	(concrete->abstract-expression (macro-expand-expression (second b))))
-       (second e))
-      (concrete->abstract-expression (third e))))
-    ((let) (concrete->abstract-expression (macro-expand-expression e)))
-    ((let*) (concrete->abstract-expression (macro-expand-expression e)))
-    ((if) (concrete->abstract-expression (macro-expand-expression e)))
-    ((cons)
-     (create-cons-expression (concrete->abstract-expression (second e))
-			     (concrete->abstract-expression (third e))))
-    ((cons*) (concrete->abstract-expression (macro-expand-expression e)))
-    ((list) (concrete->abstract-expression (macro-expand-expression e)))
-    ((cond) (concrete->abstract-expression (macro-expand-expression e)))
-    ((and) (concrete->abstract-expression (macro-expand-expression e)))
-    ((or) (concrete->abstract-expression (macro-expand-expression e)))
-    (else
-     (case (length (rest e))
-      ((0) (concrete->abstract-expression (macro-expand-expression e)))
-      ((1) (new-application (concrete->abstract-expression (first e))
-			    (concrete->abstract-expression (second e))))
-      (else (concrete->abstract-expression (macro-expand-expression e)))))))
+      ((0) (concrete->abstract (macro-expand e)))
+      ((1) (new-lambda-expression (concrete->abstract (first (second e)))
+				  (concrete->abstract (third e))))
+      (else (concrete->abstract (macro-expand e)))))
+    ((letrec) (create-letrec-expression
+	       (map first (second e))
+	       (map (lambda (b) (concrete->abstract (macro-expand (second b))))
+		    (second e))
+	       (concrete->abstract (third e))))
+    ((let) (concrete->abstract (macro-expand e)))
+    ((let*) (concrete->abstract (macro-expand e)))
+    ((if) (concrete->abstract (macro-expand e)))
+    ((cons) (create-cons-expression (concrete->abstract (second e))
+				    (concrete->abstract (third e))))
+    ((cons*) (concrete->abstract (macro-expand e)))
+    ((list) (concrete->abstract (macro-expand e)))
+    ((cond) (concrete->abstract (macro-expand e)))
+    ((and) (concrete->abstract (macro-expand e)))
+    ((or) (concrete->abstract (macro-expand e)))
+    (else (case (length (rest e))
+	   ((0) (concrete->abstract (macro-expand e)))
+	   ((1) (new-application (concrete->abstract (first e))
+				 (concrete->abstract (second e))))
+	   (else (concrete->abstract (macro-expand e)))))))
   (else (internal-error))))
 
 (define (parse e)
- (let* ((e (concrete->abstract-expression e))
-	(bs (map (lambda (v) (make-value-binding (gensym) v))
-		 (constants-in e)))
-	(e (constant-convert bs e))
+ (let* ((e (concrete->abstract e))
 	(e (anf-convert
-	    (second (alpha-convert-expression e (free-variables e)))))
-	(xs (free-variables e))
-	(bs (append bs *value-bindings*)))
-  (list
-   e
-   (map (lambda (x)
-	 (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))
-	xs))))
+	    (second (alpha-convert-expression e (free-variables e))))))
+  (list e
+	(map (lambda (x)
+	      (find-if (lambda (b) (variable=? x (value-binding-variable b)))
+		       *value-bindings*))
+	     (free-variables e)))))
 
 ;;; AD
 
@@ -1747,7 +1725,11 @@
 ;;; Forward Mode
 
 (define (forward-transform e)
- (cond ((variable-access-expression? e) (forwardify-access e))
+ (cond ((constant-expression? e)
+	(make-constant-expression
+	 (bundle (constant-expression-value e)
+		 (zero (constant-expression-value e)))))
+       ((variable-access-expression? e) (forwardify-access e))
        ((lambda-expression? e)
 	(new-lambda-expression
 	 (forward-transform (lambda-expression-parameter e))
@@ -1768,6 +1750,8 @@
 
 (define (forward-transform-inverse e)
  (cond
+  ((constant-expression? e)
+   (make-constant-expression (primal (constant-expression-value e))))
   ((variable-access-expression? e) (unforwardify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2048,6 +2032,7 @@
      (map
       (lambda (p e)
        (cond
+	((constant-expression? e) 'needs-work) ;needs work
 	;;            /   /
 	;;            _   _
 	;; p = e -~-> p = e
@@ -2111,6 +2096,7 @@
 	 (map
 	  (lambda (p e)
 	   (cond
+	    ((constant-expression? e) 'needs-work) ;needs work
 	    ;;            _    _
 	    ;;            \    \
 	    ;; p = e -~-> e += p
@@ -2224,15 +2210,6 @@
 	    (es0 '()))
   (cond
    ((null? xs) (internal-error))
-   ((and (= (length xs) 3)
-	 (result-cons? (first xs) (second xs) (third xs)
-		       (first es) (second es) (third es)
-		       (let*-body e)))
-    (if (null? xs0)
-	(unreverseify-access (partial-cons-argument (first es)))
-	(new-let* (reverse xs0)
-		  (reverse es0)
-		  (unreverseify-access (partial-cons-argument (first es))))))
    ((and (= (length xs) 2)
 	 (result-cons-expression?
 	  (first xs) (second xs) (first es) (second es) (let*-body e)))
@@ -2241,16 +2218,7 @@
 	(new-let* (reverse xs0)
 		  (reverse es0)
 		  (unreverseify-access (cons-expression-car (second es))))))
-   ((and (>= (length xs) 3)
-	 (cons-split? (first xs) (second xs) (third xs)
-		      (first es) (second es) (third es)))
-    (loop (rest (rest (rest xs)))
-	  (rest (rest (rest es)))
-	  (cons (unreverseify (second xs)) xs0)
-	  (cons (new-application
-		 (unreverseify-access (application-callee (first es)))
-		 (unreverseify-access (application-argument (first es))))
-		es0)))
+   ((constant-expression? (first es)) 'needs-work) ;needs work
    ((variable-access-expression? (first es))
     (loop (rest xs)
 	  (rest es)
@@ -2285,12 +2253,9 @@
        (reverse-transform-inverse-internal e)))))
 
 (define (added-value x)
- (case x
-  ;; This is a magic name.
-  ((null) '())
-  (else (value-binding-value
-	 (find-if (lambda (b) (variable=? (value-binding-variable b) x))
-		  *value-bindings*)))))
+ (value-binding-value
+  (find-if (lambda (b) (variable=? (value-binding-variable b) x))
+	   *value-bindings*)))
 
 (define (add/remove-slots f xs0 xs1 vs0 bs)
  (list->vector
@@ -2307,8 +2272,7 @@
 (define (added-bindings)
  ;; needs work: To replace anonymous gensym with derived gensym.
  (map (lambda (x) (make-alpha-binding x (hensym)))
-      ;; These are magic names.
-      (append (list 'null) (map value-binding-variable *value-bindings*))))
+      (map value-binding-variable *value-bindings*)))
 
 (define (conform? v1 v2)
  (or (and (null? v1) (null? v2))
@@ -2566,14 +2530,11 @@
 	(loop (rest ps)
 	      (rest es)
 	      (cons `(,(first ps) ,(abstract->concrete (first es))) bs)))))
-  ((constant-expression? e)
-   `',(externalize (constant-expression-value e)))
-  ((variable-access-expression? e)
-   (let ((x (variable-access-expression-variable e)))
-    ;; needs work: I'm not sure this is needed anymore
-    (if (primitive-procedure? x) (primitive-procedure-name x) x)))
+  ;; needs work: This doesn't work for transformed values.
+  ((constant-expression? e) `',(externalize (constant-expression-value e)))
+  ((variable-access-expression? e) (variable-access-expression-variable e))
   ((lambda-expression? e)
-   `(lambda (,(lambda-expression-parameter e))
+   `(lambda (,(abstract->concrete (lambda-expression-parameter e)))
      ,(abstract->concrete (lambda-expression-body e))))
   ((application? e)
    `(,(abstract->concrete (application-callee e))
@@ -2834,14 +2795,12 @@
       (free-variables (letrec-expression-body e))))
 
 (define (destructure p v)
- (cond ((variable-access-expression? p)
+ (cond ((constant-expression? p)
+	(unless (abstract-value=? (constant-expression-value p) v)
+	 (run-time-error "Argument is not a matching value" v))
+	'())
+       ((variable-access-expression? p)
 	(list (cons (variable-access-expression-variable p) v)))
-       ((lambda-expression? p)
-	(when (eq? *expression-equality* 'alpha)
-	 (unimplemented "Alpha equivalence"))
-	(unless (expression=? p (nonrecursive-closure-lambda-expression v))
-	 (run-time-error "Argument is not a matching nonrecursive closure" v))
-	(map cons (free-variables p) (nonrecursive-closure-values v)))
        ((cons-expression? p)
 	(unless (vlad-pair? v (cons-expression-tags p))
 	 (run-time-error "Argument is not a matching tagged pair" v))
@@ -2945,9 +2904,8 @@
 
 (define (concrete-eval e vs)
  (cond
-  ((variable-access-expression? e)
-   (unless (= (length (free-variables e)) 1) (internal-error))
-   (first vs))
+  ((constant-expression? e) (constant-expression-value e))
+  ((variable-access-expression? e) (first vs))
   ((lambda-expression? e) (make-nonrecursive-closure vs e))
   ((application? e)
    ;; This LET* is to specify the evaluation order.
@@ -3112,9 +3070,8 @@
 
 (define (abstract-eval e vs bs)
  (cond
-  ((variable-access-expression? e)
-   (unless (= (length (free-variables e)) 1) (internal-error))
-   (first vs))
+  ((constant-expression? e) (constant-expression-value e))
+  ((variable-access-expression? e) (first vs))
   ((lambda-expression? e) (make-nonrecursive-closure vs e))
   ((application? e)
    (abstract-apply
@@ -3192,6 +3149,7 @@
 
 (define (abstract-eval-prime e vs bs)
  (cond
+  ((constant-expression? e) (empty-abstract-analysis))
   ((variable-access-expression? e) (empty-abstract-analysis))
   ((lambda-expression? e) (empty-abstract-analysis))
   ((application? e)
@@ -3356,7 +3314,8 @@
       (or (scalar-value? v) (every void? (aggregate-value-values v)))))
 
 (define (all-variables-in-expression e)
- (cond ((variable-access-expression? e)
+ (cond ((constant-expression? e) '())
+       ((variable-access-expression? e)
 	(list (variable-access-expression-variable e)))
        ((lambda-expression? e)
 	(adjoinp variable=?
@@ -4192,6 +4151,7 @@
      ((bundle? v) (internal-error))
      ((tagged-pair? v) (internal-error))
      (else (internal-error))))
+   ((constant-expression? e) (internal-error))
    ((variable-access-expression? e)
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
@@ -4309,6 +4269,7 @@
  (let ((v (abstract-eval1 e vs bs)))
   (cond
    ((void? v) '())
+   ((constant-expression? e) (internal-error))
    ((variable-access-expression? e) '())
    ((lambda-expression? e) '())
    ((application? e)
@@ -5425,6 +5386,7 @@
     (let (((cons* x1 x2 x3) (*j-inverse (reverse x))))
      (if-procedure
       x1
+      ;; needs work: Tags are lost in the (lambda () ...).
       (lambda ()
        (let (((cons (reverse y) (backpropagator y)) ((*j x2) (*j '()))))
 	(cons
@@ -5436,6 +5398,7 @@
 		       ;; the sensitivity to the ignored '() argument of x2
 		       (car ((backpropagator y) (sensitivity y)))
 		       (zero x3)))))))
+      ;; needs work: Tags are lost in the (lambda () ...).
       (lambda ()
        (let (((cons (reverse y) (backpropagator y)) ((*j x3) (*j '()))))
 	(cons
@@ -5477,12 +5440,14 @@
   (unary (lambda (x) (read-real)) "read-real")
   (lambda (v vs) "read_real")
   (if *imprecise-inexacts?*
-      '(lambda ((forward (ignore))) (bundle (read-real) 0.0))
-      '(lambda ((forward (ignore))) (bundle (read-real) (real 0))))
+      ;; needs work: Tags are lost in the (lambda () ...).
+      '(lambda () (bundle (read-real) 0.0))
+      ;; needs work: Tags are lost in the (lambda () ...).
+      '(lambda () (bundle (read-real) (real 0))))
   ;; This assumes that you call read-real on '() which is what would happen
   ;; with (real-real).
-  '(lambda ((reverse (ignore)))
-    (cons (*j (read-real)) (lambda ((sensitivity (ignore))) (cons '() '())))))
+  ;; needs work: Tags are lost in the two (lambda () ...).
+  '(lambda () (cons (*j (read-real)) (lambda () (cons '() '())))))
  (define-primitive-procedure 'real
   (unary-real (lambda (x) (if *run?* x 'real)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
