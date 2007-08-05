@@ -844,7 +844,7 @@
 
 ;;; Empty List
 
-(define vlad-empty-list '())
+(define (vlad-empty-list) '())
 
 (define (vlad-empty-list? v) (null? v))
 
@@ -852,19 +852,19 @@
  (if #f					;debugging
      (let loop ((tags (nonrecursive-closure-tags v)))
       (if (empty-tags? tags)
-	  vlad-empty-list
+	  (vlad-empty-list)
 	  (case (first tags)
 	   ;; needs work: other tags
 	   ((forward) (let ((v (loop (rest tags)))) (bundle v (zero v))))
 	   ((reverse) (*j (loop (rest tags))))
 	   (else (internal-error)))))
-     vlad-empty-list))
+     (vlad-empty-list)))
 
 ;;; Booleans
 
-(define vlad-true #t)
+(define (vlad-true) #t)
 
-(define vlad-false #f)
+(define (vlad-false) #f)
 
 (define (vlad-true? v) (eq? v #t))
 
@@ -966,6 +966,7 @@
 	  (forward-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
 	  (forward-parameter? (recursive-closure-parameter v)))
+     ;; needs work: transposition is broken
      (bundle? v)
      (and (tagged-pair? v) (tagged? 'forward (tagged-pair-tags v)))))
 
@@ -974,6 +975,7 @@
 	  (reverse-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
 	  (reverse-parameter? (recursive-closure-parameter v)))
+     ;; needs work: transposition is broken
      (reverse-tagged-value? v)
      (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
 
@@ -1271,7 +1273,7 @@
 
 (define (variables->expression xs)
  (if (null? xs)
-     (make-constant-expression vlad-empty-list)
+     (make-constant-expression (vlad-empty-list))
      (create-cons-expression (make-variable-access-expression (first xs))
 			     (variables->expression (rest xs)))))
 
@@ -1504,8 +1506,8 @@
      (and (pair? v) (value? (car v)) (value? (cdr v)))))
 
 (define (internalize v)
- (cond ((null? v) vlad-empty-list)
-       ((boolean? v) (if v vlad-true vlad-false))
+ (cond ((null? v) (vlad-empty-list))
+       ((boolean? v) (if v (vlad-true) (vlad-false)))
        ((real? v) v)
        ((pair? v) (vlad-cons (internalize (car v)) (internalize (cdr v))))
        (else (internal-error))))
@@ -4902,7 +4904,7 @@
 	       (vlad-empty-list? (vlad-car x (empty-tags))))
    (internal-error))
   (let ((x (vlad-cdr x (empty-tags))))
-   (if (f x) vlad-true vlad-false))))
+   (if (f x) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
  (lambda (x bs)
@@ -4922,7 +4924,7 @@
   (let ((x (vlad-cdr x (empty-tags))))
    (unless (abstract-real? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (if (real? x) (if (f x) vlad-true vlad-false) 'boolean))))
+   (if (real? x) (if (f x) (vlad-true) (vlad-false)) 'boolean))))
 
 (define (binary f s)
  (lambda (x bs)
@@ -4960,7 +4962,7 @@
     (unless (and (abstract-real? x1) (abstract-real? x2))
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     (if (and (real? x1) (real? x2))
-	(if (f x1 x2) vlad-true vlad-false)
+	(if (f x1 x2) (vlad-true) (vlad-false))
 	'boolean)))))
 
 (define (ternary f s)
@@ -4984,7 +4986,7 @@
        (cons (make-value-binding
 	      x
 	      (if #t			;debugging
-		  (vlad-cons vlad-empty-list
+		  (vlad-cons (vlad-empty-list)
 			     (make-primitive-procedure
 			      x procedure generator forward reverse 0))
 		  (make-primitive-procedure
@@ -5025,9 +5027,6 @@
 	       *value-bindings*)))
 
 (define (initialize-basis!)
- (set! vlad-empty-list '())
- (set! vlad-true #t)
- (set! vlad-false #f)
  ;; needs work: (Almost) all of the '() in the following need to change. They
  ;;             are the sensitivities to the application target which is the
  ;;             transformed primitive. The sensitivity of a primitive used to
