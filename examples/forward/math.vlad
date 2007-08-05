@@ -10,9 +10,13 @@
 
 ;;; Lists
 
-(define (first x) (car x))
+(define (car (cons x y)) x)
 
-(define (rest x) (cdr x))
+(define (cdr (cons x y)) y)
+
+(define (first (cons x y)) x)
+
+(define (rest (cons x y)) y)
 
 (define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
 
