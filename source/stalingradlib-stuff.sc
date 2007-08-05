@@ -944,15 +944,23 @@
 
 (define (vlad-procedure? v) (or (primitive-procedure? v) (closure? v)))
 
+;;; Pairs
+
 (define (vlad-pair? v tags)
+ ;; needs work: Should remove tags argument since the only place it is used is
+ ;;             in destructure.
  (and (tagged-pair? v) (equal-tags? (tagged-pair-tags v) tags)))
 
 (define (vlad-car v tags)
+ ;; needs work: Should remove tags argument since the only place it is used is
+ ;;             in destructure.
  (unless (vlad-pair? v tags)
   (run-time-error "Attempt to take car of a non-pair" v))
  (tagged-pair-car v))
 
 (define (vlad-cdr v tags)
+ ;; needs work: Should remove tags argument since the only place it is used is
+ ;;             in destructure.
  (unless (vlad-pair? v tags)
   (run-time-error "Attempt to take cdr of a non-pair" v))
  (tagged-pair-cdr v))
@@ -1276,8 +1284,6 @@
      (make-constant-expression (vlad-empty-list))
      (create-cons-expression (make-variable-access-expression (first xs))
 			     (variables->expression (rest xs)))))
-
-;;; needs work: to closure convert transformed primitives
 
 (define (closure-convert e)
  (cond
@@ -1738,8 +1744,8 @@
 	(make-reverse-tagged-value (zero (reverse-tagged-value-primal v))))
        ((tagged-pair? v)
 	(make-tagged-pair (tagged-pair-tags v)
-			  (zero (vlad-car v (tagged-pair-tags v)))
-			  (zero (vlad-cdr v (tagged-pair-tags v)))))
+			  (zero (tagged-pair-car v))
+			  (zero (tagged-pair-cdr v))))
        (else (internal-error))))
 
 ;;; Forward Mode
@@ -1793,40 +1799,40 @@
   (else (internal-error))))
 
 (define (primal v-forward)
- (cond
-  ((vlad-empty-list? v-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-  ((abstract-boolean? v-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-  ((abstract-real? v-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-  ((primitive-procedure? v-forward)
-   (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-  ((nonrecursive-closure? v-forward)
-   (unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-   (let ((b (find-if (lambda (b)
-		      (abstract-value=? v-forward
-					(primitive-procedure-forward
-					 (value-binding-value b))))
-		     *value-bindings*)))
-    (if b
-	(value-binding-value b)
+ (let ((b (find-if (lambda (b)
+		    (abstract-value=? v-forward
+				      (primitive-procedure-forward
+				       (vlad-cdr (value-binding-value b)
+						 (empty-tags)))))
+		   *value-bindings*)))
+  (if b
+      (value-binding-value b)
+      (cond
+       ((vlad-empty-list? v-forward)
+	(run-time-error
+	 "Attempt to take primal of a non-forward value" v-forward))
+       ((abstract-boolean? v-forward)
+	(run-time-error
+	 "Attempt to take primal of a non-forward value" v-forward))
+       ((abstract-real? v-forward)
+	(run-time-error
+	 "Attempt to take primal of a non-forward value" v-forward))
+       ((primitive-procedure? v-forward)
+	(run-time-error
+	 "Attempt to take primal of a non-forward value" v-forward))
+       ((nonrecursive-closure? v-forward)
+	(unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
+	 (run-time-error
+	  "Attempt to take primal of a non-forward value" v-forward))
 	;; See the note in abstract-environment=?.
 	(make-nonrecursive-closure
 	 (map primal (nonrecursive-closure-values v-forward))
 	 (forward-transform-inverse
-	  (nonrecursive-closure-lambda-expression v-forward))))))
-  ((recursive-closure? v-forward)
-   (unless (forward-parameter? (recursive-closure-parameter v-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-   (let ((b (find-if (lambda (b)
-		      (abstract-value=? v-forward
-					(primitive-procedure-forward
-					 (value-binding-value b))))
-		     *value-bindings*)))
-    (if b
-	(value-binding-value b)
+	  (nonrecursive-closure-lambda-expression v-forward))))
+       ((recursive-closure? v-forward)
+	(unless (forward-parameter? (recursive-closure-parameter v-forward))
+	 (run-time-error
+	  "Attempt to take primal of a non-forward value" v-forward))
 	;; See the note in abstract-environment=?.
 	(make-recursive-closure
 	 (map primal (recursive-closure-values v-forward))
@@ -1834,84 +1840,83 @@
 		     (recursive-closure-procedure-variables v-forward))
 	 (map-vector forward-transform-inverse
 		     (recursive-closure-lambda-expressions v-forward))
-	 (recursive-closure-index v-forward)))))
-  ((bundle? v-forward)
-   (if (scalar-value? (bundle-primal v-forward))
-       (bundle-primal v-forward)
-       (make-bundle (primal (bundle-primal v-forward))
-		    (primal (bundle-tangent v-forward)))))
-  ((reverse-tagged-value? v-forward)
-   (make-reverse-tagged-value
-    (primal (reverse-tagged-value-primal v-forward))))
-  ((tagged-pair? v-forward)
-   (unless (tagged? 'forward (tagged-pair-tags v-forward))
-    (run-time-error "Attempt to take primal of a non-forward value" v-forward))
-   (make-tagged-pair (remove-tag 'forward (tagged-pair-tags v-forward))
-		     (primal (tagged-pair-car v-forward))
-		     (primal (tagged-pair-cdr v-forward))))
-  (else (internal-error))))
+	 (recursive-closure-index v-forward)))
+       ((bundle? v-forward)
+	(if (scalar-value? (bundle-primal v-forward))
+	    (bundle-primal v-forward)
+	    (make-bundle (primal (bundle-primal v-forward))
+			 (primal (bundle-tangent v-forward)))))
+       ((reverse-tagged-value? v-forward)
+	(make-reverse-tagged-value
+	 (primal (reverse-tagged-value-primal v-forward))))
+       ((tagged-pair? v-forward)
+	(unless (tagged? 'forward (tagged-pair-tags v-forward))
+	 (run-time-error
+	  "Attempt to take primal of a non-forward value" v-forward))
+	(make-tagged-pair (remove-tag 'forward (tagged-pair-tags v-forward))
+			  (primal (tagged-pair-car v-forward))
+			  (primal (tagged-pair-cdr v-forward))))
+       (else (internal-error))))))
 
 (define (tangent v-forward)
- (cond
-  ((vlad-empty-list? v-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
-  ((abstract-boolean? v-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
-  ((abstract-real? v-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
-  ((primitive-procedure? v-forward)
-   (run-time-error "Attempt to take tangent of a non-forward value" v-forward))
-  ((nonrecursive-closure? v-forward)
-   (unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
-    (run-time-error
-     "Attempt to take tangent of a non-forward value" v-forward))
-   (let ((b (find-if (lambda (b)
-		      (abstract-value=? v-forward
-					(primitive-procedure-forward
-					 (value-binding-value b))))
-		     *value-bindings*)))
-    (if b
-	(value-binding-value b)
+ (let ((b (find-if (lambda (b)
+		    (abstract-value=? v-forward
+				      (primitive-procedure-forward
+				       (vlad-cdr (value-binding-value b)
+						 (empty-tags)))))
+		   *value-bindings*)))
+  (if b
+      (value-binding-value b)
+      (cond
+       ((vlad-empty-list? v-forward)
+	(run-time-error
+	 "Attempt to take tangent of a non-forward value" v-forward))
+       ((abstract-boolean? v-forward)
+	(run-time-error
+	 "Attempt to take tangent of a non-forward value" v-forward))
+       ((abstract-real? v-forward)
+	(run-time-error
+	 "Attempt to take tangent of a non-forward value" v-forward))
+       ((primitive-procedure? v-forward)
+	(run-time-error
+	 "Attempt to take tangent of a non-forward value" v-forward))
+       ((nonrecursive-closure? v-forward)
+	(unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
+	 (run-time-error
+	  "Attempt to take tangent of a non-forward value" v-forward))
 	;; See the note in abstract-environment=?.
 	(make-nonrecursive-closure
 	 (map tangent (nonrecursive-closure-values v-forward))
 	 (forward-transform-inverse
-	  (nonrecursive-closure-lambda-expression v-forward))))))
-  ((recursive-closure? v-forward)
-   (unless (forward-parameter? (recursive-closure-parameter v-forward))
-    (run-time-error
-     "Attempt to take tangent of a non-forward value" v-forward))
-   (let ((b (find-if (lambda (b)
-		      (abstract-value=? v-forward
-					(primitive-procedure-forward
-					 (value-binding-value b))))
-		     *value-bindings*)))
-    (if b
-	(value-binding-value b)
+	  (nonrecursive-closure-lambda-expression v-forward))))
+       ((recursive-closure? v-forward)
+	(unless (forward-parameter? (recursive-closure-parameter v-forward))
+	 (run-time-error
+	  "Attempt to take tangent of a non-forward value" v-forward))
 	;; See the note in abstract-environment=?.
 	(make-recursive-closure
-	 (map  tangent (recursive-closure-values v-forward))
+	 (map tangent (recursive-closure-values v-forward))
 	 (map-vector unforwardify
 		     (recursive-closure-procedure-variables v-forward))
 	 (map-vector forward-transform-inverse
 		     (recursive-closure-lambda-expressions v-forward))
-	 (recursive-closure-index v-forward)))))
-  ((bundle? v-forward)
-   (if (scalar-value? (bundle-primal v-forward))
-       (bundle-tangent v-forward)
-       (make-bundle (tangent (bundle-primal v-forward))
-		    (tangent (bundle-tangent v-forward)))))
-  ((reverse-tagged-value? v-forward)
-   (make-reverse-tagged-value
-    (tangent (reverse-tagged-value-primal v-forward))))
-  ((tagged-pair? v-forward)
-   (unless (tagged? 'forward (tagged-pair-tags v-forward))
-    (run-time-error
-     "Attempt to take tangent of a non-forward value" v-forward))
-   (make-tagged-pair (remove-tag 'forward (tagged-pair-tags v-forward))
-		     (tangent (tagged-pair-car v-forward))
-		     (tangent (tagged-pair-cdr v-forward))))
-  (else (internal-error))))
+	 (recursive-closure-index v-forward)))
+       ((bundle? v-forward)
+	(if (scalar-value? (bundle-primal v-forward))
+	    (bundle-tangent v-forward)
+	    (make-bundle (tangent (bundle-primal v-forward))
+			 (tangent (bundle-tangent v-forward)))))
+       ((reverse-tagged-value? v-forward)
+	(make-reverse-tagged-value
+	 (tangent (reverse-tagged-value-primal v-forward))))
+       ((tagged-pair? v-forward)
+	(unless (tagged? 'forward (tagged-pair-tags v-forward))
+	 (run-time-error
+	  "Attempt to take tangent of a non-forward value" v-forward))
+	(make-tagged-pair (remove-tag 'forward (tagged-pair-tags v-forward))
+			  (tangent (tagged-pair-car v-forward))
+			  (tangent (tagged-pair-cdr v-forward))))
+       (else (internal-error))))))
 
 (define (legitimate? v v-perturbation)
  (or (and (vlad-empty-list? v) (vlad-empty-list? v-perturbation))
@@ -1955,41 +1960,48 @@
 	  (legitimate? (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation)))))
 
 (define (bundle-internal v v-perturbation)
- (cond
-  ((vlad-empty-list? v) (make-bundle v v-perturbation))
-  ((abstract-boolean? v) (make-bundle v v-perturbation))
-  ((abstract-real? v) (make-bundle v v-perturbation))
-  ((primitive-procedure? v) (primitive-procedure-forward v))
-  ((nonrecursive-closure? v)
-   ;; See the note in abstract-environment=?.
-   (make-nonrecursive-closure
-    (map bundle-internal
-	 (nonrecursive-closure-values v)
-	 (nonrecursive-closure-values v-perturbation))
-    (forward-transform (nonrecursive-closure-lambda-expression v))))
-  ((recursive-closure? v)
-   ;; See the note in abstract-environment=?.
-   (make-recursive-closure
-    (map bundle-internal
-	 (recursive-closure-values v)
-	 (recursive-closure-values v-perturbation))
-    (map-vector forwardify (recursive-closure-procedure-variables v))
-    (map-vector forward-transform (recursive-closure-lambda-expressions v))
-    (recursive-closure-index v)))
-  ((bundle? v)
-   (make-bundle
-    (bundle-internal (bundle-primal v) (bundle-primal v-perturbation))
-    (bundle-internal (bundle-tangent v) (bundle-tangent v-perturbation))))
-  ((reverse-tagged-value? v)
-   (make-reverse-tagged-value
-    (bundle-internal (reverse-tagged-value-primal v)
-		     (reverse-tagged-value-primal v-perturbation))))
-  ((tagged-pair? v)
-   (make-tagged-pair
-    (add-tag 'forward (tagged-pair-tags v))
-    (bundle-internal (tagged-pair-car v) (tagged-pair-car v-perturbation))
-    (bundle-internal (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
-  (else (internal-error))))
+ (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
+		   *value-bindings*)))
+  (if b
+      (primitive-procedure-forward
+       (vlad-cdr (value-binding-value b) (empty-tags)))
+      (cond
+       ((vlad-empty-list? v) (make-bundle v v-perturbation))
+       ((abstract-boolean? v) (make-bundle v v-perturbation))
+       ((abstract-real? v) (make-bundle v v-perturbation))
+       ((primitive-procedure? v) (internal-error))
+       ((nonrecursive-closure? v)
+	;; See the note in abstract-environment=?.
+	(make-nonrecursive-closure
+	 (map bundle-internal
+	      (nonrecursive-closure-values v)
+	      (nonrecursive-closure-values v-perturbation))
+	 (forward-transform (nonrecursive-closure-lambda-expression v))))
+       ((recursive-closure? v)
+	;; See the note in abstract-environment=?.
+	(make-recursive-closure
+	 (map bundle-internal
+	      (recursive-closure-values v)
+	      (recursive-closure-values v-perturbation))
+	 (map-vector forwardify (recursive-closure-procedure-variables v))
+	 (map-vector forward-transform
+		     (recursive-closure-lambda-expressions v))
+	 (recursive-closure-index v)))
+       ((bundle? v)
+	(make-bundle
+	 (bundle-internal (bundle-primal v) (bundle-primal v-perturbation))
+	 (bundle-internal (bundle-tangent v) (bundle-tangent v-perturbation))))
+       ((reverse-tagged-value? v)
+	(make-reverse-tagged-value
+	 (bundle-internal (reverse-tagged-value-primal v)
+			  (reverse-tagged-value-primal v-perturbation))))
+       ((tagged-pair? v)
+	(make-tagged-pair
+	 (add-tag 'forward (tagged-pair-tags v))
+	 (bundle-internal (tagged-pair-car v) (tagged-pair-car v-perturbation))
+	 (bundle-internal
+	  (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
+       (else (internal-error))))))
 
 (define (bundle v v-perturbation)
  (unless (legitimate? v v-perturbation)
@@ -2004,13 +2016,16 @@
    (find-if (lambda (b) (variable=? x (value-binding-variable b)))
 	    *value-bindings*))))
 
+;;; needs work: closure conversion of primitives
 (define (make-zero e) (new-application (added-variable 'zero) e))
 
+;;; needs work: closure conversion of primitives
 (define (make-plus e1 e2)
  (new-application (added-variable 'plus) (create-cons-expression e1 e2)))
 
 (define (make-plus-binding p e) (make-parameter-binding p (make-plus p e)))
 
+;;; needs work: closure conversion of primitives
 (define (make-*j-inverse e) (new-application (added-variable '*j-inverse) e))
 
 (define (reverse-transform e gs zs)
@@ -2348,88 +2363,93 @@
  (plus-internal v1 v2))
 
 (define (*j v)
- (cond ((vlad-empty-list? v) (make-reverse-tagged-value v))
-       ((abstract-boolean? v) (make-reverse-tagged-value v))
-       ((abstract-real? v) (make-reverse-tagged-value v))
-       ((primitive-procedure? v) (primitive-procedure-reverse v))
-       ((nonrecursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(make-nonrecursive-closure
-	 (map *j (nonrecursive-closure-values v))
-	 (let ((e (reverse-transform (nonrecursive-closure-lambda-expression v)
+ (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
+		   *value-bindings*)))
+  (if b
+      (primitive-procedure-reverse
+       (vlad-cdr (value-binding-value b) (empty-tags)))
+      (cond ((vlad-empty-list? v) (make-reverse-tagged-value v))
+	    ((abstract-boolean? v) (make-reverse-tagged-value v))
+	    ((abstract-real? v) (make-reverse-tagged-value v))
+	    ((primitive-procedure? v) (internal-error))
+	    ((nonrecursive-closure? v)
+	     ;; See the note in abstract-environment=?.
+	     (make-nonrecursive-closure
+	      (map *j (nonrecursive-closure-values v))
+	      (let ((e (reverse-transform
+			(nonrecursive-closure-lambda-expression v)
+			'()
+			(nonrecursive-closure-variables v))))
+	       (anf-convert
+		;; needs work: shouldn't redo closure conversion
+		(closure-convert
+		 (second (alpha-convert-expression e (free-variables e))))))))
+	    ((recursive-closure? v)
+	     ;; See the note in abstract-environment=?.
+	     (make-recursive-closure
+	      (map *j (recursive-closure-values v))
+	      (map-vector reverseify (recursive-closure-procedure-variables v))
+	      (let* ((es (map-vector
+			  (lambda (e)
+			   (reverse-transform
+			    e
+			    (vector->list
+			     (recursive-closure-procedure-variables v))
+			    (recursive-closure-variables v)))
+			  (recursive-closure-lambda-expressions v)))
+		     (xs (map-reduce union-variables
 				     '()
-				     (nonrecursive-closure-variables v))))
-	  (anf-convert
-	   (closure-convert
-	    (second (alpha-convert-expression e (free-variables e))))))))
-       ((recursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(make-recursive-closure
-	 (map *j (recursive-closure-values v))
-	 (map-vector reverseify (recursive-closure-procedure-variables v))
-	 (let* ((es (map-vector
-		     (lambda (e)
-		      (reverse-transform
-		       e
-		       (vector->list (recursive-closure-procedure-variables v))
-		       (recursive-closure-variables v)))
-		     (recursive-closure-lambda-expressions v)))
-		(xs (map-reduce
-		     union-variables '() free-variables (vector->list es))))
-	  (map-vector
-	   (lambda (e)
-	    (anf-convert
-	     (closure-convert (second (alpha-convert-expression e xs)))))
-	   es))
-	 (recursive-closure-index v)))
-       ((bundle? v) (make-reverse-tagged-value v))
-       ((reverse-tagged-value? v) (make-reverse-tagged-value v))
-       ((tagged-pair? v)
-	(make-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
-			  (*j (tagged-pair-car v))
-			  (*j (tagged-pair-cdr v))))
-       (else (internal-error))))
+				     free-variables
+				     (vector->list es))))
+	       (map-vector
+		(lambda (e)
+		 (anf-convert
+		  ;; needs work: shouldn't redo closure conversion
+		  (closure-convert (second (alpha-convert-expression e xs)))))
+		es))
+	      (recursive-closure-index v)))
+	    ((bundle? v) (make-reverse-tagged-value v))
+	    ((reverse-tagged-value? v) (make-reverse-tagged-value v))
+	    ((tagged-pair? v)
+	     (make-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
+			       (*j (tagged-pair-car v))
+			       (*j (tagged-pair-cdr v))))
+	    (else (internal-error))))))
 
 (define (*j-inverse v-reverse)
- (cond ((vlad-empty-list? v-reverse)
-	(run-time-error
-	 "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-       ((abstract-boolean? v-reverse)
-	(run-time-error
-	 "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-       ((abstract-real? v-reverse)
-	(run-time-error
-	 "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-       ((primitive-procedure? v-reverse)
-	(run-time-error
-	 "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-       ((nonrecursive-closure? v-reverse)
-	(unless (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
-	 (run-time-error
-	  "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	(let ((b (find-if (lambda (b)
-			   (abstract-value=? v-reverse
-					     (primitive-procedure-reverse
-					      (value-binding-value b))))
-			  *value-bindings*)))
-	 (if b
-	     (value-binding-value b)
+ (let ((b (find-if (lambda (b)
+		    (abstract-value=? v-reverse
+				      (primitive-procedure-reverse
+				       (vlad-cdr (value-binding-value b)
+						 (empty-tags)))))
+		   *value-bindings*)))
+  (if b
+      (value-binding-value b)
+      (cond ((vlad-empty-list? v-reverse)
+	     (run-time-error
+	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+	    ((abstract-boolean? v-reverse)
+	     (run-time-error
+	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+	    ((abstract-real? v-reverse)
+	     (run-time-error
+	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+	    ((primitive-procedure? v-reverse)
+	     (run-time-error
+	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+	    ((nonrecursive-closure? v-reverse)
+	     (unless (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
+	      (run-time-error
+	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
 	     ;; See the note in abstract-environment=?.
 	     (make-nonrecursive-closure
 	      (map *j-inverse (nonrecursive-closure-values v-reverse))
 	      (reverse-transform-inverse
-	       (nonrecursive-closure-lambda-expression v-reverse))))))
-       ((recursive-closure? v-reverse)
-	(unless (tagged? 'reverse (recursive-closure-tags v-reverse))
-	 (run-time-error
-	  "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	(let ((b (find-if (lambda (b)
-			   (abstract-value=? v-reverse
-					     (primitive-procedure-reverse
-					      (value-binding-value b))))
-			  *value-bindings*)))
-	 (if b
-	     (value-binding-value b)
+	       (nonrecursive-closure-lambda-expression v-reverse))))
+	    ((recursive-closure? v-reverse)
+	     (unless (tagged? 'reverse (recursive-closure-tags v-reverse))
+	      (run-time-error
+	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
 	     ;; See the note in abstract-environment=?.
 	     (make-recursive-closure
 	      (map *j-inverse (recursive-closure-values v-reverse))
@@ -2437,20 +2457,21 @@
 			  (recursive-closure-procedure-variables v-reverse))
 	      (map-vector reverse-transform-inverse
 			  (recursive-closure-lambda-expressions v-reverse))
-	      (recursive-closure-index v-reverse)))))
-       ((bundle? v-reverse)
-	(run-time-error
-	 "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-       ((reverse-tagged-value? v-reverse)
-	(reverse-tagged-value-primal v-reverse))
-       ((tagged-pair? v-reverse)
-	(unless (tagged? 'reverse (tagged-pair-tags v-reverse))
-	 (run-time-error
-	  "Attempt to take primal of a non-reverse value" v-reverse))
-	(make-tagged-pair (remove-tag 'reverse (tagged-pair-tags v-reverse))
-			  (*j-inverse (tagged-pair-car v-reverse))
-			  (*j-inverse (tagged-pair-cdr v-reverse))))
-       (else (internal-error))))
+	      (recursive-closure-index v-reverse)))
+	    ((bundle? v-reverse)
+	     (run-time-error
+	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
+	    ((reverse-tagged-value? v-reverse)
+	     (reverse-tagged-value-primal v-reverse))
+	    ((tagged-pair? v-reverse)
+	     (unless (tagged? 'reverse (tagged-pair-tags v-reverse))
+	      (run-time-error
+	       "Attempt to take primal of a non-reverse value" v-reverse))
+	     (make-tagged-pair
+	      (remove-tag 'reverse (tagged-pair-tags v-reverse))
+	      (*j-inverse (tagged-pair-car v-reverse))
+	      (*j-inverse (tagged-pair-cdr v-reverse))))
+	    (else (internal-error))))))
 
 ;;; Pretty printer
 
@@ -2875,6 +2896,8 @@
 ;;; Abstract Values
 
 (define (potentially-imprecise-vlad-value->abstract-value v)
+ ;; needs work: This needs to be done differently now that constant conversion
+ ;;             has been eliminated.
  (cond ((scalar-value? v)
 	(if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
        ((nonrecursive-closure? v)
@@ -3060,9 +3083,6 @@
 	   ((ternary
 	     (lambda (v1 v2 v3 bs)
 	      (unimplemented "abstract evaluator for if-procedure")
-	      (unless (and (nonrecursive-closure? v2)
-			   (nonrecursive-closure? v3))
-	       (run-time-error "You used if-procedure"))
 	      (cond ((eq? v1 'boolean)
 		     (abstract-analysis-union
 		      (abstract-apply-closure
@@ -4801,6 +4821,7 @@
 (define (serialize-object object objects)
  (cond ((primitive-procedure? object)
 	`(primitive-procedure
+	  ;; needs work: closure conversion of primitives
 	  ,(positionq object (map value-binding-value *value-bindings*))))
        ((or (null? object)
 	    (boolean? object)
@@ -4843,6 +4864,7 @@
        ((pair? object)
 	(case (first object)
 	 ((primitive-procedure)
+	  ;; needs work: closure conversion of primitives
 	  (value-binding-value (list-ref *value-bindings* (second object))))
 	 ((double)
 	  (make-double
@@ -4985,46 +5007,70 @@
  (set! *value-bindings*
        (cons (make-value-binding
 	      x
-	      (if #t			;debugging
-		  (vlad-cons (vlad-empty-list)
-			     (make-primitive-procedure
-			      x procedure generator forward reverse 0))
-		  (make-primitive-procedure
-		   x procedure generator forward reverse 0)))
+	      (vlad-cons (vlad-empty-list)
+			 (make-primitive-procedure
+			  x procedure generator forward reverse 0)))
 	     *value-bindings*)))
+
+(define (vlad-forward-listify l)
+ (if (null? l)
+     (bundle (vlad-empty-list) (vlad-empty-list))
+     (make-tagged-pair (add-tag 'forward (empty-tags))
+		       (first l)
+		       (vlad-forward-listify (rest l)))))
+
+(define (vlad-reverse-listify l)
+ (if (null? l)
+     (*j (vlad-empty-list))
+     (make-tagged-pair (add-tag 'reverse (empty-tags))
+		       (first l)
+		       (vlad-reverse-listify (rest l)))))
+
+(define (free-values-in-top-level-environment e)
+ (let ((wizard? *wizard?*))
+  (set! *wizard?* #t)
+  (syntax-check-expression! e)
+  (set! *wizard?* wizard?))
+ (map (lambda (x)
+       (value-binding-value
+	(find-if (lambda (b) (variable=? x (value-binding-variable b)))
+		 *value-bindings*)))
+      (free-variables (concrete->abstract e))))
 
 (define (evaluate-in-top-level-environment e)
  (let ((wizard? *wizard?*))
   (set! *wizard?* #t)
   (syntax-check-expression! e)
   (set! *wizard?* wizard?))
+ ;; needs work: closure conversion tags
  (let ((result (parse e)))
   (concrete-eval (first result) (map value-binding-value (second result)))))
 
 (define (initialize-forwards-and-reverses!)
- (if #t					;debugging
-     (for-each (lambda (b)
-		(set-primitive-procedure-forward!
-		 (vlad-cdr (value-binding-value b) (empty-tags))
-		 (evaluate-in-top-level-environment
-		  (primitive-procedure-forward
-		   (vlad-cdr (value-binding-value b) (empty-tags)))))
-		(set-primitive-procedure-reverse!
-		 (vlad-cdr (value-binding-value b) (empty-tags))
-		 (evaluate-in-top-level-environment
-		  (primitive-procedure-reverse
-		   (vlad-cdr (value-binding-value b) (empty-tags))))))
-	       *value-bindings*)
-     (for-each (lambda (b)
-		(set-primitive-procedure-forward!
-		 (value-binding-value b)
-		 (evaluate-in-top-level-environment
-		  (primitive-procedure-forward (value-binding-value b))))
-		(set-primitive-procedure-reverse!
-		 (value-binding-value b)
-		 (evaluate-in-top-level-environment
-		  (primitive-procedure-reverse (value-binding-value b)))))
-	       *value-bindings*)))
+ (for-each (lambda (b)
+	    (set-primitive-procedure-forward!
+	     (vlad-cdr (value-binding-value b) (empty-tags))
+	     (make-tagged-pair
+	      (add-tag 'forward (empty-tags))
+	      (vlad-forward-listify
+	       (free-values-in-top-level-environment
+		(primitive-procedure-forward
+		 (vlad-cdr (value-binding-value b) (empty-tags)))))
+	      (evaluate-in-top-level-environment
+	       (primitive-procedure-forward
+		(vlad-cdr (value-binding-value b) (empty-tags))))))
+	    (set-primitive-procedure-reverse!
+	     (vlad-cdr (value-binding-value b) (empty-tags))
+	     (make-tagged-pair
+	      (add-tag 'reverse (empty-tags))
+	      (vlad-reverse-listify
+	       (free-values-in-top-level-environment
+		(primitive-procedure-reverse
+		 (vlad-cdr (value-binding-value b) (empty-tags)))))
+	      (evaluate-in-top-level-environment
+	       (primitive-procedure-reverse
+		(vlad-cdr (value-binding-value b) (empty-tags)))))))
+	   *value-bindings*))
 
 (define (initialize-basis!)
  ;; needs work: (Almost) all of the '() in the following need to change. They
@@ -5359,21 +5405,14 @@
  (define-primitive-procedure 'if-procedure
   (ternary
    (lambda (x1 x2 x3 bs)
-    (when #f				;debugging
-     (unless (and (nonrecursive-closure? x2) (nonrecursive-closure? x3))
-      (run-time-error "You used if-procedure")))
     (if *run?*
-	(if #f				;debugging
-	    (if (vlad-false? x1)
-		(concrete-apply x3 (tagged-empty-list x3))
-		(concrete-apply x2 (tagged-empty-list x2)))
-	    (if (vlad-false? x1)
-		(concrete-apply (vlad-cdr x3 (empty-tags))
-				(vlad-cons (vlad-car x3 (empty-tags))
-					   (tagged-empty-list x3)))
-		(concrete-apply (vlad-cdr x2 (empty-tags))
-				(vlad-cons (vlad-car x2 (empty-tags))
-					   (tagged-empty-list x2)))))
+	(if (vlad-false? x1)
+	    (concrete-apply (vlad-cdr x3 (empty-tags))
+			    (vlad-cons (vlad-car x3 (empty-tags))
+				       (tagged-empty-list x3)))
+	    (concrete-apply (vlad-cdr x2 (empty-tags))
+			    (vlad-cons (vlad-car x2 (empty-tags))
+				       (tagged-empty-list x2))))
 	(begin
 	 (unimplemented "abstract evaluator for if-procedure")
 	 (cond ((eq? x1 'boolean)
