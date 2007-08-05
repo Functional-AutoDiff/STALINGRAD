@@ -67,6 +67,7 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("wizard" wizard?))
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
@@ -107,6 +108,7 @@
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *wizard?* wizard?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
  (when expression-equality-using-identity?
