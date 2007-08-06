@@ -253,17 +253,19 @@
 
 (define (add-tag tag tags) (cons tag tags))
 
-;;; needs work: tag transposition
-(define (tagged? tag tags) (memq tag tags))
+(define (tagged? tag tags) (and (not (null? tags)) (eq? (first tags) tag)))
 
-;;; needs work: tag transposition
-(define (remove-tag tag tags) (remove-oneq tag tags))
+(define (remove-tag tag tags)
+ (unless (tagged? tag tags) (internal-error))
+ (rest tags))
 
-;;; needs work: tag transposition
-(define (equal-tags? tags1 tags2)
- (and
-  (every (lambda (tag1) (= (countq tag1 tags1) (countq tag1 tags2))) tags1)
-  (every (lambda (tag2) (= (countq tag2 tags1) (countq tag2 tags2))) tags2)))
+(define (prefix-tags? tags1 tags2)
+ (or (null? tags1)
+     (and (not (null? tags2))
+	  (eq? (first tags1) (first tags2))
+	  (prefix-tags? (rest tags1) (rest tags2)))))
+
+(define (equal-tags? tags1 tags2) (equal? tags1 tags2))
 
 ;;; Variables
 
@@ -338,7 +340,6 @@
 	 (else (internal-error))))
        (else (internal-error))))
 
-;;; needs work: variables must be equal even when tags are permuted
 (define (variable=? x1 x2) (equal? x1 x2))
 
 ;;; needs work: variable-base, variable-alpha, and base-variable<? are only
@@ -389,55 +390,23 @@
 
 (define (reverseify x) `(reverse ,x))
 
-(define (forward-variable? x) (tagged? 'forward (variable-tags x)))
-
-(define (sensitivity-variable? x) (tagged? 'sensitivity (variable-tags x)))
-
-(define (backpropagator-variable? x)
- (tagged? 'backpropagator (variable-tags x)))
-
-(define (reverse-variable? x) (tagged? 'reverse (variable-tags x)))
-
-;;; needs work: tag transposition
 (define (unforwardify x)
- (unless (forward-variable? x) (internal-error))
- (let loop ((x x))
-  (unless (pair? x) (internal-error))
-  (case (first x)
-   ;; needs work: should we unwrap the alpha?
-   ((alpha) (loop (second x)))
-   ((forward) (second x))
-   ((sensitivity) (cons (first x) (loop (second x))))
-   ((reverse) (cons (first x) (loop (second x))))
-   (else (internal-error)))))
+ (unless (pair? x) (internal-error))
+ (case (first x)
+  ((alpha) (internal-error))
+  ((forward) (second x))
+  ((sensitivity) (internal-error))
+  ((reverse) (internal-error))
+  (else (internal-error))))
 
-;;; needs work: tag transposition
-(define (unsensitivityify x)
- (unless (sensitivity-variable? x) (internal-error))
- (let loop ((x x))
-  (unless (pair? x) (internal-error))
-  (case (first x)
-   ;; needs work: should we unwrap the alpha?
-   ((alpha) (loop (second x)))
-   ((forward) (cons (first x) (loop (second x))))
-   ((sensitivity) (second x))
-   ((reverse) (cons (first x) (loop (second x))))
-   (else (internal-error)))))
-
-(define (unbackpropagatorify x) (unimplemented "unbackpropagatorify"))
-
-;;; needs work: tag transposition
 (define (unreverseify x)
- (unless (reverse-variable? x) (internal-error))
- (let loop ((x x))
-  (unless (pair? x) (internal-error))
-  (case (first x)
-   ;; needs work: should we unwrap the alpha?
-   ((alpha) (loop (second x)))
-   ((forward) (cons (first x) (loop (second x))))
-   ((sensitivity) (cons (first x) (loop (second x))))
-   ((reverse) (second x))
-   (else (internal-error)))))
+ (unless (pair? x) (internal-error))
+ (case (first x)
+  ((alpha) (internal-error))
+  ((forward) (internal-error))
+  ((sensitivity) (internal-error))
+  ((reverse) (second x))
+  (else (internal-error))))
 
 (define (forward-access x) (make-variable-access-expression (forwardify x)))
 
@@ -451,12 +420,6 @@
 
 (define (unforward-access x)
  (make-variable-access-expression (unforwardify x)))
-
-(define (unsensitivity-access x)
- (make-variable-access-expression (unsensitivityify x)))
-
-(define (unbackpropagator-access x)
- (make-variable-access-expression (unbackpropagatorify x)))
 
 (define (unreverse-access x)
  (make-variable-access-expression (unreverseify x)))
@@ -480,14 +443,6 @@
 (define (unforwardify-access e)
  (make-variable-access-expression
   (unforwardify (variable-access-expression-variable e))))
-
-(define (unsensitivityify-access e)
- (make-variable-access-expression
-  (unsensitivityify (variable-access-expression-variable e))))
-
-(define (unbackpropagatorify-access e)
- (make-variable-access-expression
-  (unbackpropagatorify (variable-access-expression-variable e))))
 
 (define (unreverseify-access e)
  (make-variable-access-expression
@@ -848,18 +803,6 @@
 
 (define (vlad-empty-list? v) (null? v))
 
-(define (tagged-empty-list v)
- (if #f					;debugging
-     (let loop ((tags (nonrecursive-closure-tags v)))
-      (if (empty-tags? tags)
-	  (vlad-empty-list)
-	  (case (first tags)
-	   ;; needs work: other tags
-	   ((forward) (let ((v (loop (rest tags)))) (bundle v (zero v))))
-	   ((reverse) (*j (loop (rest tags))))
-	   (else (internal-error)))))
-     (vlad-empty-list)))
-
 ;;; Booleans
 
 (define (vlad-true) #t)
@@ -946,23 +889,15 @@
 
 ;;; Pairs
 
-(define (vlad-pair? v tags)
- ;; needs work: Should remove tags argument since the only place it is used is
- ;;             in destructure.
- (and (tagged-pair? v) (equal-tags? (tagged-pair-tags v) tags)))
+(define (vlad-pair? v)
+ (and (tagged-pair? v) (empty-tags? (tagged-pair-tags v))))
 
-(define (vlad-car v tags)
- ;; needs work: Should remove tags argument since the only place it is used is
- ;;             in destructure.
- (unless (vlad-pair? v tags)
-  (run-time-error "Attempt to take car of a non-pair" v))
+(define (vlad-car v)
+ (unless (vlad-pair? v) (run-time-error "Attempt to take car of a non-pair" v))
  (tagged-pair-car v))
 
-(define (vlad-cdr v tags)
- ;; needs work: Should remove tags argument since the only place it is used is
- ;;             in destructure.
- (unless (vlad-pair? v tags)
-  (run-time-error "Attempt to take cdr of a non-pair" v))
+(define (vlad-cdr v)
+ (unless (vlad-pair? v) (run-time-error "Attempt to take cdr of a non-pair" v))
  (tagged-pair-cdr v))
 
 (define (vlad-cons v1 v2) (make-tagged-pair (empty-tags) v1 v2))
@@ -974,7 +909,6 @@
 	  (forward-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
 	  (forward-parameter? (recursive-closure-parameter v)))
-     ;; needs work: transposition is broken
      (bundle? v)
      (and (tagged-pair? v) (tagged? 'forward (tagged-pair-tags v)))))
 
@@ -983,15 +917,8 @@
 	  (reverse-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
 	  (reverse-parameter? (recursive-closure-parameter v)))
-     ;; needs work: transposition is broken
      (reverse-tagged-value? v)
      (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
-
-(define (value-tags v)
- ;; needs work: Can do this by examining the closure and tagged pair tags.
- (cond ((vlad-forward? v) (add-tag 'forward (value-tags (primal v))))
-       ((vlad-reverse? v) (add-tag 'reverse (value-tags (*j-inverse v))))
-       (else (empty-tags))))
 
 (define (scalar-value? v)
  (or (vlad-empty-list? v)
@@ -1005,6 +932,16 @@
        ((bundle? v) (list (bundle-primal v) (bundle-tangent v)))
        ((reverse-tagged-value? v) (list (reverse-tagged-value-primal v)))
        ((tagged-pair? v) (list (tagged-pair-car v) (tagged-pair-cdr v)))
+       (else (internal-error))))
+
+(define (value-tags v)
+ (cond ((scalar-value? v) '())
+       ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
+       ((recursive-closure? v) (recursive-closure-tags v))
+       ((bundle? v) (add-tag 'forward (value-tags (bundle-primal v))))
+       ((reverse-tagged-value? v)
+	(add-tag 'reverse (value-tags (reverse-tagged-value-primal v))))
+       ((tagged-pair? v) (tagged-pair-tags v))
        (else (internal-error))))
 
 ;;; Top
@@ -1802,8 +1739,7 @@
  (let ((b (find-if (lambda (b)
 		    (abstract-value=? v-forward
 				      (primitive-procedure-forward
-				       (vlad-cdr (value-binding-value b)
-						 (empty-tags)))))
+				       (vlad-cdr (value-binding-value b)))))
 		   *value-bindings*)))
   (if b
       (value-binding-value b)
@@ -1841,14 +1777,10 @@
 	 (map-vector forward-transform-inverse
 		     (recursive-closure-lambda-expressions v-forward))
 	 (recursive-closure-index v-forward)))
-       ((bundle? v-forward)
-	(if (scalar-value? (bundle-primal v-forward))
-	    (bundle-primal v-forward)
-	    (make-bundle (primal (bundle-primal v-forward))
-			 (primal (bundle-tangent v-forward)))))
+       ((bundle? v-forward) (bundle-primal v-forward))
        ((reverse-tagged-value? v-forward)
-	(make-reverse-tagged-value
-	 (primal (reverse-tagged-value-primal v-forward))))
+	(run-time-error
+	 "Attempt to take primal of a non-forward value" v-forward))
        ((tagged-pair? v-forward)
 	(unless (tagged? 'forward (tagged-pair-tags v-forward))
 	 (run-time-error
@@ -1862,8 +1794,7 @@
  (let ((b (find-if (lambda (b)
 		    (abstract-value=? v-forward
 				      (primitive-procedure-forward
-				       (vlad-cdr (value-binding-value b)
-						 (empty-tags)))))
+				       (vlad-cdr (value-binding-value b)))))
 		   *value-bindings*)))
   (if b
       (value-binding-value b)
@@ -1901,14 +1832,10 @@
 	 (map-vector forward-transform-inverse
 		     (recursive-closure-lambda-expressions v-forward))
 	 (recursive-closure-index v-forward)))
-       ((bundle? v-forward)
-	(if (scalar-value? (bundle-primal v-forward))
-	    (bundle-tangent v-forward)
-	    (make-bundle (tangent (bundle-primal v-forward))
-			 (tangent (bundle-tangent v-forward)))))
+       ((bundle? v-forward) (bundle-tangent v-forward))
        ((reverse-tagged-value? v-forward)
-	(make-reverse-tagged-value
-	 (tangent (reverse-tagged-value-primal v-forward))))
+	(run-time-error
+	 "Attempt to take tangent of a non-forward value" v-forward))
        ((tagged-pair? v-forward)
 	(unless (tagged? 'forward (tagged-pair-tags v-forward))
 	 (run-time-error
@@ -1963,8 +1890,7 @@
  (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
 		   *value-bindings*)))
   (if b
-      (primitive-procedure-forward
-       (vlad-cdr (value-binding-value b) (empty-tags)))
+      (primitive-procedure-forward (vlad-cdr (value-binding-value b)))
       (cond
        ((vlad-empty-list? v) (make-bundle v v-perturbation))
        ((abstract-boolean? v) (make-bundle v v-perturbation))
@@ -1987,14 +1913,8 @@
 	 (map-vector forward-transform
 		     (recursive-closure-lambda-expressions v))
 	 (recursive-closure-index v)))
-       ((bundle? v)
-	(make-bundle
-	 (bundle-internal (bundle-primal v) (bundle-primal v-perturbation))
-	 (bundle-internal (bundle-tangent v) (bundle-tangent v-perturbation))))
-       ((reverse-tagged-value? v)
-	(make-reverse-tagged-value
-	 (bundle-internal (reverse-tagged-value-primal v)
-			  (reverse-tagged-value-primal v-perturbation))))
+       ((bundle? v) (make-bundle v v-perturbation))
+       ((reverse-tagged-value? v) (make-bundle v v-perturbation))
        ((tagged-pair? v)
 	(make-tagged-pair
 	 (add-tag 'forward (tagged-pair-tags v))
@@ -2366,8 +2286,7 @@
  (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
 		   *value-bindings*)))
   (if b
-      (primitive-procedure-reverse
-       (vlad-cdr (value-binding-value b) (empty-tags)))
+      (primitive-procedure-reverse (vlad-cdr (value-binding-value b)))
       (cond ((vlad-empty-list? v) (make-reverse-tagged-value v))
 	    ((abstract-boolean? v) (make-reverse-tagged-value v))
 	    ((abstract-real? v) (make-reverse-tagged-value v))
@@ -2381,7 +2300,7 @@
 			'()
 			(nonrecursive-closure-variables v))))
 	       (anf-convert
-		;; needs work: shouldn't redo closure conversion
+		;; needs work: Shouldn't redo closure conversion.
 		(closure-convert
 		 (second (alpha-convert-expression e (free-variables e))))))))
 	    ((recursive-closure? v)
@@ -2404,7 +2323,7 @@
 	       (map-vector
 		(lambda (e)
 		 (anf-convert
-		  ;; needs work: shouldn't redo closure conversion
+		  ;; needs work: Shouldn't redo closure conversion.
 		  (closure-convert (second (alpha-convert-expression e xs)))))
 		es))
 	      (recursive-closure-index v)))
@@ -2420,8 +2339,7 @@
  (let ((b (find-if (lambda (b)
 		    (abstract-value=? v-reverse
 				      (primitive-procedure-reverse
-				       (vlad-cdr (value-binding-value b)
-						 (empty-tags)))))
+				       (vlad-cdr (value-binding-value b)))))
 		   *value-bindings*)))
   (if b
       (value-binding-value b)
@@ -2526,9 +2444,7 @@
        ((eq? v 'boolean) #f)
        ((real? v) #t)
        ((eq? v 'real) #f)
-       ((vlad-pair? v (empty-tags))
-	(and (quotable? (vlad-car v (empty-tags)))
-	     (quotable? (vlad-cdr v (empty-tags)))))
+       ((vlad-pair? v) (and (quotable? (vlad-car v)) (quotable? (vlad-cdr v))))
        ((primitive-procedure? v) #f)
        ((closure? v) #f)
        ((bundle? v) #f)
@@ -2567,15 +2483,12 @@
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably"v))
 	   'real)
-	  ((vlad-pair? v (empty-tags))
+	  ((vlad-pair? v)
 	   (if (and *unabbreviate-executably?* (not quote?))
 	       (if (quotable? v)
-		   `',(cons (loop (vlad-car v (empty-tags)) #t)
-			    (loop (vlad-cdr v (empty-tags)) #t))
-		   `(cons ,(loop (vlad-car v (empty-tags)) #f)
-			  ,(loop (vlad-cdr v (empty-tags)) #f)))
-	       (cons (loop (vlad-car v (empty-tags)) quote?)
-		     (loop (vlad-cdr v (empty-tags)) quote?))))
+		   `',(cons (loop (vlad-car v) #t) (loop (vlad-cdr v) #t))
+		   `(cons ,(loop (vlad-car v) #f) ,(loop (vlad-cdr v) #f)))
+	       (cons (loop (vlad-car v) quote?) (loop (vlad-cdr v) quote?))))
 	  ((primitive-procedure? v)
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (internal-error))
@@ -2726,14 +2639,7 @@
   (thunk)
   (set-write-length! m)))
 
-(define (tag-check? tags v)
- (or (empty-tags? tags)
-     (case (first tags)
-      ;; needs work: other tags
-      ((forward) (and (vlad-forward? v) (tag-check? (rest tags) (primal v))))
-      ((reverse)
-       (and (vlad-reverse? v) (tag-check? (rest tags) (*j-inverse v))))
-      (else (internal-error)))))
+(define (tag-check? v1 v2) (prefix-tags? (value-tags v1) (value-tags v2)))
 
 ;;; Environment Restriction/Construction
 
@@ -2766,12 +2672,12 @@
        ((variable-access-expression? p)
 	(list (cons (variable-access-expression-variable p) v)))
        ((cons-expression? p)
-	(unless (vlad-pair? v (cons-expression-tags p))
+	(unless (and (tagged-pair? v)
+		     (prefix-tags? (cons-expression-tags p)
+				   (tagged-pair-tags v)))
 	 (run-time-error "Argument is not a matching tagged pair" v))
-	(append (destructure (cons-expression-car p)
-			     (vlad-car v (cons-expression-tags p)))
-		(destructure (cons-expression-cdr p)
-			     (vlad-cdr v (cons-expression-tags p)))))
+	(append (destructure (cons-expression-car p) (tagged-pair-car v))
+		(destructure (cons-expression-cdr p) (tagged-pair-cdr v))))
        (else (internal-error))))
 
 (define (construct-nonrecursive-environment v1 v2)
@@ -2811,14 +2717,8 @@
 ;;; needs work: This evaluator is not tail recursive.
 
 (define (concrete-apply v1 v2)
- (unless (vlad-procedure? v1)
-  (run-time-error "Target is not a procedure" v1))
- (unless (tag-check?
-	  (cond ((primitive-procedure? v1) (empty-tags))
-		((nonrecursive-closure? v1) (nonrecursive-closure-tags v1))
-		((recursive-closure? v1) (recursive-closure-tags v1))
-		(else (internal-error)))
-	  v2)
+ (unless (vlad-procedure? v1) (run-time-error "Target is not a procedure" v1))
+ (unless (tag-check? v1 v2)
   (run-time-error "Argument has wrong type for target" v1 v2))
  (set! *stack* (cons (list v1 v2) *stack*))
  (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
@@ -2887,7 +2787,10 @@
 			     (restrict-environment vs e cons-expression-car)))
 	  (v2 (concrete-eval (cons-expression-cdr e)
 			     (restrict-environment vs e cons-expression-cdr))))
-    ;; needs work: should do a tag check here
+    (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
+     (run-time-error "Argument has wrong type for target" v1))
+    (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
+     (run-time-error "Argument has wrong type for target" v2))
     (make-tagged-pair (cons-expression-tags e) v1 v2)))
   (else (internal-error))))
 
@@ -3025,7 +2928,8 @@
        (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
- ;; needs work: should do a tag check here
+ (unless (tag-check? v1 v2)
+  (run-time-error "Argument has wrong type for target" v1 v2))
  (if (or (abstract-top? v1) (abstract-top? v2))
      (abstract-top)
      (cond
@@ -3058,10 +2962,12 @@
 	 (v2 (abstract-eval1 (cons-expression-cdr e)
 			     (restrict-environment vs e cons-expression-cdr)
 			     bs)))
-    ;; needs work: should do a tag check here
-    (if (or (abstract-top? v1) (abstract-top? v2))
-	(abstract-top)
-	(make-tagged-pair (cons-expression-tags e) v1 v2))))
+    (cond ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
+	  (else (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
+		 (run-time-error "Argument has wrong type for target" v1))
+		(unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
+		 (run-time-error "Argument has wrong type for target" v2))
+		(make-tagged-pair (cons-expression-tags e) v1 v2)))))
   (else (internal-error))))
 
 (define (abstract-eval1-prime e vs bs)
@@ -3088,20 +2994,20 @@
 		      (abstract-apply-closure
 		       (lambda (e vs) (abstract-eval1-prime e vs bs))
 		       v2
-		       (tagged-empty-list v2))
+		       (vlad-empty-list))
 		      (abstract-apply-closure
 		       (lambda (e vs) (abstract-eval1-prime e vs bs))
 		       v3
-		       (tagged-empty-list v3))))
+		       (vlad-empty-list))))
 		    ((vlad-false? v1)
 		     (abstract-apply-closure
 		      (lambda (e vs) (abstract-eval1-prime e vs bs))
 		      v3
-		      (tagged-empty-list v3)))
+		      (vlad-empty-list)))
 		    (else (abstract-apply-closure
 			   (lambda (e vs) (abstract-eval1-prime e vs bs))
 			   v2
-			   (tagged-empty-list v2)))))
+			   (vlad-empty-list)))))
 	     "if-procedure")
 	    v2
 	    bs)
@@ -3512,22 +3418,21 @@
 					   e
 					   application-argument)
 					  bs)))
-		 (let* ((v1 (vlad-car v (empty-tags)))
-			(v2 (vlad-cdr v (empty-tags)))
-			(v3 (vlad-car v2 (empty-tags)))
-			(v4 (vlad-cdr v2 (empty-tags)))
+		 (let* ((v1 (vlad-car v))
+			(v2 (vlad-cdr v))
+			(v3 (vlad-car v2))
+			(v4 (vlad-cdr v2))
 			(v5 (cond
 			     ((eq? v1 'boolean)
 			      (abstract-value-union
-			       (abstract-apply v3 (tagged-empty-list v3) bs)
-			       (abstract-apply v4 (tagged-empty-list v4) bs)))
+			       (abstract-apply v3 (vlad-empty-list) bs)
+			       (abstract-apply v4 (vlad-empty-list) bs)))
 			     ((vlad-false? v1)
-			      (abstract-apply v4 (tagged-empty-list v4) bs))
-			     (else
-			      (abstract-apply v3 (tagged-empty-list v3) bs)))))
+			      (abstract-apply v4 (vlad-empty-list) bs))
+			     (else (abstract-apply v3 (vlad-empty-list) bs)))))
 		  (if (and (not (void? v5)) (eq? v1 'boolean))
-		      (let ((v6 (abstract-apply v3 (tagged-empty-list v3) bs))
-			    (v7 (abstract-apply v4 (tagged-empty-list v4) bs)))
+		      (let ((v6 (abstract-apply v3 (vlad-empty-list) bs))
+			    (v7 (abstract-apply v4 (vlad-empty-list) bs)))
 		       (unionp abstract-value-pair=?
 			       (all-subwidenings v6 v5)
 			       (all-subwidenings v7 v5)))
@@ -3571,30 +3476,28 @@
 					e
 					application-argument)
 				       bs)))
-	      (let* ((v1 (vlad-car v (empty-tags)))
-		     (v2 (vlad-cdr v (empty-tags)))
-		     (v3 (vlad-car v2 (empty-tags)))
-		     (v4 (vlad-cdr v2 (empty-tags)))
+	      (let* ((v1 (vlad-car v))
+		     (v2 (vlad-cdr v))
+		     (v3 (vlad-car v2))
+		     (v4 (vlad-cdr v2))
 		     (v5
-		      (cond
-		       ((eq? v1 'boolean)
-			(abstract-value-union
-			 (abstract-apply v3 (tagged-empty-list v3) bs)
-			 (abstract-apply v4 (tagged-empty-list v4) bs)))
-		       ((vlad-false? v1)
-			(abstract-apply v4 (tagged-empty-list v4) bs))
-		       (else (abstract-apply v3 (tagged-empty-list v3) bs)))))
+		      (cond ((eq? v1 'boolean)
+			     (abstract-value-union
+			      (abstract-apply v3 (vlad-empty-list) bs)
+			      (abstract-apply v4 (vlad-empty-list) bs)))
+			    ((vlad-false? v1)
+			     (abstract-apply v4 (vlad-empty-list) bs))
+			    (else (abstract-apply v3 (vlad-empty-list) bs)))))
 	       (if (void? v5)
 		   '()
-		   (cond
-		    ((eq? v1 'boolean)
-		     ;; We make the assumption that v3 and v4 will not
-		     ;; be abstract-value=?. If this assumption is false
-		     ;; then there may be duplicates.
-		     (list (list v3 (tagged-empty-list v3))
-			   (list v4 (tagged-empty-list v4))))
-		    ((vlad-false? v1) (list (list v4 (tagged-empty-list v4))))
-		    (else (list (list v3 (tagged-empty-list v3)))))))))
+		   (cond ((eq? v1 'boolean)
+			  ;; We make the assumption that v3 and v4 will not
+			  ;; be abstract-value=?. If this assumption is false
+			  ;; then there may be duplicates.
+			  (list (list v3 (vlad-empty-list))
+				(list v4 (vlad-empty-list))))
+			 ((vlad-false? v1) (list (list v4 (vlad-empty-list))))
+			 (else (list (list v3 (vlad-empty-list)))))))))
 	    (else '()))))
 	 (expression-binding-flow b))
 	'())))
@@ -3781,7 +3684,7 @@
 
 (define (generate-real*real-primitive-declarations s s1 s2 bs vs)
  (map (lambda (v)
-       (let ((v1 (vlad-car v (empty-tags))) (v2 (vlad-cdr v (empty-tags))))
+       (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
 	(unless (and (abstract-real? v1) (abstract-real? v2)) (internal-error))
 	(list "static INLINE "
 	      s1
@@ -3795,7 +3698,7 @@
 
 (define (generate-real*real-primitive-definitions s s1 s2 s3 bs vs)
  (map (lambda (v)
-       (let ((v1 (vlad-car v (empty-tags))) (v2 (vlad-cdr v (empty-tags))))
+       (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
 	(unless (and (abstract-real? v1) (abstract-real? v2)) (internal-error))
 	(list "static INLINE "
 	      s1
@@ -3897,13 +3800,10 @@
    (or
     (and (eq? (first thing1) 'function)
 	 (eq? (first thing2) 'if)
-	 (or
-	  (abstract-value=?
-	   (first (second thing1))
-	   (vlad-car (vlad-cdr (second thing2) (empty-tags)) (empty-tags)))
-	  (abstract-value=?
-	   (first (second thing1))
-	   (vlad-cdr (vlad-cdr (second thing2) (empty-tags)) (empty-tags)))))
+	 (or (abstract-value=? (first (second thing1))
+			       (vlad-car (vlad-cdr (second thing2))))
+	     (abstract-value=? (first (second thing1))
+			       (vlad-cdr (vlad-cdr (second thing2))))))
     (and (eq? (first thing1) 'if)
 	 (eq? (first thing2) 'function)
 	 (calls-if-procedure?
@@ -3930,18 +3830,17 @@
    (case (first thing)
     ((if)
      (let* ((v (second thing))
-	    (v1 (vlad-car v (empty-tags)))
-	    (v2 (vlad-cdr v (empty-tags)))
-	    (v3 (vlad-car v2 (empty-tags)))
-	    (v4 (vlad-cdr v2 (empty-tags)))
+	    (v1 (vlad-car v))
+	    (v2 (vlad-cdr v))
+	    (v3 (vlad-car v2))
+	    (v4 (vlad-cdr v2))
 	    (v5
-	     (cond
-	      ((eq? v1 'boolean)
-	       (abstract-value-union
-		(abstract-apply v3 (tagged-empty-list v3) bs)
-		(abstract-apply v4 (tagged-empty-list v4) bs)))
-	      ((vlad-false? v1) (abstract-apply v4 (tagged-empty-list v4) bs))
-	      (else (abstract-apply v3 (tagged-empty-list v3) bs)))))
+	     (cond ((eq? v1 'boolean)
+		    (abstract-value-union
+		     (abstract-apply v3 (vlad-empty-list) bs)
+		     (abstract-apply v4 (vlad-empty-list) bs)))
+		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list) bs))
+		   (else (abstract-apply v3 (vlad-empty-list) bs)))))
       (if (void? v5)
 	  '()
 	  (list "static INLINE "
@@ -3994,18 +3893,17 @@
    (case (first thing)
     ((if)
      (let* ((v (second thing))
-	    (v1 (vlad-car v (empty-tags)))
-	    (v2 (vlad-cdr v (empty-tags)))
-	    (v3 (vlad-car v2 (empty-tags)))
-	    (v4 (vlad-cdr v2 (empty-tags)))
+	    (v1 (vlad-car v))
+	    (v2 (vlad-cdr v))
+	    (v3 (vlad-car v2))
+	    (v4 (vlad-cdr v2))
 	    (v5
-	     (cond
-	      ((eq? v1 'boolean)
-	       (abstract-value-union
-		(abstract-apply v3 (tagged-empty-list v3) bs)
-		(abstract-apply v4 (tagged-empty-list v4) bs)))
-	      ((vlad-false? v1) (abstract-apply v4 (tagged-empty-list v4) bs))
-	      (else (abstract-apply v3 (tagged-empty-list v3) bs)))))
+	     (cond ((eq? v1 'boolean)
+		    (abstract-value-union
+		     (abstract-apply v3 (vlad-empty-list) bs)
+		     (abstract-apply v4 (vlad-empty-list) bs)))
+		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list) bs))
+		   (else (abstract-apply v3 (vlad-empty-list) bs)))))
       (if (void? v5)
 	  '()
 	  (list
@@ -4018,37 +3916,35 @@
 	   "){return "
 	   (cond
 	    ((eq? v1 'boolean)
-	     (let ((v6 (abstract-apply v3 (tagged-empty-list v3) bs))
-		   (v7 (abstract-apply v4 (tagged-empty-list v4) bs)))
-	      (list
-	       "x.a?"
-	       (generate-widen
-		v6
-		v5
-		(list (generate-function-name v3 (tagged-empty-list v3) v1v2s)
-		      "("
-		      (if (void? v3) '() "x.d.a")
-		      ")")
-		v1v2s1)
-	       ":"
-	       (generate-widen
-		v7
-		v5
-		(list (generate-function-name v4 (tagged-empty-list v4) v1v2s)
-		      "("
-		      (if (void? v4) '() "x.d.d")
-		      ")")
-		v1v2s1))))
+	     (let ((v6 (abstract-apply v3 (vlad-empty-list) bs))
+		   (v7 (abstract-apply v4 (vlad-empty-list) bs)))
+	      (list "x.a?"
+		    (generate-widen
+		     v6
+		     v5
+		     (list (generate-function-name v3 (vlad-empty-list) v1v2s)
+			   "("
+			   (if (void? v3) '() "x.d.a")
+			   ")")
+		     v1v2s1)
+		    ":"
+		    (generate-widen
+		     v7
+		     v5
+		     (list (generate-function-name v4 (vlad-empty-list) v1v2s)
+			   "("
+			   (if (void? v4) '() "x.d.d")
+			   ")")
+		     v1v2s1))))
 	    ((vlad-false? v1)
-	     (list (generate-function-name v4 (tagged-empty-list v4) v1v2s)
+	     (list (generate-function-name v4 (vlad-empty-list) v1v2s)
 		   "("
 		   (if (void? v4) '() "x.d.d")
 		   ")"))
-	    (else
-	     (list (generate-function-name v3 (tagged-empty-list v3) v1v2s)
-		   "("
-		   (if (void? v3) '() "x.d.a")
-		   ")")))
+	    (else (list (generate-function-name v3 (vlad-empty-list) v1v2s)
+			"("
+			(if (void? v3) '() "x.d.a")
+			")")))
 	   ";}"
 	   #\newline))))
     ((function)
@@ -4404,16 +4300,14 @@
  ;; their uses as required by gcc.
  (cached-topological-sort
   (lambda (v1 v2)
-   (component? (bundle (vlad-car v1 (empty-tags)) (vlad-cdr v1 (empty-tags)))
-	       (bundle (vlad-car v2 (empty-tags)) (vlad-cdr v2 (empty-tags)))))
+   (component? (bundle (vlad-car v1) (vlad-cdr v1))
+	       (bundle (vlad-car v2) (vlad-cdr v2))))
   (remove-if
    void?
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
-    (lambda (v)
-     (all-abstract-subvalues-for-bundle (vlad-car v (empty-tags))
-					(vlad-cdr v (empty-tags))))
+    (lambda (v) (all-abstract-subvalues-for-bundle (vlad-car v) (vlad-cdr v)))
     (map-reduce
      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
      '()
@@ -4461,6 +4355,7 @@
       (all-ad 'zero bs)))
 
 (define (generate-ad-declarations f s s1 bs vs)
+ ;; needs work: transposition
  (map (lambda (v)
        (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
 	   '()
@@ -4478,8 +4373,9 @@
       (all-ad s bs)))
 
 (define (generate-bundle-declarations bs vs)
+ ;; needs work: transposition
  (map (lambda (v)
-       (let ((v1 (bundle (vlad-car v (empty-tags)) (vlad-cdr v (empty-tags)))))
+       (let ((v1 (bundle (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
 	    '()
 	    (list "static INLINE "
@@ -4526,6 +4422,7 @@
       (all-ad 'zero bs)))
 
 (define (generate-primal-definitions bs xs vs)
+ ;; needs work: transposition
  (map
   (lambda (v)
    (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
@@ -4561,6 +4458,7 @@
   (all-ad 'primal bs)))
 
 (define (generate-tangent-definitions bs xs vs)
+ ;; needs work: transposition
  (map
   (lambda (v)
    (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
@@ -4596,11 +4494,10 @@
   (all-ad 'tangent bs)))
 
 (define (generate-bundle-definitions bs xs vs)
+ ;; needs work: transposition
  (map
   (lambda (v)
-   (let* ((v1 (vlad-car v (empty-tags)))
-	  (v2 (vlad-cdr v (empty-tags)))
-	  (v3 (bundle v1 v2)))
+   (let* ((v1 (vlad-car v)) (v2 (vlad-cdr v)) (v3 (bundle v1 v2)))
     (if (void? v3)
 	'()
 	(list
@@ -4744,13 +4641,9 @@
 		 (cond ((abstract-boolean? v)
 			(list c "=" (if (vlad-false? v1) "FALSE" "TRUE") ";"))
 		       ((abstract-real? v) (list c "=" v1 ";"))
-		       ((vlad-pair? v (empty-tags))
-			(list (loop (vlad-car v1 (empty-tags))
-				    (list c ".a")
-				    (vlad-car v (empty-tags)))
-			      (loop (vlad-cdr v1 (empty-tags))
-				    (list c ".a")
-				    (vlad-car v (empty-tags)))))
+		       ((vlad-pair? v)
+			(list (loop (vlad-car v1) (list c ".a") (vlad-car v))
+			      (loop (vlad-cdr v1) (list c ".a") (vlad-car v))))
 		       (else (internal-error))))))
 	   vs
 	   (free-variables e)))))
@@ -4914,59 +4807,51 @@
 
 (define (unary f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (f x))))
+  (let ((x (vlad-cdr x))) (f x))))
 
 (define (unary-predicate f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (if (f x) (vlad-true) (vlad-false)))))
+  (let ((x (vlad-cdr x))) (if (f x) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
+  (let ((x (vlad-cdr x)))
    (unless (abstract-real? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (if (real? x) (f x) 'real))))
 
 (define (unary-real-predicate f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
+  (let ((x (vlad-cdr x)))
    (unless (abstract-real? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
    (if (real? x) (if (f x) (vlad-true) (vlad-false)) 'boolean))))
 
 (define (binary f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (unless (vlad-pair? x (empty-tags))
+  (let ((x (vlad-cdr x)))
+   (unless (vlad-pair? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (f (vlad-car x (empty-tags)) (vlad-cdr x (empty-tags))))))
+   (f (vlad-car x) (vlad-cdr x)))))
 
 (define (binary-real f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (unless (vlad-pair? x (empty-tags))
+  (let ((x (vlad-cdr x)))
+   (unless (vlad-pair? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (vlad-car x (empty-tags))) (x2 (vlad-cdr x (empty-tags))))
+   (let ((x1 (vlad-car x)) (x2 (vlad-cdr x)))
     (unless (and (abstract-real? x1) (abstract-real? x2))
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     ;; needs work: This may be imprecise for *, /, and atan.
@@ -4974,13 +4859,12 @@
 
 (define (binary-real-predicate f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (unless (vlad-pair? x (empty-tags))
+  (let ((x (vlad-cdr x)))
+   (unless (vlad-pair? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x1 (vlad-car x (empty-tags))) (x2 (vlad-cdr x (empty-tags))))
+   (let ((x1 (vlad-car x)) (x2 (vlad-cdr x)))
     (unless (and (abstract-real? x1) (abstract-real? x2))
      (run-time-error (format #f "Invalid argument to ~a" s) x))
     (if (and (real? x1) (real? x2))
@@ -4989,19 +4873,15 @@
 
 (define (ternary f s)
  (lambda (x bs)
-  (unless (and (vlad-pair? x (empty-tags))
-	       (vlad-empty-list? (vlad-car x (empty-tags))))
+  (unless (and (vlad-pair? x) (vlad-empty-list? (vlad-car x)))
    (internal-error))
-  (let ((x (vlad-cdr x (empty-tags))))
-   (unless (vlad-pair? x (empty-tags))
+  (let ((x (vlad-cdr x)))
+   (unless (vlad-pair? x)
     (run-time-error (format #f "Invalid argument to ~a" s) x))
-   (let ((x23 (vlad-cdr x (empty-tags))))
-    (unless (vlad-pair? x23 (empty-tags))
+   (let ((x23 (vlad-cdr x)))
+    (unless (vlad-pair? x23)
      (run-time-error (format #f "Invalid argument to ~a" s) x))
-    (f (vlad-car x (empty-tags))
-       (vlad-car x23 (empty-tags))
-       (vlad-cdr x23 (empty-tags))
-       bs)))))
+    (f (vlad-car x) (vlad-car x23) (vlad-cdr x23) bs)))))
 
 (define (define-primitive-procedure x procedure generator forward reverse)
  (set! *value-bindings*
@@ -5014,7 +4894,7 @@
 
 (define (vlad-forward-listify l)
  (if (null? l)
-     (bundle (vlad-empty-list) (vlad-empty-list))
+     (bundle (vlad-empty-list) (zero (vlad-empty-list)))
      (make-tagged-pair (add-tag 'forward (empty-tags))
 		       (first l)
 		       (vlad-forward-listify (rest l)))))
@@ -5047,42 +4927,29 @@
   (concrete-eval (first result) (map value-binding-value (second result)))))
 
 (define (initialize-forwards-and-reverses!)
- (for-each (lambda (b)
-	    (set-primitive-procedure-forward!
-	     (vlad-cdr (value-binding-value b) (empty-tags))
-	     (make-tagged-pair
-	      (add-tag 'forward (empty-tags))
-	      (vlad-forward-listify
-	       (free-values-in-top-level-environment
-		(primitive-procedure-forward
-		 (vlad-cdr (value-binding-value b) (empty-tags)))))
-	      (evaluate-in-top-level-environment
-	       (primitive-procedure-forward
-		(vlad-cdr (value-binding-value b) (empty-tags))))))
-	    (set-primitive-procedure-reverse!
-	     (vlad-cdr (value-binding-value b) (empty-tags))
-	     (make-tagged-pair
-	      (add-tag 'reverse (empty-tags))
-	      (vlad-reverse-listify
-	       (free-values-in-top-level-environment
-		(primitive-procedure-reverse
-		 (vlad-cdr (value-binding-value b) (empty-tags)))))
-	      (evaluate-in-top-level-environment
-	       (primitive-procedure-reverse
-		(vlad-cdr (value-binding-value b) (empty-tags)))))))
-	   *value-bindings*))
+ (for-each
+  (lambda (b)
+   (set-primitive-procedure-forward!
+    (vlad-cdr (value-binding-value b))
+    (make-tagged-pair
+     (add-tag 'forward (empty-tags))
+     (vlad-forward-listify
+      (free-values-in-top-level-environment
+       (primitive-procedure-forward (vlad-cdr (value-binding-value b)))))
+     (evaluate-in-top-level-environment
+      (primitive-procedure-forward (vlad-cdr (value-binding-value b))))))
+   (set-primitive-procedure-reverse!
+    (vlad-cdr (value-binding-value b))
+    (make-tagged-pair
+     (add-tag 'reverse (empty-tags))
+     (vlad-reverse-listify
+      (free-values-in-top-level-environment
+       (primitive-procedure-reverse (vlad-cdr (value-binding-value b)))))
+     (evaluate-in-top-level-environment
+      (primitive-procedure-reverse (vlad-cdr (value-binding-value b)))))))
+  *value-bindings*))
 
 (define (initialize-basis!)
- ;; needs work: (Almost) all of the '() in the following need to change. They
- ;;             are the sensitivities to the application target which is the
- ;;             transformed primitive. The sensitivity of a primitive used to
- ;;             be () and thus the sensitivity of a transformed primitive used
- ;;             to be () because of the base free variables hack. Now, the
- ;;             sensitivity of a primitive is that primitive and the
- ;;             sensitivity of a transformed primitive (i.e. closure) has the
- ;;             same shape as that transformed primitive (i.e. closure). This
- ;;             requires going back to the old letrec formulation so that
- ;;             transformed primitives can get a zero of themselves.
  (define-primitive-procedure '+
   (binary-real + "+")
   (lambda (v vs) (generate-builtin-name "add" v vs))
@@ -5094,7 +4961,7 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (+ x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons '() (cons (sensitivity y) (sensitivity y))))))))
+	    (cons (sensitivity y) (sensitivity y)))))))
  (define-primitive-procedure '-
   (binary-real - "-")
   (lambda (v vs) (generate-builtin-name "minus" v vs))
@@ -5107,54 +4974,45 @@
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (- x1 x2))
 	       (lambda ((sensitivity y))
-		(cons '() (cons (sensitivity y) (- 0.0 (sensitivity y))))))))
+		(cons (sensitivity y) (- 0.0 (sensitivity y)))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
-	 (cons
-	  (*j (- x1 x2))
-	  (lambda ((sensitivity y))
-	   (cons '() (cons (sensitivity y) (- (real 0) (sensitivity y))))))))))
+	 (cons (*j (- x1 x2))
+	       (lambda ((sensitivity y))
+		(cons (sensitivity y) (- (real 0) (sensitivity y)))))))))
  (define-primitive-procedure '*
   (binary-real * "*")
   (lambda (v vs) (generate-builtin-name "times" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons x1-perturbation x2-perturbation) (tangent (forward x))))
-     (bundle (* x1 x2)
-	     (+ (* x2 x1-perturbation) (* x1 x2-perturbation)))))
+     (bundle (* x1 x2) (+ (* x2 x1-perturbation) (* x1 x2-perturbation)))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (* x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons '()
-		  (cons (* x2 (sensitivity y)) (* x1 (sensitivity y)))))))))
+	    (cons (* x2 (sensitivity y)) (* x1 (sensitivity y))))))))
  (define-primitive-procedure '/
   (binary-real divide "/")
   (lambda (v vs) (generate-builtin-name "divide" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons x1-perturbation x2-perturbation) (tangent (forward x))))
-     (bundle
-      (/ x1 x2)
-      (/ (- (* x2 x1-perturbation) (* x1 x2-perturbation)) (* x2 x2)))))
+     (bundle (/ x1 x2)
+	     (/ (- (* x2 x1-perturbation) (* x1 x2-perturbation)) (* x2 x2)))))
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
-	 (cons
-	  (*j (/ x1 x2))
-	  (lambda ((sensitivity y))
-	   (cons '()
-		 (cons (/ (sensitivity y) x2)
-		       (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2)))))))))
+	 (cons (*j (/ x1 x2))
+	       (lambda ((sensitivity y))
+		(cons (/ (sensitivity y) x2)
+		      (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
-	 (cons
-	  (*j (/ x1 x2))
-	  (lambda ((sensitivity y))
-	   (cons
-	    '()
-	    (cons (/ (sensitivity y) x2)
-		  (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2)))))))))))
+	 (cons (*j (/ x1 x2))
+	       (lambda ((sensitivity y))
+		(cons (/ (sensitivity y) x2)
+		      (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (lambda (v vs) "sqrt")
@@ -5165,7 +5023,7 @@
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (sqrt x))
 	   (lambda ((sensitivity y))
-	    (cons '() (/ (sensitivity y) (+ (sqrt x) (sqrt x)))))))))
+	    (/ (sensitivity y) (+ (sqrt x) (sqrt x))))))))
  (define-primitive-procedure 'exp
   (unary-real exp "exp")
   (lambda (v vs) "exp")
@@ -5175,8 +5033,7 @@
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (exp x))
-	   (lambda ((sensitivity y))
-	    (cons '() (* (exp x) (sensitivity y))))))))
+	   (lambda ((sensitivity y)) (* (exp x) (sensitivity y)))))))
  (define-primitive-procedure 'log
   (unary-real log "log")
   (lambda (v vs) "log")
@@ -5185,8 +5042,7 @@
      (bundle (log x) (/ x-perturbation x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (log x))
-	   (lambda ((sensitivity y)) (cons '() (/ (sensitivity y) x)))))))
+     (cons (*j (log x)) (lambda ((sensitivity y)) (/ (sensitivity y) x))))))
  (define-primitive-procedure 'sin
   (unary-real sin "sin")
   (lambda (v vs) "sin")
@@ -5196,31 +5052,28 @@
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (sin x))
-	   (lambda ((sensitivity y))
-	    (cons '() (* (cos x) (sensitivity y))))))))
+	   (lambda ((sensitivity y)) (* (cos x) (sensitivity y)))))))
  (define-primitive-procedure 'cos
   (unary-real cos "cos")
   (lambda (v vs) "cos")
   (if *imprecise-inexacts?*
       '(lambda ((forward x))
-	(let ((x (primal (forward x)))
-	      (x-perturbation (tangent (forward x))))
+	(let ((x (primal (forward x))) (x-perturbation (tangent (forward x))))
 	 (bundle (cos x) (- 0.0 (* (sin x) x-perturbation)))))
       '(lambda ((forward x))
-	(let ((x (primal (forward x)))
-	      (x-perturbation (tangent (forward x))))
+	(let ((x (primal (forward x))) (x-perturbation (tangent (forward x))))
 	 (bundle (cos x) (- (real 0) (* (sin x) x-perturbation))))))
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
 	(let ((x (*j-inverse (reverse x))))
 	 (cons (*j (cos x))
 	       (lambda ((sensitivity y))
-		(cons '() (- 0.0 (* (sin x) (sensitivity y))))))))
+		(- 0.0 (* (sin x) (sensitivity y)))))))
       '(lambda ((reverse x))
 	(let ((x (*j-inverse (reverse x))))
 	 (cons (*j (cos x))
 	       (lambda ((sensitivity y))
-		(cons '() (- (real 0) (* (sin x) (sensitivity y))))))))))
+		(- (real 0) (* (sin x) (sensitivity y)))))))))
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (lambda (v vs) (generate-builtin-name "atantwo" v vs))
@@ -5235,22 +5088,16 @@
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (atan x2 x1))
 	       (lambda ((sensitivity y))
-		(cons '()
-		      (cons (- 0.0
-			       (/ (* x2 (sensitivity y))
-				  (+ (* x1 x1) (* x2 x2))))
-			    (/ (* x1 (sensitivity y))
-			       (+ (* x1 x1) (* x2 x2)))))))))
+		(cons (- 0.0
+			 (/ (* x2 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))
+		      (/ (* x1 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (atan x2 x1))
 	       (lambda ((sensitivity y))
-		(cons '()
-		      (cons (- (real 0)
-			       (/ (* x2 (sensitivity y))
-				  (+ (* x1 x1) (* x2 x2))))
-			    (/ (* x1 (sensitivity y))
-			       (+ (* x1 x1) (* x2 x2)))))))))))
+		(cons (- (real 0)
+			 (/ (* x2 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))
+		      (/ (* x1 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))))))))
  (define-primitive-procedure '=
   (binary-real-predicate = "=")
   (lambda (v vs) (generate-builtin-name "eq" v vs))
@@ -5261,7 +5108,7 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (= x1 x2))
-	   (lambda ((sensitivity y)) (cons '() (cons (zero x1) (zero x2))))))))
+	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
  (define-primitive-procedure '<
   (binary-real-predicate < "<")
   (lambda (v vs) (generate-builtin-name "lt" v vs))
@@ -5272,7 +5119,7 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (< x1 x2))
-	   (lambda ((sensitivity y)) (cons '() (cons (zero x1) (zero x2))))))))
+	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
  (define-primitive-procedure '>
   (binary-real-predicate > ">")
   (lambda (v vs) (generate-builtin-name "gt" v vs))
@@ -5283,7 +5130,7 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (> x1 x2))
-	   (lambda ((sensitivity y)) (cons '() (cons (zero x1) (zero x2))))))))
+	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
  (define-primitive-procedure '<=
   (binary-real-predicate <= "<=")
   (lambda (v vs) (generate-builtin-name "le" v vs))
@@ -5294,7 +5141,7 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (<= x1 x2))
-	   (lambda ((sensitivity y)) (cons '() (cons (zero x1) (zero x2))))))))
+	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
  (define-primitive-procedure '>=
   (binary-real-predicate >= ">=")
   (lambda (v vs) (generate-builtin-name "ge" v vs))
@@ -5305,7 +5152,7 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (>= x1 x2))
-	   (lambda ((sensitivity y)) (cons '() (cons (zero x1) (zero x2))))))))
+	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
  (define-primitive-procedure 'zero?
   (unary-real-predicate zero? "zero?")
   (lambda (v vs) (generate-builtin-name "iszero" v vs))
@@ -5314,7 +5161,7 @@
      (j* (zero? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (zero? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (zero? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'positive?
   (unary-real-predicate positive? "positive?")
   (lambda (v vs) (generate-builtin-name "positive" v vs))
@@ -5323,8 +5170,7 @@
      (j* (positive? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (positive? x))
-	   (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (positive? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'negative?
   (unary-real-predicate negative? "negative?")
   (lambda (v vs) (generate-builtin-name "negative" v vs))
@@ -5333,8 +5179,7 @@
      (j* (negative? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (negative? x))
-	   (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (negative? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'null?
   (unary-predicate vlad-empty-list? "null?")
   (lambda (v vs) (unimplemented "null?"))
@@ -5343,7 +5188,7 @@
      (j* (null? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (null? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (null? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'boolean?
   (unary-predicate abstract-boolean? "boolean?")
   (lambda (v vs) (unimplemented "boolean?"))
@@ -5352,7 +5197,7 @@
      (j* (boolean? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (boolean? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (boolean? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'real?
   (unary-predicate abstract-real? "real?")
   (lambda (v vs) (unimplemented "real?"))
@@ -5361,16 +5206,16 @@
      (j* (real? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (real? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (real? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'pair?
-  (unary-predicate (lambda (x) (vlad-pair? x (empty-tags))) "pair?")
+  (unary-predicate vlad-pair? "pair?")
   (lambda (v vs) (unimplemented "pair?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) (j* (lambda (x) (bundle x (zero x)))))
      (j* (pair? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (pair? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (pair? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'procedure?
   (unary-predicate vlad-procedure? "procedure?")
   (lambda (v vs) (unimplemented "procedure?"))
@@ -5379,8 +5224,7 @@
      (j* (procedure? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (procedure? x))
-	   (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (procedure? x)) (lambda ((sensitivity y)) (zero x))))))
  ;; The forward? and reverse? primitives are not referentially transparent and
  ;; violate the forward-transformation rule for functions that only rearrange
  ;; data.
@@ -5392,7 +5236,7 @@
      (j* (forward? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (forward? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (forward? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'reverse?
   (unary-predicate vlad-reverse? "reverse?")
   (lambda (v vs) (unimplemented "reverse?"))
@@ -5401,29 +5245,27 @@
      (j* (reverse? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (reverse? x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (reverse? x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'if-procedure
   (ternary
    (lambda (x1 x2 x3 bs)
     (if *run?*
 	(if (vlad-false? x1)
-	    (concrete-apply (vlad-cdr x3 (empty-tags))
-			    (vlad-cons (vlad-car x3 (empty-tags))
-				       (tagged-empty-list x3)))
-	    (concrete-apply (vlad-cdr x2 (empty-tags))
-			    (vlad-cons (vlad-car x2 (empty-tags))
-				       (tagged-empty-list x2))))
+	    (concrete-apply (vlad-cdr x3)
+			    (vlad-cons (vlad-car x3) (vlad-empty-list)))
+	    (concrete-apply (vlad-cdr x2)
+			    (vlad-cons (vlad-car x2) (vlad-empty-list))))
 	(begin
 	 (unimplemented "abstract evaluator for if-procedure")
 	 (cond ((eq? x1 'boolean)
 		(let ((v2 (abstract-apply-closure
 			   (lambda (e vs) (abstract-eval1 e vs bs))
 			   x2
-			   (tagged-empty-list x2)))
+			   (vlad-empty-list)))
 		      (v3 (abstract-apply-closure
 			   (lambda (e vs) (abstract-eval1 e vs bs))
 			   x3
-			   (tagged-empty-list x3))))
+			   (vlad-empty-list))))
 		 ;; needs work: a little hokey
 		 (cond ((abstract-top? v2) v3)
 		       ((abstract-top? v3) v2)
@@ -5432,65 +5274,55 @@
 		(abstract-apply-closure
 		 (lambda (e vs) (abstract-eval1 e vs bs))
 		 x3
-		 (tagged-empty-list x3)))
+		 (vlad-empty-list)))
 	       (else (abstract-apply-closure
 		      (lambda (e vs) (abstract-eval1 e vs bs))
 		      x2
-		      (tagged-empty-list x2)))))))
+		      (vlad-empty-list)))))))
    "if-procedure")
   (lambda (v vs) (generate-builtin-name "if_procedure" v vs))
   '(lambda ((forward x))
     (let (((cons* x1 x2 x3) (primal (forward x)))
 	  ((cons* x1-perturbation x2-perturbation x3-perturbation)
 	   (tangent (forward x))))
-     (if-procedure
-      x1 (bundle x2 x2-perturbation) (bundle x3 x3-perturbation))))
+     (if x1
+	 ((bundle x2 x2-perturbation) (bundle '() (zero '())))
+	 ((bundle x3 x3-perturbation) (bundle '() (zero '()))))))
   '(lambda ((reverse x))
     (let (((cons* x1 x2 x3) (*j-inverse (reverse x))))
-     (if-procedure
-      x1
-      ;; needs work: Tags are lost in the (lambda () ...).
-      (lambda ()
-       (let (((cons (reverse y) (backpropagator y)) ((*j x2) (*j '()))))
-	(cons
-	 (reverse y)
-	 (lambda ((sensitivity y))
-	  (cons '()
-		(cons* (zero x1)
-		       ;; (cdr ((backpropagator y) (sensitivity y))) should be
-		       ;; the sensitivity to the ignored '() argument of x2
-		       ;; needs work: Should rewrite this to use destructuring
-		       ;;             that enforces the above.
-		       ((lambda ((cons x y)) x)
-			((backpropagator y) (sensitivity y)))
-		       (zero x3)))))))
-      ;; needs work: Tags are lost in the (lambda () ...).
-      (lambda ()
-       (let (((cons (reverse y) (backpropagator y)) ((*j x3) (*j '()))))
-	(cons
-	 (reverse y)
-	 (lambda ((sensitivity y))
-	  (cons '()
-		(cons* (zero x1)
-		       (zero x2)
-		       ;; (cdr ((backpropagator y) (sensitivity y))) should be
-		       ;; the sensitivity to the ignored '() argument of x3
-		       ;; needs work: Should rewrite this to use destructuring
-		       ;;             that enforces the above.
-		       ((lambda ((cons x y)) x)
-			((backpropagator y) (sensitivity y)))))))))))))
+     (if x1
+	 (let (((cons (reverse y) (backpropagator y)) ((*j x2) (*j '()))))
+	  (cons (reverse y)
+		(lambda ((sensitivity y))
+		 (cons* (zero x1)
+			;; needs work: think this through again
+			;; ((backpropagator y) (sensitivity y)) should be
+			;; the sensitivity to the ignored '() argument of x2
+			((backpropagator y) (sensitivity y))
+			(zero x3)))))
+	 (let (((cons (reverse y) (backpropagator y)) ((*j x3) (*j '()))))
+	  (cons (reverse y)
+		(lambda ((sensitivity y))
+		 (cons* (zero x1)
+			(zero x2)
+			;; needs work: think this through again
+			;; ((backpropagator y) (sensitivity y)) should be
+			;; the sensitivity to the ignored '() argument of x3
+			((backpropagator y) (sensitivity y))))))))))
  (define-primitive-procedure 'read-real
+  ;; needs work: Should enforce that the argument is vlad-empty-list.
   (unary (lambda (x) (read-real)) "read-real")
   (lambda (v vs) "read_real")
   (if *imprecise-inexacts?*
-      ;; needs work: Tags are lost in the (lambda () ...).
+      ;; needs work: Tags are lost in the (lambda () ...) and should enforce
+      ;;             that the argument is (forward vlad-empty-list).
       '(lambda () (bundle (read-real) 0.0))
-      ;; needs work: Tags are lost in the (lambda () ...).
+      ;; needs work: Tags are lost in the (lambda () ...) and should enforce
+      ;;             that the argument is (forward vlad-empty-list).
       '(lambda () (bundle (read-real) (real 0))))
-  ;; This assumes that you call read-real on '() which is what would happen
-  ;; with (real-real).
-  ;; needs work: Tags are lost in the two (lambda () ...).
-  '(lambda () (cons (*j (read-real)) (lambda () (cons '() '())))))
+  ;; needs work: Tags are lost in the first (lambda () ...) and should enforce
+  ;;             that the argument to the first is (reverse vlad-empty-list).
+  '(lambda () (cons (*j (read-real)) (lambda ((sensitivity y)) '()))))
  (define-primitive-procedure 'real
   (unary-real (lambda (x) (if *run?* x 'real)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
@@ -5501,8 +5333,7 @@
      (bundle (real x) (real x-perturbation))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (real x))
-	   (lambda ((sensitivity y)) (cons '() (real (sensitivity y))))))))
+     (cons (*j (real x)) (lambda ((sensitivity y)) (real (sensitivity y)))))))
  (define-primitive-procedure 'write
   (unary (lambda (x)
 	  (when *run?* ((if *pp?* pp write) (externalize x)) (newline))
@@ -5514,8 +5345,7 @@
      (bundle (write x) x-perturbation)))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (write x))
-	   (lambda ((sensitivity y)) (cons '() (sensitivity y)))))))
+     (cons (*j (write x)) (lambda ((sensitivity y)) (sensitivity y))))))
  (define-primitive-procedure 'zero
   (unary zero "zero")
   (lambda (v vs) (generate-builtin-name "zero" v vs))
@@ -5524,7 +5354,7 @@
      (bundle (zero x) (zero x-perturbation))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (zero x)) (lambda ((sensitivity y)) (cons '() (zero x)))))))
+     (cons (*j (zero x)) (lambda ((sensitivity y)) (zero x))))))
  (define-primitive-procedure 'primal
   (unary primal "primal")
   (lambda (v vs) (generate-builtin-name "primal" v vs))
@@ -5539,7 +5369,7 @@
 	  (j* (lambda (x) (bundle x (zero x)))))
      (cons (*j (primal x-forward))
 	   ;; needs work: not sure that this call to j* is correct
-	   (lambda ((sensitivity y)) (cons '() (j* (sensitivity y))))))))
+	   (lambda ((sensitivity y)) (j* (sensitivity y)))))))
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
   (lambda (v vs) (generate-builtin-name "tangent" v vs))
@@ -5553,9 +5383,8 @@
     (let ((x-forward (*j-inverse (reverse x-forward))))
      (cons (*j (tangent x-forward))
 	   (lambda ((sensitivity y-perturbation))
-	    (cons '()
-		  (bundle (zero (primal x-forward))
-			  (sensitivity y-perturbation))))))))
+	    (bundle (zero (primal x-forward))
+		    (sensitivity y-perturbation)))))))
  (define-primitive-procedure 'bundle
   (binary bundle "bundle")
   (lambda (v vs) (generate-builtin-name "bundle" v vs))
@@ -5569,9 +5398,8 @@
     (let (((cons x1 x2-perturbation) (*j-inverse (reverse x))))
      (cons (*j (bundle x1 x2-perturbation))
 	   (lambda ((sensitivity (forward y)))
-	    (cons '()
-		  (cons (primal (sensitivity (forward y)))
-			(tangent (sensitivity (forward y))))))))))
+	    (cons (primal (sensitivity (forward y)))
+		  (tangent (sensitivity (forward y)))))))))
  (define-primitive-procedure 'plus
   (binary plus "plus")
   (lambda (v vs) (unimplemented "plus"))
@@ -5583,7 +5411,7 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (plus x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons '() (cons (sensitivity y) (sensitivity y))))))))
+	    (cons (sensitivity y) (sensitivity y)))))))
  (define-primitive-procedure '*j
   (unary *j "*j")
   (lambda (v vs) (unimplemented "*j"))
@@ -5595,7 +5423,7 @@
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (*j x))
 	   (lambda ((sensitivity (reverse y)))
-	    (cons '() (*j-inverse (sensitivity (reverse y)))))))))
+	    (*j-inverse (sensitivity (reverse y))))))))
  (define-primitive-procedure '*j-inverse
   (unary *j-inverse "*j-inverse")
   (lambda (v vs) (unimplemented "*j-inverse"))
@@ -5609,7 +5437,7 @@
     (let ((x-reverse (*j-inverse (reverse x-reverse))))
      ;; The *j composed with *j-inverse could be optimized away.
      (cons (*j (*j-inverse x-reverse))
-	   (lambda ((sensitivity y)) (cons '() (*j (sensitivity y))))))))
+	   (lambda ((sensitivity y)) (*j (sensitivity y)))))))
  (initialize-forwards-and-reverses!))
 
 ;;; Commands
