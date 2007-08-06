@@ -121,6 +121,8 @@
 
 (define *trace-level* 0)
 
+(define *error* #f)
+
 (define *error?* #f)
 
 ;;; Parameters
@@ -208,7 +210,11 @@
   (display "Nested error: " stderr-port)
   (display message stderr-port)
   (newline stderr-port)
+  (display "Error: " stderr-port)
+  (display *error* stderr-port)
+  (newline stderr-port)
   (exit -1))
+ (set! *error* message)
  (set! *error?* #t)
  (when *run?*
   (format stderr-port "Stack trace~%")
@@ -451,17 +457,16 @@
 (define (variable-tags x)
  (if (pair? x)
      (case (first x)
-      ((alpha) (variable-tags (second x)))
+      ((alpha) (internal-error))
       ((forward) (add-tag 'forward (variable-tags (second x))))
-      ((sensitivity) (add-tag 'sensitivity (variable-tags (second x))))
-      ((backpropagator) (add-tag 'backpropagator (variable-tags (second x))))
+      ((sensitivity) (variable-tags (second x)))
+      ((backpropagator) (variable-tags (second x)))
       ((reverse) (add-tag 'reverse (variable-tags (second x))))
       (else (empty-tags)))
      (empty-tags)))
 
 ;;; Parameters
 
-;;; needs work: closure conversion breaks this
 (define (parameter-tags p)
  (cond ((constant-expression? p) (value-tags (constant-expression-value p)))
        ((variable-access-expression? p)
@@ -473,11 +478,6 @@
  (parameter-tags (lambda-expression-parameter e)))
 
 (define (forward-parameter? p) (tagged? 'forward (parameter-tags p)))
-
-(define (sensitivity-parameter? p) (tagged? 'sensitivity (parameter-tags p)))
-
-(define (backpropagator-parameter? p)
- (tagged? 'backpropagator (parameter-tags p)))
 
 (define (reverse-parameter? p) (tagged? 'reverse (parameter-tags p)))
 
@@ -1123,6 +1123,90 @@
 		ds)
    ,e))
 
+;;; Closure conversion
+
+(define (tagged-empty-list tags)
+ (if (null? tags)
+     (vlad-empty-list)
+     (case (first tags)
+      ((forward)
+       (let ((v (tagged-empty-list (rest tags)))) (bundle v (zero v))))
+      ((reverse) (*j (tagged-empty-list (rest tags))))
+      (else (internal-error)))))
+
+(define (variables->expression tags xs)
+ (if (null? xs)
+     (make-constant-expression (tagged-empty-list tags))
+     (new-cons-expression tags
+			  (make-variable-access-expression (first xs))
+			  (variables->expression tags (rest xs)))))
+
+(define (closure-convert e)
+ (cond
+  ((constant-expression? e) e)
+  ((variable-access-expression? e) e)
+  ((lambda-expression? e)
+   (let ((xs (free-variables e))
+	 (tags (parameter-tags (lambda-expression-parameter e))))
+    (new-cons-expression
+     tags
+     (variables->expression tags xs)
+     (new-lambda-expression
+      (new-cons-expression tags
+			   (variables->expression tags xs)
+			   (lambda-expression-parameter e))
+      (closure-convert (lambda-expression-body e))))))
+  ((application? e)
+   ;; This LET* is to specify the evaluation order.
+   (let* ((x1 (gensym)) (x2 (gensym)))
+    (new-let* (list (create-cons-expression
+		     (make-variable-access-expression x1)
+		     (make-variable-access-expression x2)))
+	      (list (closure-convert (application-callee e)))
+	      (new-application (make-variable-access-expression x2)
+			       (create-cons-expression
+				(make-variable-access-expression x1)
+				(closure-convert (application-argument e)))))))
+  ((letrec-expression? e)
+   (let ((xs (recursive-closure-free-variables
+	      (letrec-expression-procedure-variables e)
+	      (letrec-expression-lambda-expressions e))))
+    (new-letrec-expression
+     (letrec-expression-procedure-variables e)
+     (map (lambda (e1)
+	   (let ((tags (parameter-tags (lambda-expression-parameter e1))))
+	    (new-lambda-expression
+	     (new-cons-expression tags
+				  (variables->expression tags xs)
+				  (lambda-expression-parameter e1))
+	     ;; needs work: This could be a LET.
+	     (new-let* (map make-variable-access-expression
+			    (letrec-expression-procedure-variables e))
+		       (map (lambda (x)
+			     (new-cons-expression
+			      tags
+			      (variables->expression tags xs)
+			      (make-variable-access-expression x)))
+			    (letrec-expression-procedure-variables e))
+		       (closure-convert (lambda-expression-body e1))))))
+	  (letrec-expression-lambda-expressions e))
+     ;; needs work: This could be a LET.
+     (new-let* (map make-variable-access-expression
+		    (letrec-expression-procedure-variables e))
+	       (map (lambda (x)
+		     (let ((tags (variable-tags x)))
+		      (new-cons-expression
+		       tags
+		       (variables->expression tags xs)
+		       (make-variable-access-expression x))))
+		    (letrec-expression-procedure-variables e))
+	       (closure-convert (letrec-expression-body e))))))
+  ((cons-expression? e)
+   (new-cons-expression (cons-expression-tags e)
+			(closure-convert (cons-expression-car e))
+			(closure-convert (cons-expression-cdr e))))
+  (else (internal-error))))
+
 ;;; Alpha conversion
 
 (define (alphaify x xs)
@@ -1213,72 +1297,6 @@
 	   (new-cons-expression
 	    (cons-expression-tags e) (second result1) (second result2)))))
    (else (internal-error)))))
-
-;;; Closure conversion
-
-(define (variables->expression xs)
- (if (null? xs)
-     (make-constant-expression (vlad-empty-list))
-     (create-cons-expression (make-variable-access-expression (first xs))
-			     (variables->expression (rest xs)))))
-
-(define (closure-convert e)
- (cond
-  ((constant-expression? e) e)
-  ((variable-access-expression? e) e)
-  ((lambda-expression? e)
-   (let ((xs (free-variables e)))
-    (create-cons-expression
-     (variables->expression xs)
-     (new-lambda-expression
-      (create-cons-expression (variables->expression xs)
-			      (lambda-expression-parameter e))
-      (closure-convert (lambda-expression-body e))))))
-  ((application? e)
-   ;; This LET* is to specify the evaluation order.
-   (let* ((x1 (gensym)) (x2 (gensym)))
-    (new-let* (list (create-cons-expression
-		     (make-variable-access-expression x1)
-		     (make-variable-access-expression x2)))
-	      (list (closure-convert (application-callee e)))
-	      (new-application (make-variable-access-expression x2)
-			       (create-cons-expression
-				(make-variable-access-expression x1)
-				(closure-convert (application-argument e)))))))
-  ((letrec-expression? e)
-   (let ((xs (recursive-closure-free-variables
-	      (letrec-expression-procedure-variables e)
-	      (letrec-expression-lambda-expressions e))))
-    (new-letrec-expression
-     (letrec-expression-procedure-variables e)
-     (map (lambda (e1)
-	   (new-lambda-expression
-	    (create-cons-expression (variables->expression xs)
-				    (lambda-expression-parameter e1))
-	    ;; needs work: This could be a LET.
-	    (new-let* (map make-variable-access-expression
-			   (letrec-expression-procedure-variables e))
-		      (map (lambda (x)
-			    (create-cons-expression
-			     (variables->expression xs)
-			     (make-variable-access-expression x)))
-			   (letrec-expression-procedure-variables e))
-		      (closure-convert (lambda-expression-body e1)))))
-	  (letrec-expression-lambda-expressions e))
-     ;; needs work: This could be a LET.
-     (new-let* (map make-variable-access-expression
-		    (letrec-expression-procedure-variables e))
-	       (map (lambda (x)
-		     (create-cons-expression
-		      (variables->expression xs)
-		      (make-variable-access-expression x)))
-		    (letrec-expression-procedure-variables e))
-	       (closure-convert (letrec-expression-body e))))))
-  ((cons-expression? e)
-   (new-cons-expression (cons-expression-tags e)
-			(closure-convert (cons-expression-car e))
-			(closure-convert (cons-expression-cdr e))))
-  (else (internal-error))))
 
 ;;; ANF conversion
 
@@ -1647,11 +1665,11 @@
 
 (define (parse e)
  (let* ((e (concrete->abstract e))
+	(e (closure-convert e))
 	(e (if #f			;debugging
 	       (anf-convert
-		(closure-convert
-		 (second (alpha-convert-expression e (free-variables e)))))
-	       (closure-convert e))))
+		(second (alpha-convert-expression e (free-variables e))))
+	       e)))
   (list e
 	(map (lambda (x)
 	      (find-if (lambda (b) (variable=? x (value-binding-variable b)))
@@ -2300,9 +2318,7 @@
 			'()
 			(nonrecursive-closure-variables v))))
 	       (anf-convert
-		;; needs work: Shouldn't redo closure conversion.
-		(closure-convert
-		 (second (alpha-convert-expression e (free-variables e))))))))
+		(second (alpha-convert-expression e (free-variables e)))))))
 	    ((recursive-closure? v)
 	     ;; See the note in abstract-environment=?.
 	     (make-recursive-closure
@@ -2322,9 +2338,7 @@
 				     (vector->list es))))
 	       (map-vector
 		(lambda (e)
-		 (anf-convert
-		  ;; needs work: Shouldn't redo closure conversion.
-		  (closure-convert (second (alpha-convert-expression e xs)))))
+		 (anf-convert (second (alpha-convert-expression e xs))))
 		es))
 	      (recursive-closure-index v)))
 	    ((bundle? v) (make-reverse-tagged-value v))
@@ -2667,7 +2681,8 @@
 (define (destructure p v)
  (cond ((constant-expression? p)
 	(unless (abstract-value=? (constant-expression-value p) v)
-	 (run-time-error "Argument is not a matching value" v))
+	 (run-time-error
+	  "Argument is not a matching value" (constant-expression-value p) v))
 	'())
        ((variable-access-expression? p)
 	(list (cons (variable-access-expression-variable p) v)))
@@ -2675,7 +2690,11 @@
 	(unless (and (tagged-pair? v)
 		     (prefix-tags? (cons-expression-tags p)
 				   (tagged-pair-tags v)))
-	 (run-time-error "Argument is not a matching tagged pair" v))
+	 (when #f			;debugging
+	  (run-time-error
+	   (format #f "Argument is not a matching tagged pair with tags ~s"
+		   (cons-expression-tags p))
+	   v)))
 	(append (destructure (cons-expression-car p) (tagged-pair-car v))
 		(destructure (cons-expression-cdr p) (tagged-pair-cdr v))))
        (else (internal-error))))
@@ -2718,8 +2737,9 @@
 
 (define (concrete-apply v1 v2)
  (unless (vlad-procedure? v1) (run-time-error "Target is not a procedure" v1))
- (unless (tag-check? v1 v2)
-  (run-time-error "Argument has wrong type for target" v1 v2))
+ (when #f				;debugging
+  (unless (tag-check? v1 v2)
+   (run-time-error "Argument has wrong type for target" v1 v2)))
  (set! *stack* (cons (list v1 v2) *stack*))
  (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
 	     ((nonrecursive-closure? v1) *trace-nonrecursive-closures?*)
@@ -2787,10 +2807,17 @@
 			     (restrict-environment vs e cons-expression-car)))
 	  (v2 (concrete-eval (cons-expression-cdr e)
 			     (restrict-environment vs e cons-expression-cdr))))
-    (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
-     (run-time-error "Argument has wrong type for target" v1))
-    (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
-     (run-time-error "Argument has wrong type for target" v2))
+    (when #f				;debugging
+     (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
+      (run-time-error
+       (format #f "CAR argument has wrong type for target with tags ~s"
+	       (cons-expression-tags e))
+       v1))
+     (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
+      (run-time-error
+       (format #f "CDR argument has wrong type for target with tags ~s"
+	       (cons-expression-tags e))
+       v2)))
     (make-tagged-pair (cons-expression-tags e) v1 v2)))
   (else (internal-error))))
 
@@ -2928,15 +2955,18 @@
        (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
- (unless (tag-check? v1 v2)
-  (run-time-error "Argument has wrong type for target" v1 v2))
- (if (or (abstract-top? v1) (abstract-top? v2))
-     (abstract-top)
-     (cond
-      ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2 bs))
-      ((closure? v1)
-       (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs)) v1 v2))
-      (else (run-time-error "Target is not a procedure" v1)))))
+ (cond
+  ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
+  (else
+   (unless (vlad-procedure? v1)
+    (run-time-error "Target is not a procedure" v1))
+   (unless (tag-check? v1 v2)
+    (run-time-error "Argument has wrong type for target" v1 v2))
+   (cond
+    ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2 bs))
+    ((closure? v1)
+     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs)) v1 v2))
+    (else (internal-error))))))
 
 (define (abstract-eval e vs bs)
  (cond
@@ -2962,12 +2992,19 @@
 	 (v2 (abstract-eval1 (cons-expression-cdr e)
 			     (restrict-environment vs e cons-expression-cdr)
 			     bs)))
-    (cond ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
-	  (else (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
-		 (run-time-error "Argument has wrong type for target" v1))
-		(unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
-		 (run-time-error "Argument has wrong type for target" v2))
-		(make-tagged-pair (cons-expression-tags e) v1 v2)))))
+    (cond
+     ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
+     (else (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
+	    (run-time-error
+	     (format #f "CAR argument has wrong type for target with tags ~s"
+		     (cons-expression-tags e))
+	     v1))
+	   (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
+	    (run-time-error
+	     (format #f "CDR argument has wrong type for target with tags ~s"
+		     (cons-expression-tags e))
+	     v2))
+	   (make-tagged-pair (cons-expression-tags e) v1 v2)))))
   (else (internal-error))))
 
 (define (abstract-eval1-prime e vs bs)
@@ -4922,7 +4959,6 @@
   (set! *wizard?* #t)
   (syntax-check-expression! e)
   (set! *wizard?* wizard?))
- ;; needs work: closure conversion tags
  (let ((result (parse e)))
   (concrete-eval (first result) (map value-binding-value (second result)))))
 
