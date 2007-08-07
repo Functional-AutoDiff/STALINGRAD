@@ -831,10 +831,12 @@
 
 (define (new-nonrecursive-closure vs e)
  (unless (= (length vs) (length (free-variables e))) (internal-error))
- ;; An alternative check would be that the tags of each free variable are
- ;; a prefix of the tags of the value to which it is bound.
  (let ((tags (lambda-expression-tags e)))
-  (unless (every (lambda (v) (prefix-tags? tags (value-tags v))) vs)
+  (unless (every (lambda (x v)
+		  (and (prefix-tags? tags (value-tags v))
+		       (prefix-tags? (variable-tags x) (value-tags v))))
+		 (free-variables e)
+		 vs)
    (internal-error)))
  (make-nonrecursive-closure vs e))
 
@@ -843,12 +845,15 @@
 	    (length (recursive-closure-free-variables
 		     (vector->list xs) (vector->list es))))
   (internal-error))
- ;; An alternative check would be that the tags of each recursive-closure free
- ;; variable are a prefix of the tags of the value to which it is bound.
  ;; There will always be at least one procedure variable and one lambda
  ;; expression.
  (let ((tags (lambda-expression-tags (vector-ref es 0))))
-  (unless (every (lambda (v) (prefix-tags? tags (value-tags v))) vs)
+  (unless (every (lambda (x v)
+		  (and (prefix-tags? tags (value-tags v))
+		       (prefix-tags? (variable-tags x) (value-tags v))))
+		 (recursive-closure-free-variables
+		  (vector->list xs) (vector->list es))
+		 vs)
    (internal-error)))
  (make-recursive-closure vs xs es i))
 
@@ -2100,100 +2105,91 @@
        (create-let*
 	(append
 	 ;; These are the zeroing bindings for the reverse phase.
-	 (map
-	  (lambda (x)
-	   (make-parameter-binding
-	    (sensitivity-access x)
-	    (make-zero (make-*j-inverse (reverse-access x)))))
-	  (removep
-	   variable=?
-	   (variable-access-expression-variable (anf-parameter e1))
-	   ;; needs work: p might not be a variable access parameter
-	   (cons (variable-access-expression-variable p)
-		 (append (map variable-access-expression-variable
-			      (anf-let*-parameters e1))
-			 fs
-			 gs
-			 zs))))
+	 (map (lambda (x)
+	       (make-parameter-binding
+		(sensitivity-access x)
+		(make-zero (make-*j-inverse (reverse-access x)))))
+	      (removep
+	       variable=?
+	       (variable-access-expression-variable (anf-parameter e1))
+	       ;; needs work: p might not be a variable access parameter
+	       (cons (variable-access-expression-variable p)
+		     (append (map variable-access-expression-variable
+				  (anf-let*-parameters e1))
+			     fs
+			     gs
+			     zs))))
 	 ;; These are the bindings for the reverse phase that come from the
 	 ;; primal.
-	 (map
-	  (lambda (p e)
-	   (cond
-	    ((constant-expression? e) 'needs-work) ;needs work
-	    ;;            _    _
-	    ;;            \    \
-	    ;; p = e -~-> e += p
-	    ((variable-access-expression? e)
-	     ;; needs work: only create binding if e is needed
-	     (make-plus-binding
-	      (sensitivityify-access e) (sensitivityify-access p)))
-	    ;;                _____    _
-	    ;;                \        \
-	    ;; p = \ x e -~-> \ x e += p
-	    ((lambda-expression? e)
-	     ;; needs work: only create bindings for those free variables of
-	     ;;             e, i.e. \ x e that are needed
-	     (make-plus-binding
-	      ;; needs work: sensitivity transform
-	      (sensitivity-transform e) (sensitivityify-access p)))
-	    ;;                __ _ __    _ _
-	    ;;                \  \ \       \
-	    ;; p = x1 x2 -~-> x1 , x2 += p p
-	    ;; We want the x1,x2 inside the sensitivity so that the aggregate
-	    ;; is a sensitivity that can be added by plus, since for type
-	    ;; correctness, plus adds only sensitivities.
-	    ((application? e)
-	     ;; needs work: only create bindings for x1 and/or x2 if they are
-	     ;;             needed
-	     (make-plus-binding
-	      (new-cons-expression
-	       (add-tag 'sensitivity (empty-tags))
-	       (sensitivityify-access (application-callee e))
-	       (sensitivityify-access (application-argument e)))
-	      (new-application (backpropagatorify-access p)
-			       (sensitivityify-access p))))
-	    ;;                __ _ __    _
-	    ;;                \  \ \     \
-	    ;; p = x1,x2 -~-> x1 , x2 += p
-	    ;; We want the x1,x2 inside the sensitivity so that the aggregate
-	    ;; is a sensitivity that can be added by plus, since for type
-	    ;; correctness, plus adds only sensitivities.
-	    ((cons-expression? e)
-	     ;; needs work: only create bindings for x1 and/or x2 if they are
-	     ;;             needed
-	     (make-plus-binding
-	      (new-cons-expression
-	       (add-tag 'sensitivity (cons-expression-tags e))
-	       (sensitivityify-access (cons-expression-car e))
-	       (sensitivityify-access (cons-expression-cdr e)))
-	      (sensitivityify-access p)))
-	    (else (internal-error))))
-	  (reverse (anf-let*-parameters e1))
-	  (reverse (anf-let*-expressions e1)))
-	 ;; needs work: I don't remember what this is.
-	 ;; here I am
-	 (make-list-bindings
-	  tags
-	  ;; needs work: ws
-	  (map sensitivityify ws)
-	  ;; needs work: fs, ws
-	  (let loop ((fs fs))
-	   (if (null? fs)
-	       (make-list-invocation tags (map sensitivity-access ws))
-	       (make-plus (sensitivity-access (first fs)) (loop (rest fs)))))))
+	 (map (lambda (p e)
+	       (cond
+		((constant-expression? e) 'needs-work) ;needs work
+		;;            _    _
+		;;            \    \
+		;; p = e -~-> e += p
+		((variable-access-expression? e)
+		 ;; needs work: only create binding if e is needed
+		 (make-plus-binding
+		  (sensitivityify-access e) (sensitivityify-access p)))
+		;;                _____    _
+		;;                \        \
+		;; p = \ x e -~-> \ x e += p
+		((lambda-expression? e)
+		 ;; needs work: only create bindings for those free variables
+		 ;;             of e, i.e. \ x e that are needed
+		 (make-plus-binding
+		  ;; needs work: sensitivity transform
+		  (sensitivity-transform e) (sensitivityify-access p)))
+		;;                __ _ __    _ _
+		;;                \  \ \       \
+		;; p = x1 x2 -~-> x1 , x2 += p p
+		;; We want the x1,x2 inside the sensitivity so that the
+		;; aggregate is a sensitivity that can be added by plus, since
+		;; for type correctness, plus adds only sensitivities.
+		((application? e)
+		 ;; needs work: only create bindings for x1 and/or x2 if they
+		 ;;             are needed
+		 (make-plus-binding
+		  (new-cons-expression
+		   (add-tag 'sensitivity (empty-tags))
+		   (sensitivityify-access (application-callee e))
+		   (sensitivityify-access (application-argument e)))
+		  (new-application (backpropagatorify-access p)
+				   (sensitivityify-access p))))
+		;;                __ _ __    _
+		;;                \  \ \     \
+		;; p = x1,x2 -~-> x1 , x2 += p
+		;; We want the x1,x2 inside the sensitivity so that the
+		;; aggregate is a sensitivity that can be added by plus, since
+		;; for type correctness, plus adds only sensitivities.
+		((cons-expression? e)
+		 ;; needs work: only create bindings for x1 and/or x2 if they
+		 ;;             are needed
+		 (make-plus-binding
+		  (new-cons-expression
+		   (add-tag 'sensitivity (cons-expression-tags e))
+		   (sensitivityify-access (cons-expression-car e))
+		   (sensitivityify-access (cons-expression-cdr e)))
+		  (sensitivityify-access p)))
+		(else (internal-error))))
+	      (reverse (anf-let*-parameters e1))
+	      (reverse (anf-let*-expressions e1)))
+	 (list
+	  (make-parameter-binding
+	   (variables->expression tags (map sensitivity-access ws))
+	   (map-reduce make-plus
+		       (variables->expression tags (map sensitivity-access ws))
+		       sensitivity-access
+		       fs))))
 	;; This conses the sensitivity to the target with the sensitivity to
 	;; the argument.
 	(new-cons-expression
 	 (add-tag 'sensitivity (empty-tags))
 	 ;; This is the sensitivity to the target.
-	 ;; here I am
-	 ;; needs work: gs, zs
-	 (let loop ((gs gs))
-	  (if (null? gs)
-	      ;; needs work: This is not a list anymore.
-	      (make-list-invocation tags (map sensitivity-access zs))
-	      (make-plus (sensitivity-access (first gs)) (loop (rest gs)))))
+	 (map-reduce make-plus
+		     (variables->expression tags (map sensitivity-access zs))
+		     sensitivity-access
+		     gs)
 	 ;; This is the sensitivity to the argument.
 	 ;; needs work: p might not be a variable access parameter
 	 (sensitivityify-access p))))))))))
