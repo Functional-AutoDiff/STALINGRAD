@@ -355,9 +355,6 @@
 
 (define (variable=? x1 x2) (equal? x1 x2))
 
-;;; needs work: variable-base, variable-alpha, and base-variable<? are only
-;;;             used to implement variable<? which is only used in
-;;;             sort-variables. We may eliminate this.
 (define (variable-base x)
  (if (and (list? x) (eq? (first x) 'alpha)) (variable-base (second x)) x))
 
@@ -1295,12 +1292,10 @@
  (anf-result
   (let outer ((i (anf-max e)) (e e) (bs1 '()) (bs2 '()))
    (cond
-    ;; needs work: This means that an anf-result can be a constant expression,
-    ;;             as well as the RHS of a variable binding, the callee and
-    ;;             argument of an application, and the car and cdr of a cons
-    ;;             expression.
-    ;; result
-    ((constant-expression? e) (list i e bs1 bs2))
+    ((constant-expression? e)
+     (let* ((i (+ i 1)) (p (make-variable-access-expression `(anf ,i))))
+      ;; result
+      (list i p (cons (make-parameter-binding p e) bs1) bs2)))
     ;; result
     ((variable-access-expression? e) (list i e bs1 bs2))
     ((lambda-expression? e)
@@ -1937,6 +1932,38 @@
 	     make-variable-access-expression
 	     xs))
 
+(define (sensitivityify-parameter p)
+ (cond
+  ((constant-expression? p)
+   (make-constant-expression (zero (constant-expression-value p))))
+  ((variable-access-expression? p) (sensitivityify-access p))
+  ((cons-expression? p)
+   (new-cons-expression (cons-expression-tags p)
+			(sensitivityify-parameter (cons-expression-car p))
+			(sensitivityify-parameter (cons-expression-cdr p))))
+  (else (internal-error))))
+
+(define (reverseify-parameter p)
+ (cond ((constant-expression? p)
+	(make-constant-expression (*j (constant-expression-value p))))
+       ((variable-access-expression? p) (reverseify-access p))
+       ((cons-expression? p)
+	(new-cons-expression (add-tag 'reverse (cons-expression-tags p))
+			     (reverseify-parameter (cons-expression-car p))
+			     (reverseify-parameter (cons-expression-cdr p))))
+       (else (internal-error))))
+
+(define (unreverseify-parameter p)
+ (cond ((constant-expression? p)
+	(make-constant-expression
+	 (*j-inverse (constant-expression-value p))))
+       ((variable-access-expression? p) (unreverseify-access p))
+       ((cons-expression? p)
+	(new-cons-expression (remove-tag 'reverse (cons-expression-tags p))
+			     (unreverseify-parameter (cons-expression-car p))
+			     (unreverseify-parameter (cons-expression-cdr p))))
+       (else (internal-error))))
+
 (define (reverse-transform e gs zs)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
  ;;    expression, unless it has been optimized away.
@@ -1962,8 +1989,7 @@
 		 (letrec-expression-lambda-expressions e1))
 		'())))
   (new-lambda-expression
-   ;; needs work: p might not be a variable access parameter
-   (reverseify-access p)
+   (reverseify-parameter p)
    (new-letrec-expression
     (map reverseify fs)
     (map (lambda (e) (reverse-transform e fs ws))
@@ -2028,71 +2054,75 @@
 	       (make-parameter-binding
 		(sensitivity-access x)
 		(make-zero (make-*j-inverse (reverse-access x)))))
-	      (removep
-	       variable=?
-	       (variable-access-expression-variable (anf-parameter e1))
-	       ;; needs work: p might not be a variable access parameter
-	       (cons (variable-access-expression-variable p)
-		     (append (map variable-access-expression-variable
-				  (anf-let*-parameters e1))
-			     fs
-			     gs
-			     zs))))
+	      (removep variable=?
+		       (variable-access-expression-variable (anf-parameter e1))
+		       (append (parameter-variables p)
+			       (map variable-access-expression-variable
+				    (anf-let*-parameters e1))
+			       fs
+			       ;; needs work: why is ws not here?
+			       gs
+			       zs)))
 	 ;; These are the bindings for the reverse phase that come from the
 	 ;; primal.
-	 (map (lambda (p e)
-	       (cond
-		;; p = v is eliminated
-		((constant-expression? e) #f)
-		;;            _    _
-		;;            \    \
-		;; p = e -~-> e += p
-		((variable-access-expression? e)
-		 ;; needs work: only create binding if e is needed
-		 (make-plus-binding
-		  (sensitivityify-access e) (sensitivityify-access p)))
-		;;                _____    _
-		;;                \        \
-		;; p = \ x e -~-> \ x e += p
-		((lambda-expression? e)
-		 ;; needs work: only create bindings for those free variables
-		 ;;             of e, i.e. \ x e that are needed
-		 (make-plus-binding
-		  (variables->expression
-		   tags (map sensitivityify (free-variables e)))
-		  (sensitivityify-access p)))
-		;;                __ _ __    _ _
-		;;                \  \ \       \
-		;; p = x1 x2 -~-> x1 , x2 += p p
-		;; We want the x1,x2 inside the sensitivity so that the
-		;; aggregate is a sensitivity that can be added by plus, since
-		;; for type correctness, plus adds only sensitivities.
-		((application? e)
-		 ;; needs work: only create bindings for x1 and/or x2 if they
-		 ;;             are needed
-		 (make-plus-binding
-		  (create-cons-expression
-		   (sensitivityify-access (application-callee e))
-		   (sensitivityify-access (application-argument e)))
-		  (new-application (backpropagatorify-access p)
-				   (sensitivityify-access p))))
-		;;                __ _ __    _
-		;;                \  \ \     \
-		;; p = x1,x2 -~-> x1 , x2 += p
-		;; We want the x1,x2 inside the sensitivity so that the
-		;; aggregate is a sensitivity that can be added by plus, since
-		;; for type correctness, plus adds only sensitivities.
-		((cons-expression? e)
-		 ;; needs work: only create bindings for x1 and/or x2 if they
-		 ;;             are needed
-		 (make-plus-binding
-		  (create-cons-expression
-		   (sensitivityify-access (cons-expression-car e))
-		   (sensitivityify-access (cons-expression-cdr e)))
-		  (sensitivityify-access p)))
-		(else (internal-error))))
-	      (reverse (anf-let*-parameters e1))
-	      (reverse (anf-let*-expressions e1)))
+	 (removeq
+	  #t
+	  (map (lambda (p e)
+		(cond
+		 ;; p = v is eliminated
+		 ((constant-expression? e) #f)
+		 ;;            _    _
+		 ;;            \    \
+		 ;; p = e -~-> e += p
+		 ((variable-access-expression? e)
+		  ;; needs work: only create binding if e is needed
+		  (make-plus-binding
+		   (sensitivityify-access e) (sensitivityify-access p)))
+		 ;;                _____    _
+		 ;;                \        \
+		 ;; p = \ x e -~-> \ x e += p
+		 ((lambda-expression? e)
+		  ;; needs work: only create bindings for those free variables
+		  ;;             of e, i.e. \ x e that are needed
+		  (make-plus-binding
+		   (variables->expression
+		    tags (map sensitivityify (free-variables e)))
+		   (sensitivityify-access p)))
+		 ;;                __ _ __    _ _
+		 ;;                \  \ \       \
+		 ;; p = x1 x2 -~-> x1 , x2 += p p
+		 ;; We want the x1,x2 inside the sensitivity so that the
+		 ;; aggregate is a sensitivity that can be added by plus, since
+		 ;; for type correctness, plus adds only sensitivities.
+		 ((application? e)
+		  ;; needs work: only create bindings for x1 and/or x2 if they
+		  ;;             are needed
+		  (make-plus-binding
+		   (create-cons-expression
+		    (sensitivityify-access (application-callee e))
+		    (sensitivityify-access (application-argument e)))
+		   (new-application (backpropagatorify-access p)
+				    (sensitivityify-access p))))
+		 ;;                __ _ __    _
+		 ;;                \  \ \     \
+		 ;; p = x1,x2 -~-> x1 , x2 += p
+		 ;; We want the x1,x2 inside the sensitivity so that the
+		 ;; aggregate is a sensitivity that can be added by plus, since
+		 ;; for type correctness, plus adds only sensitivities.
+		 ((cons-expression? e)
+		  ;; needs work: only create bindings for x1 and/or x2 if they
+		  ;;             are needed
+		  (make-plus-binding
+		   (create-cons-expression
+		    (sensitivityify-access (cons-expression-car e))
+		    (sensitivityify-access (cons-expression-cdr e)))
+		   (sensitivityify-access p)))
+		 (else (internal-error))))
+	       (reverse (anf-let*-parameters e1))
+	       (reverse (anf-let*-expressions e1))))
+	 ;;  __     __     __     __
+	 ;;  \      \      \      \
+	 ;; [w1,...,wn] += f1+...+fn
 	 (list
 	  (make-parameter-binding
 	   (variables->expression tags (map sensitivity-access ws))
@@ -2104,13 +2134,15 @@
 	;; the argument.
 	(create-cons-expression
 	 ;; This is the sensitivity to the target.
+	 ;;  __     __  __     __
+	 ;;  \      \   \      \
+	 ;; [z1,...,zn]+g1+...+gn
 	 (map-reduce make-plus
 		     (variables->expression tags (map sensitivity-access zs))
 		     sensitivity-access
 		     gs)
 	 ;; This is the sensitivity to the argument.
-	 ;; needs work: p might not be a variable access parameter
-	 (sensitivityify-access p))))))))))
+	 (sensitivityify-parameter p))))))))))
 
 (define (result-cons-expression? p1 p2 e1 e2 e)
  ;; p1=(lambda ...)
@@ -2183,7 +2215,7 @@
 
 (define (reverse-transform-inverse e)
  (new-lambda-expression
-  (reverse-transform-inverse (lambda-expression-parameter e))
+  (unreverseify-parameter (lambda-expression-parameter e))
   (let ((e (lambda-expression-body e)))
    (if (letrec-expression? e)
        (new-letrec-expression
