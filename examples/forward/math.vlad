@@ -14,9 +14,9 @@
 
 (define (cdr (cons x y)) y)
 
-(define (first (cons x y)) x)
+(define (first x) (car x))
 
-(define (rest (cons x y)) y)
+(define (rest x) (car x))
 
 (define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
 
