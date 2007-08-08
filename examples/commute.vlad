@@ -1,3 +1,9 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (j* x) (bundle x (zero x)))
+
 ((j* (j* sqrt)) (bundle (bundle 4 1) (bundle 1 0)))
 
 (let ((x ((*j (j* sqrt)) (*j (bundle 4 1))))) 

@@ -1,3 +1,7 @@
+(define (cdr (cons x y)) y)
+
+(define (j* x) (bundle x (zero x)))
+
 (define ((derivative-using-j* f) x) (tangent ((j* f) (bundle x 1))))
 
 (define ((derivative-using-*j f) x) (cdr ((cdr ((*j f) (*j x))) 1)))

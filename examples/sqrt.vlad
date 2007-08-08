@@ -1,5 +1,9 @@
 (define (abs x) (if (negative? x) (- 0 x) x))
 
+(define (cdr (cons x y)) y)
+
+(define (j* x) (bundle x (zero x)))
+
 (define (derivative-using-j* f)
  (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
 
