@@ -1,3 +1,5 @@
+(define (car (cons x y)) x)
+
 (*j (lambda (x) (car (cons x x))))
 
 (*j (*j (lambda (x) (car (cons x x)))))
