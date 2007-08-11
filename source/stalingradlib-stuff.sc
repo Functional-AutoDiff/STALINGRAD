@@ -827,50 +827,19 @@
 
 ;;; Closures
 
-(define (new-nonrecursive-closure-debugging vs e)
- (unless (= (length vs) (length (free-variables e))) (internal-error))
- (let ((tags (lambda-expression-tags e)))
-  (unless (every (lambda (x v)
-		  (and (prefix-tags? tags (value-tags v))
-		       (prefix-tags? (variable-tags x) (value-tags v))))
-		 (free-variables e)
-		 vs)
-   ;; debugging
-   (for-each (lambda (x v)
-	      (unless (and (prefix-tags? tags (value-tags v))
-			   (prefix-tags? (variable-tags x) (value-tags v)))
-	       (write (list x
-			    tags
-			    (value-tags v)
-			    (prefix-tags? tags (value-tags v))
-			    (prefix-tags? (variable-tags x) (value-tags v))))
-	       (newline)))
-	     (free-variables e)
-	     vs)
-   (pp (abstract->concrete e))
-   (newline)
-   (internal-error)))
- (make-nonrecursive-closure vs e))
-
 (define (new-nonrecursive-closure vs e)
  (unless (= (length vs) (length (free-variables e))) (internal-error))
- (let ((tags (lambda-expression-tags e)))
-  (unless (every (lambda (x v)
-		  (prefix-tags? (variable-tags x) (value-tags v)))
-		 (free-variables e)
-		 vs)
-   ;; debugging
-   (for-each (lambda (x v)
-	      (unless (prefix-tags? (variable-tags x) (value-tags v))
-	       (write (list x
-			    (value-tags v)
-			    (prefix-tags? (variable-tags x) (value-tags v))))
-	       (newline)))
-	     (free-variables e)
-	     vs)
-   (pp (abstract->concrete e))
-   (newline)
-   (internal-error)))
+ ;; We used to enforce the constraint that the tags of the parameter of e
+ ;; (as an indication of the tags of the resulting closure) were a prefix of
+ ;; the tags of each v in vs. But this does not hold of the let* bindings
+ ;; taken as lambda expressions for results paired with backpropagator
+ ;; variables. The backpropagator variables are free in the nested let* context
+ ;; context of the forward phase reverse transformed procedure but the
+ ;; backpropagators are not reverse values.
+ (unless (every (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
+		(free-variables e)
+		vs)
+  (internal-error))
  (make-nonrecursive-closure vs e))
 
 (define (new-recursive-closure vs xs es i)
@@ -878,16 +847,13 @@
 	    (length (recursive-closure-free-variables
 		     (vector->list xs) (vector->list es))))
   (internal-error))
- ;; There will always be at least one procedure variable and one lambda
- ;; expression.
- (let ((tags (lambda-expression-tags (vector-ref es 0))))
-  (unless (every (lambda (x v)
-		  (and (prefix-tags? tags (value-tags v))
-		       (prefix-tags? (variable-tags x) (value-tags v))))
-		 (recursive-closure-free-variables
-		  (vector->list xs) (vector->list es))
-		 vs)
-   (internal-error)))
+ ;; See the note in new-nonrecursive-closure. While that hasn't happened in
+ ;; practise, and I don't know whether it can, I removed it in principle.
+ (unless (every (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
+		(recursive-closure-free-variables
+		 (vector->list xs) (vector->list es))
+		vs)
+  (internal-error))
  (make-recursive-closure vs xs es i))
 
 (define (nonrecursive-closure-match? v1 v2)
@@ -1542,18 +1508,6 @@
  (new-lambda-expression (lambda-expression-parameter e)
 			(anf-convert (lambda-expression-body e))))
 
-(define (anf-convert-lambda-expression-debugging e)
- (display "before")
- (newline)
- (pp (abstract->concrete (lambda-expression-body e)))
- (newline)
- (display "after")
- (newline)
- (pp (abstract->concrete (anf-convert (lambda-expression-body e))))
- (newline)
- (new-lambda-expression (lambda-expression-parameter e)
-			(anf-convert (lambda-expression-body e))))
-
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
      (if (let*? (letrec-expression-body e))
@@ -2174,7 +2128,7 @@
 	;; p = \ x e -~-> p = \ x e
 	((lambda-expression? e)
 	 (make-parameter-binding
-	 ;; needs work: p might not be a variable-access expression parameter
+	  ;; needs work: p might not be a variable-access expression parameter
 	  (reverseify-access p) (reverse-transform e '() (free-variables e))))
 	;;                /     /  /
 	;;                _ _   __ __
