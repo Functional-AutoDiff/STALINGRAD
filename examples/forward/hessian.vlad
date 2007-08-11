@@ -1,7 +1,7 @@
 (include "math")
 
 (define ((partial-derivative-using-j* f i) x)
- (tangent ((j* f) (bundle x (e i (length x))))))
+ (unperturb (tangent ((j* f) (bundle x (perturb (e i (length x))))))))
 
 (define (partial-derivative f i) (partial-derivative-using-j* f i))
 
@@ -19,9 +19,10 @@
 
 (define (hessian-quadratic-form-using-j*-j* f x u v)
  (let ((f-forward (j* f)))
-  (tangent ((j* (lambda (x) (tangent (f-forward (bundle x v)))))
-	    (bundle x u)))))
-
+  (unperturb
+   (tangent
+    ((j* (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb v)))))))
+     (bundle x (perturb u)))))))
 
 (define (hessian-quadratic-form f x v)
  (hessian-quadratic-form-using-j*-j* f x v))
@@ -32,8 +33,12 @@
 (define (curried-hessian-quadratic-form f)
  (let ((f-forward-forward (j* (j* f))))
   (lambda (x u v)
-   (tangent (tangent (f-forward-forward
-		      (bundle (bundle x u) (bundle v (zero x)))))))))
+   (unperturb
+    (tangent
+     (unperturb
+      (tangent (f-forward-forward
+		(bundle (bundle x (perturb u))
+			(perturb (bundle v (perturb (zero x)))))))))))))
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 

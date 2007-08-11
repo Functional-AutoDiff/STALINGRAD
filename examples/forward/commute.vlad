@@ -1,3 +1,4 @@
 (include "math")
 
-((j* (j* sqrt)) (bundle (bundle 4 1) (bundle 1 0)))
+((j* (j* sqrt))
+ (bundle (bundle 4 (perturb 1)) (perturb (bundle 1 (perturb 0)))))

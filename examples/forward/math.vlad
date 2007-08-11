@@ -16,7 +16,7 @@
 
 (define (first x) (car x))
 
-(define (rest x) (car x))
+(define (rest x) (cdr x))
 
 (define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
 
@@ -63,15 +63,18 @@
 
 ;;; Derivatives
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
-(define ((derivative-using-j* f) x) (tangent ((j* f) (bundle x 1))))
+(define ((derivative-using-j* f) x)
+ (unperturb (tangent ((j* f) (bundle x (perturb 1))))))
 
 (define (derivative f) (derivative-using-j* f))
 
 (define ((gradient-using-j* f) x)
  (let ((n (length x)))
-  (map-n (lambda (i) (tangent ((j* f) (bundle x (e i n))))) n)))
+  (map-n
+   (lambda (i) (unperturb (tangent ((j* f) (bundle x (perturb (e i n)))))))
+   n)))
 
 (define (gradient f) (gradient-using-j* f))
 
