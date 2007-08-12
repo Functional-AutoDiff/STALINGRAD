@@ -305,7 +305,6 @@
 		     perturbation
 		     forward
 		     sensitivity
-		     backpropagator
 		     reverse)))))
 
 (define (variable? x)
@@ -337,23 +336,19 @@
 	  (variable? (second x)))
      (and (list? x)
 	  (= (length x) 2)
-	  (eq? (first x) 'backpropagator)
-	  (variable? (second x)))
-     (and (list? x)
-	  (= (length x) 2)
 	  (eq? (first x) 'reverse)
 	  (variable? (second x)))))
 
 (define (variable-anf-max x)
- (cond ((symbol? x) 0)
-       ((list? x)
-	(case (first x)
-	 ((alpha) (variable-anf-max (second x)))
-	 ((anf) (second x))
-	 ((perturbation forward sensitivity backpropagator reverse)
-	  (variable-anf-max (second x)))
-	 (else (internal-error))))
-       (else (internal-error))))
+ (cond
+  ((symbol? x) 0)
+  ((list? x)
+   (case (first x)
+    ((alpha) (variable-anf-max (second x)))
+    ((anf) (second x))
+    ((perturbation forward sensitivity reverse) (variable-anf-max (second x)))
+    (else (internal-error))))
+  (else (internal-error))))
 
 (define (variable=? x1 x2) (equal? x1 x2))
 
@@ -375,7 +370,7 @@
 	 (if (eq? (first x1) (first x2))
 	     (case (first x1)
 	      ((anf) (< (second x1) (second x2)))
-	      ((perturbation forward sensitivity backpropagator reverse)
+	      ((perturbation forward sensitivity reverse)
 	       (variable<? (second x1) (second x2)))
 	      (else (internal-error)))
 	     (not (not (memq (first x2)
@@ -384,7 +379,6 @@
 				     perturbation
 				     forward
 				     sensitivity
-				     backpropagator
 				     reverse)))))))))
 
 (define (variable<? x1 x2)
@@ -400,8 +394,6 @@
 (define (forwardify x) `(forward ,x))
 
 (define (sensitivityify x) `(sensitivity ,x))
-
-(define (backpropagatorify x) `(backpropagator ,x))
 
 (define (reverseify x) `(reverse ,x))
 
@@ -466,10 +458,6 @@
  (make-variable-access-expression
   (sensitivityify (variable-access-expression-variable e))))
 
-(define (backpropagatorify-access e)
- (make-variable-access-expression
-  (backpropagatorify (variable-access-expression-variable e))))
-
 (define (reverseify-access e)
  (make-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
@@ -498,7 +486,6 @@
       ((perturbation) (add-tag 'perturbation (variable-tags (second x))))
       ((forward) (add-tag 'forward (variable-tags (second x))))
       ((sensitivity) (add-tag 'sensitivity (variable-tags (second x))))
-      ((backpropagator) (variable-tags (second x)))
       ((reverse) (add-tag 'reverse (variable-tags (second x))))
       (else (internal-error)))
      (empty-tags)))
@@ -506,10 +493,10 @@
 ;;; Parameters
 
 (define (parameter-tags p)
- ;; needs work: lambda-expression parameters
  (cond ((constant-expression? p) (value-tags (constant-expression-value p)))
        ((variable-access-expression? p)
 	(variable-tags (variable-access-expression-variable p)))
+       ((lambda-expression? p) (lambda-expression-tags p))
        ((cons-expression? p) (cons-expression-tags p))
        (else (internal-error))))
 
@@ -544,10 +531,10 @@
    variable=? (map-reduce union-variables '() free-variables es) xs)))
 
 (define (parameter-variables p)
- ;; needs work: lambda-expression parameters
  (cond ((constant-expression? p) '())
        ((variable-access-expression? p)
 	(list (variable-access-expression-variable p)))
+       ((lambda-expression? p) (free-variables p))
        ((cons-expression? p)
 	(append (parameter-variables (cons-expression-car p))
 		(parameter-variables (cons-expression-cdr p))))
@@ -1284,6 +1271,7 @@
 	  (cons x xs)
 	  (list (make-alpha-binding (variable-access-expression-variable p) x))
 	  (make-variable-access-expression x))))
+       ((lambda-expression? p) (unimplemented))
        ((cons-expression? p)
 	(let* ((result1 (alpha-convert-parameter (cons-expression-car p) xs))
 	       (result2 (alpha-convert-parameter (cons-expression-cdr p)
@@ -2310,11 +2298,11 @@
 	     xs))
 
 (define (sensitivityify-parameter p)
- ;; needs work: lambda-expression parameters
  (cond
   ((constant-expression? p)
    (make-constant-expression (zero (constant-expression-value p))))
   ((variable-access-expression? p) (sensitivityify-access p))
+  ((lambda-expression? p) (sensitivity-transform p))
   ((cons-expression? p)
    (new-cons-expression (cons-expression-tags p)
 			(sensitivityify-parameter (cons-expression-car p))
@@ -2322,10 +2310,10 @@
   (else (internal-error))))
 
 (define (reverseify-parameter p)
- ;; needs work: lambda-expression parameters
  (cond ((constant-expression? p)
 	(make-constant-expression (*j (constant-expression-value p))))
        ((variable-access-expression? p) (reverseify-access p))
+       ((lambda-expression? p)  (reverse-transform p '() (free-variables p)))
        ((cons-expression? p)
 	(new-cons-expression (add-tag 'reverse (cons-expression-tags p))
 			     (reverseify-parameter (cons-expression-car p))
@@ -2333,11 +2321,11 @@
        (else (internal-error))))
 
 (define (unreverseify-parameter p)
- ;; needs work: lambda-expression parameters
  (cond ((constant-expression? p)
 	(make-constant-expression
 	 (*j-inverse (constant-expression-value p))))
        ((variable-access-expression? p) (unreverseify-access p))
+       ((lambda-expression? p) (reverse-transform-inverse p))
        ((cons-expression? p)
 	(new-cons-expression (remove-tag 'reverse (cons-expression-tags p))
 			     (unreverseify-parameter (cons-expression-car p))
@@ -2415,7 +2403,8 @@
 		(recursive-closure-free-variables
 		 (letrec-expression-procedure-variables e1)
 		 (letrec-expression-lambda-expressions e1))
-		'())))
+		'()))
+	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
@@ -2427,7 +2416,7 @@
     (create-let*
      ;; These are the bindings for the forward phase that come from the primal.
      (map
-      (lambda (p e)
+      (lambda (p e x)
        (cond
 	;;            /   /
 	;;            _   _
@@ -2454,11 +2443,7 @@
 	;; p = x1 x2 -~-> p,p = x1 x2
 	((application? e)
 	 (make-parameter-binding
-	  (create-cons-expression (reverseify-parameter p)
-				  ;; needs work: p might not be a
-				  ;;             variable-access expression
-				  ;;             parameter
-				  (backpropagatorify-access p))
+	  (create-cons-expression (reverseify-parameter p) x)
 	  (new-application (reverseify-access (application-callee e))
 			   (reverseify-access (application-argument e)))))
 	;;                /   /  / /
@@ -2472,7 +2457,8 @@
 			       (reverseify-access (cons-expression-cdr e)))))
 	(else (internal-error))))
       (anf-let*-parameters e1)
-      (anf-let*-expressions e1))
+      (anf-let*-expressions e1)
+      xs)
      ;; This conses the result of the forward phase with the backpropagator.
      (create-cons-expression
       ;; This is the result of the forward phase.
@@ -2501,7 +2487,7 @@
 	 ;; primal.
 	 (removeq
 	  #f
-	  (map (lambda (p e)
+	  (map (lambda (p e x)
 		(cond
 		 ;; p = v is eliminated
 		 ((constant-expression? e) #f)
@@ -2536,10 +2522,7 @@
 		    (add-tag 'sensitivity (cons-expression-tags e))
 		    (sensitivityify-access (application-callee e))
 		    (sensitivityify-access (application-argument e)))
-		   ;; needs work: p might not be a variable-access expression
-		   ;;             parameter
-		   (new-application (backpropagatorify-access p)
-				    (sensitivityify-parameter p))))
+		   (new-application x (sensitivityify-parameter p))))
 		 ;;                __ _ __    _
 		 ;;                \  \ \     \
 		 ;; p = x1,x2 -~-> x1 , x2 += p
@@ -2557,7 +2540,8 @@
 		   (sensitivityify-parameter p)))
 		 (else (internal-error))))
 	       (reverse (anf-let*-parameters e1))
-	       (reverse (anf-let*-expressions e1))))
+	       (reverse (anf-let*-expressions e1))
+	       (reverse xs)))
 	 ;;  __     __     __     __
 	 ;;  \      \      \      \
 	 ;; [w1,...,wn] += f1+...+fn
@@ -5503,7 +5487,9 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (+ x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons (sensitivity y) (sensitivity y)))))))
+	    (sensitize (cons +
+			     (cons (unsensitize (sensitivity y))
+				   (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure '-
   (binary-real - "-")
   (lambda (v vs) (generate-builtin-name "minus" v vs))
@@ -5518,12 +5504,19 @@
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (- x1 x2))
 	       (lambda ((sensitivity y))
-		(cons (sensitivity y) (- 0.0 (sensitivity y)))))))
+		(sensitize
+		 (cons -
+		       (cons (unsensitize (sensitivity y))
+			     (- 0.0 (unsensitize (sensitivity y))))))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
-	 (cons (*j (- x1 x2))
-	       (lambda ((sensitivity y))
-		(cons (sensitivity y) (- (real 0) (sensitivity y)))))))))
+	 (cons
+	  (*j (- x1 x2))
+	  (lambda ((sensitivity y))
+	   (sensitize
+	    (cons -
+		  (cons (unsensitize (sensitivity y))
+			(- (real 0) (unsensitize (sensitivity y))))))))))))
  (define-primitive-procedure '*
   (binary-real * "*")
   (lambda (v vs) (generate-builtin-name "times" v vs))
@@ -5537,7 +5530,10 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (* x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons (* x2 (sensitivity y)) (* x1 (sensitivity y))))))))
+	    (sensitize
+	     (cons *
+		   (cons (* x2 (unsensitize (sensitivity y)))
+			 (* x1 (unsensitize (sensitivity y)))))))))))
  (define-primitive-procedure '/
   (binary-real divide "/")
   (lambda (v vs) (generate-builtin-name "divide" v vs))
@@ -5553,14 +5549,22 @@
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (/ x1 x2))
 	       (lambda ((sensitivity y))
-		(cons (/ (sensitivity y) x2)
-		      (- 0.0 (/ (* x1 (sensitivity y)) (* x2 x2))))))))
+		(sensitize
+		 (cons /
+		       (cons (/ (unsensitize (sensitivity y)) x2)
+			     (- 0.0
+				(/ (* x1 (unsensitize (sensitivity y)))
+				   (* x2 x2))))))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (/ x1 x2))
 	       (lambda ((sensitivity y))
-		(cons (/ (sensitivity y) x2)
-		      (- (real 0) (/ (* x1 (sensitivity y)) (* x2 x2))))))))))
+		(sensitize
+		 (cons /
+		       (cons (/ (unsensitize (sensitivity y)) x2)
+			     (- (real 0)
+				(/ (* x1 (unsensitize (sensitivity y)))
+				   (* x2 x2))))))))))))
  (define-primitive-procedure 'sqrt
   (unary-real sqrt "sqrt")
   (lambda (v vs) "sqrt")
@@ -5571,9 +5575,12 @@
       (perturb (/ (unperturb (perturbation x)) (+ (sqrt x) (sqrt x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (sqrt x))
-	   (lambda ((sensitivity y))
-	    (/ (sensitivity y) (+ (sqrt x) (sqrt x))))))))
+     (cons
+      (*j (sqrt x))
+      (lambda ((sensitivity y))
+       (sensitize
+	(cons sqrt
+	      (/ (unsensitize (sensitivity y)) (+ (sqrt x) (sqrt x))))))))))
  (define-primitive-procedure 'exp
   (unary-real exp "exp")
   (lambda (v vs) "exp")
@@ -5582,8 +5589,10 @@
      (bundle (exp x) (perturb (* (exp x) (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (exp x))
-	   (lambda ((sensitivity y)) (* (exp x) (sensitivity y)))))))
+     (cons
+      (*j (exp x))
+      (lambda ((sensitivity y))
+       (sensitize (cons exp (* (exp x) (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'log
   (unary-real log "log")
   (lambda (v vs) "log")
@@ -5592,7 +5601,9 @@
      (bundle (log x) (perturb (/ (unperturb (perturbation x)) x)))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (log x)) (lambda ((sensitivity y)) (/ (sensitivity y) x))))))
+     (cons (*j (log x))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons log (/ (unsensitize (sensitivity y)) x))))))))
  (define-primitive-procedure 'sin
   (unary-real sin "sin")
   (lambda (v vs) "sin")
@@ -5601,8 +5612,10 @@
      (bundle (sin x) (perturb (* (cos x) (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (sin x))
-	   (lambda ((sensitivity y)) (* (cos x) (sensitivity y)))))))
+     (cons
+      (*j (sin x))
+      (lambda ((sensitivity y))
+       (sensitize (cons sin (* (cos x) (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'cos
   (unary-real cos "cos")
   (lambda (v vs) "cos")
@@ -5621,14 +5634,20 @@
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
 	(let ((x (*j-inverse (reverse x))))
-	 (cons (*j (cos x))
-	       (lambda ((sensitivity y))
-		(- 0.0 (* (sin x) (sensitivity y)))))))
+	 (cons
+	  (*j (cos x))
+	  (lambda ((sensitivity y))
+	   (sensitize
+	    (cons cos (- 0.0 (* (sin x) (unsensitize (sensitivity y))))))))))
       '(lambda ((reverse x))
 	(let ((x (*j-inverse (reverse x))))
-	 (cons (*j (cos x))
-	       (lambda ((sensitivity y))
-		(- (real 0) (* (sin x) (sensitivity y)))))))))
+	 (cons
+	  (*j (cos x))
+	  (lambda ((sensitivity y))
+	   (sensitize
+	    (cons
+	     cos
+	     (- (real 0) (* (sin x) (unsensitize (sensitivity y))))))))))))
  (define-primitive-procedure 'atan
   (binary-real atan "atan")
   (lambda (v vs) (generate-builtin-name "atantwo" v vs))
@@ -5644,16 +5663,24 @@
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (atan x2 x1))
 	       (lambda ((sensitivity y))
-		(cons (- 0.0
-			 (/ (* x2 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))
-		      (/ (* x1 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))))))
+		(sensitize
+		 (cons atan
+		       (cons (- 0.0
+				(/ (* x2 (unsensitize (sensitivity y)))
+				   (+ (* x1 x1) (* x2 x2))))
+			     (/ (* x1 (unsensitize (sensitivity y)))
+				(+ (* x1 x1) (* x2 x2))))))))))
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
 	 (cons (*j (atan x2 x1))
 	       (lambda ((sensitivity y))
-		(cons (- (real 0)
-			 (/ (* x2 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))
-		      (/ (* x1 (sensitivity y)) (+ (* x1 x1) (* x2 x2))))))))))
+		(sensitize
+		 (cons atan
+		       (cons (- (real 0)
+				(/ (* x2 (unsensitize (sensitivity y)))
+				   (+ (* x1 x1) (* x2 x2))))
+			     (/ (* x1 (unsensitize (sensitivity y)))
+				(+ (* x1 x1) (* x2 x2))))))))))))
  (define-primitive-procedure '=
   (binary-real-predicate = "=")
   (lambda (v vs) (generate-builtin-name "eq" v vs))
@@ -5664,7 +5691,8 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (= x1 x2))
-	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons = (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '<
   (binary-real-predicate < "<")
   (lambda (v vs) (generate-builtin-name "lt" v vs))
@@ -5675,7 +5703,8 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (< x1 x2))
-	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons < (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '>
   (binary-real-predicate > ">")
   (lambda (v vs) (generate-builtin-name "gt" v vs))
@@ -5686,7 +5715,8 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (> x1 x2))
-	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons > (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '<=
   (binary-real-predicate <= "<=")
   (lambda (v vs) (generate-builtin-name "le" v vs))
@@ -5697,7 +5727,8 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (<= x1 x2))
-	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons <= (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '>=
   (binary-real-predicate >= ">=")
   (lambda (v vs) (generate-builtin-name "ge" v vs))
@@ -5708,7 +5739,8 @@
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (>= x1 x2))
-	   (lambda ((sensitivity y)) (cons (zero x1) (zero x2)))))))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons >= (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure 'zero?
   (unary-real-predicate zero? "zero?")
   (lambda (v vs) (generate-builtin-name "iszero" v vs))
@@ -5718,7 +5750,8 @@
      (j* (zero? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (zero? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (zero? x))
+	   (lambda ((sensitivity y)) (sensitize (cons zero? (zero x))))))))
  (define-primitive-procedure 'positive?
   (unary-real-predicate positive? "positive?")
   (lambda (v vs) (generate-builtin-name "positive" v vs))
@@ -5728,7 +5761,8 @@
      (j* (positive? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (positive? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (positive? x))
+	   (lambda ((sensitivity y)) (sensitize (cons positive? (zero x))))))))
  (define-primitive-procedure 'negative?
   (unary-real-predicate negative? "negative?")
   (lambda (v vs) (generate-builtin-name "negative" v vs))
@@ -5738,7 +5772,8 @@
      (j* (negative? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (negative? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (negative? x))
+	   (lambda ((sensitivity y)) (sensitize (cons negative? (zero x))))))))
  (define-primitive-procedure 'null?
   (unary-predicate vlad-empty-list? "null?")
   (lambda (v vs) (unimplemented "null?"))
@@ -5748,7 +5783,8 @@
      (j* (null? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (null? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (null? x))
+	   (lambda ((sensitivity y)) (sensitize (cons null? (zero x))))))))
  (define-primitive-procedure 'boolean?
   (unary-predicate abstract-boolean? "boolean?")
   (lambda (v vs) (unimplemented "boolean?"))
@@ -5758,7 +5794,8 @@
      (j* (boolean? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (boolean? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (boolean? x))
+	   (lambda ((sensitivity y)) (sensitize (cons boolean? (zero x))))))))
  (define-primitive-procedure 'real?
   (unary-predicate abstract-real? "real?")
   (lambda (v vs) (unimplemented "real?"))
@@ -5768,7 +5805,8 @@
      (j* (real? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (real? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (real? x))
+	   (lambda ((sensitivity y)) (sensitize (cons real? (zero x))))))))
  (define-primitive-procedure 'pair?
   (unary-predicate vlad-pair? "pair?")
   (lambda (v vs) (unimplemented "pair?"))
@@ -5778,7 +5816,8 @@
      (j* (pair? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (pair? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (pair? x))
+	   (lambda ((sensitivity y)) (sensitize (cons pair? (zero x))))))))
  (define-primitive-procedure 'procedure?
   ;; needs work: This should probably return #f for any transformed procedure.
   (unary-predicate vlad-procedure? "procedure?")
@@ -5789,10 +5828,24 @@
      (j* (procedure? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (procedure? x)) (lambda ((sensitivity y)) (zero x))))))
- ;; The forward? and reverse? primitives are not referentially transparent and
- ;; violate the forward-transformation rule for functions that only rearrange
- ;; data.
+     (cons
+      (*j (procedure? x))
+      (lambda ((sensitivity y)) (sensitize (cons procedure? (zero x))))))))
+ ;; The perturbation?, forward?, sensitivity? and reverse? primitives are not
+ ;; referentially transparent and violate the forward-transformation rule for
+ ;; functions that only rearrange data.
+ (define-primitive-procedure 'perturbation?
+  (unary-predicate perturbation-value? "perturbation?")
+  (lambda (v vs) (unimplemented "perturbation?"))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x)))
+	  (j* (lambda (x) (bundle x (perturb (zero x))))))
+     (j* (perturbation? x))))
+  '(lambda ((reverse x))
+    (let ((x (*j-inverse (reverse x))))
+     (cons
+      (*j (perturbation? x))
+      (lambda ((sensitivity y)) (sensitize (cons perturbation? (zero x))))))))
  (define-primitive-procedure 'forward?
   (unary-predicate forward-value? "forward?")
   (lambda (v vs) (unimplemented "forward?"))
@@ -5802,7 +5855,20 @@
      (j* (forward? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (forward? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (forward? x))
+	   (lambda ((sensitivity y)) (sensitize (cons forward? (zero x))))))))
+ (define-primitive-procedure 'sensitivity?
+  (unary-predicate sensitivity-value? "sensitivity?")
+  (lambda (v vs) (unimplemented "sensitivity?"))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x)))
+	  (j* (lambda (x) (bundle x (perturb (zero x))))))
+     (j* (sensitivity? x))))
+  '(lambda ((reverse x))
+    (let ((x (*j-inverse (reverse x))))
+     (cons
+      (*j (sensitivity? x))
+      (lambda ((sensitivity y)) (sensitize (cons sensitivity? (zero x))))))))
  (define-primitive-procedure 'reverse?
   (unary-predicate reverse-value? "reverse?")
   (lambda (v vs) (unimplemented "reverse?"))
@@ -5812,7 +5878,8 @@
      (j* (reverse? x))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (reverse? x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (reverse? x))
+	   (lambda ((sensitivity y)) (sensitize (cons reverse? (zero x))))))))
  (define-primitive-procedure 'if-procedure
   (ternary
    (lambda (x1 x2 x3 bs)
@@ -5859,24 +5926,35 @@
   '(lambda ((reverse x))
     (let (((cons* x1 x2 x3) (*j-inverse (reverse x))))
      (if x1
-	 (let (((cons (reverse y) (backpropagator y)) ((*j x2) (*j '()))))
-	  (cons (reverse y)
-		(lambda ((sensitivity y))
-		 (cons* (zero x1)
-			;; needs work: think this through again
-			;; ((backpropagator y) (sensitivity y)) should be
-			;; the sensitivity to the ignored '() argument of x2
-			((backpropagator y) (sensitivity y))
-			(zero x3)))))
-	 (let (((cons (reverse y) (backpropagator y)) ((*j x3) (*j '()))))
-	  (cons (reverse y)
-		(lambda ((sensitivity y))
-		 (cons* (zero x1)
-			(zero x2)
-			;; needs work: think this through again
-			;; ((backpropagator y) (sensitivity y)) should be
-			;; the sensitivity to the ignored '() argument of x3
-			((backpropagator y) (sensitivity y))))))))))
+	 (let (((cons (reverse y) y-backpropagator) ((*j x2) (*j '()))))
+	  (cons
+	   (reverse y)
+	   (lambda ((sensitivity y))
+	    (sensitize
+	     (cons
+	      if-procedure
+	      (cons*
+	       (zero x1)
+	       ;; (sensitize
+	       ;;  (cdr (unsensitize (y-backpropagator (sensitivity y)))))
+	       ;; should be the sensitivity to the ignored '() argument of x2
+	       (car (unsensitize (y-backpropagator (sensitivity y))))
+	       (zero x3)))))))
+	 (let (((cons (reverse y) y-backpropagator) ((*j x3) (*j '()))))
+	  (cons
+	   (reverse y)
+	   (lambda ((sensitivity y))
+	    (sensitize
+	     (cons
+	      if-procedure
+	      (cons*
+	       (zero x1)
+	       (zero x2)
+	       ;; (sensitize
+	       ;;  (cdr (unsensitize (y-backpropagator (sensitivity y)))))
+	       ;; should be the sensitivity to the ignored '() argument of x3
+	       (car
+		(unsensitize (y-backpropagator (sensitivity y))))))))))))))
  (define-primitive-procedure 'read-real
   (unary read-real "read-real")
   (lambda (v vs) "read_real")
@@ -5886,7 +5964,8 @@
       `(lambda (',(j* (vlad-empty-list)))
 	(bundle (read-real) (perturb (real 0)))))
   `(lambda (',(*j (vlad-empty-list)))
-    (cons (*j (read-real)) (lambda ((sensitivity y)) '()))))
+    (cons (*j (read-real))
+	  (lambda ((sensitivity y)) (sensitize (cons read-real '()))))))
  (define-primitive-procedure 'real
   (unary-real (lambda (x) (if *run?* x 'real)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
@@ -5897,7 +5976,9 @@
      (bundle (real x) (perturb (real (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (real x)) (lambda ((sensitivity y)) (real (sensitivity y)))))))
+     (cons (*j (real x))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons real (real (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'write
   (unary (lambda (x)
 	  (when *run?* ((if *pp?* pp write) (externalize x)) (newline))
@@ -5910,7 +5991,9 @@
      (bundle (write x) (perturb (unperturb (perturbation x))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (write x)) (lambda ((sensitivity y)) (sensitivity y))))))
+     (cons (*j (write x))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons write (unsensitize (sensitivity y)))))))))
  (define-primitive-procedure 'zero
   (unary zero "zero")
   (lambda (v vs) (generate-builtin-name "zero" v vs))
@@ -5920,7 +6003,8 @@
      (bundle (zero x) (perturb (zero (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (zero x)) (lambda ((sensitivity y)) (zero x))))))
+     (cons (*j (zero x))
+	   (lambda ((sensitivity y)) (sensitize (cons zero (zero x))))))))
  (define-primitive-procedure 'perturb
   (unary perturb "perturb")
   (lambda (v vs) (unimplemented "perturb"))
@@ -5930,9 +6014,14 @@
      (bundle (perturb x) (perturb (perturb (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (perturb x))
-	   ;; needs work
-	   (lambda ((sensitivity y)) (sensitivity y))))))
+     (cons
+      (*j (perturb x))
+      ;; The argument must be called y-perturbation so as not to confuse the
+      ;; tags.
+      (lambda ((sensitivity y-perturbation))
+       (sensitize
+	(cons perturb
+	      (unperturb (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'unperturb
   (unary unperturb "unperturb")
   (lambda (v vs) (unimplemented "unperturb"))
@@ -5947,8 +6036,9 @@
   '(lambda ((reverse x-perturbation))
     (let ((x-perturbation (*j-inverse (reverse x-perturbation))))
      (cons (*j (unperturb x-perturbation))
-	   ;; needs work
-	   (lambda ((sensitivity y)) (sensitivity y))))))
+	   (lambda ((sensitivity y))
+	    (sensitize
+	     (cons unperturb (perturb (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'primal
   (unary primal "primal")
   (lambda (v vs) (generate-builtin-name "primal" v vs))
@@ -5961,10 +6051,11 @@
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((reverse x-forward))
     (let ((x-forward (*j-inverse (reverse x-forward)))
-	  (j* (lambda (x) (bundle x (zero x)))))
+	  (j* (lambda (x) (bundle x (perturb (zero x))))))
      (cons (*j (primal x-forward))
-	   ;; needs work: not sure that this call to j* is correct
-	   (lambda ((sensitivity y)) (j* (sensitivity y)))))))
+	   (lambda ((sensitivity y))
+	    ;; needs work: I'm not sure that j* is the inverse of primal.
+	    (sensitize (cons primal (j* (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
   (lambda (v vs) (generate-builtin-name "tangent" v vs))
@@ -5978,9 +6069,15 @@
   '(lambda ((reverse x-forward))
     (let ((x-forward (*j-inverse (reverse x-forward))))
      (cons (*j (tangent x-forward))
-	   (lambda ((sensitivity (perturbation y)))
-	    (bundle (zero (primal x-forward))
-		    (sensitivity (perturbation y))))))))
+	   ;; The argument must be called y-perturbation so as not to confuse
+	   ;; the tags.
+	   (lambda ((sensitivity y-perturbation))
+	    (sensitize
+	     (cons tangent
+		   ;; needs work: I'm not sure that this is the inverse of
+		   ;;             tangent.
+		   (bundle (zero (primal x-forward))
+			   (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'bundle
   (binary bundle "bundle")
   (lambda (v vs) (generate-builtin-name "bundle" v vs))
@@ -5988,7 +6085,6 @@
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
 	  ((cons (perturbation x1) (perturbation (perturbation x2)))
 	   (tangent (forward x))))
-     ;; needs work
      (bundle
       ;; The unperturb composed with perturb could be optimized away.
       (bundle x1 (perturb (unperturb (perturbation x2))))
@@ -5999,10 +6095,14 @@
 	(perturb (unperturb (unperturb (perturbation (perturbation x2))))))))))
   '(lambda ((reverse x))
     (let (((cons x1 (perturbation x2)) (*j-inverse (reverse x))))
-     (cons (*j (bundle x1 (perturbation x2)))
-	   (lambda ((sensitivity (forward y)))
-	    (cons (primal (sensitivity (forward y)))
-		  (tangent (sensitivity (forward y)))))))))
+     (cons
+      (*j (bundle x1 (perturbation x2)))
+      ;; The argument must be called y-forward so as not to confuse the tags.
+      (lambda ((sensitivity y-forward))
+       (sensitize
+	(cons bundle
+	      (cons (primal (unsensitize (sensitivity y-forward)))
+		    (tangent (unsensitize (sensitivity y-forward)))))))))))
  (define-primitive-procedure 'sensitize
   (unary sensitize "sensitize")
   (lambda (v vs) (unimplemented "sensitize"))
@@ -6012,9 +6112,14 @@
       (sensitize x) (perturb (sensitize (unperturb (perturbation x)))))))
   '(lambda ((reverse x))
     (let ((x (*j-inverse (reverse x))))
-     (cons (*j (sensitize x))
-	   ;; needs work
-	   (lambda ((sensitivity y)) (sensitivity y))))))
+     (cons
+      (*j (sensitize x))
+      ;; The argument must be called y-sensitivity so as not to confuse the
+      ;; tags.
+      (lambda ((sensitivity y-sensitivity))
+       (sensitize
+	(cons sensitize
+	      (unsensitize (unsensitize (sensitivity y-sensitivity))))))))))
  (define-primitive-procedure 'unsensitize
   (unary unsensitize "unsensitize")
   (lambda (v vs) (unimplemented "unsensitize"))
@@ -6028,9 +6133,12 @@
   ;; The argument must be called x-sensitivity so as not to confuse the tags.
   '(lambda ((reverse x-sensitivity))
     (let ((x-sensitivity (*j-inverse (reverse x-sensitivity))))
-     (cons (*j (unsensitize x-sensitivity))
-	   ;; needs work
-	   (lambda ((sensitivity y)) (sensitivity y))))))
+     (cons
+      (*j (unsensitize x-sensitivity))
+      (lambda ((sensitivity y))
+       (sensitize
+	;; The unsensitize composed with sensitize could be optimized away.
+	(cons unsensitize (sensitize (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'plus
   (binary plus "plus")
   (lambda (v vs) (unimplemented "plus"))
@@ -6045,7 +6153,9 @@
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (plus x1 x2))
 	   (lambda ((sensitivity y))
-	    (cons (sensitivity y) (sensitivity y)))))))
+	    (sensitize (cons plus
+			     (cons (unsensitize (sensitivity y))
+				   (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure '*j
   (unary *j "*j")
   (lambda (v vs) (unimplemented "*j"))
@@ -6056,8 +6166,11 @@
     ;; The *j-inverse composed with *j could be optimized away.
     (let ((x (*j-inverse (reverse x))))
      (cons (*j (*j x))
-	   (lambda ((sensitivity (reverse y)))
-	    (*j-inverse (sensitivity (reverse y))))))))
+	   ;; The argument must be called y-reverse so as not to confuse the
+	   ;; tags.
+	   (lambda ((sensitivity y-reverse))
+	    (sensitize
+	     (cons *j (*j-inverse (unsensitize (sensitivity y-reverse))))))))))
  (define-primitive-procedure '*j-inverse
   (unary *j-inverse "*j-inverse")
   (lambda (v vs) (unimplemented "*j-inverse"))
@@ -6071,8 +6184,10 @@
   '(lambda ((reverse x-reverse))
     (let ((x-reverse (*j-inverse (reverse x-reverse))))
      ;; The *j-inverse composed with *j could be optimized away.
-     (cons (*j (*j-inverse x-reverse))
-	   (lambda ((sensitivity y)) (*j (sensitivity y)))))))
+     (cons
+      (*j (*j-inverse x-reverse))
+      (lambda ((sensitivity y))
+       (sensitize (cons *j-inverse (*j (unsensitize (sensitivity y))))))))))
  (initialize-forwards-and-reverses!))
 
 ;;; Commands
