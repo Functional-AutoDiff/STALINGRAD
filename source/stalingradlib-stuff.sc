@@ -956,6 +956,20 @@
 		     (recursive-closure-index v)))
 	(else (internal-error)))))
 
+(define (letrec-lambda-expression xs es)
+ (new-lambda-expression
+  (lambda-expression-parameter (first es))
+  (new-letrec-expression
+   xs
+   es
+   (new-application (make-variable-access-expression (first xs))
+		    (lambda-expression-parameter (first es))))))
+
+(define (recursive-closure-lambda-expression v)
+ (letrec-lambda-expression
+  (vector->list (recursive-closure-procedure-variables v))
+  (vector->list (recursive-closure-lambda-expressions v))))
+
 (define (vlad-procedure? v) (or (primitive-procedure? v) (closure? v)))
 
 ;;; Pairs
@@ -1271,7 +1285,7 @@
 	  (cons x xs)
 	  (list (make-alpha-binding (variable-access-expression-variable p) x))
 	  (make-variable-access-expression x))))
-       ((lambda-expression? p) (unimplemented))
+       ((lambda-expression? p) (unimplemented "needs work"))
        ((cons-expression? p)
 	(let* ((result1 (alpha-convert-parameter (cons-expression-car p) xs))
 	       (result2 (alpha-convert-parameter (cons-expression-cdr p)
@@ -2290,13 +2304,6 @@
 
 (define (make-*j-inverse e) (new-application (added-variable '*j-inverse) e))
 
-(define (variables->expression tags xs)
- ;; needs work: This needs to change to handle opaque typed sensitivities.
- (map-reduce (lambda (e1 e2) (new-cons-expression tags e1 e2))
-	     (make-constant-expression (tagged-empty-list tags))
-	     make-variable-access-expression
-	     xs))
-
 (define (sensitivityify-parameter p)
  (cond
   ((constant-expression? p)
@@ -2313,7 +2320,7 @@
  (cond ((constant-expression? p)
 	(make-constant-expression (*j (constant-expression-value p))))
        ((variable-access-expression? p) (reverseify-access p))
-       ((lambda-expression? p)  (reverse-transform p '() (free-variables p)))
+       ((lambda-expression? p) (reverse-transform p))
        ((cons-expression? p)
 	(new-cons-expression (add-tag 'reverse (cons-expression-tags p))
 			     (reverseify-parameter (cons-expression-car p))
@@ -2380,36 +2387,31 @@
     (sensitivity-transform-inverse (cons-expression-cdr e))))
   (else (internal-error))))
 
-(define (reverse-transform e gs zs)
+(define (reverse-transform-internal e gs e3)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
  ;;    expression, unless it has been optimized away.
  ;; fs is the procedure variables of the body of e, when it is a letrec
  ;;    expression. Otherwise it is empty.
- ;; ws is the recursive closure free variables of the body of e, when it is a
- ;;    letrec expression. Otherwise it is empty.
+ ;; e4 is the letrec lambda expression of the body of e, when it is a letrec
+ ;;    expression. Otherwise it isn't used.
  ;; gs is the surrounding procedure variables when e is a letrec expression
  ;;    lambda expression or a recursive closure lambda expression. Otherwise
  ;;    it is empty.
- ;; zs is the surrounding recursive closure free variables if e is a letrec
- ;;    expression lambda expression or a recursive closure lambda expression.
- ;;    Otherwise it is the free variables.
+ ;; e3 is the the surrounding lambda expression if e is a letrec expression
+ ;;    lambda expression. It is a synthetic surrounding lambda expression if e
+ ;;    is a recursive closure lambda expression. Otherwise it is e.
  (let* ((tags (lambda-expression-tags e))
 	(p (lambda-expression-parameter e))
 	(e1 (lambda-expression-body e))
 	(fs (if (letrec-expression? e1)
 		(letrec-expression-procedure-variables e1)
 		'()))
-	(ws (if (letrec-expression? e1)
-		(recursive-closure-free-variables
-		 (letrec-expression-procedure-variables e1)
-		 (letrec-expression-lambda-expressions e1))
-		'()))
 	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
     (map reverseify fs)
-    (map (lambda (e) (reverse-transform e fs ws))
+    (map (lambda (e2) (reverse-transform-internal e2 fs e))
 	 (if (letrec-expression? e1)
 	     (letrec-expression-lambda-expressions e1)
 	     '()))
@@ -2436,14 +2438,14 @@
 	;; p = \ x e -~-> p = \ x e
 	((lambda-expression? e)
 	 (make-parameter-binding
-	  (reverseify-parameter p)
-	  (reverse-transform e '() (free-variables e))))
+	  (reverseify-parameter p) (reverse-transform e)))
 	;;                /     /  /
 	;;                _ _   __ __
 	;; p = x1 x2 -~-> p,p = x1 x2
 	((application? e)
 	 (make-parameter-binding
-	  (create-cons-expression (reverseify-parameter p) x)
+	  (create-cons-expression (reverseify-parameter p)
+				  (make-variable-access-expression x))
 	  (new-application (reverseify-access (application-callee e))
 			   (reverseify-access (application-argument e)))))
 	;;                /   /  / /
@@ -2480,9 +2482,9 @@
 			       (map variable-access-expression-variable
 				    (anf-let*-parameters e1))
 			       fs
-			       ;; needs work: why is ws not here?
+			       ;; needs work: why is e4 not here?
 			       gs
-			       zs)))
+			       (map sensitivityify (free-variables e3)))))
 	 ;; These are the bindings for the reverse phase that come from the
 	 ;; primal.
 	 (removeq
@@ -2505,9 +2507,7 @@
 		  ;; needs work: only create bindings for those free variables
 		  ;;             of e, i.e. \ x e that are needed
 		  (make-plus-binding
-		   (variables->expression
-		    tags (map sensitivityify (free-variables e)))
-		   (sensitivityify-parameter p)))
+		   (sensitivity-transform e) (sensitivityify-parameter p)))
 		 ;;                __ _ __    _ _
 		 ;;                \  \ \       \
 		 ;; p = x1 x2 -~-> x1 , x2 += p p
@@ -2519,10 +2519,11 @@
 		  ;;             are needed
 		  (make-plus-binding
 		   (new-cons-expression
-		    (add-tag 'sensitivity (cons-expression-tags e))
+		    (add-tag 'sensitivity tags)
 		    (sensitivityify-access (application-callee e))
 		    (sensitivityify-access (application-argument e)))
-		   (new-application x (sensitivityify-parameter p))))
+		   (new-application (make-variable-access-expression x)
+				    (sensitivityify-parameter p))))
 		 ;;                __ _ __    _
 		 ;;                \  \ \     \
 		 ;; p = x1,x2 -~-> x1 , x2 += p
@@ -2542,30 +2543,34 @@
 	       (reverse (anf-let*-parameters e1))
 	       (reverse (anf-let*-expressions e1))
 	       (reverse xs)))
-	 ;;  __     __     __     __
-	 ;;  \      \      \      \
-	 ;; [w1,...,wn] += f1+...+fn
-	 (list
-	  (make-parameter-binding
-	   (variables->expression tags (map sensitivityify ws))
-	   (map-reduce make-plus
-		       (variables->expression tags (map sensitivityify ws))
-		       sensitivity-access
-		       fs))))
+	 ;; __    __     __
+	 ;; \     \      \
+	 ;; e4 += f1+...+fn
+	 (if (null? fs)
+	     '()
+	     (list (make-plus-binding
+		    (sensitivity-transform
+		     (letrec-lambda-expression
+		      (letrec-expression-procedure-variables e)
+		      (letrec-expression-lambda-expressions e)))
+		    (map-reduce make-plus
+				(sensitivity-access (first fs))
+				sensitivity-access
+				(rest fs))))))
 	;; This conses the sensitivity to the target with the sensitivity to
 	;; the argument.
 	(new-cons-expression
 	 (add-tag 'sensitivity tags)
 	 ;; This is the sensitivity to the target.
-	 ;;  __     __  __     __
-	 ;;  \      \   \      \
-	 ;; [z1,...,zn]+g1+...+gn
-	 (map-reduce make-plus
-		     (variables->expression tags (map sensitivityify zs))
-		     sensitivity-access
-		     gs)
+	 ;; __ __     __
+	 ;; \  \      \
+	 ;; e3+g1+...+gn
+	 (map-reduce
+	  make-plus (sensitivity-transform e3) sensitivity-access gs)
 	 ;; This is the sensitivity to the argument.
 	 (sensitivityify-parameter p))))))))))
+
+(define (reverse-transform e) (reverse-transform-internal e '() e))
 
 (define (result-cons-expression? p1 p2 e1 e2 e)
  ;; p1=(lambda ...)
@@ -2797,9 +2802,7 @@
 	     (new-nonrecursive-closure
 	      (map *j (nonrecursive-closure-values v))
 	      (let ((e (reverse-transform
-			(nonrecursive-closure-lambda-expression v)
-			'()
-			(nonrecursive-closure-variables v))))
+			(nonrecursive-closure-lambda-expression v))))
 	       (anf-convert-lambda-expression
 		(second (alpha-convert-expression e (free-variables e)))))))
 	    ((recursive-closure? v)
@@ -2809,21 +2812,20 @@
 	      (map-vector reverseify (recursive-closure-procedure-variables v))
 	      (let* ((es (map-vector
 			  (lambda (e)
-			   (reverse-transform
+			   (reverse-transform-internal
 			    e
 			    (vector->list
 			     (recursive-closure-procedure-variables v))
-			    (recursive-closure-variables v)))
+			    (recursive-closure-lambda-expression v)))
 			  (recursive-closure-lambda-expressions v)))
 		     (xs (map-reduce union-variables
 				     '()
 				     free-variables
 				     (vector->list es))))
-	       (map-vector
-		(lambda (e)
-		 (anf-convert-lambda-expression
-		  (second (alpha-convert-expression e xs))))
-		es))
+	       (map-vector (lambda (e)
+			    (anf-convert-lambda-expression
+			     (second (alpha-convert-expression e xs))))
+			   es))
 	      (recursive-closure-index v)))
 	    ((perturbation-tagged-value? v) (make-reverse-tagged-value v))
 	    ((bundle? v) (make-reverse-tagged-value v))
@@ -5938,7 +5940,8 @@
 	       ;; (sensitize
 	       ;;  (cdr (unsensitize (y-backpropagator (sensitivity y)))))
 	       ;; should be the sensitivity to the ignored '() argument of x2
-	       (car (unsensitize (y-backpropagator (sensitivity y))))
+	       ((lambda ((cons x y)) x)
+		(unsensitize (y-backpropagator (sensitivity y))))
 	       (zero x3)))))))
 	 (let (((cons (reverse y) y-backpropagator) ((*j x3) (*j '()))))
 	  (cons
@@ -5953,7 +5956,7 @@
 	       ;; (sensitize
 	       ;;  (cdr (unsensitize (y-backpropagator (sensitivity y)))))
 	       ;; should be the sensitivity to the ignored '() argument of x3
-	       (car
+	       ((lambda ((cons x y)) x)
 		(unsensitize (y-backpropagator (sensitivity y))))))))))))))
  (define-primitive-procedure 'read-real
   (unary read-real "read-real")
