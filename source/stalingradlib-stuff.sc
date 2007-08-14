@@ -864,7 +864,12 @@
 ;;; Closures
 
 (define (new-nonrecursive-closure vs e)
- (unless (= (length vs) (length (free-variables e))) (internal-error))
+ (unless (= (length vs) (length (free-variables e)))
+  ;; debugging
+  (when #f
+   (pp (abstract->concrete e)) (newline)
+   (write (free-variables e)) (newline) (write (length vs)) (newline))
+  (internal-error))
  ;; We used to enforce the constraint that the tags of the parameter of e
  ;; (as an indication of the tags of the resulting closure) were a prefix of
  ;; the tags of each v in vs. But this does not hold of the let* bindings
@@ -2420,11 +2425,79 @@
 		(letrec-expression-procedure-variables e1)
 		'()))
 	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
+  ;; debugging
+  (when #t
+   (display "free variables") (newline)
+   (pp (abstract->concrete e))
+   (newline)
+   (pp (abstract->concrete e3))
+   (newline)
+   (display "(free-variables e4): ")
+   (if (null? fs)
+       (write 'bingo)
+       (write (free-variables
+	       (letrec-lambda-expression
+		(letrec-expression-procedure-variables e1)
+		(letrec-expression-lambda-expressions e1)))))
+   (newline)
+   (display "p: ")
+   (write (parameter-variables p))
+   (newline)
+   (display "(anf-let*-parameters e1): ")
+   (write (map-reduce
+	   append '() parameter-variables (anf-let*-parameters e1)))
+   (newline)
+   (display "fs: ")
+   (write fs)
+   (newline)
+   (display "gs: ")
+   (write gs)
+   (newline)
+   (display "(free-variables e3): ")
+   (write (free-variables e3))
+   (newline)
+   (display "union: ")
+   (write (remove-duplicatesp
+	   variable=?
+	   (append
+	    (parameter-variables p)
+	    (map-reduce
+	     append '() parameter-variables (anf-let*-parameters e1))
+	    fs
+	    ;; needs work: why is e4 not here?
+	    gs
+	    (free-variables e3))))
+   (newline)
+   (display "(anf-parameter e1): ")
+   (write (parameter-variables (anf-parameter e1)))
+   (newline)
+   (display "to zero: ")
+   (write (set-differencep
+	   variable=?
+	   (remove-duplicatesp
+	    variable=?
+	    (append
+	     (parameter-variables p)
+	     (map-reduce
+	      append '() parameter-variables (anf-let*-parameters e1))
+	     fs
+	     ;; needs work: why is e4 not here?
+	     gs
+	     (free-variables e3)))
+	   (parameter-variables (anf-parameter e1))))
+   (newline)
+   (newline))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
     (map reverseify fs)
-    (map (lambda (e2) (reverse-transform-internal e2 fs e))
+    (map (lambda (e)
+	  (reverse-transform-internal
+	   e
+	   fs
+	   (letrec-lambda-expression
+	    (letrec-expression-procedure-variables e1)
+	    (letrec-expression-lambda-expressions e1))))
 	 (if (letrec-expression? e1)
 	     (letrec-expression-lambda-expressions e1)
 	     '()))
