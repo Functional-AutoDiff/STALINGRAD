@@ -864,12 +864,7 @@
 ;;; Closures
 
 (define (new-nonrecursive-closure vs e)
- (unless (= (length vs) (length (free-variables e)))
-  ;; debugging
-  (when #f
-   (pp (abstract->concrete e)) (newline)
-   (write (free-variables e)) (newline) (write (length vs)) (newline))
-  (internal-error))
+ (unless (= (length vs) (length (free-variables e))) (internal-error))
  ;; We used to enforce the constraint that the tags of the parameter of e
  ;; (as an indication of the tags of the resulting closure) were a prefix of
  ;; the tags of each v in vs. But this does not hold of the let* bindings
@@ -2325,11 +2320,11 @@
 (define (sensitivityify-parameter p)
  (cond
   ((constant-expression? p)
-   (make-constant-expression (zero (constant-expression-value p))))
+   (make-constant-expression (sensitize (zero (constant-expression-value p)))))
   ((variable-access-expression? p) (sensitivityify-access p))
   ((lambda-expression? p) (sensitivity-transform p))
   ((cons-expression? p)
-   (new-cons-expression (cons-expression-tags p)
+   (new-cons-expression (add-tag 'sensitivity (cons-expression-tags p))
 			(sensitivityify-parameter (cons-expression-car p))
 			(sensitivityify-parameter (cons-expression-cdr p))))
   (else (internal-error))))
@@ -2410,14 +2405,14 @@
  ;;    expression, unless it has been optimized away.
  ;; fs is the procedure variables of the body of e, when it is a letrec
  ;;    expression. Otherwise it is empty.
- ;; e4 is the letrec lambda expression of the body of e, when it is a letrec
- ;;    expression. Otherwise it isn't used.
+ ;; e4 is the synthetic letrec lambda expression of the body of e, when it is
+ ;;    a letrec expression. Otherwise it isn't used.
  ;; gs is the surrounding procedure variables when e is a letrec expression
  ;;    lambda expression or a recursive closure lambda expression. Otherwise
  ;;    it is empty.
- ;; e3 is the the surrounding lambda expression if e is a letrec expression
- ;;    lambda expression. It is a synthetic surrounding lambda expression if e
- ;;    is a recursive closure lambda expression. Otherwise it is e.
+ ;; e3 is the surrounding synthetic letrec lambda expression if e is a letrec
+ ;;    expression lambda expression or a recursize closure lambda expression.
+ ;;    Otherwise it is e.
  (let* ((tags (lambda-expression-tags e))
 	(p (lambda-expression-parameter e))
 	(e1 (lambda-expression-body e))
@@ -2425,68 +2420,6 @@
 		(letrec-expression-procedure-variables e1)
 		'()))
 	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
-  ;; debugging
-  (when #t
-   (display "free variables") (newline)
-   (pp (abstract->concrete e))
-   (newline)
-   (pp (abstract->concrete e3))
-   (newline)
-   (display "(free-variables e4): ")
-   (if (null? fs)
-       (write 'bingo)
-       (write (free-variables
-	       (letrec-lambda-expression
-		(letrec-expression-procedure-variables e1)
-		(letrec-expression-lambda-expressions e1)))))
-   (newline)
-   (display "p: ")
-   (write (parameter-variables p))
-   (newline)
-   (display "(anf-let*-parameters e1): ")
-   (write (map-reduce
-	   append '() parameter-variables (anf-let*-parameters e1)))
-   (newline)
-   (display "fs: ")
-   (write fs)
-   (newline)
-   (display "gs: ")
-   (write gs)
-   (newline)
-   (display "(free-variables e3): ")
-   (write (free-variables e3))
-   (newline)
-   (display "union: ")
-   (write (remove-duplicatesp
-	   variable=?
-	   (append
-	    (parameter-variables p)
-	    (map-reduce
-	     append '() parameter-variables (anf-let*-parameters e1))
-	    fs
-	    ;; needs work: why is e4 not here?
-	    gs
-	    (free-variables e3))))
-   (newline)
-   (display "(anf-parameter e1): ")
-   (write (parameter-variables (anf-parameter e1)))
-   (newline)
-   (display "to zero: ")
-   (write (set-differencep
-	   variable=?
-	   (remove-duplicatesp
-	    variable=?
-	    (append
-	     (parameter-variables p)
-	     (map-reduce
-	      append '() parameter-variables (anf-let*-parameters e1))
-	     fs
-	     ;; needs work: why is e4 not here?
-	     gs
-	     (free-variables e3)))
-	   (parameter-variables (anf-parameter e1))))
-   (newline)
-   (newline))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
