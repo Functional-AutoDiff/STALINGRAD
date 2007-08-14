@@ -1,10 +1,12 @@
 (define (cdr (cons x y)) y)
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
-(define ((derivative-using-j* f) x) (tangent ((j* f) (bundle x 1))))
+(define ((derivative-using-j* f) x)
+ (unperturb (tangent ((j* f) (bundle x (perturb 1))))))
 
-(define ((derivative-using-*j f) x) (cdr ((cdr ((*j f) (*j x))) 1)))
+(define ((derivative-using-*j f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1)))))
 
 (define (dn-using-j* n f)
  (if (zero? n) f (dn-using-j* (- n 1) (derivative-using-j* f))))

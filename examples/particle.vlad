@@ -26,14 +26,19 @@
 
 (define (argmin-using-textbook-newtons-method f x)
  (let ((error-tolerance 1e-1) (f-j*-j* (j* (j* f))))
-  (letrec ((loop (lambda (x i)
-		  (let* ((result
-			  (f-j*-j* (bundle (bundle (write x) 1) (bundle 1 0))))
-			 (df-dx (primal (tangent result))))
-		   (if (< (abs df-dx) error-tolerance)
-		       x
-		       (loop (- x (/ df-dx (tangent (tangent result))))
-			     (+ i 1)))))))
+  (letrec ((loop
+	    (lambda (x i)
+	     (let* ((result
+		     (f-j*-j* (bundle (bundle (write x) (perturb 1))
+				      (perturb (bundle 1 (perturb 0))))))
+		    (df-dx (primal (unperturb (tangent result)))))
+	      (if (< (abs df-dx) error-tolerance)
+		  x
+		  (loop
+		   (- x
+		      (/ df-dx
+			 (unperturb (tangent (unperturb (tangent result))))))
+		   (+ i 1)))))))
    (loop x 0))))
 
 (let ((w0 0.0)) (argmin-using-textbook-newtons-method naive-euler w0))

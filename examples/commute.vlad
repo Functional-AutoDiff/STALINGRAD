@@ -2,21 +2,24 @@
 
 (define (cdr (cons x y)) y)
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
-((j* (j* sqrt)) (bundle (bundle 4 1) (bundle 1 0)))
+((j* (j* sqrt))
+ (bundle (bundle 4 (perturb 1)) (perturb (bundle 1 (perturb 0)))))
 
-(let ((x ((*j (j* sqrt)) (*j (bundle 4 1))))) 
+;;; The next three are not (yet) fully updated.
+
+(let ((x ((*j (j* sqrt)) (*j (bundle 4 (perturb 1)))))) 
  (list (*j-inverse (car x))
-       (cdr ((cdr x) (bundle 1 0)))
-       (cdr ((cdr x) (bundle 0 1)))))
+       (cdr ((cdr x) (bundle 1 (perturb 0))))
+       (cdr ((cdr x) (bundle 0 (perturb 1))))))
 
-(let ((x ((j* (*j sqrt)) (bundle (*j 4) (*j 1)))))
+(let ((x ((j* (*j sqrt)) (bundle (*j 4) (perturb (*j 1))))))
  (list (*j-inverse (car (tangent x)))
        (*j-inverse (car (primal x)))
        (cdr ((cdr (primal x)) 1))
-       ((j* cdr) (((j* cdr) x) (bundle 1 0)))
-       ((j* cdr) (((j* cdr) x) (bundle 0 1)))))
+       ((j* cdr) (((j* cdr) x) (bundle 1 (perturb 0))))
+       ((j* cdr) (((j* cdr) x) (bundle 0 (perturb 1))))))
 
 (let ((x ((*j (*j sqrt)) (*j (*j 4)))))
  (list (*j-inverse (car (*j-inverse (car x))))

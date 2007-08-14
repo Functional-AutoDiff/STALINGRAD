@@ -63,13 +63,15 @@
 
 ;;; Derivatives
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
 (define (derivative-using-j* f)
- (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+ (let ((f-forward (j* f)))
+  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
 
 (define (derivative-using-*j f)
- (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse (*j x))) 1)))))
+ (let ((f-reverse (*j f)))
+  (lambda (x) (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
 
 (define (derivative f) (derivative-using-*j f))
 
@@ -77,7 +79,9 @@
  (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
-    (map-n (lambda (i) (tangent (f-forward (bundle x (e i n))))) n)))))
+    (map-n (lambda (i)
+	    (unperturb (tangent (f-forward (bundle x (perturb (e i n)))))))
+	   n)))))
 
 (define (gradient-using-*j f) (derivative-using-*j f))
 
@@ -108,15 +112,17 @@
 	(line-forward (j* line))
 	(line-prime
 	 (lambda (x g k)
-	  (tangent
-	   (line-forward
-	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	  (unperturb
+	   (tangent
+	    (line-forward
+	     (bundle (cons* x g k) (perturb (cons* (zero x) (zero g) 1))))))))
 	(line-prime-forward (j* line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
-	  (tangent
-	   (line-prime-forward
-	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1)))))))
+	  (unperturb
+	   (tangent
+	    (line-prime-forward
+	     (bundle (cons* x g k) (perturb (cons* (zero x) (zero g) 1)))))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -138,14 +144,17 @@
 	(line-forward (j* line))
 	(line-prime
 	 (lambda (x g k)
-	  (tangent
-	   (line-forward
-	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1))))))
+	  (unperturb
+	   (tangent
+	    (line-forward
+	     (bundle (cons* x g k) (perturb (cons* (zero x) (zero g) 1))))))))
 	(line-prime-reverse (*j line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
 	  (cdr
-	   (cdr (cdr ((cdr (line-prime-reverse (*j (cons* x g k)))) 1)))))))
+	   (cdr
+	    (cdr (unsensitize ((cdr (line-prime-reverse (*j (cons* x g k))))
+			       (sensitize 1)))))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -167,13 +176,15 @@
 	(line-reverse (*j line))
 	(line-prime
 	 (lambda (x g k)
-	  (cdr (cdr (cdr ((cdr (line-reverse (*j (cons* x g k)))) 1))))))
+	  (cdr (cdr (cdr (unsensitize ((cdr (line-reverse (*j (cons* x g k))))
+				       (sensitize 1))))))))
 	(line-prime-forward (j* line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
-	  (tangent
-	   (line-prime-forward
-	    (bundle (cons* x g k) (cons* (zero x) (zero g) 1)))))))
+	  (unperturb
+	   (tangent
+	    (line-prime-forward
+	     (bundle (cons* x g k) (perturb (cons* (zero x) (zero g) 1)))))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))
@@ -195,12 +206,15 @@
 	(line-reverse (*j line))
 	(line-prime
 	 (lambda (x g k)
-	  (cdr (cdr (cdr ((cdr (line-reverse (*j (cons* x g k)))) 1))))))
+	  (cdr (cdr (cdr (unsensitize ((cdr (line-reverse (*j (cons* x g k))))
+				       (sensitize 1))))))))
 	(line-prime-reverse (*j line-prime))
 	(line-prime-prime
 	 (lambda (x g k)
 	  (cdr
-	   (cdr (cdr ((cdr (line-prime-reverse (*j (cons* x g k)))) 1)))))))
+	   (cdr
+	    (cdr (unsensitize ((cdr (line-prime-reverse (*j (cons* x g k))))
+			       (sensitize 1)))))))))
   (letrec ((loop
 	    (lambda (x)
 	     (let ((g (del-f x)))

@@ -2,13 +2,15 @@
 
 (define (cdr (cons x y)) y)
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
 (define (derivative-using-j* f)
- (let ((f-forward (j* f))) (lambda (x) (tangent (f-forward (bundle x 1))))))
+ (let ((f-forward (j* f)))
+  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
 
 (define (derivative-using-*j f)
- (let ((f-reverse (*j f))) (lambda (x) (cdr ((cdr (f-reverse (*j x))) 1)))))
+ (let ((f-reverse (*j f)))
+  (lambda (x) (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
 
 (define (nr-sqrt x)
  (letrec ((loop (lambda (y)
