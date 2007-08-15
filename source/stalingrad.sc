@@ -71,12 +71,6 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
-		 (at-most-one ("expression-equality-using-identity"
-			       expression-equality-using-identity?)
-			      ("expression-equality-using-structural"
-			       expression-equality-using-structural?)
-			      ("expression-equality-using-alpha"
-			       expression-equality-using-alpha?))
 		 (at-most-one ("ebs" ebs?))
 		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
@@ -111,11 +105,6 @@
  (set! *wizard?* wizard?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
- (when expression-equality-using-identity?
-  (set! *expression-equality* 'identity))
- (when expression-equality-using-structural?
-  (set! *expression-equality* 'structural))
- (when expression-equality-using-alpha? (set! *expression-equality* 'alpha))
  (set! *metered?* metered?)
  (set! *trace-primitive-procedures?* trace-primitive-procedures?)
  (set! *trace-nonrecursive-closures?* trace-nonrecursive-closures?)
