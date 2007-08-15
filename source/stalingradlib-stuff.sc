@@ -139,8 +139,6 @@
 
 (define *compile?* #f)
 
-(define *expression-equality* 'alpha)
-
 (define *metered?* #f)
 
 (define *trace-primitive-procedures?* #f)
@@ -497,6 +495,19 @@
        ((variable-access-expression? p)
 	(variable-tags (variable-access-expression-variable p)))
        ((lambda-expression? p) (lambda-expression-tags p))
+       ((letrec-expression? p)
+	(unless (and (variable-access-expression? (letrec-expression-body p))
+		     (memp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	 (internal-error "Unsupported letrec-expression parameter"))
+	;; It is also possible to derive this from the tags of one of the
+	;; procedure variables.
+	(lambda-expression-tags
+	 ;; The procedure-variables and lambda-expressions slots will be
+	 ;; nonempty.
+	 (first (letrec-expression-lambda-expressions p))))
        ((cons-expression? p) (cons-expression-tags p))
        (else (internal-error))))
 
@@ -530,11 +541,23 @@
   (set-differencep
    variable=? (map-reduce union-variables '() free-variables es) xs)))
 
+(define (letrec-expression-variables e)
+ (recursive-closure-free-variables (letrec-expression-procedure-variables e)
+				   (letrec-expression-lambda-expressions e)))
+
 (define (parameter-variables p)
  (cond ((constant-expression? p) '())
        ((variable-access-expression? p)
 	(list (variable-access-expression-variable p)))
        ((lambda-expression? p) (free-variables p))
+       ((letrec-expression? p)
+	(unless (and (variable-access-expression? (letrec-expression-body p))
+		     (memp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	 (internal-error "Unsupported letrec-expression parameter"))
+	(letrec-expression-variables p))
        ((cons-expression? p)
 	(append (parameter-variables (cons-expression-car p))
 		(parameter-variables (cons-expression-cdr p))))
@@ -717,47 +740,10 @@
 
 ;;; Expression Equivalence
 
-(define (expression-eqv? e1 e2)
- (or
-  (and (constant-expression? e1)
-       (constant-expression? e2)
-       (abstract-value=? (constant-expression-value e1)
-			 (constant-expression-value e2)))
-  (and (variable-access-expression? e1)
-       (variable-access-expression? e2)
-       (variable=? (variable-access-expression-variable e1)
-		   (variable-access-expression-variable e2)))
-  (and (lambda-expression? e1)
-       (lambda-expression? e2)
-       (expression-eqv? (lambda-expression-parameter e1)
-			(lambda-expression-parameter e2))
-       (expression-eqv? (lambda-expression-body e1)
-			(lambda-expression-body e2)))
-  (and (application? e1)
-       (application? e2)
-       (expression-eqv? (application-callee e1) (application-callee e2))
-       (expression-eqv? (application-argument e1)(application-argument e2)))
-  (and (letrec-expression? e1)
-       (letrec-expression? e2)
-       (= (length (letrec-expression-procedure-variables e1))
-	  (length (letrec-expression-procedure-variables e2)))
-       (every variable=?
-	      (letrec-expression-procedure-variables e1)
-	      (letrec-expression-procedure-variables e2))
-       (every expression-eqv?
-	      (letrec-expression-lambda-expressions e1)
-	      (letrec-expression-lambda-expressions e2))
-       (expression-eqv? (letrec-expression-body e1)
-			(letrec-expression-body e2)))
-  (and (cons-expression? e1) (cons-expression? e2)
-       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
-       (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
-       (expression-eqv? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
-
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
  ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
- ;; is assumed to be equivalent to the corresponding ex2_i.
+ ;; is assumed to be equivalent to the corresponding xs2_i.
  (or
   (and (constant-expression? e1)
        (constant-expression? e2)
@@ -817,13 +803,9 @@
  ;; environments. (The notion of expression equality depends on the notion of
  ;; value equality.) Expression equality is undecidable. (It is semidecidable
  ;; since a lone environment can witness disequality and environments are
- ;; recursively enumerable. This selects among a hierarchy of more precise
- ;; conservative approximation alternatives. A #t result is precise.
- (case *expression-equality*
-  ((identity) (eq? e1 e2))
-  ((structural) (expression-eqv? e1 e2))
-  ((alpha) (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2)))
-  (else (internal-error))))
+ ;; recursively enumerable. This is a conservative approximation. A #t result
+ ;; is precise.
+ (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2)))
 
 ;;; Values
 
@@ -902,12 +884,15 @@
 	 (vector-length (recursive-closure-procedure-variables v2)))
       (= (vector-length (recursive-closure-lambda-expressions v1))
 	 (vector-length (recursive-closure-lambda-expressions v2)))
-      (every-vector variable=?
-		    (recursive-closure-procedure-variables v1)
-		    (recursive-closure-procedure-variables v2))
-      (every-vector expression=?
-		    (recursive-closure-lambda-expressions v1)
-		    (recursive-closure-lambda-expressions v2))))
+      (let ((xs1 (append
+		  (recursive-closure-variables v1)
+		  (vector->list (recursive-closure-procedure-variables v1))))
+	    (xs2 (append
+		  (recursive-closure-variables v2)
+		  (vector->list (recursive-closure-procedure-variables v2)))))
+       (every-vector (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		     (recursive-closure-lambda-expressions v1)
+		     (recursive-closure-lambda-expressions v2)))))
 
 (define (closure? v) (or (nonrecursive-closure? v) (recursive-closure? v)))
 
@@ -950,20 +935,6 @@
 	 (vector-ref (recursive-closure-lambda-expressions v)
 		     (recursive-closure-index v)))
 	(else (internal-error)))))
-
-(define (letrec-lambda-expression xs es)
- (new-lambda-expression
-  (lambda-expression-parameter (first es))
-  (new-letrec-expression
-   xs
-   es
-   (new-application (make-variable-access-expression (first xs))
-		    (lambda-expression-parameter (first es))))))
-
-(define (recursive-closure-lambda-expression v)
- (letrec-lambda-expression
-  (vector->list (recursive-closure-procedure-variables v))
-  (vector->list (recursive-closure-lambda-expressions v))))
 
 (define (vlad-procedure? v) (or (primitive-procedure? v) (closure? v)))
 
@@ -1283,7 +1254,16 @@
      (cons x xs)
      (list (make-alpha-binding (variable-access-expression-variable p) x)))))
   ((lambda-expression? p)
-   (let loop ((bs '()) (xs xs) (xs0 (free-variables p)))
+   (let loop ((bs '()) (xs xs) (xs0 (parameter-variables p)))
+    (if (null? xs0)
+	(let ((result (alpha-convert-expression p xs bs)))
+	 (list (first result) (second result) bs))
+	(let ((x (alphaify (first xs0) xs)))
+	 (loop (cons (make-alpha-binding (first xs0) x) bs)
+	       (cons x xs)
+	       (rest xs0))))))
+  ((letrec-expression? p)
+   (let loop ((bs '()) (xs xs) (xs0 (parameter-variables p)))
     (if (null? xs0)
 	(let ((result (alpha-convert-expression p xs bs)))
 	 (list (first result) (second result) bs))
@@ -2318,11 +2298,20 @@
 (define (make-*j-inverse e) (new-application (added-variable '*j-inverse) e))
 
 (define (sensitivityify-parameter p)
+ ;; needs work: Could we not just apply sensitivity-transform to p?
  (cond
   ((constant-expression? p)
-   (make-constant-expression (sensitize (zero (constant-expression-value p)))))
+   (make-constant-expression (sensitize (constant-expression-value p))))
   ((variable-access-expression? p) (sensitivityify-access p))
   ((lambda-expression? p) (sensitivity-transform p))
+  ((letrec-expression? p)
+   (unless (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p)))
+    (internal-error "Unsupported letrec-expression parameter"))
+   (sensitivity-transform p))
   ((cons-expression? p)
    (new-cons-expression (add-tag 'sensitivity (cons-expression-tags p))
 			(sensitivityify-parameter (cons-expression-car p))
@@ -2334,6 +2323,23 @@
 	(make-constant-expression (*j (constant-expression-value p))))
        ((variable-access-expression? p) (reverseify-access p))
        ((lambda-expression? p) (reverse-transform p))
+       ((letrec-expression? p)
+	(unless (and (variable-access-expression? (letrec-expression-body p))
+		     (memp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	 (internal-error "Unsupported letrec-expression parameter"))
+	(new-letrec-expression
+	 (map reverseify (letrec-expression-procedure-variables p))
+	 (map-indexed (lambda (e i)
+		       (reverse-transform-internal
+			e
+			(letrec-expression-procedure-variables p)
+			(letrec-expression-lambda-expressions p)
+			i))
+		      (letrec-expression-lambda-expressions p))
+	 (reverseify-access (letrec-expression-body p))))
        ((cons-expression? p)
 	(new-cons-expression (add-tag 'reverse (cons-expression-tags p))
 			     (reverseify-parameter (cons-expression-car p))
@@ -2346,6 +2352,18 @@
 	 (*j-inverse (constant-expression-value p))))
        ((variable-access-expression? p) (unreverseify-access p))
        ((lambda-expression? p) (reverse-transform-inverse p))
+       ((letrec-expression? p)
+	(unless (and (variable-access-expression? (letrec-expression-body p))
+		     (memp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	 (internal-error "Unsupported letrec-expression parameter"))
+	(new-letrec-expression
+	 (map unreverseify (letrec-expression-procedure-variables p))
+	 (map-indexed reverse-transform-inverse
+		      (letrec-expression-lambda-expressions p))
+	 (unreverseify-access (letrec-expression-body p))))
        ((cons-expression? p)
 	(new-cons-expression (remove-tag 'reverse (cons-expression-tags p))
 			     (unreverseify-parameter (cons-expression-car p))
@@ -2400,40 +2418,37 @@
     (sensitivity-transform-inverse (cons-expression-cdr e))))
   (else (internal-error))))
 
-(define (reverse-transform-internal e gs e3)
+(define (reverse-transform-internal e xs0 es0 i)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
  ;;    expression, unless it has been optimized away.
- ;; fs is the procedure variables of the body of e, when it is a letrec
- ;;    expression. Otherwise it is empty.
- ;; e4 is the synthetic letrec lambda expression of the body of e, when it is
- ;;    a letrec expression. Otherwise it isn't used.
- ;; gs is the surrounding procedure variables when e is a letrec expression
- ;;    lambda expression or a recursive closure lambda expression. Otherwise
- ;;    it is empty.
- ;; e3 is the surrounding synthetic letrec lambda expression if e is a letrec
- ;;    expression lambda expression or a recursize closure lambda expression.
- ;;    Otherwise it is e.
+ ;; xs1 is the procedure variables of the body of e, when it is a letrec
+ ;;     expression. Otherwise it is empty.
+ ;; es1 is the lambda expressions of the body of e, when it is a letrec
+ ;;     expression. Otherwise it is empty.
+ ;; xs0 is the procedure variables of the surrounding letrec or recursive
+ ;;     closure when e is a letrec expression lambda expression or a recursive
+ ;;     closure lambda expression. Otherwise it is empty.
+ ;; es0 is the lambda expressions of the surrounding letrec or recursive
+ ;;     closure when e is a letrec expression lambda expression or a recursive
+ ;;     closure lambda expression. Otherwise it is empty.
  (let* ((tags (lambda-expression-tags e))
 	(p (lambda-expression-parameter e))
 	(e1 (lambda-expression-body e))
-	(fs (if (letrec-expression? e1)
-		(letrec-expression-procedure-variables e1)
-		'()))
+	(xs1 (if (letrec-expression? e1)
+		 (letrec-expression-procedure-variables e1)
+		 '()))
+	(es1 (if (letrec-expression? e1)
+		 (letrec-expression-lambda-expressions e1)
+		 '()))
 	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
-    (map reverseify fs)
-    (map (lambda (e)
-	  (reverse-transform-internal
-	   e
-	   fs
-	   (letrec-lambda-expression
-	    (letrec-expression-procedure-variables e1)
-	    (letrec-expression-lambda-expressions e1))))
-	 (if (letrec-expression? e1)
-	     (letrec-expression-lambda-expressions e1)
-	     '()))
+    (map reverseify xs1)
+    (if (letrec-expression? e1)
+	(map-indexed (lambda (e i) (reverse-transform-internal e xs1 es1 i))
+		     es1)
+	'())
     (create-let*
      ;; These are the bindings for the forward phase that come from the primal.
      (map
@@ -2503,10 +2518,14 @@
 		 (parameter-variables p)
 		 (map-reduce
 		  append '() parameter-variables (anf-let*-parameters e1))
-		 fs
-		 ;; needs work: why is e4 not here?
-		 gs
-		 (free-variables e3)))
+		 xs1
+		 ;; needs work: why is
+		 ;;             (recursive-closure-free-variables xs1 es1) not
+		 ;;             here?
+		 xs0
+		 (if (= i -1)
+		     (free-variables e)
+		     (recursive-closure-free-variables xs0 es0))))
 	       (parameter-variables (anf-parameter e1))))
 	 ;; These are the bindings for the reverse phase that come from the
 	 ;; primal.
@@ -2566,34 +2585,46 @@
 	       (reverse (anf-let*-parameters e1))
 	       (reverse (anf-let*-expressions e1))
 	       (reverse xs)))
-	 ;; __    __     __
-	 ;; \     \      \
-	 ;; e4 += f1+...+fn
-	 (if (null? fs)
-	     '()
-	     (list (make-plus-binding
-		    (sensitivity-transform
-		     (letrec-lambda-expression
-		      (letrec-expression-procedure-variables e1)
-		      (letrec-expression-lambda-expressions e1)))
-		    (map-reduce make-plus
-				(sensitivity-access (first fs))
-				sensitivity-access
-				(rest fs))))))
+	 (map (lambda (x1)
+	       ;; ______________________    __
+	       ;; \                         \
+	       ;; letrec xs1 = es1 in x1 += x1
+	       (make-plus-binding
+		(sensitivity-transform
+		 (new-letrec-expression
+		  xs1 es1 (make-variable-access-expression x1)))
+		(sensitivity-access x1)))
+	      xs1)
+	 (map (lambda (x0)
+	       ;; ______________________    __
+	       ;; \                         \
+	       ;; letrec xs0 = es0 in x0 += x0
+	       (make-plus-binding
+		(sensitivity-transform
+		 (new-letrec-expression
+		  xs0 es0 (make-variable-access-expression x0)))
+		(sensitivity-access x0)))
+	      xs0))
 	;; This conses the sensitivity to the target with the sensitivity to
 	;; the argument.
 	(new-cons-expression
 	 (add-tag 'sensitivity tags)
 	 ;; This is the sensitivity to the target.
-	 ;; __ __     __
-	 ;; \  \      \
-	 ;; e3+g1+...+gn
-	 (map-reduce
-	  make-plus (sensitivity-transform e3) sensitivity-access gs)
+	 (sensitivity-transform
+	  (if (= i -1)
+	      ;; _
+	      ;; \
+	      ;; e
+	      e
+	      ;; ----------------------
+	      ;; \
+	      ;; letrec xs0 = es0 in x0
+	      (new-letrec-expression
+	       xs0 es0 (make-variable-access-expression (list-ref xs0 i)))))
 	 ;; This is the sensitivity to the argument.
 	 (sensitivityify-parameter p))))))))))
 
-(define (reverse-transform e) (reverse-transform-internal e '() e))
+(define (reverse-transform e) (reverse-transform-internal e '() '() -1))
 
 (define (result-cons-expression? p1 p2 e1 e2 e)
  ;; p1=(lambda ...)
@@ -2840,7 +2871,8 @@
 		  (reverse-transform-internal
 		   e
 		   (vector->list (recursive-closure-procedure-variables v))
-		   (recursive-closure-lambda-expression v)))))
+		   (vector->list (recursive-closure-lambda-expressions v))
+		   (recursive-closure-index v)))))
 	       (recursive-closure-lambda-expressions v))
 	      (recursive-closure-index v)))
 	    ((perturbation-tagged-value? v) (make-reverse-tagged-value v))
@@ -3203,9 +3235,7 @@
 
 (define (letrec-restrict-environment vs e)
  (map (lambda (x) (list-ref vs (positionp variable=? x (free-variables e))))
-      (recursive-closure-free-variables
-       (letrec-expression-procedure-variables e)
-       (letrec-expression-lambda-expressions e))))
+      (letrec-expression-variables e)))
 
 (define (letrec-nested-environment vs e)
  (map (lambda (x)
@@ -3234,7 +3264,42 @@
 	  (format #f "Argument is not a matching nonrecursive closure for ~s"
 		  (abstract->concrete p))
 	  v))
-	(map cons (free-variables p) (nonrecursive-closure-values v)))
+	(map cons (parameter-variables p) (nonrecursive-closure-values v)))
+       ((letrec-expression? p)
+	(unless (and (variable-access-expression? (letrec-expression-body p))
+		     (memp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	 (internal-error "Unsupported letrec-expression parameter"))
+	(unless (and (recursive-closure? v)
+		     (= (recursive-closure-index v)
+			(positionp variable=?
+				   (variable-access-expression-variable
+				    (letrec-expression-body p))
+				   (letrec-expression-procedure-variables p)))
+		     (= (vector-length
+			 (recursive-closure-procedure-variables v))
+			(length (letrec-expression-procedure-variables p)))
+		     (= (vector-length
+			 (recursive-closure-lambda-expressions v))
+			(length (letrec-expression-lambda-expressions p)))
+		     (let ((xs1 (append
+				 (recursive-closure-variables v)
+				 (vector->list
+				  (recursive-closure-procedure-variables v))))
+			   (xs2 (append
+				 (letrec-expression-variables p)
+				 (letrec-expression-procedure-variables p))))
+		      (every
+		       (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		       (vector->list (recursive-closure-lambda-expressions v))
+		       (letrec-expression-lambda-expressions p))))
+	 (run-time-error
+	  (format #f "Argument is not a matching recursive closure for ~s"
+		  (abstract->concrete p))
+	  v))
+	(map cons (parameter-variables p) (recursive-closure-values v)))
        ((cons-expression? p)
 	(unless (and (tagged-pair? v)
 		     (prefix-tags? (cons-expression-tags p)
