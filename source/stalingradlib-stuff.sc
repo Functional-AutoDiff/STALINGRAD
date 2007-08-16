@@ -2448,8 +2448,7 @@
  ;; es0 is the lambda expressions of the surrounding letrec or recursive
  ;;     closure when e is a letrec expression lambda expression or a recursive
  ;;     closure lambda expression. Otherwise it is empty.
- (let* ((tags (lambda-expression-tags e))
-	(p (lambda-expression-parameter e))
+ (let* ((p (lambda-expression-parameter e))
 	(e1 (lambda-expression-body e))
 	(xs1 (if (letrec-expression? e1)
 		 (letrec-expression-procedure-variables e1)
@@ -2578,7 +2577,7 @@
 		  ;;             are needed
 		  (make-plus-binding
 		   (new-cons-expression
-		    (add-tag 'sensitivity tags)
+		    (add-tag 'sensitivity (empty-tags))
 		    (sensitivityify-access (application-callee e))
 		    (sensitivityify-access (application-argument e)))
 		   (new-application (make-variable-access-expression x)
@@ -2625,7 +2624,7 @@
 	;; This conses the sensitivity to the target with the sensitivity to
 	;; the argument.
 	(new-cons-expression
-	 (add-tag 'sensitivity tags)
+	 (add-tag 'sensitivity (empty-tags))
 	 ;; This is the sensitivity to the target.
 	 (sensitivity-transform
 	  (if (= i -1)
@@ -2988,8 +2987,18 @@
 	      (cons `(,(abstract->concrete(first ps))
 		      ,(abstract->concrete (first es)))
 		    bs)))))
-  ;; needs work: This doesn't work for transformed values.
-  ((constant-expression? e) `',(externalize (constant-expression-value e)))
+  ;; needs work: There are several problems with this rendering of constant
+  ;;             expressions.
+  ;;              1. primitive procedures, nonrecursive closures, recursive
+  ;;                 closures, perturbation tagged values, bundles, sensitivity
+  ;;                 tagged values, reverse tagged values, abstract booleans,
+  ;;                 and abstract real cannot be read back in.
+  ;;              2. This doesn't properly interface with unabbreviate-*
+  ((constant-expression? e)
+   (if (or (boolean? (constant-expression-value e))
+	   (real? (constant-expression-value e)))
+       (externalize (constant-expression-value e))
+       `',(externalize (constant-expression-value e))))
   ((variable-access-expression? e) (variable-access-expression-variable e))
   ((lambda-expression? e)
    `(lambda (,(abstract->concrete (lambda-expression-parameter e)))
@@ -3006,13 +3015,16 @@
    (if (empty-tags? (cons-expression-tags e))
        `(cons ,(abstract->concrete (cons-expression-car e))
 	      ,(abstract->concrete (cons-expression-cdr e)))
+       ;; needs work: This cannot be read back in.
        `(cons ,(cons-expression-tags e)
 	      ,(abstract->concrete (cons-expression-car e))
 	      ,(abstract->concrete (cons-expression-cdr e)))))
   (else (internal-error))))
 
 (define (quotable? v)
- (cond ((and (not *unabbreviate-transformed?*) (forward-value? v)) #f)
+ (cond ((and (not *unabbreviate-transformed?*) (perturbation-value? v)) #f)
+       ((and (not *unabbreviate-transformed?*) (forward-value? v)) #f)
+       ((and (not *unabbreviate-transformed?*) (sensitivity-value? v)) #f)
        ((and (not *unabbreviate-transformed?*) (reverse-value? v)) #f)
        ((vlad-empty-list? v) #t)
        ((vlad-true? v) #t)
@@ -3322,8 +3334,8 @@
 	(map cons (parameter-variables p) (recursive-closure-values v)))
        ((cons-expression? p)
 	(unless (and (tagged-pair? v)
-		     (prefix-tags? (cons-expression-tags p)
-				   (tagged-pair-tags v)))
+		     (equal-tags? (cons-expression-tags p)
+				  (tagged-pair-tags v)))
 	 (run-time-error
 	  (format #f "Argument is not a matching tagged pair with tags ~s"
 		  (cons-expression-tags p))
@@ -6175,12 +6187,15 @@
 	     (perturb (primal (unperturb (perturbation x-forward)))))))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((reverse x-forward))
-    (let ((x-forward (*j-inverse (reverse x-forward)))
-	  (j* (lambda (x) (bundle x (perturb (zero x))))))
+    (let ((x-forward (*j-inverse (reverse x-forward))))
      (cons (*j (primal x-forward))
 	   (lambda ((sensitivity y))
-	    ;; needs work: I'm not sure that j* is the inverse of primal.
-	    (sensitize (cons primal (j* (unsensitize (sensitivity y))))))))))
+	    (sensitize
+	     (cons primal
+		   ;; needs work: I'm not sure that this is the inverse of
+		   ;;             primal.
+		   (bundle (unsensitize (sensitivity y))
+			   (zero (tangent x-forward))))))))))
  (define-primitive-procedure 'tangent
   (unary tangent "tangent")
   (lambda (v vs) (generate-builtin-name "tangent" v vs))
