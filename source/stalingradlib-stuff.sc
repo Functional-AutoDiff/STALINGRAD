@@ -566,6 +566,7 @@
 ;;; Expression constructors
 
 (define (new-lambda-expression p e)
+ (when (duplicatesp? variable=? (parameter-variables p)) (internal-error))
  (make-lambda-expression
   (sort-variables
    (set-differencep variable=? (free-variables e) (parameter-variables p)))
@@ -1386,7 +1387,7 @@
    (max (anf-max (cons-expression-car e)) (anf-max (cons-expression-cdr e))))
   (else (internal-error))))
 
-(define (anf-convert e)
+(define (anf-convert e p?)
  ;; The soundness of our method for ANF conversion relies on two things:
  ;;  1. E must be alpha converted.
  ;;     This allows letrecs to be merged.
@@ -1404,7 +1405,23 @@
 		;; result
 		(list i p (cons (make-parameter-binding p e) bs1) bs2)))
 	      ;; result
-	      ((variable-access-expression? e) (list i e bs1 bs2))
+	      ((variable-access-expression? e)
+	       (if p?
+		   ;; This is used during reverse-transform because it
+		   ;; guarantees that there is a one-to-one correspondence
+		   ;; between primal and forward phase bindings so that the
+		   ;; reverse transform is invertible.
+		   (list i e bs1 bs2)
+		   ;; This is used during parsing to guarantee that there is
+		   ;;                                            ---    -
+		   ;;                                            \      \
+		   ;; no binding like x = y,y which would become y,y += x
+		   ;; during reverse phase which incorrecty accumulates.
+		   ;; result
+		   (let* ((i (+ i 1))
+			  (p (make-variable-access-expression `(anf ,i))))
+		    ;; result
+		    (list i p (cons (make-parameter-binding p e) bs1) bs2))))
 	      ((lambda-expression? e)
 	       (let* ((result (outer i (lambda-expression-body e) '() '()))
 		      (i (+ (first result) 1))
@@ -1579,9 +1596,9 @@
 	      (else (internal-error))))))
    (outer (anf-max e) e '() '()))))
 
-(define (anf-convert-lambda-expression e)
+(define (anf-convert-lambda-expression e p?)
  (new-lambda-expression (lambda-expression-parameter e)
-			(anf-convert (lambda-expression-body e))))
+			(anf-convert (lambda-expression-body e) p?)))
 
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
@@ -1837,7 +1854,7 @@
   (else (internal-error))))
 
 (define (parse e)
- (let ((e (anf-convert (alpha-convert (concrete->abstract e)))))
+ (let ((e (anf-convert (alpha-convert (concrete->abstract e)) #f)))
   (list e
 	(map (lambda (x)
 	      (find-if (lambda (b) (variable=? x (value-binding-variable b)))
@@ -2643,6 +2660,7 @@
 
 (define (reverse-transform-inverse-internal e)
  (unless (and (let*? e)
+	      (>= (length (let*-parameters e)) 2)
 	      (result-cons-expression? (last (but-last (let*-parameters e)))
 				       (last (let*-parameters e))
 				       (last (but-last (let*-expressions e)))
@@ -2858,7 +2876,8 @@
 	      (anf-convert-lambda-expression
 	       (alpha-convert
 		(reverse-transform
-		 (nonrecursive-closure-lambda-expression v))))))
+		 (nonrecursive-closure-lambda-expression v)))
+	       #t)))
 	    ((recursive-closure? v)
 	     ;; See the note in abstract-environment=?.
 	     (new-recursive-closure
@@ -2872,7 +2891,8 @@
 		   e
 		   (vector->list (recursive-closure-procedure-variables v))
 		   (vector->list (recursive-closure-lambda-expressions v))
-		   (recursive-closure-index v)))))
+		   (recursive-closure-index v)))
+		 #t))
 	       (recursive-closure-lambda-expressions v))
 	      (recursive-closure-index v)))
 	    ((perturbation-tagged-value? v) (make-reverse-tagged-value v))
@@ -5563,7 +5583,7 @@
  (new-nonrecursive-closure
   '()
   (anf-convert-lambda-expression
-   (alpha-convert (constant-unconvert (concrete->abstract e))))))
+   (alpha-convert (constant-unconvert (concrete->abstract e))) #f)))
 
 (define (initialize-forwards-and-reverses!)
  (for-each (lambda (b)
