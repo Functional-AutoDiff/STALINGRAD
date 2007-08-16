@@ -2067,7 +2067,7 @@
   ((tagged-pair? v-perturbation)
    (unless (tagged? 'perturbation (tagged-pair-tags v-perturbation))
     (run-time-error
-     "Attempt to take primal of a non-perturbation value" v-perturbation))
+     "Attempt to take unperturb of a non-perturbation value" v-perturbation))
    (new-tagged-pair
     (remove-tag 'perturbation (tagged-pair-tags v-perturbation))
     (unperturb (tagged-pair-car v-perturbation))
@@ -2801,7 +2801,7 @@
   ((tagged-pair? v-sensitivity)
    (unless (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
     (run-time-error
-     "Attempt to take primal of a non-sensitivity value" v-sensitivity))
+     "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
    (new-tagged-pair
     (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
     (unsensitize (tagged-pair-car v-sensitivity))
@@ -2959,7 +2959,7 @@
 	    ((tagged-pair? v-reverse)
 	     (unless (tagged? 'reverse (tagged-pair-tags v-reverse))
 	      (run-time-error
-	       "Attempt to take primal of a non-reverse value" v-reverse))
+	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
 	     (new-tagged-pair
 	      (remove-tag 'reverse (tagged-pair-tags v-reverse))
 	      (*j-inverse (tagged-pair-car v-reverse))
@@ -5615,10 +5615,9 @@
   (lambda (v vs) (generate-builtin-name "add" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
-     (bundle (+ x1 x2)
-	     (perturb (+ (unperturb (perturbation x1))
-			 (unperturb (perturbation x2)))))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
+     (bundle (+ x1 x2) (perturb (+ x1-unperturbed x2-unperturbed)))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (+ x1 x2))
@@ -5631,10 +5630,9 @@
   (lambda (v vs) (generate-builtin-name "minus" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
-     (bundle (- x1 x2)
-	     (perturb (- (unperturb (perturbation x1))
-			 (unperturb (perturbation x2)))))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
+     (bundle (- x1 x2) (perturb (- x1-unperturbed x2-unperturbed)))))
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
 	(let (((cons x1 x2) (*j-inverse (reverse x))))
@@ -5658,10 +5656,10 @@
   (lambda (v vs) (generate-builtin-name "times" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
      (bundle (* x1 x2)
-	     (perturb (+ (* x2 (unperturb (perturbation x1)))
-			 (* x1 (unperturb (perturbation x2))))))))
+	     (perturb (+ (* x2 x1-unperturbed) (* x1 x2-unperturbed))))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (* x1 x2))
@@ -5675,10 +5673,10 @@
   (lambda (v vs) (generate-builtin-name "divide" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
      (bundle (/ x1 x2)
-	     (perturb (/ (- (* x2 (unperturb (perturbation x1)))
-			    (* x1 (unperturb (perturbation x2))))
+	     (perturb (/ (- (* x2 x1-unperturbed) (* x1 x2-unperturbed))
 			 (* x2 x2))))))
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
@@ -5789,10 +5787,10 @@
   (lambda (v vs) (generate-builtin-name "atantwo" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
      (bundle (atan x2 x1)
-	     (perturb (/ (- (* x1 (unperturb (perturbation x2)))
-			    (* x2 (unperturb (perturbation x1))))
+	     (perturb (/ (- (* x1 x2-unperturbed) (* x2 x1-unperturbed))
 			 (+ (* x1 x1) (* x2 x2)))))))
   (if *imprecise-inexacts?*
       '(lambda ((reverse x))
@@ -6051,14 +6049,12 @@
   (lambda (v vs) (generate-builtin-name "if_procedure" v vs))
   '(lambda ((forward x))
     (let (((cons* x1 x2 x3) (primal (forward x)))
-	  ((cons* (perturbation x1) (perturbation x2) (perturbation x3))
-	   (tangent (forward x)))
+	  ((cons* x1-unperturbed x2-unperturbed x3-unperturbed)
+	   (unperturb (tangent (forward x))))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
      (if x1
-	 ;; The unperturb composed with perturb could be optimized away.
-	 ((bundle x2 (perturb (unperturb (perturbation x2)))) (j* '()))
-	 ;; The unperturb composed with perturb could be optimized away.
-	 ((bundle x3 (perturb (unperturb (perturbation x3)))) (j* '())))))
+	 ((bundle x2 (perturb x2-unperturbed)) (j* '()))
+	 ((bundle x3 (perturb x3-unperturbed)) (j* '())))))
   '(lambda ((reverse x))
     (let (((cons* x1 x2 x3) (*j-inverse (reverse x))))
      (if x1
@@ -6223,16 +6219,15 @@
   (lambda (v vs) (generate-builtin-name "bundle" v vs))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation (perturbation x2)))
-	   (tangent (forward x))))
+	  ((cons x1-unperturbed (perturbation x2-unperturbed))
+	   (unperturb (tangent (forward x)))))
      (bundle
       ;; The unperturb composed with perturb could be optimized away.
       (bundle x1 (perturb (unperturb (perturbation x2))))
       (perturb
-       (bundle
-	(unperturb (perturbation x1))
-	;; The unperturb composed with perturb could be optimized away.
-	(perturb (unperturb (unperturb (perturbation (perturbation x2))))))))))
+       (bundle x1-unperturbed
+	       ;; The unperturb composed with perturb could be optimized away.
+	       (perturb (unperturb (perturbation x2-unperturbed))))))))
   '(lambda ((reverse x))
     (let (((cons x1 (perturbation x2)) (*j-inverse (reverse x))))
      (cons
@@ -6284,11 +6279,9 @@
   (lambda (v vs) (unimplemented "plus"))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
-	  ((cons (perturbation x1) (perturbation x2)) (tangent (forward x))))
-     ;; The unperturb-perturb could be optimized away.
-     (bundle (plus x1 x2)
-	     (perturb (plus (unperturb (perturbation x1))
-			    (unperturb (perturbation x2)))))))
+	  ((cons x1-unperturbed x2-unperturbed)
+	   (unperturb (tangent (forward x)))))
+     (bundle (plus x1 x2) (perturb (plus x1-unperturbed x2-unperturbed)))))
   '(lambda ((reverse x))
     (let (((cons x1 x2) (*j-inverse (reverse x))))
      (cons (*j (plus x1 x2))
