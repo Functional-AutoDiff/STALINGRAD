@@ -1349,6 +1349,13 @@
 
 ;;; ANF conversion
 
+;;; The soundness of our method for ANF conversion relies on two things:
+;;;  1. E must be alpha converted.
+;;;     This allows letrecs to be merged.
+;;;     It also allows let*s in expressions of let*s to be merged.
+;;;  2. No letrec nested in a let* expression or body can reference a variable
+;;;     bound by that let*.
+
 (define (anf-result result)
  ;; needs work: Should have structure instead of list.
  (when (and (not (null? (fourth result)))
@@ -1387,218 +1394,280 @@
    (max (anf-max (cons-expression-car e)) (anf-max (cons-expression-cdr e))))
   (else (internal-error))))
 
+(define (anf-convert-parameter i p p?)
+ (cond
+  ;; result
+  ((constant-expression? p) (list i p))
+  ;; result
+  ((variable-access-expression? p) (list i p))
+  ((lambda-expression? p)
+   (let* ((result1
+	   (anf-convert-parameter i (lambda-expression-parameter p) p?))
+	  (result2 (anf-convert-expression
+		    (first result1) (lambda-expression-body p) '() '() p?)))
+    ;; result
+    (list (first result2)
+	  (new-lambda-expression (second result1) (anf-result result2)))))
+  ((letrec-expression? p)
+   (unless (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p)))
+    (internal-error "Unsupported letrec-expression parameter"))
+   (let loop ((i i) (es (letrec-expression-lambda-expressions p)) (es1 '()))
+    (if (null? es)
+	;; result
+	(list i
+	      (new-letrec-expression
+	       (letrec-expression-procedure-variables p)
+	       (reverse es1)
+	       (letrec-expression-body p)))
+	(let* ((result1 (anf-convert-parameter
+			 i (lambda-expression-parameter (first es)) p?))
+	       (result2 (anf-convert-expression
+			 (first result1)
+			 (lambda-expression-body (first es))
+			 '()
+			 '()
+			 p?)))
+	 (loop
+	  (first result2)
+	  (rest es)
+	  (cons (new-lambda-expression (second result1) (anf-result result2))
+		es1))))))
+  ((cons-expression? p)
+   (let* ((result1 (anf-convert-parameter i (cons-expression-car p) p?))
+	  (result2 (anf-convert-parameter
+		    (first result1) (cons-expression-cdr p) p?)))
+    ;; result
+    (list (first result2)
+	  (new-cons-expression
+	   (cons-expression-tags p) (second result1) (second result2)))))
+  (else (internal-error))))
+
+(define (anf-convert-expression i e bs1 bs2 p?)
+ (cond
+  ((constant-expression? e)
+   (let* ((i (+ i 1)) (p (make-variable-access-expression `(anf ,i))))
+    ;; result
+    (list i p (cons (make-parameter-binding p e) bs1) bs2)))
+  ;; result
+  ((variable-access-expression? e)
+   (if p?
+       ;; This is used during reverse-transform because it
+       ;; guarantees that there is a one-to-one correspondence
+       ;; between primal and forward phase bindings so that the
+       ;; reverse transform is invertible.
+       (list i e bs1 bs2)
+       ;; This is used during parsing to guarantee that there is
+       ;;                                            ---    -
+       ;;                                            \      \
+       ;; no binding like x = y,y which would become y,y += x
+       ;; during reverse phase which incorrecty accumulates.
+       ;; result
+       (let* ((i (+ i 1)) (p (make-variable-access-expression `(anf ,i))))
+	;; result
+	(list i p (cons (make-parameter-binding p e) bs1) bs2))))
+  ((lambda-expression? e)
+   (let* ((result1
+	   (anf-convert-parameter i (lambda-expression-parameter e) p?))
+	  (result2 (anf-convert-expression
+		    (first result1) (lambda-expression-body e) '() '() p?))
+	  (i (+ (first result2) 1))
+	  (p (make-variable-access-expression `(anf ,i))))
+    ;; result
+    (list i
+	  p
+	  (cons (make-parameter-binding
+		 p
+		 (new-lambda-expression (second result1) (anf-result result2)))
+		bs1)
+	  bs2)))
+  ((let*? e)
+   (let* ((result1 (anf-convert-parameter
+		    i (lambda-expression-parameter (application-callee e)) p?))
+	  (result2 (anf-convert-reuse (second result1)
+				      (first result1)
+				      (application-argument e)
+				      bs1
+				      bs2
+				      p?)))
+    (anf-convert-expression (first result2)
+			    (lambda-expression-body (application-callee e))
+			    (third result2)
+			    (fourth result2)
+			    p?)))
+  ((application? e)
+   (let* ((result1
+	   (anf-convert-expression i (application-callee e) bs1 bs2 p?))
+	  (result2 (anf-convert-expression (first result1)
+					   (application-argument e)
+					   (third result1)
+					   (fourth result1)
+					   p?))
+	  (i (+ (first result2) 1))
+	  (p (make-variable-access-expression `(anf ,i))))
+    ;; result
+    (list
+     i
+     p
+     (cons (make-parameter-binding
+	    p (new-application (second result1) (second result2)))
+	   (third result2))
+     (fourth result2))))
+  ((letrec-expression? e)
+   (let loop ((i i)
+	      (xs (letrec-expression-procedure-variables e))
+	      (es (letrec-expression-lambda-expressions e))
+	      (bs2 bs2))
+    (if (null? xs)
+	(anf-convert-expression i (letrec-expression-body e) bs1 bs2 p?)
+	(let* ((result1 (anf-convert-parameter
+			 i (lambda-expression-parameter (first es)) p?))
+	       (result2
+		(anf-convert-expression (first result1)
+					(lambda-expression-body (first es))
+					'()
+					'()
+					p?)))
+	 (loop
+	  (first result2)
+	  (rest xs)
+	  (rest es)
+	  (cons
+	   (make-variable-binding
+	    (first xs)
+	    (new-lambda-expression (second result1) (anf-result result2)))
+	   bs2))))))
+  ((cons-expression? e)
+   (let* ((result1
+	   (anf-convert-expression i (cons-expression-car e) bs1 bs2 p?))
+	  (result2 (anf-convert-expression (first result1)
+					   (cons-expression-cdr e)
+					   (third result1)
+					   (fourth result1)
+					   p?))
+	  (i (+ (first result2) 1))
+	  (p (make-variable-access-expression `(anf ,i))))
+    ;; result
+    (list i
+	  p
+	  (cons (make-parameter-binding
+		 p
+		 (new-cons-expression
+		  (cons-expression-tags e) (second result1) (second result2)))
+		(third result2))
+	  (fourth result2))))
+  (else (internal-error))))
+
+(define (anf-convert-reuse p i e bs1 bs2 p?)
+ (cond
+  ((constant-expression? e)
+   ;; result
+   (list i p (cons (make-parameter-binding p e) bs1) bs2))
+  ((variable-access-expression? e)
+   ;; There is copying here, since both names might be used.
+   ;; result
+   (list i p (cons (make-parameter-binding p e) bs1) bs2))
+  ((lambda-expression? e)
+   (let* ((result1
+	   (anf-convert-parameter i (lambda-expression-parameter e) p?))
+	  (result2 (anf-convert-expression
+		    (first result1) (lambda-expression-body e) '() '() p?)))
+    ;; result
+    (list (first result2)
+	  p
+	  (cons (make-parameter-binding
+		 p
+		 (new-lambda-expression (second result1) (anf-result result2)))
+		bs1)
+	  bs2)))
+  ((let*? e)
+   (let* ((result1 (anf-convert-parameter
+		    i (lambda-expression-parameter (application-callee e)) p?))
+	  (result2 (anf-convert-reuse (second result1)
+				      (first result1)
+				      (application-argument e)
+				      bs1
+				      bs2
+				      p?)))
+    (anf-convert-expression
+     (first result2)
+     (lambda-expression-body (application-callee e))
+     ;; There is copying here, since both names might be used.
+     (cons (make-parameter-binding p (second result1))
+	   (cons (make-parameter-binding (second result1) (second result2))
+		 (third result2)))
+     (fourth result2)
+     p?)))
+  ((application? e)
+   (let* ((result1
+	   (anf-convert-expression i (application-callee e) bs1 bs2 p?))
+	  (result2 (anf-convert-expression (first result1)
+					   (application-argument e)
+					   (third result1)
+					   (fourth result1)
+					   p?)))
+    ;; result
+    (list
+     (first result2)
+     p
+     (cons (make-parameter-binding
+	    p (new-application (second result1) (second result2)))
+	   (third result2))
+     (fourth result2))))
+  ((letrec-expression? e)
+   (let loop ((i i)
+	      (xs (letrec-expression-procedure-variables e))
+	      (es (letrec-expression-lambda-expressions e))
+	      (bs2 bs2))
+    (if (null? xs)
+	(anf-convert-expression i (letrec-expression-body e) bs1 bs2 p?)
+	(let* ((result1 (anf-convert-parameter
+			 i (lambda-expression-parameter (first es)) p?))
+	       (result2
+		(anf-convert-expression (first result1)
+					(lambda-expression-body (first es))
+					'()
+					'()
+					p?)))
+	 (loop
+	  (first result2)
+	  (rest xs)
+	  (rest es)
+	  (cons (make-variable-binding
+		 (first xs)
+		 (new-lambda-expression (second result1) (anf-result result2)))
+		bs2))))))
+  ((cons-expression? e)
+   (let* ((result1
+	   (anf-convert-expression i (cons-expression-car e) bs1 bs2 p?))
+	  (result2 (anf-convert-expression (first result1)
+					   (cons-expression-cdr e)
+					   (third result1)
+					   (fourth result1)
+					   p?)))
+    ;; result
+    (list (first result2)
+	  p
+	  (cons (make-parameter-binding
+		 p
+		 (new-cons-expression
+		  (cons-expression-tags e) (second result1) (second result2)))
+		(third result2))
+	  (fourth result2))))
+  (else (internal-error))))
+
 (define (anf-convert e p?)
- ;; The soundness of our method for ANF conversion relies on two things:
- ;;  1. E must be alpha converted.
- ;;     This allows letrecs to be merged.
- ;;     It also allows let*s in expressions of let*s to be merged.
- ;;  2. No letrec nested in a let* expression or body can reference a variable
- ;;     bound by that let*.
- ;; needs work: Should have structure instead of list.
- (anf-result
-  (letrec ((outer
-	    (lambda (i e bs1 bs2)
-	     (cond
-	      ((constant-expression? e)
-	       (let* ((i (+ i 1))
-		      (p (make-variable-access-expression `(anf ,i))))
-		;; result
-		(list i p (cons (make-parameter-binding p e) bs1) bs2)))
-	      ;; result
-	      ((variable-access-expression? e)
-	       (if p?
-		   ;; This is used during reverse-transform because it
-		   ;; guarantees that there is a one-to-one correspondence
-		   ;; between primal and forward phase bindings so that the
-		   ;; reverse transform is invertible.
-		   (list i e bs1 bs2)
-		   ;; This is used during parsing to guarantee that there is
-		   ;;                                            ---    -
-		   ;;                                            \      \
-		   ;; no binding like x = y,y which would become y,y += x
-		   ;; during reverse phase which incorrecty accumulates.
-		   ;; result
-		   (let* ((i (+ i 1))
-			  (p (make-variable-access-expression `(anf ,i))))
-		    ;; result
-		    (list i p (cons (make-parameter-binding p e) bs1) bs2))))
-	      ((lambda-expression? e)
-	       (let* ((result (outer i (lambda-expression-body e) '() '()))
-		      (i (+ (first result) 1))
-		      (p (make-variable-access-expression `(anf ,i))))
-		;; result
-		(list i
-		      p
-		      (cons (make-parameter-binding
-			     p
-			     (new-lambda-expression
-			      (lambda-expression-parameter e)
-			      (anf-result result)))
-			    bs1)
-		      bs2)))
-	      ((let*? e)
-	       (let ((result
-		      (reuse
-		       (lambda-expression-parameter (application-callee e))
-		       i
-		       (application-argument e)
-		       bs1
-		       bs2)))
-		(outer (first result)
-		       (lambda-expression-body (application-callee e))
-		       (third result)
-		       (fourth result))))
-	      ((application? e)
-	       (let* ((result1 (outer i (application-callee e) bs1 bs2))
-		      (result2 (outer (first result1)
-				      (application-argument e)
-				      (third result1)
-				      (fourth result1)))
-		      (i (+ (first result2) 1))
-		      (p (make-variable-access-expression `(anf ,i))))
-		;; result
-		(list
-		 i
-		 p
-		 (cons (make-parameter-binding
-			p (new-application (second result1) (second result2)))
-		       (third result2))
-		 (fourth result2))))
-	      ((letrec-expression? e)
-	       (let inner ((i i)
-			   (xs (letrec-expression-procedure-variables e))
-			   (es (letrec-expression-lambda-expressions e))
-			   (bs2 bs2))
-		(if (null? xs)
-		    (outer i (letrec-expression-body e) bs1 bs2)
-		    (let ((result
-			   (outer
-			    i (lambda-expression-body (first es)) '() '())))
-		     (inner (first result)
-			    (rest xs)
-			    (rest es)
-			    (cons (make-variable-binding
-				   (first xs)
-				   (new-lambda-expression
-				    (lambda-expression-parameter (first es))
-				    (anf-result result)))
-				  bs2))))))
-	      ((cons-expression? e)
-	       (let* ((result1 (outer i (cons-expression-car e) bs1 bs2))
-		      (result2 (outer (first result1)
-				      (cons-expression-cdr e)
-				      (third result1)
-				      (fourth result1)))
-		      (i (+ (first result2) 1))
-		      (p (make-variable-access-expression `(anf ,i))))
-		;; result
-		(list i
-		      p
-		      (cons (make-parameter-binding
-			     p
-			     (new-cons-expression (cons-expression-tags e)
-						  (second result1)
-						  (second result2)))
-			    (third result2))
-		      (fourth result2))))
-	      (else (internal-error)))))
-	   (reuse
-	    (lambda (p i e bs1 bs2)
-	     (cond
-	      ((constant-expression? e)
-	       ;; result
-	       (list i p (cons (make-parameter-binding p e) bs1) bs2))
-	      ((variable-access-expression? e)
-	       ;; There is copying here, since both names might be used.
-	       ;; result
-	       (list i p (cons (make-parameter-binding p e) bs1) bs2))
-	      ((lambda-expression? e)
-	       (let* ((result (outer i (lambda-expression-body e) '() '())))
-		;; result
-		(list (first result)
-		      p
-		      (cons (make-parameter-binding
-			     p
-			     (new-lambda-expression
-			      (lambda-expression-parameter e)
-			      (anf-result result)))
-			    bs1)
-		      bs2)))
-	      ((let*? e)
-	       (let ((result
-		      (reuse
-		       (lambda-expression-parameter (application-callee e))
-		       i
-		       (application-argument e)
-		       bs1
-		       bs2)))
-		(outer
-		 (first result)
-		 (lambda-expression-body (application-callee e))
-		 (cons
-		  ;; There is copying here, since both names might be used.
-		  (make-parameter-binding
-		   p (lambda-expression-parameter (application-callee e)))
-		  (cons (make-parameter-binding
-			 (lambda-expression-parameter (application-callee e))
-			 (second result))
-			(third result)))
-		 (fourth result))))
-	      ((application? e)
-	       (let* ((result1 (outer i (application-callee e) bs1 bs2))
-		      (result2 (outer (first result1)
-				      (application-argument e)
-				      (third result1)
-				      (fourth result1))))
-		;; result
-		(list
-		 (first result2)
-		 p
-		 (cons (make-parameter-binding
-			p (new-application (second result1) (second result2)))
-		       (third result2))
-		 (fourth result2))))
-	      ((letrec-expression? e)
-	       (let inner ((i i)
-			   (xs (letrec-expression-procedure-variables e))
-			   (es (letrec-expression-lambda-expressions e))
-			   (bs2 bs2))
-		(if (null? xs)
-		    (outer i (letrec-expression-body e) bs1 bs2)
-		    (let ((result
-			   (outer
-			    i (lambda-expression-body (first es)) '() '())))
-		     (inner (first result)
-			    (rest xs)
-			    (rest es)
-			    (cons (make-variable-binding
-				   (first xs)
-				   (new-lambda-expression
-				    (lambda-expression-parameter (first es))
-				    (anf-result result)))
-				  bs2))))))
-	      ((cons-expression? e)
-	       (let* ((result1 (outer i (cons-expression-car e) bs1 bs2))
-		      (result2 (outer (first result1)
-				      (cons-expression-cdr e)
-				      (third result1)
-				      (fourth result1))))
-		;; result
-		(list (first result2)
-		      p
-		      (cons (make-parameter-binding
-			     p
-			     (new-cons-expression (cons-expression-tags e)
-						  (second result1)
-						  (second result2)))
-			    (third result2))
-		      (fourth result2))))
-	      (else (internal-error))))))
-   (outer (anf-max e) e '() '()))))
+ (anf-result (anf-convert-expression (anf-max e) e '() '() p?)))
 
 (define (anf-convert-lambda-expression e p?)
- (new-lambda-expression (lambda-expression-parameter e)
-			(anf-convert (lambda-expression-body e) p?)))
+ (let* ((result1 (anf-convert-parameter
+		  (anf-max e) (lambda-expression-parameter e) p?))
+	(result2 (anf-convert-expression
+		  (first result1) (lambda-expression-body e) '() '() p?)))
+  (new-lambda-expression (second result1) (anf-result result2))))
 
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
