@@ -1,1 +1,1 @@
-(bundle (bundle 1 2) (bundle 3 4.0))
+(bundle (bundle 1 (perturb 2)) (perturb (bundle 3 (perturb 4.0))))

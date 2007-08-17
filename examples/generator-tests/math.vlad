@@ -101,10 +101,13 @@
 
 ;;; Derivatives
 
-(define (j* x) (bundle x (zero x)))
+(define (j* x) (bundle x (perturb (zero x))))
 
-(define ((derivative f) x) (tangent ((j* f) (bundle x 1.0))))
+(define ((derivative f) x)
+ (unperturb (tangent ((j* f) (bundle x (perturb 1.0))))))
 
 (define ((gradient f) x)
  (let ((n (length x)))
-  ((map-n (lambda (i) (tangent ((j* f) (bundle x (e i n)))))) n)))
+  ((map-n (lambda (i)
+	   (unperturb (tangent ((j* f) (bundle x (perturb (e i n))))))))
+   n)))
