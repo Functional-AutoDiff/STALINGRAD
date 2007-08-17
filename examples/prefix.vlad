@@ -13,7 +13,7 @@
   (lambda (x)
    (let ((n (length x)) (y-tilde (cdr (f-reverse (*j x)))))
     (transpose
-     (map-n (lambda (i) (unsensitize (cdr (y-tilde (sensitize (e i n))))))
+     (map-n (lambda (i) (cdr (unsensitize (y-tilde (sensitize (e i n))))))
 	    n))))))
 
 (define (jacobian f) (jacobian-using-j* f))
