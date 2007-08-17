@@ -1,5 +1,7 @@
 (define (f x y) (lambda () (+ x y)))
 
 (list (if (zero? (read-real)) (cons (read-real) 0) (cons 0 (read-real)))
-      (if (zero? (read-real)) (bundle (read-real) 0) (bundle 0 (read-real)))
+      (if (zero? (read-real))
+	  (bundle (read-real) (perturb 0))
+	  (bundle 0 (perturb (read-real))))
       (if (zero? (read-real)) (f (read-real) 0) (f 0 (read-real))))
