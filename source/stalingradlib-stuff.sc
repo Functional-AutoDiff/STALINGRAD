@@ -743,6 +743,44 @@
 
 ;;; Expression Equivalence
 
+(define (expression-eqv? e1 e2)
+ ;; This is only needed for abstract-analysis=? and lookup-expression-binding.
+ (or
+  (and (constant-expression? e1)
+       (constant-expression? e2)
+       (abstract-value=? (constant-expression-value e1)
+			 (constant-expression-value e2)))
+  (and (variable-access-expression? e1)
+       (variable-access-expression? e2)
+       (variable=? (variable-access-expression-variable e1)
+		   (variable-access-expression-variable e2)))
+  (and (lambda-expression? e1)
+       (lambda-expression? e2)
+       (expression-eqv? (lambda-expression-parameter e1)
+			(lambda-expression-parameter e2))
+       (expression-eqv? (lambda-expression-body e1)
+			(lambda-expression-body e2)))
+  (and (application? e1)
+       (application? e2)
+       (expression-eqv? (application-callee e1) (application-callee e2))
+       (expression-eqv? (application-argument e1)(application-argument e2)))
+  (and (letrec-expression? e1)
+       (letrec-expression? e2)
+       (= (length (letrec-expression-procedure-variables e1))
+	  (length (letrec-expression-procedure-variables e2)))
+       (every variable=?
+	      (letrec-expression-procedure-variables e1)
+	      (letrec-expression-procedure-variables e2))
+       (every expression-eqv?
+	      (letrec-expression-lambda-expressions e1)
+	      (letrec-expression-lambda-expressions e2))
+       (expression-eqv? (letrec-expression-body e1)
+			(letrec-expression-body e2)))
+  (and (cons-expression? e1) (cons-expression? e2)
+       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
+       (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
+       (expression-eqv? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
+
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
  ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
@@ -808,7 +846,10 @@
  ;; since a lone environment can witness disequality and environments are
  ;; recursively enumerable. This is a conservative approximation. A #t result
  ;; is precise.
- (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2)))
+ ;; debugging
+ (if #t
+     (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2))
+     (expression-eqv? e1 e2)))
 
 ;;; Values
 
@@ -3674,15 +3715,26 @@
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
  (set-equalp? (lambda (b1 b2)
-	       (and (expression=? (expression-binding-expression b1)
-				  (expression-binding-expression b2))
+	       (and (if #t		;debugging
+			(expression=? (expression-binding-expression b1)
+				      (expression-binding-expression b2))
+			(expression-eqv? (expression-binding-expression b1)
+					 (expression-binding-expression b2)))
 		    (abstract-flow=? (expression-binding-flow b1)
 				     (expression-binding-flow b2))))
 	      bs1
 	      bs2))
 
 (define (lookup-expression-binding e bs)
- (find-if (lambda (b) (expression=? e (expression-binding-expression b))) bs))
+ ;; This (and in abstract-analysis=?) is expression-eqv? and not expression=?
+ ;; because otherwise two different expressions can share the same
+ ;; subexpression. And one of them will have alpha-equivalent but distinct
+ ;; variables and this causes the code generator to generate incorrect C code.
+ (find-if (lambda (b)
+	   (if #t			;debugging
+	       (expression=? e (expression-binding-expression b))
+	       (expression-eqv? e (expression-binding-expression b))))
+	  bs))
 
 (define (abstract-analysis-union bs1 bs2)
  (if (null? bs1)
@@ -4738,6 +4790,123 @@
      (list
       (generate-widener-name v1 v2 v1v2s) "(" (if (void? v1) '() code) ")")))
 
+(define (generate-destructure p e v c xs vs)
+ (cond
+  ((constant-expression? p)
+   ;; needs work: To generate run-time equivalence check when the constant
+   ;;             expression parameter and/or argument contain abstract
+   ;;             booleans or abstract reals.
+   (unless (abstract-value-nondisjoint?
+	    (potentially-imprecise-vlad-value->abstract-value
+	     (constant-expression-value p))
+	    v)
+    (run-time-error "Argument is not an equivalent value"
+		    (constant-expression-value p)
+		    v))
+   '())
+  ((variable-access-expression? p)
+   (if (or (void? v)
+	   ;; We get "warning: unused variable" messages from gcc. This is an
+	   ;; unsuccessful attempt to eliminate such messages. It is difficult
+	   ;; to soundly eliminate all unneeded destructuring bindings. This
+	   ;; is sound but eliminates only some. One can't simply check
+	   ;; if the variable is referenced in the VLAD source. Because
+	   ;; suppose you have code like (F (G X)). Even though X is not void,
+	   ;; (G X) might be, and then code is not generated for (G X). For
+	   ;; example (REST '(3)) or (NULL? '(3)).
+	   (not (memp variable=?
+		      (variable-access-expression-variable p)
+		      (free-variables e))))
+       '()
+       (list
+	(generate-specifier v vs)
+	" "
+	(generate-variable-name (variable-access-expression-variable p) xs)
+	"="
+	c
+	";")))
+  ((lambda-expression? p)
+   (unless (and (nonrecursive-closure? v)
+		(expression=? p (nonrecursive-closure-lambda-expression v)))
+    (run-time-error
+     (format #f "Argument is not a matching nonrecursive closure for ~s"
+	     (abstract->concrete p))
+     v))
+   (map (lambda (x v)
+	 (generate-destructure
+	  (make-variable-access-expression x)
+	  e
+	  v
+	  (list c
+		"."
+		(generate-variable-name
+		 (variable-access-expression-variable x) xs))
+	  xs
+	  vs))
+	(parameter-variables p)
+	(nonrecursive-closure-values v)))
+  ((letrec-expression? p)
+   (unless (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p)))
+    (internal-error "Unsupported letrec-expression parameter"))
+   (unless (and (recursive-closure? v)
+		(= (recursive-closure-index v)
+		   (positionp variable=?
+			      (variable-access-expression-variable
+			       (letrec-expression-body p))
+			      (letrec-expression-procedure-variables p)))
+		(= (vector-length
+		    (recursive-closure-procedure-variables v))
+		   (length (letrec-expression-procedure-variables p)))
+		(= (vector-length
+		    (recursive-closure-lambda-expressions v))
+		   (length (letrec-expression-lambda-expressions p)))
+		(let ((xs1 (append
+			    (recursive-closure-variables v)
+			    (vector->list
+			     (recursive-closure-procedure-variables v))))
+		      (xs2 (append
+			    (letrec-expression-variables p)
+			    (letrec-expression-procedure-variables p))))
+		 (every
+		  (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		  (vector->list (recursive-closure-lambda-expressions v))
+		  (letrec-expression-lambda-expressions p))))
+    (run-time-error
+     (format #f "Argument is not a matching recursive closure for ~s"
+	     (abstract->concrete p))
+     v))
+   (map (lambda (x v)
+	 (generate-destructure
+	  (make-variable-access-expression x)
+	  e
+	  v
+	  (list c
+		"."
+		(generate-variable-name
+		 (variable-access-expression-variable x) xs))
+	  xs
+	  vs))
+	(parameter-variables p)
+	(recursive-closure-values v)))
+  ((cons-expression? p)
+   (unless (and (tagged-pair? v)
+		(equal-tags? (cons-expression-tags p)
+			     (tagged-pair-tags v)))
+    (run-time-error
+     (format #f "Argument is not a matching tagged pair with tags ~s"
+	     (cons-expression-tags p))
+     v))
+   (append
+    (generate-destructure
+     (cons-expression-car p) e (tagged-pair-car v) (list c ".a") xs vs)
+    (generate-destructure
+     (cons-expression-cdr p) e (tagged-pair-cdr v) (list c ".d") xs vs)))
+  (else (internal-error))))
+
 (define (generate-if-and-function-definitions
 	 bs xs vs v1v2s v1v2s1 things1-things2)
  (map
@@ -4805,13 +4974,17 @@
 	    (v2 (second v1v2))
 	    (v3 (abstract-apply v1 v2 bs)))
       ;; debugging
-      (begin
-       (display "f")
-       (write (positionp abstract-value-pair=? (list v1 v2) v1v2s))
-       (newline)
-       (pp (abstract->concrete (closure-body v1)))
-       (newline)
-       (newline))
+      (when #f
+       (when (= (positionp abstract-value-pair=? (list v1 v2) v1v2s) 7)
+	(display "f7")
+	(newline)
+	(pp (externalize v1))
+	(newline))
+       (when (= (positionp abstract-value-pair=? (list v1 v2) v1v2s) 28)
+	(display "f28")
+	(newline)
+	(pp (externalize v1))
+	(newline)))
       (if (void? v3)
 	  '()
 	  (list
@@ -4825,7 +4998,8 @@
 	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
 		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
 	   "){"
-	   (generate-destructure (closure-parameter v1) v2 "x" xs vs)
+	   (generate-destructure
+	    (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
 	   (generate-letrec-bindings
 	    (closure-body v1)
 	    (abstract-apply-closure (lambda (e vs) vs) v1 v2)
@@ -4857,119 +5031,6 @@
     (else (internal-error))))
   (append (first things1-things2) (second things1-things2))))
 
-(define (generate-destructure p v c xs vs)
- (cond
-  ((constant-expression? p)
-   ;; needs work: To generate run-time equivalence check when the constant
-   ;;             expression parameter and/or argument contain abstract
-   ;;             booleans or abstract reals.
-   (unless (abstract-value-nondisjoint?
-	    (potentially-imprecise-vlad-value->abstract-value
-	     (constant-expression-value p))
-	    v)
-    (run-time-error "Argument is not an equivalent value"
-		    (constant-expression-value p)
-		    v))
-   '())
-  ((variable-access-expression? p)
-   ;; debugging
-   (when #f
-    (when (void? v)
-     (write (generate-variable-name (variable-access-expression-variable p) xs))
-     (newline)
-     (write (variable-access-expression-variable p))
-     (newline)
-     (write (externalize v))
-     (newline)))
-   (if (void? v)
-       '()
-       (list
-	(generate-specifier v vs)
-	" "
-	(generate-variable-name (variable-access-expression-variable p) xs)
-	"="
-	c
-	";")))
-  ((lambda-expression? p)
-   (unless (and (nonrecursive-closure? v)
-		(expression=? p
-			      (nonrecursive-closure-lambda-expression v)))
-    (run-time-error
-     (format #f "Argument is not a matching nonrecursive closure for ~s"
-	     (abstract->concrete p))
-     v))
-   (map (lambda (x v)
-	 (generate-destructure
-	  (make-variable-access-expression x)
-	  v
-	  (list c
-		"."
-		(generate-variable-name
-		 (variable-access-expression-variable x) xs))
-	  xs
-	  vs))
-	(parameter-variables p)
-	(nonrecursive-closure-values v)))
-  ((letrec-expression? p)
-   (unless (and (variable-access-expression? (letrec-expression-body p))
-		(memp variable=?
-		      (variable-access-expression-variable
-		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p)))
-    (internal-error "Unsupported letrec-expression parameter"))
-   (unless (and (recursive-closure? v)
-		(= (recursive-closure-index v)
-		   (positionp variable=?
-			      (variable-access-expression-variable
-			       (letrec-expression-body p))
-			      (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-procedure-variables v))
-		   (length (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-lambda-expressions v))
-		   (length (letrec-expression-lambda-expressions p)))
-		(let ((xs1 (append
-			    (recursive-closure-variables v)
-			    (vector->list
-			     (recursive-closure-procedure-variables v))))
-		      (xs2 (append
-			    (letrec-expression-variables p)
-			    (letrec-expression-procedure-variables p))))
-		 (every
-		  (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		  (vector->list (recursive-closure-lambda-expressions v))
-		  (letrec-expression-lambda-expressions p))))
-    (run-time-error
-     (format #f "Argument is not a matching recursive closure for ~s"
-	     (abstract->concrete p))
-     v))
-   (map (lambda (x v)
-	 (generate-destructure
-	  (make-variable-access-expression x)
-	  v
-	  (list c
-		"."
-		(generate-variable-name
-		 (variable-access-expression-variable x) xs))
-	  xs
-	  vs))
-	(parameter-variables p)
-	(recursive-closure-values v)))
-  ((cons-expression? p)
-   (unless (and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p)
-			     (tagged-pair-tags v)))
-    (run-time-error
-     (format #f "Argument is not a matching tagged pair with tags ~s"
-	     (cons-expression-tags p))
-     v))
-   (append (generate-destructure
-	    (cons-expression-car p) (tagged-pair-car v) (list c ".a") xs vs)
-	   (generate-destructure
-	    (cons-expression-cdr p) (tagged-pair-cdr v) (list c ".d") xs vs)))
-  (else (internal-error))))
-
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
        ((memp variable=? x xs) (list "c." (generate-variable-name x xs1)))
@@ -4982,14 +5043,17 @@
     (unless (void? (constant-expression-value e)) (internal-error))
     (generate-widen (constant-expression-value e) v '() v1v2s1))
    ((variable-access-expression? e)
+    ;; here I am: alpha
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
     (list
      (generate-builtin-name "m" v vs1)
      "("
      (commas-between
+      ;; here I am: alpha
       (map (lambda (x s v) (if (void? v) #f (generate-reference x xs2 xs xs1)))
 	   (nonrecursive-closure-variables v)
+	   ;; here I am: alpha
 	   (generate-slot-names v xs1)
 	   (aggregate-value-values v)))
      ")"))
@@ -5174,8 +5238,10 @@
 		  "("
 		  (commas-between
 		   (map (lambda (x s v)
+			 ;; here I am: alpha
 			 (if (void? v) #f (generate-reference x xs2 xs xs1)))
 			(recursive-closure-variables v)
+			;; here I am: alpha
 			(generate-slot-names v xs1)
 			(aggregate-value-values v)))
 		  ");"))))
@@ -5299,7 +5365,7 @@
 			      bs)))
 		    (if (and (primitive-procedure? v1)
 			     ;; here I am: this reference to bundle needs to
-			     ;;            be abstract to s
+			     ;;            be abstracted to s
 			     (eq? (primitive-procedure-name v1) 'bundle))
 			(abstract-eval1 (application-argument e)
 					(restrict-environment
@@ -5545,6 +5611,12 @@
 	(v1v2s (all-functions bs))
 	(v1v2s1 (all-widenings bs))
 	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
+  ;; debugging
+  (when #f
+   (write (list 1 (list-ref xs 1)))
+   (newline)
+   (write (list 3 (list-ref xs 3)))
+   (newline))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
