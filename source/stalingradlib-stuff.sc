@@ -743,44 +743,6 @@
 
 ;;; Expression Equivalence
 
-(define (expression-eqv? e1 e2)
- ;; This is only needed for abstract-analysis=? and lookup-expression-binding.
- (or
-  (and (constant-expression? e1)
-       (constant-expression? e2)
-       (abstract-value=? (constant-expression-value e1)
-			 (constant-expression-value e2)))
-  (and (variable-access-expression? e1)
-       (variable-access-expression? e2)
-       (variable=? (variable-access-expression-variable e1)
-		   (variable-access-expression-variable e2)))
-  (and (lambda-expression? e1)
-       (lambda-expression? e2)
-       (expression-eqv? (lambda-expression-parameter e1)
-			(lambda-expression-parameter e2))
-       (expression-eqv? (lambda-expression-body e1)
-			(lambda-expression-body e2)))
-  (and (application? e1)
-       (application? e2)
-       (expression-eqv? (application-callee e1) (application-callee e2))
-       (expression-eqv? (application-argument e1)(application-argument e2)))
-  (and (letrec-expression? e1)
-       (letrec-expression? e2)
-       (= (length (letrec-expression-procedure-variables e1))
-	  (length (letrec-expression-procedure-variables e2)))
-       (every variable=?
-	      (letrec-expression-procedure-variables e1)
-	      (letrec-expression-procedure-variables e2))
-       (every expression-eqv?
-	      (letrec-expression-lambda-expressions e1)
-	      (letrec-expression-lambda-expressions e2))
-       (expression-eqv? (letrec-expression-body e1)
-			(letrec-expression-body e2)))
-  (and (cons-expression? e1) (cons-expression? e2)
-       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
-       (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
-       (expression-eqv? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
-
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
  ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
@@ -846,10 +808,7 @@
  ;; since a lone environment can witness disequality and environments are
  ;; recursively enumerable. This is a conservative approximation. A #t result
  ;; is precise.
- ;; debugging
- (if #t
-     (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2))
-     (expression-eqv? e1 e2)))
+ (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2)))
 
 ;;; Values
 
@@ -3715,26 +3674,15 @@
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
  (set-equalp? (lambda (b1 b2)
-	       (and (if #t		;debugging
-			(expression=? (expression-binding-expression b1)
-				      (expression-binding-expression b2))
-			(expression-eqv? (expression-binding-expression b1)
-					 (expression-binding-expression b2)))
+	       (and (expression=? (expression-binding-expression b1)
+				  (expression-binding-expression b2))
 		    (abstract-flow=? (expression-binding-flow b1)
 				     (expression-binding-flow b2))))
 	      bs1
 	      bs2))
 
 (define (lookup-expression-binding e bs)
- ;; This (and in abstract-analysis=?) is expression-eqv? and not expression=?
- ;; because otherwise two different expressions can share the same
- ;; subexpression. And one of them will have alpha-equivalent but distinct
- ;; variables and this causes the code generator to generate incorrect C code.
- (find-if (lambda (b)
-	   (if #t			;debugging
-	       (expression=? e (expression-binding-expression b))
-	       (expression-eqv? e (expression-binding-expression b))))
-	  bs))
+ (find-if (lambda (b) (expression=? e (expression-binding-expression b))) bs))
 
 (define (abstract-analysis-union bs1 bs2)
  (if (null? bs1)
@@ -4182,15 +4130,16 @@
 		       all-unary-abstract-subvalues
 		       (aggregate-value-values v)))))
 
-(define (all-binary-abstract-subvalues v1 v2)
- (cons (vlad-cons v1 v2)
-       (if (and (scalar-value? v1) (scalar-value? v2))
-	   '()
-	   (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		       '()
-		       all-binary-abstract-subvalues
-		       (aggregate-value-values v1)
-		       (aggregate-value-values v2)))))
+(define (all-binary-abstract-subvalues p? f f-inverse v)
+ (let loop ((v1 (vlad-car v)) (v2 (f-inverse (vlad-cdr v))))
+  (cons (vlad-cons v1 (f v2))
+	(if (p? v1)
+	    '()
+	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+			'()
+			loop
+			(aggregate-value-values v1)
+			(aggregate-value-values v2))))))
 
 (define (component*? v1 v2)
  (or (abstract-value=? v1 v2)
@@ -4265,14 +4214,22 @@
 (define (all-nested-abstract-values bs)
  (cached-topological-sort
   component?
-  (unionp abstract-value=?
-	  (unionp abstract-value=?
-		  (all-binary-ad 'bundle bs)
-		  (all-binary-ad 'plus bs))
-	  (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		      '()
-		      all-unary-abstract-subvalues
-		      (all-abstract-values bs)))))
+  (unionp
+   abstract-value=?
+   (unionp abstract-value=?
+	   (all-binary-ad bundle 'bundle
+			  (lambda (v)
+			   (or (scalar-value? v)
+			       (perturbation-tagged-value? v)
+			       (bundle? v)
+			       (sensitivity-tagged-value? v)
+			       (reverse-tagged-value? v)))
+			  perturb unperturb bs)
+	   (all-binary-ad plus 'plus scalar-value? identity identity bs))
+   (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+	       '()
+	       all-unary-abstract-subvalues
+	       (all-abstract-values bs)))))
 
 (define (abstract-value-pair=? v1v2a v1v2b)
  (and (abstract-value=? (first v1v2a) (first v1v2b))
@@ -4973,18 +4930,6 @@
 	    (v1 (first v1v2))
 	    (v2 (second v1v2))
 	    (v3 (abstract-apply v1 v2 bs)))
-      ;; debugging
-      (when #f
-       (when (= (positionp abstract-value-pair=? (list v1 v2) v1v2s) 7)
-	(display "f7")
-	(newline)
-	(pp (externalize v1))
-	(newline))
-       (when (= (positionp abstract-value-pair=? (list v1 v2) v1v2s) 28)
-	(display "f28")
-	(newline)
-	(pp (externalize v1))
-	(newline)))
       (if (void? v3)
 	  '()
 	  (list
@@ -5043,18 +4988,16 @@
     (unless (void? (constant-expression-value e)) (internal-error))
     (generate-widen (constant-expression-value e) v '() v1v2s1))
    ((variable-access-expression? e)
-    ;; here I am: alpha
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
     (list
      (generate-builtin-name "m" v vs1)
      "("
      (commas-between
-      ;; here I am: alpha
-      (map (lambda (x s v) (if (void? v) #f (generate-reference x xs2 xs xs1)))
-	   (nonrecursive-closure-variables v)
-	   ;; here I am: alpha
-	   (generate-slot-names v xs1)
+      (map (lambda (x v) (if (void? v) #f (generate-reference x xs2 xs xs1)))
+	   ;; This cannot be (nonrecursive-closure-variables v) because of
+	   ;; using alpha equivalence for expression=?.
+	   (free-variables e)
 	   (aggregate-value-values v)))
      ")"))
    ((application? e)
@@ -5237,12 +5180,11 @@
 		  (generate-builtin-name "m" v vs1)
 		  "("
 		  (commas-between
-		   (map (lambda (x s v)
-			 ;; here I am: alpha
+		   (map (lambda (x v)
 			 (if (void? v) #f (generate-reference x xs2 xs xs1)))
-			(recursive-closure-variables v)
-			;; here I am: alpha
-			(generate-slot-names v xs1)
+			;; This cannot be (recursive-closure-variables v)
+			;; because of using alpha equivalence for expression=?.
+			(letrec-expression-variables e)
 			(aggregate-value-values v)))
 		  ");"))))
       (letrec-expression-procedure-variables e))
@@ -5326,25 +5268,19 @@
 	  '())))
     bs))))
 
-(define (all-binary-ad s bs)
+(define (all-binary-ad g s p? f f-inverse bs)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
   (lambda (v1 v2)
-   ;; here I am: this call to bundle needs to be abstract to s
-   ;; here I am: this perturb is hardwired for now
-   (component? (bundle (vlad-car v1) (perturb (vlad-cdr v1)))
-	       (bundle (vlad-car v2) (perturb (vlad-cdr v2)))))
+   (component? (g (vlad-car v1) (vlad-cdr v1))
+	       (g (vlad-car v2) (vlad-cdr v2))))
   (remove-if
    void?
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
-    (lambda (v)
-     (all-binary-abstract-subvalues
-      (vlad-car v)
-      ;; here I am: this unperturb is hardwired for now
-      (unperturb (vlad-cdr v))))
+    (lambda (v) (all-binary-abstract-subvalues p? f f-inverse v))
     (map-reduce
      (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
      '()
@@ -5353,34 +5289,32 @@
        (if (application? e)
 	   (remove-duplicatesp
 	    abstract-value=?
-	    (removeq
-	     #f
-	     (map (lambda (b)
-		   (let ((v1 (abstract-eval1
-			      (application-callee e)
-			      (restrict-environment
-			       (environment-binding-values b)
-			       e
-			       application-callee)
-			      bs)))
-		    (if (and (primitive-procedure? v1)
-			     ;; here I am: this reference to bundle needs to
-			     ;;            be abstracted to s
-			     (eq? (primitive-procedure-name v1) 'bundle))
-			(abstract-eval1 (application-argument e)
-					(restrict-environment
-					 (environment-binding-values b)
-					 e
-					 application-argument)
-					bs)
-			#f)))
-		  (expression-binding-flow b))))
+	    (removeq #f
+		     (map (lambda (b)
+			   (let ((v1 (abstract-eval1
+				      (application-callee e)
+				      (restrict-environment
+				       (environment-binding-values b)
+				       e
+				       application-callee)
+				      bs)))
+			    (if (and (primitive-procedure? v1)
+				     (eq? (primitive-procedure-name v1) s))
+				(abstract-eval1 (application-argument e)
+						(restrict-environment
+						 (environment-binding-values b)
+						 e
+						 application-argument)
+						bs)
+				#f)))
+			  (expression-binding-flow b))))
 	   '())))
      bs)))))
 
-(define (generate-unary-ad-declarations f s s1 bs vs)
- (map (lambda (v)
-       ;; here I am: this call to f can fail
+(define (generate-unary-ad-declarations p? f s s1 bs vs)
+ (map
+  (lambda (v)
+   (if (p? v)
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -5391,13 +5325,13 @@
 		  "("
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
-		  #\newline))))
-      (all-unary-ad s bs)))
+		  #\newline)))
+       '()))
+  (all-unary-ad s bs)))
 
-(define (generate-binary-ad-declarations f s s1 bs vs)
+(define (generate-binary-ad-declarations g s s1 p? f f-inverse bs vs)
  (map (lambda (v)
-       ;; here I am: this call to f can fail
-       (let ((v1 (f (vlad-car v) (vlad-cdr v))))
+       (let ((v1 (g (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
 	    '()
 	    (list "static INLINE "
@@ -5408,11 +5342,12 @@
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
 		  #\newline))))
-      (all-binary-ad s bs)))
+      (all-binary-ad g s p? f f-inverse bs)))
 
-(define (generate-unary-ad-definitions g f s s1 bs xs vs)
- (map (lambda (v)
-       ;; here I am: this call to f can fail
+(define (generate-unary-ad-definitions p? g f s s1 bs xs vs)
+ (map
+  (lambda (v)
+   (if (p? v)
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -5425,29 +5360,31 @@
 		  "){return "
 		  (g v)
 		  ";}"
-		  #\newline))))
-      (all-unary-ad s bs)))
+		  #\newline)))
+       '()))
+  (all-unary-ad s bs)))
 
-(define (generate-binary-ad-definitions g f s s1 bs xs vs)
+(define (generate-binary-ad-definitions h g s s1 p? f f-inverse bs xs vs)
  (map (lambda (v)
-       ;; here I am: this call to f can fail
-       (let ((v1 (f (vlad-car v) (vlad-cdr v))))
+       (let ((v1 (g (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
 	    '()
-	    (list "static INLINE "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name s1 v vs)
-		  "("
-		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
-		  "){return "
-		  (g v)
-		  ";}"
-		  #\newline))))
-      (all-binary-ad s bs)))
+	    (list
+	     "static INLINE "
+	     (generate-specifier v1 vs)
+	     " "
+	     (generate-builtin-name s1 v vs)
+	     "("
+	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
+	     "){return "
+	     (h v)
+	     ";}"
+	     #\newline))))
+      (all-binary-ad g s p? f f-inverse bs)))
 
 (define (generate-zero-definitions bs xs vs)
  (generate-unary-ad-definitions
+  (lambda (v) #t)
   (lambda (v)
    (cond
     ((abstract-boolean? v) "x")
@@ -5471,6 +5408,7 @@
 
 (define (generate-perturb-definitions bs xs vs)
  (generate-unary-ad-definitions
+  (lambda (v) #t)
   (lambda (v)
    (cond
     ((or (abstract-boolean? v)
@@ -5499,6 +5437,7 @@
 
 (define (generate-unperturb-definitions bs xs vs)
  (generate-unary-ad-definitions
+  perturbation-value?
   (lambda (v)
    (cond
     ((perturbation-tagged-value? v) "x.p")
@@ -5521,6 +5460,7 @@
 
 (define (generate-primal-definitions bs xs vs)
  (generate-unary-ad-definitions
+  forward-value?
   (lambda (v)
    (cond
     ((bundle? v) "x.p")
@@ -5543,6 +5483,7 @@
 
 (define (generate-tangent-definitions bs xs vs)
  (generate-unary-ad-definitions
+  forward-value?
   (lambda (v)
    (cond
     ((bundle? v) "x.t")
@@ -5582,28 +5523,35 @@
 	     (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d")))
 	    ")"))
      ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-      (list (generate-builtin-name "m" (bundle v1 v2) vs)
-	    "("
-	    (map (lambda (s3a s3b v3)
-		  (if (void? v3)
-		      #f
-		      (list (generate-builtin-name
-			     "bundle" (vlad-cons (primal v3) (tangent v3)) vs)
-			    "("
-			    (generate-builtin-name
-			     "m" (vlad-cons (primal v3) (tangent v3)) vs)
-			    "("
-			    (commas-between
-			     (list
-			      (if (void? (primal v3)) #f (list "x.a." s3a))
+      (list
+       (generate-builtin-name "m" (bundle v1 v2) vs)
+       "("
+       (map (lambda (s3a s3b v3)
+	     (if (void? v3)
+		 #f
+		 (list (generate-builtin-name
+			"bundle" (vlad-cons (primal v3) (tangent v3)) vs)
+		       "("
+		       (generate-builtin-name
+			"m" (vlad-cons (primal v3) (tangent v3)) vs)
+		       "("
+		       (commas-between
+			(list (if (void? (primal v3)) #f (list "x.a." s3a))
 			      (if (void? (tangent v3)) #f (list "x.d." s3b))))
-			    "))")))
-		 (generate-slot-names v1 xs)
-		 (generate-slot-names v2 xs)
-		 (aggregate-value-values (bundle v1 v2)))
-	    ")"))
+		       "))")))
+	    (generate-slot-names v1 xs)
+	    (generate-slot-names v2 xs)
+	    (aggregate-value-values (bundle v1 v2)))
+       ")"))
      (else (internal-error)))))
-  bundle 'bundle "bundle" bs xs vs))
+  bundle 'bundle "bundle"
+  (lambda (v)
+   (or (scalar-value? v)
+       (perturbation-tagged-value? v)
+       (bundle? v)
+       (sensitivity-tagged-value? v)
+       (reverse-tagged-value? v)))
+  perturb unperturb bs xs vs))
 
 (define (generate e bs bs0)
  (let* ((xs (all-variables bs))
@@ -5611,12 +5559,6 @@
 	(v1v2s (all-functions bs))
 	(v1v2s1 (all-widenings bs))
 	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
-  ;; debugging
-  (when #f
-   (write (list 1 (list-ref xs 1)))
-   (newline)
-   (write (list 3 (list-ref xs 3)))
-   (newline))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
@@ -5645,19 +5587,33 @@
    "static INLINE double read_real(void);" #\newline
    (generate-real-primitive-declarations 'real "double" "real" bs vs)
    (generate-real-primitive-declarations 'write "double" "write" bs vs)
-   (generate-unary-ad-declarations zero 'zero "zero" bs vs)
-   (generate-unary-ad-declarations perturb 'perturb "perturb" bs vs)
-   (generate-unary-ad-declarations unperturb 'unperturb "unperturb" bs vs)
-   (generate-unary-ad-declarations primal 'primal "primal" bs vs)
-   (generate-unary-ad-declarations tangent 'tangent "tangent" bs vs)
-   (generate-binary-ad-declarations bundle 'bundle "bundle" bs vs)
-   (generate-unary-ad-declarations sensitize 'sensitize "sensitize" bs vs)
+   (generate-unary-ad-declarations (lambda (v) #t) zero 'zero "zero" bs vs)
    (generate-unary-ad-declarations
-    unsensitize 'unsensitize "unsensitize" bs vs)
-   (generate-binary-ad-declarations plus 'plus "plus" bs vs)
-   (generate-unary-ad-declarations *j '*j "starj" bs vs)
+    (lambda (v) #t) perturb 'perturb "perturb" bs vs)
    (generate-unary-ad-declarations
-    *j-inverse '*j-inverse "starj_inverse" bs vs)
+    perturbation-value? unperturb 'unperturb "unperturb" bs vs)
+   (generate-unary-ad-declarations
+    forward-value? primal 'primal "primal" bs vs)
+   (generate-unary-ad-declarations
+    forward-value? tangent 'tangent "tangent" bs vs)
+   (generate-binary-ad-declarations
+    bundle 'bundle "bundle"
+    (lambda (v)
+     (or (scalar-value? v)
+	 (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v)))
+    perturb unperturb bs vs)
+   (generate-unary-ad-declarations
+    (lambda (v) #t) sensitize 'sensitize "sensitize" bs vs)
+   (generate-unary-ad-declarations
+    sensitivity-value? unsensitize 'unsensitize "unsensitize" bs vs)
+   (generate-binary-ad-declarations
+    plus 'plus "plus" scalar-value? identity identity bs vs)
+   (generate-unary-ad-declarations (lambda (v) #t) *j '*j "starj" bs vs)
+   (generate-unary-ad-declarations
+    reverse-value? *j-inverse '*j-inverse "starj_inverse" bs vs)
    (generate-if-and-function-declarations bs vs v1v2s things1-things2)
    "int main(void);" #\newline
    (generate-constructor-definitions xs vs)
