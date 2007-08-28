@@ -4121,19 +4121,20 @@
 	       (expression-binding-flow b)))
   bs))
 
-(define (all-unary-abstract-subvalues v)
- (cons v
-       (if (scalar-value? v)
-	   '()
-	   (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-		       '()
-		       all-unary-abstract-subvalues
-		       (aggregate-value-values v)))))
+(define (all-unary-abstract-subvalues p? v)
+ (let loop ((v v))
+  (cons v
+	(if (or (scalar-value? v) (not (p? v)))
+	    '()
+	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+			'()
+			loop
+			(aggregate-value-values v))))))
 
 (define (all-binary-abstract-subvalues p? f f-inverse v)
  (let loop ((v1 (vlad-car v)) (v2 (f-inverse (vlad-cdr v))))
   (cons (vlad-cons v1 (f v2))
-	(if (p? v1)
+	(if (or (scalar-value? v1) (not (p? v1)))
 	    '()
 	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 			'()
@@ -4217,18 +4218,16 @@
   (unionp
    abstract-value=?
    (unionp abstract-value=?
-	   (all-binary-ad bundle 'bundle
-			  (lambda (v)
-			   (or (scalar-value? v)
-			       (perturbation-tagged-value? v)
-			       (bundle? v)
-			       (sensitivity-tagged-value? v)
-			       (reverse-tagged-value? v)))
-			  perturb unperturb bs)
-	   (all-binary-ad plus 'plus scalar-value? identity identity bs))
+	   (all-binary-ad (lambda (v)
+			   (and (not (perturbation-tagged-value? v))
+				(not (bundle? v))
+				(not (sensitivity-tagged-value? v))
+				(not (reverse-tagged-value? v))))
+			  bundle 'bundle perturb unperturb bs)
+	   (all-binary-ad (lambda (v) #t) plus 'plus identity identity bs))
    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 	       '()
-	       all-unary-abstract-subvalues
+	       (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
 	       (all-abstract-values bs)))))
 
 (define (abstract-value-pair=? v1v2a v1v2b)
@@ -5229,7 +5228,7 @@
 		v1v2s)))))
    (else (internal-error)))))
 
-(define (all-unary-ad s bs)
+(define (all-unary-ad p? s bs)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
@@ -5237,7 +5236,7 @@
   (map-reduce
    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
    '()
-   all-unary-abstract-subvalues
+   (lambda (v) (all-unary-abstract-subvalues p? v))
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
@@ -5268,53 +5267,49 @@
 	  '())))
     bs))))
 
-(define (all-binary-ad g s p? f f-inverse bs)
+(define (all-binary-ad p? g s f f-inverse bs)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
   (lambda (v1 v2)
    (component? (g (vlad-car v1) (vlad-cdr v1))
 	       (g (vlad-car v2) (vlad-cdr v2))))
-  (remove-if
-   void?
+  (map-reduce
+   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+   '()
+   (lambda (v) (all-binary-abstract-subvalues p? f f-inverse v))
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
-    (lambda (v) (all-binary-abstract-subvalues p? f f-inverse v))
-    (map-reduce
-     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-     '()
-     (lambda (b)
-      (let ((e (expression-binding-expression b)))
-       (if (application? e)
-	   (remove-duplicatesp
-	    abstract-value=?
-	    (removeq #f
-		     (map (lambda (b)
-			   (let ((v1 (abstract-eval1
-				      (application-callee e)
-				      (restrict-environment
-				       (environment-binding-values b)
-				       e
-				       application-callee)
-				      bs)))
-			    (if (and (primitive-procedure? v1)
-				     (eq? (primitive-procedure-name v1) s))
-				(abstract-eval1 (application-argument e)
-						(restrict-environment
-						 (environment-binding-values b)
-						 e
-						 application-argument)
-						bs)
-				#f)))
-			  (expression-binding-flow b))))
-	   '())))
-     bs)))))
+    (lambda (b)
+     (let ((e (expression-binding-expression b)))
+      (if (application? e)
+	  (remove-duplicatesp
+	   abstract-value=?
+	   (removeq #f
+		    (map (lambda (b)
+			  (let ((v1 (abstract-eval1
+				     (application-callee e)
+				     (restrict-environment
+				      (environment-binding-values b)
+				      e
+				      application-callee)
+				     bs)))
+			   (if (and (primitive-procedure? v1)
+				    (eq? (primitive-procedure-name v1) s))
+			       (abstract-eval1 (application-argument e)
+					       (restrict-environment
+						(environment-binding-values b)
+						e
+						application-argument)
+					       bs)
+			       #f)))
+			 (expression-binding-flow b))))
+	  '())))
+    bs))))
 
 (define (generate-unary-ad-declarations p? f s s1 bs vs)
- (map
-  (lambda (v)
-   (if (p? v)
+ (map (lambda (v)
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -5325,11 +5320,10 @@
 		  "("
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
-		  #\newline)))
-       '()))
-  (all-unary-ad s bs)))
+		  #\newline))))
+      (all-unary-ad p? s bs)))
 
-(define (generate-binary-ad-declarations g s s1 p? f f-inverse bs vs)
+(define (generate-binary-ad-declarations p? g s s1 f f-inverse bs vs)
  (map (lambda (v)
        (let ((v1 (g (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
@@ -5342,12 +5336,10 @@
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
 		  #\newline))))
-      (all-binary-ad g s p? f f-inverse bs)))
+      (all-binary-ad p? g s f f-inverse bs)))
 
 (define (generate-unary-ad-definitions p? g f s s1 bs xs vs)
- (map
-  (lambda (v)
-   (if (p? v)
+ (map (lambda (v)
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -5360,27 +5352,25 @@
 		  "){return "
 		  (g v)
 		  ";}"
-		  #\newline)))
-       '()))
-  (all-unary-ad s bs)))
+		  #\newline))))
+      (all-unary-ad p? s bs)))
 
-(define (generate-binary-ad-definitions h g s s1 p? f f-inverse bs xs vs)
+(define (generate-binary-ad-definitions p? h g s s1 f f-inverse bs xs vs)
  (map (lambda (v)
        (let ((v1 (g (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
 	    '()
-	    (list
-	     "static INLINE "
-	     (generate-specifier v1 vs)
-	     " "
-	     (generate-builtin-name s1 v vs)
-	     "("
-	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	     "){return "
-	     (h v)
-	     ";}"
-	     #\newline))))
-      (all-binary-ad g s p? f f-inverse bs)))
+	    (list "static INLINE "
+		  (generate-specifier v1 vs)
+		  " "
+		  (generate-builtin-name s1 v vs)
+		  "("
+		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
+		  "){return "
+		  (h v)
+		  ";}"
+		  #\newline))))
+      (all-binary-ad p? g s f f-inverse bs)))
 
 (define (generate-zero-definitions bs xs vs)
  (generate-unary-ad-definitions
@@ -5408,7 +5398,11 @@
 
 (define (generate-perturb-definitions bs xs vs)
  (generate-unary-ad-definitions
-  (lambda (v) #t)
+  (lambda (v)
+   (and (not (perturbation-tagged-value? v))
+	(not (bundle? v))
+	(not (sensitivity-tagged-value? v))
+	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
     ((or (abstract-boolean? v)
@@ -5437,7 +5431,8 @@
 
 (define (generate-unperturb-definitions bs xs vs)
  (generate-unary-ad-definitions
-  perturbation-value?
+  (lambda (v)
+   (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
   (lambda (v)
    (cond
     ((perturbation-tagged-value? v) "x.p")
@@ -5460,7 +5455,7 @@
 
 (define (generate-primal-definitions bs xs vs)
  (generate-unary-ad-definitions
-  forward-value?
+  (lambda (v) (and (forward-value? v) (not (bundle? v))))
   (lambda (v)
    (cond
     ((bundle? v) "x.p")
@@ -5483,7 +5478,7 @@
 
 (define (generate-tangent-definitions bs xs vs)
  (generate-unary-ad-definitions
-  forward-value?
+  (lambda (v) (and (forward-value? v) (not (bundle? v))))
   (lambda (v)
    (cond
     ((bundle? v) "x.t")
@@ -5507,6 +5502,11 @@
 (define (generate-bundle-definitions bs xs vs)
  (generate-binary-ad-definitions
   (lambda (v)
+   (and (not (perturbation-tagged-value? v))
+	(not (bundle? v))
+	(not (sensitivity-tagged-value? v))
+	(not (reverse-tagged-value? v))))
+  (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
     (cond
      ((or (abstract-boolean? v1)
@@ -5526,32 +5526,196 @@
       (list
        (generate-builtin-name "m" (bundle v1 v2) vs)
        "("
-       (map (lambda (s3a s3b v3)
-	     (if (void? v3)
-		 #f
-		 (list (generate-builtin-name
-			"bundle" (vlad-cons (primal v3) (tangent v3)) vs)
-		       "("
-		       (generate-builtin-name
-			"m" (vlad-cons (primal v3) (tangent v3)) vs)
-		       "("
-		       (commas-between
-			(list (if (void? (primal v3)) #f (list "x.a." s3a))
-			      (if (void? (tangent v3)) #f (list "x.d." s3b))))
-		       "))")))
-	    (generate-slot-names v1 xs)
-	    (generate-slot-names v2 xs)
-	    (aggregate-value-values (bundle v1 v2)))
+       (commas-between
+	(map (lambda (s3a s3b v3)
+	      (if (void? v3)
+		  #f
+		  (list (generate-builtin-name
+			 "bundle" (vlad-cons (primal v3) (tangent v3)) vs)
+			"("
+			(generate-builtin-name
+			 "m" (vlad-cons (primal v3) (tangent v3)) vs)
+			"("
+			(commas-between
+			 (list (if (void? (primal v3)) #f (list "x.a." s3a))
+			       (if (void? (tangent v3)) #f (list "x.d." s3b))))
+			"))")))
+	     (generate-slot-names v1 xs)
+	     (generate-slot-names v2 xs)
+	     (aggregate-value-values (bundle v1 v2))))
        ")"))
      (else (internal-error)))))
-  bundle 'bundle "bundle"
+  bundle 'bundle "bundle" perturb unperturb bs xs vs))
+
+(define (generate-sensitize-definitions bs xs vs)
+ (generate-unary-ad-definitions
   (lambda (v)
-   (or (scalar-value? v)
-       (perturbation-tagged-value? v)
-       (bundle? v)
-       (sensitivity-tagged-value? v)
-       (reverse-tagged-value? v)))
-  perturb unperturb bs xs vs))
+   (and (not (perturbation-tagged-value? v))
+	(not (bundle? v))
+	(not (sensitivity-tagged-value? v))
+	(not (reverse-tagged-value? v))))
+  (lambda (v)
+   (cond
+    ((or (abstract-boolean? v)
+	 (abstract-real? v)
+	 (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v))
+     (list (generate-builtin-name "m" (sensitize v) vs) "(x)"))
+    ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+     (list (generate-builtin-name "m" (sensitize v) vs)
+	   "("
+	   (commas-between
+	    (map (lambda (s v)
+		  (if (void? (sensitize v))
+		      #f
+		      (list (generate-builtin-name "sensitize" v vs)
+			    "("
+			    (if (void? v) '() (list "x." s))
+			    ")")))
+		 (generate-slot-names v xs)
+		 (aggregate-value-values v)))
+	   ")"))
+    (else (internal-error))))
+  sensitize 'sensitize "sensitize" bs xs vs))
+
+(define (generate-unsensitize-definitions bs xs vs)
+ (generate-unary-ad-definitions
+  (lambda (v)
+   (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
+  (lambda (v)
+   (cond
+    ((sensitivity-tagged-value? v) "x.p")
+    ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+     (list (generate-builtin-name "m" (unsensitize v) vs)
+	   "("
+	   (commas-between
+	    (map (lambda (s v)
+		  (if (void? (unsensitize v))
+		      #f
+		      (list (generate-builtin-name "unsensitize" v vs)
+			    "("
+			    (if (void? v) '() (list "x." s))
+			    ")")))
+		 (generate-slot-names v xs)
+		 (aggregate-value-values v)))
+	   ")"))
+    (else (internal-error))))
+  unsensitize 'unsensitize "unsensitize" bs xs vs))
+
+(define (generate-plus-definitions bs xs vs)
+ (generate-binary-ad-definitions
+  (lambda (v) #t)
+  (lambda (v)
+   (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+    (cond
+     ((abstract-boolean? v1)
+      ;; needs work: To generate run-time conformance check when the primal
+      ;;             and/or tangent are abstract booleans.
+      (if (void? v1)
+	  (if (void? v2) (internal-error) "x.d")
+	  (if (void? v2) "x.a" "x.d")))
+     ((abstract-real? v1)
+      (if (void? v1)
+	  (if (void? v2)
+	      (internal-error)
+	      ;; This assumes that Scheme inexact numbers are printed as C
+	      ;; doubles.
+	      (list (exact->inexact v1) "+x.d"))
+	  (if (void? v2)
+	      ;; This assumes that Scheme inexact numbers are printed as C
+	      ;; doubles.
+	      (list "x.a+" (exact->inexact v2))
+	      "x.a+x.d")))
+     ((or (nonrecursive-closure? v)
+	  (recursive-closure? v)
+	  (perturbation-tagged-value? v)
+	  (bundle? v)
+	  (sensitivity-tagged-value? v)
+	  (reverse-tagged-value? v)
+	  (tagged-pair? v))
+      (list
+       (generate-builtin-name "m" (plus v1 v2) vs)
+       "("
+       (commas-between
+	(map (lambda (s3a s3b v3 v3a v3b)
+	      (if (void? v3)
+		  #f
+		  (list (generate-builtin-name
+			 "plus" (vlad-cons v3a v3b) vs)
+			"("
+			(generate-builtin-name
+			 "m" (vlad-cons v3a v3b) vs)
+			"("
+			(commas-between
+			 (list (if (void? v3a) #f (list "x.a." s3a))
+			       (if (void? v3b) #f (list "x.d." s3b))))
+			"))")))
+	     (generate-slot-names v1 xs)
+	     (generate-slot-names v2 xs)
+	     (aggregate-value-values (plus v1 v2))
+	     (aggregate-value-values v1)
+	     (aggregate-value-values v2)))
+       ")"))
+     (else (internal-error)))))
+  plus 'plus "plus" identity identity bs xs vs))
+
+(define (generate-*j-definitions bs xs vs)
+ (generate-unary-ad-definitions
+  (lambda (v)
+   (and (not (perturbation-tagged-value? v))
+	(not (bundle? v))
+	(not (sensitivity-tagged-value? v))
+	(not (reverse-tagged-value? v))))
+  (lambda (v)
+   (cond
+    ((or (abstract-boolean? v)
+	 (abstract-real? v)
+	 (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v))
+     (list (generate-builtin-name "m" (*j v) vs) "(x)"))
+    ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+     (list (generate-builtin-name "m" (*j v) vs)
+	   "("
+	   (commas-between
+	    (map (lambda (s v)
+		  (if (void? (*j v))
+		      #f
+		      (list (generate-builtin-name "starj" v vs)
+			    "("
+			    (if (void? v) '() (list "x." s))
+			    ")")))
+		 (generate-slot-names v xs)
+		 (aggregate-value-values v)))
+	   ")"))
+    (else (internal-error))))
+  *j '*j "starj" bs xs vs))
+
+(define (generate-*j-inverse-definitions bs xs vs)
+ (generate-unary-ad-definitions
+  (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
+  (lambda (v)
+   (cond
+    ((reverse-tagged-value? v) "x.p")
+    ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+     (list (generate-builtin-name "m" (*j-inverse v) vs)
+	   "("
+	   (commas-between
+	    (map (lambda (s v)
+		  (if (void? (*j-inverse v))
+		      #f
+		      (list (generate-builtin-name "starj_inverse" v vs)
+			    "("
+			    (if (void? v) '() (list "x." s))
+			    ")")))
+		 (generate-slot-names v xs)
+		 (aggregate-value-values v)))
+	   ")"))
+    (else (internal-error))))
+  *j-inverse '*j-inverse "starj_inverse" bs xs vs))
 
 (define (generate e bs bs0)
  (let* ((xs (all-variables bs))
@@ -5589,31 +5753,52 @@
    (generate-real-primitive-declarations 'write "double" "write" bs vs)
    (generate-unary-ad-declarations (lambda (v) #t) zero 'zero "zero" bs vs)
    (generate-unary-ad-declarations
-    (lambda (v) #t) perturb 'perturb "perturb" bs vs)
-   (generate-unary-ad-declarations
-    perturbation-value? unperturb 'unperturb "unperturb" bs vs)
-   (generate-unary-ad-declarations
-    forward-value? primal 'primal "primal" bs vs)
-   (generate-unary-ad-declarations
-    forward-value? tangent 'tangent "tangent" bs vs)
-   (generate-binary-ad-declarations
-    bundle 'bundle "bundle"
     (lambda (v)
-     (or (scalar-value? v)
-	 (perturbation-tagged-value? v)
-	 (bundle? v)
-	 (sensitivity-tagged-value? v)
-	 (reverse-tagged-value? v)))
-    perturb unperturb bs vs)
+     (and (not (perturbation-tagged-value? v))
+	  (not (bundle? v))
+	  (not (sensitivity-tagged-value? v))
+	  (not (reverse-tagged-value? v))))
+    perturb 'perturb "perturb" bs vs)
    (generate-unary-ad-declarations
-    (lambda (v) #t) sensitize 'sensitize "sensitize" bs vs)
+    (lambda (v)
+     (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
+    unperturb 'unperturb "unperturb" bs vs)
    (generate-unary-ad-declarations
-    sensitivity-value? unsensitize 'unsensitize "unsensitize" bs vs)
+    (lambda (v) (and (forward-value? v) (not (bundle? v))))
+    primal 'primal "primal" bs vs)
+   (generate-unary-ad-declarations
+    (lambda (v) (and (forward-value? v) (not (bundle? v))))
+    tangent 'tangent "tangent" bs vs)
    (generate-binary-ad-declarations
-    plus 'plus "plus" scalar-value? identity identity bs vs)
-   (generate-unary-ad-declarations (lambda (v) #t) *j '*j "starj" bs vs)
+    (lambda (v)
+     (and (not (perturbation-tagged-value? v))
+	  (not (bundle? v))
+	  (not (sensitivity-tagged-value? v))
+	  (not (reverse-tagged-value? v))))
+    bundle 'bundle "bundle" perturb unperturb bs vs)
    (generate-unary-ad-declarations
-    reverse-value? *j-inverse '*j-inverse "starj_inverse" bs vs)
+    (lambda (v)
+     (and (not (perturbation-tagged-value? v))
+	  (not (bundle? v))
+	  (not (sensitivity-tagged-value? v))
+	  (not (reverse-tagged-value? v))))
+    sensitize 'sensitize "sensitize" bs vs)
+   (generate-unary-ad-declarations
+    (lambda (v)
+     (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
+    unsensitize 'unsensitize "unsensitize" bs vs)
+   (generate-binary-ad-declarations
+    (lambda (v) #t) plus 'plus "plus" identity identity bs vs)
+   (generate-unary-ad-declarations
+    (lambda (v)
+     (and (not (perturbation-tagged-value? v))
+	  (not (bundle? v))
+	  (not (sensitivity-tagged-value? v))
+	  (not (reverse-tagged-value? v))))
+    *j '*j "starj" bs vs)
+   (generate-unary-ad-declarations
+    (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
+    *j-inverse '*j-inverse "starj_inverse" bs vs)
    (generate-if-and-function-declarations bs vs v1v2s things1-things2)
    "int main(void);" #\newline
    (generate-constructor-definitions xs vs)
@@ -5646,7 +5831,11 @@
    (generate-primal-definitions bs xs vs)
    (generate-tangent-definitions bs xs vs)
    (generate-bundle-definitions bs xs vs)
-   ;; needs work: sensitize, unsensitize, plus, *j, and *j-inverse
+   (generate-sensitize-definitions bs xs vs)
+   (generate-unsensitize-definitions bs xs vs)
+   (generate-plus-definitions bs xs vs)
+   (generate-*j-definitions bs xs vs)
+   (generate-*j-inverse-definitions bs xs vs)
    (generate-if-and-function-definitions bs xs vs v1v2s v1v2s1 things1-things2)
    (list
     "int main(void){"
@@ -6586,7 +6775,7 @@
 	(cons unsensitize (sensitize (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'plus
   (binary plus "plus")
-  (lambda (v vs) (generate-builtin-name "bundle" v vs))
+  (lambda (v vs) (generate-builtin-name "plus" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
 	  ((cons x1-unperturbed x2-unperturbed)
