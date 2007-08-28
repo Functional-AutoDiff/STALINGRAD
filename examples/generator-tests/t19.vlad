@@ -1,0 +1,9 @@
+(define (cdr (cons x y)) y)
+
+(define ((gradient f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1.0)))))
+
+(let (((cons x y)
+       ((gradient (lambda (x y) (+ (* x x) (* x y))))
+	(read-real) (read-real))))
+ (list (write x) (write y)))
