@@ -98,3 +98,14 @@ stalingrad -compile -imprecise-inexacts t17
 1
 1
 EOF
+echo Compiling t18
+stalingrad -compile -imprecise-inexacts t18
+./t18 <<EOF
+7
+EOF
+echo Compiling t19
+stalingrad -compile -imprecise-inexacts t19
+./t19 <<EOF
+3
+4
+EOF
