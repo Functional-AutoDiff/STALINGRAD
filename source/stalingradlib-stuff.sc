@@ -170,11 +170,6 @@
 
 ;;; General
 
-(define (duplicates? xs)
- ;; belongs in QobiScheme
- (and (not (null? xs))
-      (or (member (first xs) (rest xs)) (duplicates? (rest xs)))))
-
 (define (duplicatesp? p xs)
  ;; belongs in QobiScheme
  (and (not (null? xs))
@@ -193,13 +188,6 @@
   (if (null? l)
       c
       (loop (rest l) (map rest ls) (g (apply f (first l) (map first ls)) c)))))
-
-(define (remove-oneq x l)
- ;; belongs in QobiScheme
- (when (null? l) (internal-error))
- (if (eq? (first l) x)
-     (rest l)
-     (cons (first l) (remove-oneq x (rest l)))))
 
 ;;; Error Handing
 
@@ -238,7 +226,6 @@
  (display "Error: " stderr-port)
  (display message stderr-port)
  (newline stderr-port)
- (internal-error "debugging")
  (exit -1))
 
 (define (internal-error . arguments)
@@ -817,17 +804,6 @@
 (define (vlad-empty-list) '())
 
 (define (vlad-empty-list? v) (null? v))
-
-(define (tagged-empty-list tags)
- (if (null? tags)
-     (vlad-empty-list)
-     ((case (first tags)
-       ((perturbation) perturb)
-       ((forward) j*)
-       ((sensitivity) sensitize)
-       ((reverse) *j)
-       (else (internal-error)))
-      (tagged-empty-list (rest tags)))))
 
 ;;; Booleans
 
