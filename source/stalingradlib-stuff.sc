@@ -48,8 +48,7 @@
 
 ;;; unions
 ;;;  1. 'boolean
-;;;  2. top
-;;;  3. vlad-boolean
+;;;  2. vlad-boolean
 
 ;;; needs work
 ;;;  1. zero, perturb, unperturb, primal, tangent, bundle, sensitize,
@@ -173,6 +172,10 @@
 
 (define *imprecise-inexacts?* #f)
 
+(define *warnings?* #f)
+
+(define *abstract?* #f)
+
 (define *run?* #f)
 
 ;;; Procedures
@@ -207,48 +210,10 @@
    (some (lambda (e-prime) (and (not (eq? e-prime e)) (<=? e e-prime))) s))
   s))
 
+(define (cross-product f l1 l2)
+ (map-reduce append '() (lambda (x1) (map (lambda (x2) (f x1 x2)) l2)) l1))
+
 ;;; Error Handing
-
-(define (compile-time-error message . arguments)
- (apply format stderr-port message arguments)
- (newline stderr-port)
- (exit -1))
-
-(define (run-time-error message . vs)
- (cond
-  ;; unions: option to print warnings
-  (*abstract?* (empty-abstract-value))
-  (else
-   (when *error?*
-    (display "Nested error: " stderr-port)
-    (display message stderr-port)
-    (newline stderr-port)
-    (display "Error: " stderr-port)
-    (display *error* stderr-port)
-    (newline stderr-port)
-    (exit -1))
-   (set! *error* message)
-   (set! *error?* #t)
-   (when *run?*
-    (format stderr-port "Stack trace~%")
-    (for-each (lambda (record)
-	       (display "Procedure: " stderr-port)
-	       ((if *pp?* pp write) (externalize (first record)) stderr-port)
-	       (newline stderr-port)
-	       (display "Argument: " stderr-port)
-	       ((if *pp?* pp write) (externalize (second record)) stderr-port)
-	       (newline stderr-port)
-	       (newline stderr-port))
-	      *stack*)
-    (newline stderr-port))
-   (for-each (lambda (v)
-	      ((if *pp?* pp write) (externalize v) stderr-port)
-	      (newline stderr-port))
-	     vs)
-   (display "Error: " stderr-port)
-   (display message stderr-port)
-   (newline stderr-port)
-   (exit -1))))
 
 (define (internal-error . arguments)
  (if (null? arguments)
@@ -263,6 +228,61 @@
      (apply panic
 	    (format #f "Not (yet) implemented: ~a" (first arguments))
 	    (rest arguments))))
+
+(define (compile-time-error message . arguments)
+ (apply format stderr-port message arguments)
+ (newline stderr-port)
+ (exit -1))
+
+(define (compile-time-warning message . vs)
+ (unless *abstract?* (internal-error))
+ (when *warnings?*
+  (for-each (lambda (v)
+	     ((if *pp?* pp write) (externalize v) stderr-port)
+	     (newline stderr-port))
+	    vs)
+  (display "Warning: " stderr-port)
+  (display message stderr-port)
+  (newline stderr-port))
+ (empty-abstract-value))
+
+(define (run-time-error message . vs)
+ (when *abstract?* (internal-error))
+ (when *error?*
+  (display "Nested error: " stderr-port)
+  (display message stderr-port)
+  (newline stderr-port)
+  (display "Error: " stderr-port)
+  (display *error* stderr-port)
+  (newline stderr-port)
+  (exit -1))
+ (set! *error* message)
+ (set! *error?* #t)
+ (when *run?*
+  (format stderr-port "Stack trace~%")
+  (for-each (lambda (record)
+	     (display "Procedure: " stderr-port)
+	     ((if *pp?* pp write) (externalize (first record)) stderr-port)
+	     (newline stderr-port)
+	     (display "Argument: " stderr-port)
+	     ((if *pp?* pp write) (externalize (second record)) stderr-port)
+	     (newline stderr-port)
+	     (newline stderr-port))
+	    *stack*)
+  (newline stderr-port))
+ (for-each (lambda (v)
+	    ((if *pp?* pp write) (externalize v) stderr-port)
+	    (newline stderr-port))
+	   vs)
+ (display "Error: " stderr-port)
+ (display message stderr-port)
+ (newline stderr-port)
+ (exit -1))
+
+(define (ad-error message . vs)
+ (if *abstract?*
+     (apply compile-time-warning (format #f message "might not be") vs)
+     (apply run-time-error (format #f message "is not") vs)))
 
 ;;; Tags
 
@@ -825,7 +845,9 @@
 
 (define (vlad-empty-list) '())
 
-(define (vlad-empty-list? v) (null? v))
+(define (vlad-empty-list? v)
+ (when (or (union? v) (up? v)) (internal-error))
+ (null? v))
 
 ;;; Booleans
 
@@ -833,21 +855,28 @@
 
 (define (vlad-false) #f)
 
-(define (vlad-true? v) (eq? v #t))
+(define (vlad-true? v)
+ (when (or (union? v) (up? v)) (internal-error))
+ (eq? v #t))
 
-(define (vlad-false? v) (eq? v #f))
+(define (vlad-false? v)
+ (when (or (union? v) (up? v)) (internal-error))
+ (eq? v #f))
 
-(define (vlad-boolean? v)
- (when (union? v) (internal-error))
- (or (vlad-true? v) (vlad-false? v)))
+(define (vlad-boolean? v) (or (vlad-true? v) (vlad-false? v)))
 
 ;;; Reals
 
-(define (abstract-real? v) (or (real? v) (eq? v 'real)))
+(define (abstract-real? v)
+ (when (or (union? v) (up? v)) (internal-error))
+ (or (real? v) (eq? v 'real)))
 
 ;;; Closures
 
 (define (new-nonrecursive-closure vs e)
+ (when (and *abstract?*
+	    (some (lambda (v) (and (not (union? v)) (not (up? v)))) vs))
+  (internal-error))
  (unless (= (length vs) (length (free-variables e))) (internal-error))
  ;; We used to enforce the constraint that the tags of the parameter of e
  ;; (as an indication of the tags of the resulting closure) were a prefix of
@@ -856,37 +885,46 @@
  ;; variables. The backpropagator variables are free in the nested let* context
  ;; context of the forward phase reverse transformed procedure but the
  ;; backpropagators are not reverse values.
- ;; unions: can't get value-tags of empty abstract value
- (unless (every (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
-		(free-variables e)
-		vs)
-  (internal-error))
+ (unless *abstract?*
+  (unless (every (lambda (x v)
+		  (or (empty-abstract-value? v)
+		      (prefix-tags? (variable-tags x) (value-tags v))))
+		 (free-variables e)
+		 vs)
+   (internal-error)))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-nonrecursive-closure vs e)))
 
 (define (new-recursive-closure vs xs es i)
+ (when (and *abstract?*
+	    (some (lambda (v) (and (not (union? v)) (not (up? v)))) vs))
+  (internal-error))
  (unless (= (length vs)
 	    (length (recursive-closure-free-variables
 		     (vector->list xs) (vector->list es))))
   (internal-error))
  ;; See the note in new-nonrecursive-closure. While that hasn't happened in
  ;; practise, and I don't know whether it can, I removed it in principle.
- ;; unions: can't get value-tags of empty abstract value
- (unless (every (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
-		(recursive-closure-free-variables
-		 (vector->list xs) (vector->list es))
-		vs)
-  (internal-error))
+ (unless *abstract?*
+  (unless (every (lambda (x v)
+		  (or (empty-abstract-value? v)
+		      (prefix-tags? (variable-tags x) (value-tags v))))
+		 (recursive-closure-free-variables
+		  (vector->list xs) (vector->list es))
+		 vs)
+   (internal-error)))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-recursive-closure vs xs es i)))
 
 (define (nonrecursive-closure-match? v1 v2)
+ (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
  (expression=? (nonrecursive-closure-lambda-expression v1)
 	       (nonrecursive-closure-lambda-expression v2)))
 
 (define (recursive-closure-match? v1 v2)
+ (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
  (and (= (recursive-closure-index v1) (recursive-closure-index v2))
       (= (vector-length (recursive-closure-procedure-variables v1))
 	 (vector-length (recursive-closure-procedure-variables v2)))
@@ -903,13 +941,15 @@
 		     (recursive-closure-lambda-expressions v2)))))
 
 (define (closure? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (nonrecursive-closure? v) (recursive-closure? v)))
 
 (define (nonrecursive-closure-variables v)
+ (when (or (union? v) (up? v)) (internal-error))
  (free-variables (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-variables v)
+ (when (or (union? v) (up? v)) (internal-error))
  (recursive-closure-free-variables
   (vector->list (recursive-closure-procedure-variables v))
   (vector->list (recursive-closure-lambda-expressions v))))
@@ -920,9 +960,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-parameter v)
+ (when (or (union? v) (up? v)) (internal-error))
  (lambda-expression-parameter (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-parameter v)
+ (when (or (union? v) (up? v)) (internal-error))
  (lambda-expression-parameter
   (vector-ref (recursive-closure-lambda-expressions v)
 	      (recursive-closure-index v))))
@@ -933,9 +975,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-tags v)
+ (when (or (union? v) (up? v)) (internal-error))
  (parameter-tags (nonrecursive-closure-parameter v)))
 
 (define (recursive-closure-tags v)
+ (when (or (union? v) (up? v)) (internal-error))
  (parameter-tags (recursive-closure-parameter v)))
 
 (define (closure-body v)
@@ -947,19 +991,23 @@
 	(else (internal-error)))))
 
 (define (vlad-procedure? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (primitive-procedure? v) (closure? v)))
 
 ;;; Perturbation Tagged Values
 
 (define (new-perturbation-tagged-value v)
- (if (empty-abstract-value? v)
-     (empty-abstract-value)
-     (make-perturbation-tagged-value v)))
+ (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (if (empty-abstract-value? v) v (make-perturbation-tagged-value v)))
 
 ;;; Bundles
 
 (define (new-bundle v v-perturbation)
+ (when (and *abstract?*
+	    (or (and (not (union? v)) (not (up? v)))
+		(and (not (union? v-perturbation))
+		     (not (up? v-perturbation)))))
+  (internal-error))
  ;; unions: Should check that v-perturbation conforms to v.
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
@@ -968,36 +1016,41 @@
 ;;; Sensitivity Tagged Values
 
 (define (new-sensitivity-tagged-value v)
- (if (empty-abstract-value? v)
-     (empty-abstract-value)
-     (make-sensitivity-tagged-value v)))
+ (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (if (empty-abstract-value? v) v (make-sensitivity-tagged-value v)))
 
 ;;; Reverse Tagged Values
 
 (define (new-reverse-tagged-value v)
- (if (empty-abstract-value? v)
-     (empty-abstract-value)
-     (make-reverse-tagged-value v)))
+ (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (if (empty-abstract-value? v) v (make-reverse-tagged-value v)))
 
 ;;; Pairs
 
 (define (new-tagged-pair tags v1 v2)
- (unless (and (prefix-tags? tags (value-tags v1))
-	      (prefix-tags? tags (value-tags v2)))
+ (when (and *abstract?*
+	    (or (and (not (union? v1)) (not (up? v1)))
+		(and (not (union? v2)) (not (up? v2)))))
   (internal-error))
- (make-tagged-pair tags v1 v2))
+ (unless *abstract?*
+  (unless (and (or (empty-abstract-value? v1)
+		   (prefix-tags? tags (value-tags v1)))
+	       (or (empty-abstract-value? v2)
+		   (prefix-tags? tags (value-tags v2))))
+   (internal-error)))
+ (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
+     (empty-abstract-value)
+     (make-tagged-pair tags v1 v2)))
 
 (define (vlad-pair? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (and (tagged-pair? v) (empty-tags? (tagged-pair-tags v))))
 
 (define (vlad-car v)
- ;; unions
  (unless (vlad-pair? v) (internal-error))
  (tagged-pair-car v))
 
 (define (vlad-cdr v)
- ;; unions
  (unless (vlad-pair? v) (internal-error))
  (tagged-pair-cdr v))
 
@@ -1009,12 +1062,54 @@
 
 (define (empty-abstract-value? v) (and (union? v) (null? (union-values v))))
 
-(define (new-union vs) (make-union (remove-if empty-abstract-value? vs)))
+(define (singleton v)
+ (cond (*abstract?*
+	(when (or (and (union? v) (not (empty-abstract-value? v))) (up? v))
+	 (internal-error))
+	(if (empty-abstract-value? v) v (make-union (list v))))
+       (else (when (or (union? v) (up? v)) (internal-error))
+	     v)))
+
+(define (abstract-boolean) (make-union (list (vlad-true) (vlad-false))))
+
+(define (closed? v)
+ (let loop ((v v) (n 0))
+  (cond ((union? v) (every (lambda (u) (loop u (+ n 1))) (union-values v)))
+	((up? v) (< (up-index v) n))
+	((scalar-value? v) #t)
+	(else (every (lambda (v) (loop v n)) (aggregate-value-values v))))))
+
+(define (union-members v)
+ (when (up? v) (internal-error))
+ (if (union? v)
+     (map-reduce append '() union-members (union-values v))
+     (list v)))
+
+(define (new-union vs)
+ (let* ((us (map-reduce append '() union-members vs))
+	(us1 (remove-if closed? us))
+	(us2 (remove-if-not closed? us)))
+  (make-union
+   (append us1
+	   ;; This does not affect the extension of the abstract value but can
+	   ;; yield a smaller representation. Thus this is just an
+	   ;; optimization. Since abstract value subset and equivalence is
+	   ;; undecidable, can only conservatively approximate this. Using a
+	   ;; conservative approximation is sound since abstract values are
+	   ;; removed only when the predicate returns #t which is a precise
+	   ;; result.
+	   (maximal-elements abstract-value-subset?
+			     (remove-duplicatesp abstract-value=? us2))))))
+
+(define (map-union f v) (new-union (map f (union-values v))))
+
+(define (cross-union f v1 v2)
+ (new-union (cross-product f (union-values v1) (union-values v2))))
 
 ;;; Generic
 
 (define (perturbation-value? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (and (nonrecursive-closure? v)
 	  (perturbation-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1023,7 +1118,7 @@
      (and (tagged-pair? v) (tagged? 'perturbation (tagged-pair-tags v)))))
 
 (define (forward-value? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (and (nonrecursive-closure? v)
 	  (forward-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1036,7 +1131,7 @@
  ;; unsensitize them. You need to invoke backpropagators so we can't prohibit
  ;; invocation of sensitivity-tagged procedures. Perhaps we could/should
  ;; prohibit invocation of perturbation-tagged procedures.
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (and (nonrecursive-closure? v)
 	  (sensitivity-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1045,7 +1140,7 @@
      (and (tagged-pair? v) (tagged? 'sensitivity (tagged-pair-tags v)))))
 
 (define (reverse-value? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (and (nonrecursive-closure? v)
 	  (reverse-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1054,7 +1149,7 @@
      (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
 
 (define (scalar-value? v)
- (when (union? v) (internal-error))
+ (when (or (union? v) (up? v)) (internal-error))
  (or (vlad-empty-list? v)
      (vlad-true? v)
      (vlad-false? v)
@@ -1062,7 +1157,6 @@
      (primitive-procedure? v)))
 
 (define (aggregate-value-values v)
- (when (union? v) (internal-error))
  (cond
   ((nonrecursive-closure? v) (nonrecursive-closure-values v))
   ((recursive-closure? v) (recursive-closure-values v))
@@ -1074,7 +1168,6 @@
   (else (internal-error))))
 
 (define (make-aggregate-value-with-new-values v vs)
- (when (union? v) (internal-error))
  (cond
   ((nonrecursive-closure? v)
    (new-nonrecursive-closure vs (nonrecursive-closure-lambda-expression v)))
@@ -1101,7 +1194,6 @@
   (else (internal-error))))
 
 (define (value-tags v)
- ;; unions
  (cond
   ((scalar-value? v) '())
   ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
@@ -1116,7 +1208,7 @@
   ((tagged-pair? v) (tagged-pair-tags v))
   (else (internal-error))))
 
-;;; Abstract Value Subset, Equivalence, Nondisjointness, and Union
+;;; Abstract Value Subset, Equivalence, and Nondisjointness
 
 (define (abstract-value-subset? v1 v2)
  ;; I used to think that abstract value subset and equality is undecidable (by
@@ -1152,7 +1244,7 @@
 	  cs
 	  vs1-above
 	  (rest* vs2-above (+ (up-index v2) 1))))
-   ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #t)
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #t)
    ((and (union? v1) (union? v2))
     (every (lambda (u1)
 	    (some (lambda (u2)
@@ -1233,9 +1325,7 @@
 (define (abstract-value=? v1 v2)
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
 
-(define (abstract-value-nondisjoint? v1 v2 conformance?)
- ;; Conformance means that v1 and v2 is are nondisjoint when reals are lifted
- ;; to abstract reals.
+(define (abstract-value-nondisjoint? v1 v2)
  ;; I used to think that determining whether two abstract values are
  ;; nondisjoint is undecidable (by reduction from nonempty interesection of
  ;; two context-free grammars, which is semidecidable since a lone element in
@@ -1245,7 +1335,7 @@
  ;; strong equivalence, not weak equivalence. And I believe that determining
  ;; whether the set of trees generated by two context-free grammars is
  ;; nondisjoint is decidable. And I believe that this algorithm is precise.
- ;; Only used in bundle, plus, destructure, generate-destructure for generating
+ ;; Only used in abstract-destructure and generate-destructure for generating
  ;; error messages.
  (let loop ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
   (cond
@@ -1261,7 +1351,7 @@
 	  cs
 	  vs1-above
 	  (rest* vs2-above (+ (up-index v2) 1))))
-   ((some (lambda (c) (and (eq? v1 (car c)) (eq? v2 (cdr c)))) cs) #f)
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #f)
    ((and (union? v1) (union? v2))
     (some (lambda (u1)
 	   (some (lambda (u2)
@@ -1280,8 +1370,7 @@
      (and (vlad-false? v1) (vlad-false? v2))
      (and (abstract-real? v1)
 	  (abstract-real? v2)
-	  (or conformance?
-	      (eq? v1 'real)
+	  (or (eq? v1 'real)
 	      (eq? v2 'real)
 	      ;; This was = but then it equates exact values with inexact
 	      ;; values and this breaks -imprecise-inexacts.
@@ -1335,50 +1424,9 @@
       (loop
        (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs vs1-above vs2-above)))))))
 
-(define (closed-proto-abstract-values v)
- (let loop ((v v) (vs-above '()))
-  (if (up? v)
-      (if (= (up-index v) (- (length vs-above) 1))
-	  (new-union
-	   (map (lambda (u)
-		 (if (scalar-proto-abstract-value? u)
-		     u
-		     (make-aggregate-value-with-new-values
-		      u
-		      (map (lambda (v)
-			    (if (memq v vs-above)
-				(make-up (+ (positionq v vs-above) 1))
-				v))
-			   (aggregate-value-values u)))))
-		(union-values (last vs-above))))
-	  v)
-      (new-union (map (lambda (u)
-		       (if (scalar-proto-abstract-value? u)
-			   u
-			   (make-aggregate-value-with-new-values
-			    u
-			    (map (lambda (v1) (loop v1 (cons v vs-above)))
-				 (aggregate-value-values u)))))
-		      (union-values v))))))
+(define (abstract-value-union v1 v2) (unimplemented "debugging"))
 
-(define (remove-redundant-abstract-values vs)
- ;; This does not affect the extension of the abstract value but can yield a
- ;; smaller representation. Thus this is just an optimization. Since abstract
- ;; value subset and equality is undecidable, can only conservatively
- ;; approximate this. Using a conservative approximation is sound since
- ;; abstract values are removed only when the predicate returns #t which is a
- ;; precise result.
- (maximal-elements abstract-value-subset?
-		   (remove-duplicatesp abstract-value=? vs)))
-
-(define (abstract-value-union v1 v2)
- ;; This cannot introduce imprecision.
- (unless (and (union? v1) (union? v2)) (internal-error))
- (new-union (remove-redundant-abstract-values
-	     (append (union-values (closed-proto-abstract-values v1))
-		     (union-values (closed-proto-abstract-values v2))))))
-
-;;; Abstract Environment Equivalence and Union
+;;; Abstract Environment Equivalence
 
 (define (abstract-environment=? vs1 vs2)
  ;; This assumes that the free variables in two alpha-equivalent expressions
@@ -1924,7 +1972,6 @@
  (or (null? v)
      (boolean? v)
      (real? v)
-     (and *wizard?* (vlad-empty-list? v))
      (and *wizard?*
 	  (perturbation-tagged-value? v)
 	  (value? (perturbation-tagged-value-primal v)))
@@ -1941,12 +1988,10 @@
      (and (pair? v) (value? (car v)) (value? (cdr v)))))
 
 (define (internalize v)
- ;; union
  (cond
   ((null? v) (vlad-empty-list))
   ((boolean? v) (if v (vlad-true) (vlad-false)))
   ((real? v) v)
-  ((vlad-empty-list? v) v)
   ((perturbation-tagged-value? v)
    (new-perturbation-tagged-value
     (internalize (perturbation-tagged-value-primal v))))
@@ -2163,6 +2208,8 @@
 
 (define (zero v)
  (cond
+  ((union? v) (map-union zero v))
+  ((up? v) v)
   ((vlad-empty-list? v) v)
   ((vlad-true? v) v)
   ((vlad-false? v) v)
@@ -2191,9 +2238,6 @@
    (new-tagged-pair (tagged-pair-tags v)
 		    (zero (tagged-pair-car v))
 		    (zero (tagged-pair-cdr v))))
-  ;; union: to remove redundant abstract values
-  ((union? v) (new-union (map zero (union-values v))))
-  ((up? v) v)
   (else (internal-error))))
 
 ;;; Forward Mode
@@ -2293,283 +2337,311 @@
   (else (internal-error))))
 
 (define (perturb v)
- (cond ((vlad-empty-list? v) (new-perturbation-tagged-value v))
-       ((vlad-true? v) (new-perturbation-tagged-value v))
-       ((vlad-false? v) (new-perturbation-tagged-value v))
-       ((abstract-real? v) (new-perturbation-tagged-value v))
-       ((primitive-procedure? v) (new-perturbation-tagged-value v))
-       ((nonrecursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map perturb (nonrecursive-closure-values v))
-	 (perturbation-transform (nonrecursive-closure-lambda-expression v))))
-       ((recursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map perturb (recursive-closure-values v))
-	 (map-vector perturbationify (recursive-closure-procedure-variables v))
-	 (map-vector perturbation-transform
-		     (recursive-closure-lambda-expressions v))
-	 (recursive-closure-index v)))
-       ((perturbation-tagged-value? v) (new-perturbation-tagged-value v))
-       ((bundle? v) (new-perturbation-tagged-value v))
-       ((sensitivity-tagged-value? v) (new-perturbation-tagged-value v))
-       ((reverse-tagged-value? v) (new-perturbation-tagged-value v))
-       ((tagged-pair? v)
-	(new-tagged-pair (add-tag 'perturbation (tagged-pair-tags v))
-			 (perturb (tagged-pair-car v))
-			 (perturb (tagged-pair-cdr v))))
-       ((union? v) (new-union (map perturb (union-values v))))
-       ((up? v) v)
-       (else (internal-error))))
+ (cond
+  ((union? v) (map-union perturb v))
+  ((up? v) v)
+  ((vlad-empty-list? v) (new-perturbation-tagged-value (singleton v)))
+  ((vlad-true? v) (new-perturbation-tagged-value (singleton v)))
+  ((vlad-false? v) (new-perturbation-tagged-value (singleton v)))
+  ((abstract-real? v) (new-perturbation-tagged-value (singleton v)))
+  ((primitive-procedure? v) (new-perturbation-tagged-value (singleton v)))
+  ((nonrecursive-closure? v)
+   ;; See the note in abstract-environment=?.
+   (new-nonrecursive-closure
+    (map perturb (nonrecursive-closure-values v))
+    (perturbation-transform (nonrecursive-closure-lambda-expression v))))
+  ((recursive-closure? v)
+   ;; See the note in abstract-environment=?.
+   (new-recursive-closure
+    (map perturb (recursive-closure-values v))
+    (map-vector perturbationify (recursive-closure-procedure-variables v))
+    (map-vector perturbation-transform
+		(recursive-closure-lambda-expressions v))
+    (recursive-closure-index v)))
+  ((perturbation-tagged-value? v)
+   (new-perturbation-tagged-value (singleton v)))
+  ((bundle? v) (new-perturbation-tagged-value (singleton v)))
+  ((sensitivity-tagged-value? v) (new-perturbation-tagged-value (singleton v)))
+  ((reverse-tagged-value? v) (new-perturbation-tagged-value (singleton v)))
+  ((tagged-pair? v)
+   (new-tagged-pair (add-tag 'perturbation (tagged-pair-tags v))
+		    (perturb (tagged-pair-car v))
+		    (perturb (tagged-pair-cdr v))))
+  (else (internal-error))))
 
 (define (unperturb v-perturbation)
  (cond
+  ((union? v-perturbation) (map-union unperturb v-perturbation))
+  ((up? v-perturbation) v-perturbation)
   ((vlad-empty-list? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((vlad-true? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((vlad-false? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((abstract-real? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((primitive-procedure? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((nonrecursive-closure? v-perturbation)
-   (unless (tagged? 'perturbation (nonrecursive-closure-tags v-perturbation))
-    (run-time-error
-     "Attempt to take unperturb of a non-perturbation value" v-perturbation))
-   ;; See the note in abstract-environment=?.
-   (new-nonrecursive-closure
-    (map unperturb (nonrecursive-closure-values v-perturbation))
-    (perturbation-transform-inverse
-     (nonrecursive-closure-lambda-expression v-perturbation))))
+   (if (tagged? 'perturbation (nonrecursive-closure-tags v-perturbation))
+       ;; See the note in abstract-environment=?.
+       (new-nonrecursive-closure
+	(map unperturb (nonrecursive-closure-values v-perturbation))
+	(perturbation-transform-inverse
+	 (nonrecursive-closure-lambda-expression v-perturbation)))
+       (ad-error "Argument to unperturb ~a a non-perturbation value"
+		 v-perturbation)))
   ((recursive-closure? v-perturbation)
-   (unless (tagged? 'perturbation (recursive-closure-tags v-perturbation))
-    (run-time-error
-     "Attempt to take unperturb of a non-perturbation value" v-perturbation))
-   ;; See the note in abstract-environment=?.
-   (new-recursive-closure
-    (map unperturb (recursive-closure-values v-perturbation))
-    (map-vector unperturbationify
-		(recursive-closure-procedure-variables v-perturbation))
-    (map-vector perturbation-transform-inverse
-		(recursive-closure-lambda-expressions v-perturbation))
-    (recursive-closure-index v-perturbation)))
+   (if (tagged? 'perturbation (recursive-closure-tags v-perturbation))
+       ;; See the note in abstract-environment=?.
+       (new-recursive-closure
+	(map unperturb (recursive-closure-values v-perturbation))
+	(map-vector unperturbationify
+		    (recursive-closure-procedure-variables v-perturbation))
+	(map-vector perturbation-transform-inverse
+		    (recursive-closure-lambda-expressions v-perturbation))
+	(recursive-closure-index v-perturbation))
+       (ad-error "Argument to unperturb ~a a non-perturbation value"
+		 v-perturbation)))
   ((perturbation-tagged-value? v-perturbation)
    (perturbation-tagged-value-primal v-perturbation))
   ((bundle? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((sensitivity-tagged-value? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((reverse-tagged-value? v-perturbation)
-   (run-time-error
-    "Attempt to take unperturb of a non-perturbation value" v-perturbation))
+   (ad-error
+    "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((tagged-pair? v-perturbation)
-   (unless (tagged? 'perturbation (tagged-pair-tags v-perturbation))
-    (run-time-error
-     "Attempt to take unperturb of a non-perturbation value" v-perturbation))
-   (new-tagged-pair
-    (remove-tag 'perturbation (tagged-pair-tags v-perturbation))
-    (unperturb (tagged-pair-car v-perturbation))
-    (unperturb (tagged-pair-cdr v-perturbation))))
-  ((union? v-perturbation)
-   (new-union (map unperturb (union-values v-perturbation))))
-  ((up? v-perturbation) v-perturbation)
+   (if (tagged? 'perturbation (tagged-pair-tags v-perturbation))
+       (new-tagged-pair
+	(remove-tag 'perturbation (tagged-pair-tags v-perturbation))
+	(unperturb (tagged-pair-car v-perturbation))
+	(unperturb (tagged-pair-cdr v-perturbation)))
+       (ad-error "Argument to unperturb ~a a non-perturbation value"
+		 v-perturbation)))
   (else (internal-error))))
 
 (define (primal v-forward)
- (let ((b (find-if
-	   (lambda (b)
-	    (abstract-value=?
-	     v-forward (primitive-procedure-forward (value-binding-value b))))
-	   *value-bindings*)))
-  (if b
-      (value-binding-value b)
-      (cond
-       ((vlad-empty-list? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((vlad-true? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((vlad-false? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((abstract-real? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((primitive-procedure? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((nonrecursive-closure? v-forward)
-	(unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
-	 (run-time-error
-	  "Attempt to take primal of a non-forward value" v-forward))
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map primal (nonrecursive-closure-values v-forward))
-	 (forward-transform-inverse
-	  (nonrecursive-closure-lambda-expression v-forward))))
-       ((recursive-closure? v-forward)
-	(unless (forward-parameter? (recursive-closure-parameter v-forward))
-	 (run-time-error
-	  "Attempt to take primal of a non-forward value" v-forward))
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map primal (recursive-closure-values v-forward))
-	 (map-vector unforwardify
-		     (recursive-closure-procedure-variables v-forward))
-	 (map-vector forward-transform-inverse
-		     (recursive-closure-lambda-expressions v-forward))
-	 (recursive-closure-index v-forward)))
-       ((perturbation-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((bundle? v-forward) (bundle-primal v-forward))
-       ((sensitivity-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((reverse-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take primal of a non-forward value" v-forward))
-       ((tagged-pair? v-forward)
-	(unless (tagged? 'forward (tagged-pair-tags v-forward))
-	 (run-time-error
-	  "Attempt to take primal of a non-forward value" v-forward))
-	(new-tagged-pair (remove-tag 'forward (tagged-pair-tags v-forward))
-			 (primal (tagged-pair-car v-forward))
-			 (primal (tagged-pair-cdr v-forward))))
-       ;; union: to remove redundant abstract values
-       ((union? v-forward) (new-union (map primal (union-values v-forward))))
-       ((up? v-forward) v-forward)
-       (else (internal-error))))))
+ (cond
+  ((union? v-forward) (map-union primal v-forward))
+  ((up? v-forward) v-forward)
+  (else
+   (let ((b (find-if (lambda (b)
+		      (abstract-value=?
+		       v-forward
+		       (primitive-procedure-forward (value-binding-value b))))
+		     *value-bindings*)))
+    (if b
+	(value-binding-value b)
+	(cond
+	 ((vlad-empty-list? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((vlad-true? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((vlad-false? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((abstract-real? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((primitive-procedure? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((nonrecursive-closure? v-forward)
+	  (if (forward-parameter?
+	       (nonrecursive-closure-parameter v-forward))
+	      ;; See the note in abstract-environment=?.
+	      (new-nonrecursive-closure
+	       (map primal (nonrecursive-closure-values v-forward))
+	       (forward-transform-inverse
+		(nonrecursive-closure-lambda-expression v-forward)))
+	      (ad-error
+	       "Argument to primal ~a a non-forward value" v-forward)))
+	 ((recursive-closure? v-forward)
+	  (if (forward-parameter? (recursive-closure-parameter v-forward))
+	      ;; See the note in abstract-environment=?.
+	      (new-recursive-closure
+	       (map primal (recursive-closure-values v-forward))
+	       (map-vector unforwardify
+			   (recursive-closure-procedure-variables v-forward))
+	       (map-vector forward-transform-inverse
+			   (recursive-closure-lambda-expressions v-forward))
+	       (recursive-closure-index v-forward))
+	      (ad-error
+	       "Argument to primal ~a a non-forward value" v-forward)))
+	 ((perturbation-tagged-value? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((bundle? v-forward) (bundle-primal v-forward))
+	 ((sensitivity-tagged-value? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((reverse-tagged-value? v-forward)
+	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
+	 ((tagged-pair? v-forward)
+	  (if (tagged? 'forward (tagged-pair-tags v-forward))
+	      (new-tagged-pair
+	       (remove-tag 'forward (tagged-pair-tags v-forward))
+	       (primal (tagged-pair-car v-forward))
+	       (primal (tagged-pair-cdr v-forward)))
+	      (ad-error
+	       "Argument to primal ~a a non-forward value" v-forward)))
+	 (else (internal-error))))))))
 
 (define (tangent v-forward)
- (let ((b (find-if
-	   (lambda (b)
-	    (abstract-value=?
-	     v-forward (primitive-procedure-forward (value-binding-value b))))
-	   *value-bindings*)))
-  (if b
-      (perturb (value-binding-value b))
-      (cond
-       ((vlad-empty-list? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((vlad-true? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((vlad-false? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((abstract-real? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((primitive-procedure? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((nonrecursive-closure? v-forward)
-	(unless (forward-parameter? (nonrecursive-closure-parameter v-forward))
-	 (run-time-error
-	  "Attempt to take tangent of a non-forward value" v-forward))
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map tangent (nonrecursive-closure-values v-forward))
-	 (perturbation-transform
-	  (forward-transform-inverse
-	   (nonrecursive-closure-lambda-expression v-forward)))))
-       ((recursive-closure? v-forward)
-	(unless (forward-parameter? (recursive-closure-parameter v-forward))
-	 (run-time-error
-	  "Attempt to take tangent of a non-forward value" v-forward))
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map tangent (recursive-closure-values v-forward))
-	 (map-vector (lambda (x) (perturbationify (unforwardify x)))
-		     (recursive-closure-procedure-variables v-forward))
-	 (map-vector (lambda (e)
-		      (perturbation-transform (forward-transform-inverse e)))
-		     (recursive-closure-lambda-expressions v-forward))
-	 (recursive-closure-index v-forward)))
-       ((perturbation-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((bundle? v-forward) (bundle-tangent v-forward))
-       ((sensitivity-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((reverse-tagged-value? v-forward)
-	(run-time-error
-	 "Attempt to take tangent of a non-forward value" v-forward))
-       ((tagged-pair? v-forward)
-	(unless (tagged? 'forward (tagged-pair-tags v-forward))
-	 (run-time-error
-	  "Attempt to take tangent of a non-forward value" v-forward))
-	(new-tagged-pair
-	 (add-tag 'perturbation
-		  (remove-tag 'forward (tagged-pair-tags v-forward)))
-	 (tangent (tagged-pair-car v-forward))
-	 (tangent (tagged-pair-cdr v-forward))))
-       ;; union: to remove redundant abstract values
-       ((union? v-forward) (new-union (map tangent (union-values v-forward))))
-       ((up? v-forward) v-forward)
-       (else (internal-error))))))
-
-(define (bundle-internal v v-perturbation)
- (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
-		   *value-bindings*)))
-  (if b
-      (primitive-procedure-forward (value-binding-value b))
-      (cond
-       ((vlad-empty-list? v) (new-bundle v v-perturbation))
-       ((vlad-true? v) (new-bundle v v-perturbation))
-       ((vlad-false? v) (new-bundle v v-perturbation))
-       ((abstract-real? v) (new-bundle v v-perturbation))
-       ((primitive-procedure? v) (internal-error))
-       ((nonrecursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map bundle-internal
-	      (nonrecursive-closure-values v)
-	      (nonrecursive-closure-values v-perturbation))
-	 (forward-transform (nonrecursive-closure-lambda-expression v))))
-       ((recursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map bundle-internal
-	      (recursive-closure-values v)
-	      (recursive-closure-values v-perturbation))
-	 (map-vector forwardify (recursive-closure-procedure-variables v))
-	 (map-vector forward-transform
-		     (recursive-closure-lambda-expressions v))
-	 (recursive-closure-index v)))
-       ((perturbation-tagged-value? v) (new-bundle v v-perturbation))
-       ((bundle? v) (new-bundle v v-perturbation))
-       ((sensitivity-tagged-value? v) (new-bundle v v-perturbation))
-       ((reverse-tagged-value? v) (new-bundle v v-perturbation))
-       ((tagged-pair? v)
-	(new-tagged-pair
-	 (add-tag 'forward (tagged-pair-tags v))
-	 (bundle-internal (tagged-pair-car v) (tagged-pair-car v-perturbation))
-	 (bundle-internal
-	  (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
-       ;; unions
-       (else (internal-error))))))
+ (cond
+  ((union? v-forward) (map-union tangent v-forward))
+  ((up? v-forward) v-forward)
+  (else
+   (let ((b (find-if (lambda (b)
+		      (abstract-value=?
+		       v-forward
+		       (primitive-procedure-forward (value-binding-value b))))
+		     *value-bindings*)))
+    (if b
+	(perturb (value-binding-value b))
+	(cond
+	 ((vlad-empty-list? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((vlad-true? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((vlad-false? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((abstract-real? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((primitive-procedure? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((nonrecursive-closure? v-forward)
+	  (if (forward-parameter?
+	       (nonrecursive-closure-parameter v-forward))
+	      ;; See the note in abstract-environment=?.
+	      (new-nonrecursive-closure
+	       (map tangent (nonrecursive-closure-values v-forward))
+	       (perturbation-transform
+		(forward-transform-inverse
+		 (nonrecursive-closure-lambda-expression v-forward))))
+	      (ad-error
+	       "Argument to tangent ~a a non-forward value" v-forward)))
+	 ((recursive-closure? v-forward)
+	  (if (forward-parameter? (recursive-closure-parameter v-forward))
+	      ;; See the note in abstract-environment=?.
+	      (new-recursive-closure
+	       (map tangent (recursive-closure-values v-forward))
+	       (map-vector (lambda (x) (perturbationify (unforwardify x)))
+			   (recursive-closure-procedure-variables v-forward))
+	       (map-vector
+		(lambda (e)
+		 (perturbation-transform (forward-transform-inverse e)))
+		(recursive-closure-lambda-expressions v-forward))
+	       (recursive-closure-index v-forward))
+	      (ad-error
+	       "Argument to tangent ~a a non-forward value" v-forward)))
+	 ((perturbation-tagged-value? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((bundle? v-forward) (bundle-tangent v-forward))
+	 ((sensitivity-tagged-value? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((reverse-tagged-value? v-forward)
+	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
+	 ((tagged-pair? v-forward)
+	  (if (tagged? 'forward (tagged-pair-tags v-forward))
+	      (new-tagged-pair
+	       (add-tag 'perturbation
+			(remove-tag 'forward (tagged-pair-tags v-forward)))
+	       (tangent (tagged-pair-car v-forward))
+	       (tangent (tagged-pair-cdr v-forward)))
+	      (ad-error
+	       "Argument to tangent ~a a non-forward value" v-forward)))
+	 (else (internal-error))))))))
 
 (define (bundle v v-perturbation)
- (unless (and (perturbation-value? v-perturbation)
-	      (abstract-value-nondisjoint? v (unperturb v-perturbation) #t))
-  (run-time-error
-   "The arguments to bundle do not conform" v v-perturbation))
- (bundle-internal v v-perturbation))
+ (let loop ((v v)
+	    (v-perturbation v-perturbation)
+	    (cs '())
+	    (vs-above '())
+	    (vs-perturbation-above '()))
+  (cond
+   ((up? v)
+    (loop (list-ref vs-above (up-index v))
+	  v-perturbation
+	  cs
+	  (rest* vs-above (+ (up-index v) 1))
+	  vs-perturbation-above))
+   ((up? v-perturbation)
+    (loop v
+	  (list-ref vs-perturbation-above (up-index v-perturbation))
+	  cs
+	  vs-above
+	  (rest* vs-perturbation-above (+ (up-index v-perturbation) 1))))
+   ((some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+    (make-up
+     (position-if
+      (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)))
+   ((and (union? v) (union? v-perturbation))
+    (cross-union (lambda (u u-perturbation)
+		  (loop u
+			u-perturbation
+			(cons (cons v v-perturbation) cs)
+			(cons v vs-above)
+			(cons v-perturbation vs-perturbation-above)))
+		 v
+		 v-perturbation))
+   ((or (union? v) (union? v-perturbation)) (internal-error))
+   (else
+    (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
+		      *value-bindings*)))
+     (if b
+	 (primitive-procedure-forward (value-binding-value b))
+	 (cond
+	  ;; unions: check conformance
+	  ((vlad-empty-list? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((vlad-true? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((vlad-false? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((abstract-real? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((primitive-procedure? v) (internal-error))
+	  ((nonrecursive-closure? v)
+	   ;; See the note in abstract-environment=?.
+	   (new-nonrecursive-closure
+	    (map bundle
+		 (nonrecursive-closure-values v)
+		 (nonrecursive-closure-values v-perturbation))
+	    (forward-transform (nonrecursive-closure-lambda-expression v))))
+	  ((recursive-closure? v)
+	   ;; See the note in abstract-environment=?.
+	   (new-recursive-closure
+	    (map bundle
+		 (recursive-closure-values v)
+		 (recursive-closure-values v-perturbation))
+	    (map-vector forwardify (recursive-closure-procedure-variables v))
+	    (map-vector forward-transform
+			(recursive-closure-lambda-expressions v))
+	    (recursive-closure-index v)))
+	  ((perturbation-tagged-value? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((bundle? v) (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((sensitivity-tagged-value? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((reverse-tagged-value? v)
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((tagged-pair? v)
+	   (new-tagged-pair
+	    (add-tag 'forward (tagged-pair-tags v))
+	    (bundle (tagged-pair-car v) (tagged-pair-car v-perturbation))
+	    (bundle (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
+	  (else
+	   (if *abstract?*
+	       (compile-time-warning
+		"Arguments to bundle might not conform" v v-perturbation)
+	       (run-time-error
+		"Arguments to bundle do not conform" v v-perturbation))))))))))
 
 (define (j* v) (bundle v (perturb (zero v))))
 
@@ -2996,266 +3068,307 @@
        (reverse-transform-inverse-internal e)))))
 
 (define (sensitize v)
- (cond ((vlad-empty-list? v) (new-sensitivity-tagged-value v))
-       ((vlad-true? v) (new-sensitivity-tagged-value v))
-       ((vlad-false? v) (new-sensitivity-tagged-value v))
-       ((abstract-real? v) (new-sensitivity-tagged-value v))
-       ((primitive-procedure? v) (new-sensitivity-tagged-value v))
-       ((nonrecursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map sensitize (nonrecursive-closure-values v))
-	 (sensitivity-transform (nonrecursive-closure-lambda-expression v))))
-       ((recursive-closure? v)
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map sensitize (recursive-closure-values v))
-	 (map-vector sensitivityify (recursive-closure-procedure-variables v))
-	 (map-vector sensitivity-transform
-		     (recursive-closure-lambda-expressions v))
-	 (recursive-closure-index v)))
-       ((perturbation-tagged-value? v) (new-sensitivity-tagged-value v))
-       ((bundle? v) (new-sensitivity-tagged-value v))
-       ((sensitivity-tagged-value? v) (new-sensitivity-tagged-value v))
-       ((reverse-tagged-value? v) (new-sensitivity-tagged-value v))
-       ((tagged-pair? v)
-	(new-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
-			 (sensitize (tagged-pair-car v))
-			 (sensitize (tagged-pair-cdr v))))
-       ((union? v) (new-union (map tangent (union-values v))))
-       ((up? v) v)
-       (else (internal-error))))
+ (cond
+  ((union? v) (map-union sensitize v))
+  ((up? v) v)
+  ((vlad-empty-list? v) (new-sensitivity-tagged-value (singleton v)))
+  ((vlad-true? v) (new-sensitivity-tagged-value (singleton v)))
+  ((vlad-false? v) (new-sensitivity-tagged-value (singleton v)))
+  ((abstract-real? v) (new-sensitivity-tagged-value (singleton v)))
+  ((primitive-procedure? v) (new-sensitivity-tagged-value (singleton v)))
+  ((nonrecursive-closure? v)
+   ;; See the note in abstract-environment=?.
+   (new-nonrecursive-closure
+    (map sensitize (nonrecursive-closure-values v))
+    (sensitivity-transform (nonrecursive-closure-lambda-expression v))))
+  ((recursive-closure? v)
+   ;; See the note in abstract-environment=?.
+   (new-recursive-closure
+    (map sensitize (recursive-closure-values v))
+    (map-vector sensitivityify (recursive-closure-procedure-variables v))
+    (map-vector sensitivity-transform
+		(recursive-closure-lambda-expressions v))
+    (recursive-closure-index v)))
+  ((perturbation-tagged-value? v) (new-sensitivity-tagged-value (singleton v)))
+  ((bundle? v) (new-sensitivity-tagged-value (singleton v)))
+  ((sensitivity-tagged-value? v) (new-sensitivity-tagged-value (singleton v)))
+  ((reverse-tagged-value? v) (new-sensitivity-tagged-value (singleton v)))
+  ((tagged-pair? v)
+   (new-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
+		    (sensitize (tagged-pair-car v))
+		    (sensitize (tagged-pair-cdr v))))
+  (else (internal-error))))
 
 (define (unsensitize v-sensitivity)
  (cond
+  ((union? v-sensitivity) (map-union unsensitize v-sensitivity))
+  ((up? v-sensitivity) v-sensitivity)
   ((vlad-empty-list? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((vlad-true? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((vlad-false? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((abstract-real? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((primitive-procedure? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((nonrecursive-closure? v-sensitivity)
-   (unless (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
-    (run-time-error
-     "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
-   ;; See the note in abstract-environment=?.
-   (new-nonrecursive-closure
-    (map unsensitize (nonrecursive-closure-values v-sensitivity))
-    (sensitivity-transform-inverse
-     (nonrecursive-closure-lambda-expression v-sensitivity))))
+   (if (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
+       ;; See the note in abstract-environment=?.
+       (new-nonrecursive-closure
+	(map unsensitize (nonrecursive-closure-values v-sensitivity))
+	(sensitivity-transform-inverse
+	 (nonrecursive-closure-lambda-expression v-sensitivity)))
+       (ad-error "Argument to unsensitize ~a a non-sensitivity value"
+		 v-sensitivity)))
   ((recursive-closure? v-sensitivity)
-   (unless (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
-    (run-time-error
-     "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
-   ;; See the note in abstract-environment=?.
-   (new-recursive-closure
-    (map unsensitize (recursive-closure-values v-sensitivity))
-    (map-vector unsensitivityify
-		(recursive-closure-procedure-variables v-sensitivity))
-    (map-vector sensitivity-transform-inverse
-		(recursive-closure-lambda-expressions v-sensitivity))
-    (recursive-closure-index v-sensitivity)))
+   (if (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
+       ;; See the note in abstract-environment=?.
+       (new-recursive-closure
+	(map unsensitize (recursive-closure-values v-sensitivity))
+	(map-vector unsensitivityify
+		    (recursive-closure-procedure-variables v-sensitivity))
+	(map-vector sensitivity-transform-inverse
+		    (recursive-closure-lambda-expressions v-sensitivity))
+	(recursive-closure-index v-sensitivity))
+       (ad-error "Argument to unsensitize ~a a non-sensitivity value"
+		 v-sensitivity)))
   ((perturbation-tagged-value? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((bundle? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((sensitivity-tagged-value? v-sensitivity)
    (sensitivity-tagged-value-primal v-sensitivity))
   ((reverse-tagged-value? v-sensitivity)
-   (run-time-error
-    "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
+   (ad-error
+    "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((tagged-pair? v-sensitivity)
-   (unless (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-    (run-time-error
-     "Attempt to take unsensitize of a non-sensitivity value" v-sensitivity))
-   (new-tagged-pair
-    (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
-    (unsensitize (tagged-pair-car v-sensitivity))
-    (unsensitize (tagged-pair-cdr v-sensitivity))))
-  ((union? v-sensitivity)
-   (new-union (map tangent (union-values v-sensitivity))))
-  ((up? v-sensitivity) v-sensitivity)
+   (if (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
+       (new-tagged-pair
+	(remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
+	(unsensitize (tagged-pair-car v-sensitivity))
+	(unsensitize (tagged-pair-cdr v-sensitivity)))
+       (ad-error "Argument to unsensitize ~a a non-sensitivity value"
+		 v-sensitivity)))
   (else (internal-error))))
 
-(define (plus-internal v1 v2)
- (cond ((vlad-empty-list? v1) v1)
-       ((vlad-true? v1) v1)
-       ((vlad-false? v1) v1)
-       ((eq? v1 'real) 'real)
-       ((eq? v2 'real) 'real)
-       ((abstract-real? v1) (+ v1 v2))
-       ((primitive-procedure? v1) v1)
-       ((nonrecursive-closure? v1)
-	;; See the note in abstract-environment=?.
-	(new-nonrecursive-closure
-	 (map plus-internal
-	      (nonrecursive-closure-values v1)
-	      (nonrecursive-closure-values v2))
-	 (nonrecursive-closure-lambda-expression v1)))
-       ((recursive-closure? v1)
-	;; See the note in abstract-environment=?.
-	(new-recursive-closure
-	 (map plus-internal
-	      (recursive-closure-values v1)
-	      (recursive-closure-values v2))
-	 (recursive-closure-procedure-variables v1)
-	 (recursive-closure-lambda-expressions v1)
-	 (recursive-closure-index v1)))
-       ((perturbation-tagged-value? v1)
-	(new-perturbation-tagged-value
-	 (plus-internal (perturbation-tagged-value-primal v1)
-			(perturbation-tagged-value-primal v2))))
-       ((bundle? v1)
-	(new-bundle (plus-internal (bundle-primal v1) (bundle-primal v2))
-		    (plus-internal (bundle-tangent v1) (bundle-tangent v2))))
-       ((sensitivity-tagged-value? v1)
-	(new-sensitivity-tagged-value
-	 (plus-internal (sensitivity-tagged-value-primal v1)
-			(sensitivity-tagged-value-primal v2))))
-       ((reverse-tagged-value? v1)
-	(new-reverse-tagged-value
-	 (plus-internal (reverse-tagged-value-primal v1)
-			(reverse-tagged-value-primal v2))))
-       ((tagged-pair? v1)
-	(new-tagged-pair
-	 (tagged-pair-tags v1)
-	 (plus-internal (tagged-pair-car v1) (tagged-pair-car v2))
-	 (plus-internal (tagged-pair-cdr v1) (tagged-pair-cdr v2))))
-       ;; unions
-       (else (internal-error))))
-
 (define (plus v1 v2)
- ;; needs work: Should constrain to only add sensitivities.
- (unless (abstract-value-nondisjoint? v1 v2 #t)
-  (run-time-error "The arguments to plus do not conform" v1 v2))
- (plus-internal v1 v2))
+ (let loop ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
+  (cond
+   ((up? v1)
+    (loop (list-ref vs1-above (up-index v1))
+	  v2
+	  cs
+	  (rest* vs1-above (+ (up-index v1) 1))
+	  vs2-above))
+   ((up? v2)
+    (loop v1
+	  (list-ref vs2-above (up-index v2))
+	  cs
+	  vs1-above
+	  (rest* vs2-above (+ (up-index v2) 1))))
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs)
+    (make-up (position-if
+	      (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs)))
+   ((and (union? v1) (union? v2))
+    (cross-union
+     (lambda (u1 u2)
+      (loop
+       u1 u2 (cons (cons v1 v2) cs) (cons v1 vs1-above) (cons v2 vs2-above)))
+     v1
+     v2))
+   ((or (union? v1) (union? v2)) (internal-error))
+   ((and (vlad-empty-list? v1) (vlad-empty-list? v2)) v1)
+   ((and (vlad-true? v1) (vlad-true? v2)) v1)
+   ((and (vlad-false? v1) (vlad-false? v2)) v1)
+   ((and (eq? v1 'real) (abstract-real? v2)) 'real)
+   ((and (abstract-real? v1) (eq? v2 'real)) 'real)
+   ((and (real? v1) (real? v2)) (+ v1 v2))
+   ((and (primitive-procedure? v1)
+	 (primitive-procedure? v2)
+	 (eq? v1 v2))
+    v1)
+   ((and (nonrecursive-closure? v1)
+	 (nonrecursive-closure? v2)
+	 (nonrecursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (new-nonrecursive-closure
+     (map (lambda (v1 v2) (loop v1 v2 cs vs1-above vs2-above))
+	  (nonrecursive-closure-values v1)
+	  (nonrecursive-closure-values v2))
+     (nonrecursive-closure-lambda-expression v1)))
+   ((and (recursive-closure? v1)
+	 (recursive-closure? v2)
+	 (recursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (new-recursive-closure
+     (map (lambda (v1 v2) (loop v1 v2 cs vs1-above vs2-above))
+	  (recursive-closure-values v1)
+	  (recursive-closure-values v2))
+     (recursive-closure-procedure-variables v1)
+     (recursive-closure-lambda-expressions v1)
+     (recursive-closure-index v1)))
+   ((and (perturbation-tagged-value? v1)
+	 (perturbation-tagged-value? v2))
+    (new-perturbation-tagged-value
+     (loop (perturbation-tagged-value-primal v1)
+	   (perturbation-tagged-value-primal v2)
+	   cs
+	   vs1-above
+	   vs2-above)))
+   ((and (bundle? v1) (bundle? v2))
+    (new-bundle
+     (loop (bundle-primal v1) (bundle-primal v2) cs vs1-above vs2-above)
+     (loop (bundle-tangent v1) (bundle-tangent v2) cs vs1-above vs2-above)))
+   ((and (sensitivity-tagged-value? v1)
+	 (sensitivity-tagged-value? v2))
+    (new-sensitivity-tagged-value
+     (loop (sensitivity-tagged-value-primal v1)
+	   (sensitivity-tagged-value-primal v2)
+	   cs
+	   vs1-above
+	   vs2-above)))
+   ((and (reverse-tagged-value? v1)
+	 (reverse-tagged-value? v2))
+    (new-reverse-tagged-value
+     (loop (reverse-tagged-value-primal v1)
+	   (reverse-tagged-value-primal v2)
+	   cs
+	   vs1-above
+	   vs2-above)))
+   ((and (tagged-pair? v1)
+	 (tagged-pair? v2)
+	 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+    (new-tagged-pair
+     (tagged-pair-tags v1)
+     (loop (tagged-pair-car v1) (tagged-pair-car v2) cs vs1-above vs2-above)
+     (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs vs1-above vs2-above)))
+   (else
+    (if *abstract?*
+	(compile-time-warning "Arguments to plus might not conform" v1 v2)
+	(run-time-error "Arguments to plus do not conform" v1 v2))))))
 
 (define (*j v)
- (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
-		   *value-bindings*)))
-  (if b
-      (primitive-procedure-reverse (value-binding-value b))
-      (cond ((vlad-empty-list? v) (new-reverse-tagged-value v))
-	    ((vlad-true? v) (new-reverse-tagged-value v))
-	    ((vlad-false? v) (new-reverse-tagged-value v))
-	    ((abstract-real? v) (new-reverse-tagged-value v))
-	    ((primitive-procedure? v) (internal-error))
-	    ((nonrecursive-closure? v)
-	     ;; See the note in abstract-environment=?.
-	     (new-nonrecursive-closure
-	      (map *j (nonrecursive-closure-values v))
-	      (anf-convert-lambda-expression
-	       (alpha-convert
-		(reverse-transform
-		 (nonrecursive-closure-lambda-expression v)))
-	       #t)))
-	    ((recursive-closure? v)
-	     ;; See the note in abstract-environment=?.
-	     (new-recursive-closure
-	      (map *j (recursive-closure-values v))
-	      (map-vector reverseify (recursive-closure-procedure-variables v))
-	      (map-vector
-	       (lambda (e)
-		(anf-convert-lambda-expression
-		 (alpha-convert
-		  (reverse-transform-internal
-		   e
-		   (vector->list (recursive-closure-procedure-variables v))
-		   (vector->list (recursive-closure-lambda-expressions v))
-		   (recursive-closure-index v)))
-		 #t))
-	       (recursive-closure-lambda-expressions v))
-	      (recursive-closure-index v)))
-	    ((perturbation-tagged-value? v) (new-reverse-tagged-value v))
-	    ((bundle? v) (new-reverse-tagged-value v))
-	    ((sensitivity-tagged-value? v) (new-reverse-tagged-value v))
-	    ((reverse-tagged-value? v) (new-reverse-tagged-value v))
-	    ((tagged-pair? v)
-	     (new-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
-			      (*j (tagged-pair-car v))
-			      (*j (tagged-pair-cdr v))))
-	    ((union? v) (new-union (map tangent (union-values v))))
-	    ((up? v) v)
-	    (else (internal-error))))))
+ (cond
+  ((union? v) (map-union *j v))
+  ((up? v) v)
+  (else
+   (let ((b (find-if (lambda (b) (abstract-value=? v (value-binding-value b)))
+		     *value-bindings*)))
+    (if b
+	(primitive-procedure-reverse (value-binding-value b))
+	(cond
+	 ((vlad-empty-list? v) (new-reverse-tagged-value (singleton v)))
+	 ((vlad-true? v) (new-reverse-tagged-value (singleton v)))
+	 ((vlad-false? v) (new-reverse-tagged-value (singleton v)))
+	 ((abstract-real? v) (new-reverse-tagged-value (singleton v)))
+	 ((primitive-procedure? v) (internal-error))
+	 ((nonrecursive-closure? v)
+	  ;; See the note in abstract-environment=?.
+	  (new-nonrecursive-closure
+	   (map *j (nonrecursive-closure-values v))
+	   (anf-convert-lambda-expression
+	    (alpha-convert
+	     (reverse-transform (nonrecursive-closure-lambda-expression v)))
+	    #t)))
+	 ((recursive-closure? v)
+	  ;; See the note in abstract-environment=?.
+	  (new-recursive-closure
+	   (map *j (recursive-closure-values v))
+	   (map-vector reverseify (recursive-closure-procedure-variables v))
+	   (map-vector
+	    (lambda (e)
+	     (anf-convert-lambda-expression
+	      (alpha-convert
+	       (reverse-transform-internal
+		e
+		(vector->list (recursive-closure-procedure-variables v))
+		(vector->list (recursive-closure-lambda-expressions v))
+		(recursive-closure-index v)))
+	      #t))
+	    (recursive-closure-lambda-expressions v))
+	   (recursive-closure-index v)))
+	 ((perturbation-tagged-value? v)
+	  (new-reverse-tagged-value (singleton v)))
+	 ((bundle? v) (new-reverse-tagged-value (singleton v)))
+	 ((sensitivity-tagged-value? v)
+	  (new-reverse-tagged-value (singleton v)))
+	 ((reverse-tagged-value? v) (new-reverse-tagged-value (singleton v)))
+	 ((tagged-pair? v)
+	  (new-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
+			   (*j (tagged-pair-car v))
+			   (*j (tagged-pair-cdr v))))
+	 (else (internal-error))))))))
 
 (define (*j-inverse v-reverse)
- (let ((b (find-if
-	   (lambda (b)
-	    (abstract-value=?
-	     v-reverse (primitive-procedure-reverse (value-binding-value b))))
-	   *value-bindings*)))
-  (if b
-      (value-binding-value b)
-      (cond ((vlad-empty-list? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((vlad-true? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((vlad-false? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((abstract-real? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((primitive-procedure? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((nonrecursive-closure? v-reverse)
-	     (unless (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
-	      (run-time-error
-	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	     ;; See the note in abstract-environment=?.
-	     (new-nonrecursive-closure
-	      (map *j-inverse (nonrecursive-closure-values v-reverse))
-	      (reverse-transform-inverse
-	       (nonrecursive-closure-lambda-expression v-reverse))))
-	    ((recursive-closure? v-reverse)
-	     (unless (tagged? 'reverse (recursive-closure-tags v-reverse))
-	      (run-time-error
-	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	     ;; See the note in abstract-environment=?.
-	     (new-recursive-closure
-	      (map *j-inverse (recursive-closure-values v-reverse))
-	      (map-vector unreverseify
-			  (recursive-closure-procedure-variables v-reverse))
-	      (map-vector reverse-transform-inverse
-			  (recursive-closure-lambda-expressions v-reverse))
-	      (recursive-closure-index v-reverse)))
-	    ((perturbation-tagged-value? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((bundle? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((sensitivity-tagged-value? v-reverse)
-	     (run-time-error
-	      "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	    ((reverse-tagged-value? v-reverse)
-	     (reverse-tagged-value-primal v-reverse))
-	    ((tagged-pair? v-reverse)
-	     (unless (tagged? 'reverse (tagged-pair-tags v-reverse))
-	      (run-time-error
-	       "Attempt to take *j-inverse of a non-reverse value" v-reverse))
-	     (new-tagged-pair
-	      (remove-tag 'reverse (tagged-pair-tags v-reverse))
-	      (*j-inverse (tagged-pair-car v-reverse))
-	      (*j-inverse (tagged-pair-cdr v-reverse))))
-	    ((union? v-reverse)
-	     (new-union (map tangent (union-values v-reverse))))
-	    ((up? v-reverse) v-reverse)
-	    (else (internal-error))))))
+ (cond
+  ((union? v-reverse) (map-union *j-inverse v-reverse))
+  ((up? v-reverse) v-reverse)
+  (else
+   (let ((b (find-if (lambda (b)
+		      (abstract-value=?
+		       v-reverse
+		       (primitive-procedure-reverse (value-binding-value b))))
+		     *value-bindings*)))
+    (if b
+	(value-binding-value b)
+	(cond
+	 ((vlad-empty-list? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((vlad-true? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((vlad-false? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((abstract-real? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((primitive-procedure? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((nonrecursive-closure? v-reverse)
+	  (if (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
+	      ;; See the note in abstract-environment=?.
+	      (new-nonrecursive-closure
+	       (map *j-inverse (nonrecursive-closure-values v-reverse))
+	       (reverse-transform-inverse
+		(nonrecursive-closure-lambda-expression v-reverse)))
+	      (ad-error
+	       "Argument to *j-inverse ~a a non-reverse value" v-reverse)))
+	 ((recursive-closure? v-reverse)
+	  (if (tagged? 'reverse (recursive-closure-tags v-reverse))
+	      ;; See the note in abstract-environment=?.
+	      (new-recursive-closure
+	       (map *j-inverse (recursive-closure-values v-reverse))
+	       (map-vector unreverseify
+			   (recursive-closure-procedure-variables v-reverse))
+	       (map-vector reverse-transform-inverse
+			   (recursive-closure-lambda-expressions v-reverse))
+	       (recursive-closure-index v-reverse))
+	      (ad-error
+	       "Argument to *j-inverse ~a a non-reverse value" v-reverse)))
+	 ((perturbation-tagged-value? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((bundle? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((sensitivity-tagged-value? v-reverse)
+	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
+	 ((reverse-tagged-value? v-reverse)
+	  (reverse-tagged-value-primal v-reverse))
+	 ((tagged-pair? v-reverse)
+	  (if (tagged? 'reverse (tagged-pair-tags v-reverse))
+	      (new-tagged-pair
+	       (remove-tag 'reverse (tagged-pair-tags v-reverse))
+	       (*j-inverse (tagged-pair-car v-reverse))
+	       (*j-inverse (tagged-pair-cdr v-reverse)))
+	      (ad-error
+	       "Argument to *j-inverse ~a a non-reverse value" v-reverse)))
+	 (else (internal-error))))))))
 
 ;;; Pretty printer
 
@@ -3335,6 +3448,18 @@
  (let ((v
 	(let loop ((v v) (quote? #f))
 	 (cond
+	  ((union? v)
+	   (when *unabbreviate-executably?*
+	    (run-time-error "Cannot unabbreviate executably"v))
+	   (cond ((empty-abstract-value? v) 'bottom)
+		 ((null? (rest (union-values v)))
+		  (loop (first (union-values v)) quote?))
+		 (else `(union ,@(map (lambda (u) (loop u quote?))
+				      (union-values v))))))
+	  ((up? v)
+	   (when *unabbreviate-executably?*
+	    (run-time-error "Cannot unabbreviate executably"v))
+	   `(up ,(up-index v)))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(perturbation-value? v))
 	   (cond (*unabbreviate-executably?*
@@ -3561,15 +3686,9 @@
 	   (list-ref vs (positionp variable=? x (free-variables e)))))
       (free-variables (letrec-expression-body e))))
 
-(define (destructure p v)
+(define (concrete-destructure p v)
  (cond ((constant-expression? p)
-	(unless (abstract-value-nondisjoint?
-		 (if *run?*
-		     (constant-expression-value p)
-		     (potentially-imprecise-vlad-value->abstract-value
-		      (constant-expression-value p)))
-		 v
-		 #f)
+	(unless (abstract-value=? (constant-expression-value p) v)
 	 (run-time-error "Argument is not an equivalent value"
 			 (constant-expression-value p)
 			 v))
@@ -3628,12 +3747,16 @@
 	  (format #f "Argument is not a matching tagged pair with tags ~s"
 		  (cons-expression-tags p))
 	  v))
-	(append (destructure (cons-expression-car p) (tagged-pair-car v))
-		(destructure (cons-expression-cdr p) (tagged-pair-cdr v))))
+	;; This LET* is to specify the evaluation order.
+	(let* ((alist1 (concrete-destructure
+			(cons-expression-car p) (tagged-pair-car v)))
+	       (alist2 (concrete-destructure
+			(cons-expression-cdr p) (tagged-pair-cdr v))))
+	 (append alist1 alist2)))
        (else (internal-error))))
 
-(define (construct-nonrecursive-environment v1 v2)
- (let ((alist (destructure (nonrecursive-closure-parameter v1) v2)))
+(define (construct-concrete-nonrecursive-environment v1 v2)
+ (let ((alist (concrete-destructure (nonrecursive-closure-parameter v1) v2)))
   (map
    (lambda (x)
     (let ((result (assp variable=? x alist)))
@@ -3645,8 +3768,8 @@
    (free-variables
     (lambda-expression-body (nonrecursive-closure-lambda-expression v1))))))
 
-(define (construct-recursive-environment v1 v2)
- (let ((alist (destructure (recursive-closure-parameter v1) v2)))
+(define (construct-concrete-recursive-environment v1 v2)
+ (let ((alist (concrete-destructure (recursive-closure-parameter v1) v2)))
   (map (lambda (x)
 	(let ((result (assp variable=? x alist)))
 	 (cond
@@ -3695,12 +3818,12 @@
 	 ((nonrecursive-closure? v1)
 	  (concrete-eval
 	   (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
-	   (construct-nonrecursive-environment v1 v2)))
+	   (construct-concrete-nonrecursive-environment v1 v2)))
 	 ((recursive-closure? v1)
 	  (concrete-eval (lambda-expression-body
 			  (vector-ref (recursive-closure-lambda-expressions v1)
 				      (recursive-closure-index v1)))
-			 (construct-recursive-environment v1 v2)))
+			 (construct-concrete-recursive-environment v1 v2)))
 	 (else (internal-error)))))
   (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
@@ -3756,45 +3879,38 @@
 
 ;;; Abstract Values
 
-(define (potentially-imprecise-vlad-value->abstract-value v)
- (cond ((scalar-value? v)
-	(if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
-       ((nonrecursive-closure? v)
-	(new-nonrecursive-closure
-	 (map potentially-imprecise-vlad-value->abstract-value
-	      (nonrecursive-closure-values v))
-	 (nonrecursive-closure-lambda-expression v)))
-       ((recursive-closure? v)
-	(new-recursive-closure
-	 (map potentially-imprecise-vlad-value->abstract-value
-	      (recursive-closure-values v))
-	 (recursive-closure-procedure-variables v)
-	 (recursive-closure-lambda-expressions v)
-	 (recursive-closure-index v)))
-       ((perturbation-tagged-value? v)
-	(new-perturbation-tagged-value
-	 (potentially-imprecise-vlad-value->abstract-value
-	  (perturbation-tagged-value-primal v))))
-       ((bundle? v)
-	(new-bundle (potentially-imprecise-vlad-value->abstract-value
-		     (bundle-primal v))
-		    (potentially-imprecise-vlad-value->abstract-value
-		     (bundle-tangent v))))
-       ((sensitivity-tagged-value? v)
-	(new-sensitivity-tagged-value
-	 (potentially-imprecise-vlad-value->abstract-value
-	  (sensitivity-tagged-value-primal v))))
-       ((reverse-tagged-value? v)
-	(new-reverse-tagged-value
-	 (potentially-imprecise-vlad-value->abstract-value
-	  (reverse-tagged-value-primal v))))
-       ((tagged-pair? v)
-	(new-tagged-pair (tagged-pair-tags v)
-			 (potentially-imprecise-vlad-value->abstract-value
-			  (tagged-pair-car v))
-			 (potentially-imprecise-vlad-value->abstract-value
-			  (tagged-pair-cdr v))))
-       (else (internal-error))))
+(define (concrete-value->abstract-value v)
+ (singleton
+  (cond
+   ((scalar-value? v)
+    (if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
+   ((nonrecursive-closure? v)
+    (new-nonrecursive-closure
+     (map concrete-value->abstract-value (nonrecursive-closure-values v))
+     (nonrecursive-closure-lambda-expression v)))
+   ((recursive-closure? v)
+    (new-recursive-closure
+     (map concrete-value->abstract-value (recursive-closure-values v))
+     (recursive-closure-procedure-variables v)
+     (recursive-closure-lambda-expressions v)
+     (recursive-closure-index v)))
+   ((perturbation-tagged-value? v)
+    (new-perturbation-tagged-value
+     (concrete-value->abstract-value (perturbation-tagged-value-primal v))))
+   ((bundle? v)
+    (new-bundle (concrete-value->abstract-value (bundle-primal v))
+		(concrete-value->abstract-value (bundle-tangent v))))
+   ((sensitivity-tagged-value? v)
+    (new-sensitivity-tagged-value
+     (concrete-value->abstract-value (sensitivity-tagged-value-primal v))))
+   ((reverse-tagged-value? v)
+    (new-reverse-tagged-value
+     (concrete-value->abstract-value (reverse-tagged-value-primal v))))
+   ((tagged-pair? v)
+    (new-tagged-pair (tagged-pair-tags v)
+		     (concrete-value->abstract-value (tagged-pair-car v))
+		     (concrete-value->abstract-value (tagged-pair-cdr v))))
+   (else (internal-error)))))
 
 ;;; Abstract Flows
 
@@ -3855,9 +3971,12 @@
 ;;; Abstract Evaluator
 
 (define (make-abstract-analysis e vs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (unless (= (length vs) (length (free-variables e))) (internal-error))
- (list (make-expression-binding
-	e (list (make-environment-binding vs (abstract-top))))))
+ (if (some empty-abstract-value? vs)
+     (empty-abstract-analysis)
+     (list (make-expression-binding
+	    e (list (make-environment-binding vs (empty-abstract-value)))))))
 
 (define (initial-abstract-analysis e bs)
  ;; This (like update-analysis-domains) only makes domains.
@@ -3865,52 +3984,204 @@
   e
   (map
    (lambda (x)
-    (value-binding-value
-     (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs)))
+    (singleton
+     (value-binding-value
+      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
    (free-variables e))))
 
 (define (abstract-eval1 e vs bs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (let ((b (lookup-expression-binding e bs)))
   (if b
       (let ((b (find-if
 		(lambda (b)
 		 (abstract-environment=? vs (environment-binding-values b)))
 		(expression-binding-flow b))))
-       (if b (environment-binding-value b) (abstract-top)))
-      (abstract-top))))
+       (if b (environment-binding-value b) (empty-abstract-value)))
+      (empty-abstract-value))))
+
+(define (abstract-letrec-nested-environment vs e)
+ (map
+  (lambda (x)
+   (if (memp variable=? x (letrec-expression-procedure-variables e))
+       (singleton
+	(new-recursive-closure
+	 (letrec-restrict-environment vs e)
+	 (list->vector (letrec-expression-procedure-variables e))
+	 (list->vector (letrec-expression-lambda-expressions e))
+	 (positionp variable=? x (letrec-expression-procedure-variables e))))
+       (list-ref vs (positionp variable=? x (free-variables e)))))
+  (free-variables (letrec-expression-body e))))
+
+(define (abstract-destructure p v)
+ (unless (and (union? v) (closed? v)) (internal-error))
+ (cond
+  ((constant-expression? p)
+   (cond ((abstract-value-nondisjoint?
+	   (concrete-value->abstract-value (constant-expression-value p))
+	   v)
+	  ;; A run-time error might still occur unless the extensions of both
+	  ;; the parameter value and the argument value are singletons.
+	  '())
+	 (else
+	  ;; Can't say will because the target might be a member of a union
+	  ;; that won't occur.
+	  (compile-time-warning "Argument might not be an equivalent value"
+				(constant-expression-value p)
+				v)
+	  #f)))
+  ((variable-access-expression? p)
+   (list (cons (variable-access-expression-variable p) v)))
+  ((lambda-expression? p)
+   (cond
+    ((and (nonrecursive-closure? v)
+	  (expression=? p
+			(nonrecursive-closure-lambda-expression v)))
+     (map cons (parameter-variables p) (nonrecursive-closure-values v)))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching nonrecursive closure for ~s"
+	      (abstract->concrete p))
+      v)
+     #f)))
+  ((letrec-expression? p)
+   (unless (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p)))
+    (internal-error "Unsupported letrec-expression parameter"))
+   (cond
+    ((and (recursive-closure? v)
+	  (= (recursive-closure-index v)
+	     (positionp variable=?
+			(variable-access-expression-variable
+			 (letrec-expression-body p))
+			(letrec-expression-procedure-variables p)))
+	  (= (vector-length
+	      (recursive-closure-procedure-variables v))
+	     (length (letrec-expression-procedure-variables p)))
+	  (= (vector-length
+	      (recursive-closure-lambda-expressions v))
+	     (length (letrec-expression-lambda-expressions p)))
+	  (let ((xs1 (append
+		      (recursive-closure-variables v)
+		      (vector->list
+		       (recursive-closure-procedure-variables v))))
+		(xs2 (append
+		      (letrec-expression-variables p)
+		      (letrec-expression-procedure-variables p))))
+	   (every (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		  (vector->list (recursive-closure-lambda-expressions v))
+		  (letrec-expression-lambda-expressions p))))
+     (map cons (parameter-variables p) (recursive-closure-values v)))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching recursive closure for ~s"
+	      (abstract->concrete p))
+      v)
+     #f)))
+  ((cons-expression? p)
+   (cond
+    ((and (tagged-pair? v)
+	  (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
+     ;; This LET* is to specify the evaluation order.
+     (let* ((alist1 (abstract-destructure
+		     (cons-expression-car p) (tagged-pair-car v)))
+	    (alist2 (abstract-destructure
+		     (cons-expression-cdr p) (tagged-pair-cdr v))))
+      (if (or (eq? alist1 #f) (eq? alist2 #f))
+	  #f
+	  (append alist1 alist2))))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching tagged pair with tags ~s"
+	      (cons-expression-tags p))
+      v)
+     #f)))
+  (else (internal-error))))
+
+(define (construct-abstract-nonrecursive-environment v1 v2)
+ (unless (and (union? v2) (closed? v2)) (internal-error))
+ (let ((alist (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
+  (if (eq? alist #f)
+      #f
+      (map
+       (lambda (x)
+	(let ((result (assp variable=? x alist)))
+	 (if result
+	     (cdr result)
+	     (list-ref
+	      (nonrecursive-closure-values v1)
+	      (positionp variable=? x (nonrecursive-closure-variables v1))))))
+       (free-variables (lambda-expression-body
+			(nonrecursive-closure-lambda-expression v1)))))))
+
+(define (construct-abstract-recursive-environment v1 v2)
+ (unless (and (union? v2) (closed? v2)) (internal-error))
+ (let ((alist (abstract-destructure (recursive-closure-parameter v1) v2)))
+  (if (eq? alist #f)
+      #f
+      (map (lambda (x)
+	    (let ((result (assp variable=? x alist)))
+	     (cond
+	      (result (cdr result))
+	      ((some-vector (lambda (x1) (variable=? x x1))
+			    (recursive-closure-procedure-variables v1))
+	       (singleton
+		(new-recursive-closure
+		 (recursive-closure-values v1)
+		 (recursive-closure-procedure-variables v1)
+		 (recursive-closure-lambda-expressions v1)
+		 (positionp-vector
+		  variable=? x (recursive-closure-procedure-variables v1)))))
+	      (else
+	       (list-ref
+		(recursive-closure-values v1)
+		(positionp variable=? x (recursive-closure-variables v1)))))))
+	   (free-variables
+	    (lambda-expression-body
+	     (vector-ref (recursive-closure-lambda-expressions v1)
+			 (recursive-closure-index v1))))))))
 
 (define (abstract-apply-closure p v1 v2)
+ (unless (and (union? v2) (closed? v2)) (internal-error))
  (cond ((nonrecursive-closure? v1)
 	(p (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
-	   (construct-nonrecursive-environment v1 v2)))
+	   (construct-abstract-nonrecursive-environment v1 v2)))
        ((recursive-closure? v1)
 	(p (lambda-expression-body
 	    (vector-ref (recursive-closure-lambda-expressions v1)
 			(recursive-closure-index v1)))
-	   (construct-recursive-environment v1 v2)))
+	   (construct-abstract-recursive-environment v1 v2)))
        (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
- (cond
-  ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
-  (else
-   (unless (vlad-procedure? v1)
-    (run-time-error "Target is not a procedure" v1))
-   (unless (tag-check? v1 v2)
-    (run-time-error "Argument has wrong type for target" v1 v2))
-   (cond
-    ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2 bs))
-    ((closure? v1)
-     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs)) v1 v2))
-    (else (internal-error))))))
+ (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
+  (internal-error))
+ (if (empty-abstract-value? v2)
+     v2
+     (map-union
+      (lambda (u1)
+       ;; unions: we don't do tag-check for now
+       (cond
+	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2 bs))
+	((closure? u1)
+	 (abstract-apply-closure
+	  (lambda (e vs)
+	   (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
+	  u1
+	  v2))
+	(else (compile-time-warning "Target might not be a procedure" u1))))
+      v1)))
 
 (define (abstract-eval e vs bs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (cond
   ((constant-expression? e)
-   (potentially-imprecise-vlad-value->abstract-value
-    (constant-expression-value e)))
+   (concrete-value->abstract-value (constant-expression-value e)))
   ((variable-access-expression? e) (first vs))
-  ((lambda-expression? e) (new-nonrecursive-closure vs e))
+  ((lambda-expression? e) (singleton (new-nonrecursive-closure vs e)))
   ((application? e)
    (abstract-apply
     (abstract-eval1 (application-callee e)
@@ -3922,30 +4193,21 @@
     bs))
   ((letrec-expression? e)
    (abstract-eval1
-    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
+    (letrec-expression-body e) (abstract-letrec-nested-environment vs e) bs))
   ((cons-expression? e)
-   (let ((v1 (abstract-eval1 (cons-expression-car e)
-			     (restrict-environment vs e cons-expression-car)
-			     bs))
-	 (v2 (abstract-eval1 (cons-expression-cdr e)
-			     (restrict-environment vs e cons-expression-cdr)
-			     bs)))
-    (cond
-     ((or (abstract-top? v1) (abstract-top? v2)) (abstract-top))
-     (else (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
-	    (run-time-error
-	     (format #f "CAR argument has wrong type for target with tags ~s"
-		     (cons-expression-tags e))
-	     v1))
-	   (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
-	    (run-time-error
-	     (format #f "CDR argument has wrong type for target with tags ~s"
-		     (cons-expression-tags e))
-	     v2))
-	   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
+   ;; unions: we don't do tag-check for now
+   (singleton (new-tagged-pair
+	       (cons-expression-tags e)
+	       (abstract-eval1 (cons-expression-car e)
+			       (restrict-environment vs e cons-expression-car)
+			       bs)
+	       (abstract-eval1 (cons-expression-cdr e)
+			       (restrict-environment vs e cons-expression-cdr)
+			       bs))))
   (else (internal-error))))
 
 (define (abstract-eval1-prime e vs bs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (let ((b (lookup-expression-binding e bs)))
   (if (and b
 	   (some (lambda (b)
@@ -3955,37 +4217,53 @@
       (make-abstract-analysis e vs))))
 
 (define (abstract-apply-prime v1 v2 bs)
- (cond ((or (abstract-top? v1) (abstract-top? v2)) (empty-abstract-analysis))
-       (else
-	(unless (vlad-procedure? v1)
-	 (run-time-error "Target is not a procedure" v1))
-	(unless (tag-check? v1 v2)
-	 (run-time-error "Argument has wrong type for target" v1 v2))
-	(cond
-	 ((primitive-procedure? v1)
-	  ;; needs work: should put this into slots of the primitive procedures
-	  (if (eq? (primitive-procedure-name v1) 'if-procedure)
-	      ((ternary
-		(lambda (v1 v2 v3 bs)
-		 (cond ((vlad-false? v1)
-			(abstract-apply-closure
-			 (lambda (e vs) (abstract-eval1-prime e vs bs))
-			 v3
-			 (vlad-empty-list)))
-		       (else (abstract-apply-closure
-			      (lambda (e vs) (abstract-eval1-prime e vs bs))
-			      v2
-			      (vlad-empty-list)))))
-		"if-procedure")
-	       v2
-	       bs)
-	      (empty-abstract-analysis)))
-	 ((closure? v1)
-	  (abstract-apply-closure
-	   (lambda (e vs) (abstract-eval1-prime e vs bs)) v1 v2))
-	 (else (internal-error))))))
+ (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
+  (internal-error))
+ (if (empty-abstract-value? v2)
+     (empty-abstract-analysis)
+     (map-reduce
+      abstract-analysis-union
+      (empty-abstract-analysis)
+      (lambda (u1)
+       ;; unions: we don't do tag-check for now
+       (cond ((primitive-procedure? u1)
+	      ;; needs work: should put this into slots of the primitive
+	      ;;             procedures
+	      (if (eq? (primitive-procedure-name u1) 'if-procedure)
+		  ((ternary-prime (lambda (v1 v2 v3 bs)
+				   (if (vlad-false? v1)
+				       (abstract-apply-closure
+					(lambda (e vs)
+					 (if (eq? vs #f)
+					     (empty-abstract-analysis)
+					     (abstract-eval1-prime e vs bs)))
+					v3
+					(singleton (vlad-empty-list)))
+				       (abstract-apply-closure
+					(lambda (e vs)
+					 (if (eq? vs #f)
+					     (empty-abstract-analysis)
+					     (abstract-eval1-prime e vs bs)))
+					v2
+					(singleton (vlad-empty-list)))))
+				  "if-procedure")
+		   v2
+		   bs)
+		  (empty-abstract-analysis)))
+	     ((closure? u1)
+	      (abstract-apply-closure
+	       (lambda (e vs)
+		(if (eq? vs #f)
+		    (empty-abstract-analysis)
+		    (abstract-eval1-prime e vs bs)))
+	       u1
+	       v2))
+	     (else (compile-time-warning "Target might not be a procedure" u1)
+		   (empty-abstract-analysis))))
+      (union-values v1))))
 
 (define (abstract-eval-prime e vs bs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (cond
   ((constant-expression? e) (empty-abstract-analysis))
   ((variable-access-expression? e) (empty-abstract-analysis))
@@ -4009,7 +4287,7 @@
      bs)))
   ((letrec-expression? e)
    (abstract-eval1-prime
-    (letrec-expression-body e) (letrec-nested-environment vs e) bs))
+    (letrec-expression-body e) (abstract-letrec-nested-environment vs e) bs))
   ((cons-expression? e)
    (abstract-analysis-union
     (abstract-eval1-prime (cons-expression-car e)
@@ -4049,12 +4327,14 @@
 
 (define (concrete-reals-in v)
  (cond
+  ((union? v) (map-reduce unionv '() concrete-reals-in (union-values v)))
+  ((up? v) '())
   ((real? v) (list v))
   ((scalar-value? v) '())
-  ((abstract-top? v) '())
   (else (map-reduce unionv '() concrete-reals-in (aggregate-value-values v)))))
 
 (define (flow-analysis e bs)
+ (set! *abstract?* #t)
  (let loop ((bs (initial-abstract-analysis e bs)) (i 0))
   (when *verbose?* (format #t "~s: " i))
   (let ((bs1 (if *verbose?*
@@ -4070,7 +4350,7 @@
 	    (map-reduce
 	     + 0 (lambda (b) (length (expression-binding-flow b))) bs1)))
    (when *verbose?*
-    (format #t "expressions: ~s, max flow size: ~s, tops: ~s, concrete reals: ~s~%"
+    (format #t "expressions: ~s, max flow size: ~s, bottoms: ~s, concrete reals: ~s~%"
 	    (length bs)
 	    (map-reduce max
 			minus-infinity
@@ -4080,9 +4360,9 @@
 	     +
 	     0
 	     (lambda (b)
-	      (count-if
-	       (lambda (b) (abstract-top? (environment-binding-value b)))
-	       (expression-binding-flow b)))
+	      (count-if (lambda (b)
+			 (empty-abstract-value? (environment-binding-value b)))
+			(expression-binding-flow b)))
 	     bs)
 	    (map-reduce
 	     unionv
@@ -4896,10 +5176,8 @@
    ;;             expression parameter and/or argument contain abstract
    ;;             booleans or abstract reals.
    (unless (abstract-value-nondisjoint?
-	    (potentially-imprecise-vlad-value->abstract-value
-	     (constant-expression-value p))
-	    v
-	    #f)
+	    (concrete-value->abstract-value (constant-expression-value p))
+	    v)
     (run-time-error "Argument is not an equivalent value"
 		    (constant-expression-value p)
 		    v))
@@ -6139,62 +6417,181 @@
      (/ x1 x2)))
 
 (define (read-real v)
- (unless (vlad-empty-list? v)
-  (run-time-error "Argument is not an equivalent value" (vlad-empty-list) v))
- (if *run?* (unimplemented "read-real") 'real))
+ (cond (*abstract?*
+	(if (vlad-empty-list? v)
+	    'real
+	    (compile-time-warning
+	     "Argument might not be an equivalent value" (vlad-empty-list) v)))
+       (else (unless (vlad-empty-list? v)
+	      (run-time-error
+	       "Argument is not an equivalent value" (vlad-empty-list) v))
+	     (unimplemented "read-real"))))
 
-(define (unary f s) (lambda (v bs) (f v)))
+(define (unary f s) (lambda (v bs) (if *abstract?* (map-union f v) (f v))))
+
+(define (unary-ad f s) (lambda (v bs) (f v)))
 
 (define (unary-predicate f s)
- (lambda (v bs) (if (f v) (vlad-true) (vlad-false))))
+ (lambda (v bs)
+  (if *abstract?*
+      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)
+      (if (f v) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
  (lambda (v bs)
-  (unless (abstract-real? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (if (real? v) (f v) 'real)))
+  (cond (*abstract?*
+	 (map-union (lambda (u)
+		     (if (abstract-real? u)
+			 (if (real? u) (f u) 'real)
+			 (compile-time-warning
+			  (format #f "Argument to ~a might be invalid" s) u)))
+		    v))
+	(else (unless (abstract-real? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (f v)))))
 
 (define (unary-real-predicate f s)
  (lambda (v bs)
-  (unless (abstract-real? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (if (real? v) (if (f v) (vlad-true) (vlad-false)) 'boolean)))
+  (cond (*abstract?*
+	 (map-union (lambda (u)
+		     (if (abstract-real? u)
+			 (if (real? u)
+			     (if (f u) (vlad-true) (vlad-false))
+			     (abstract-boolean))
+			 (compile-time-warning
+			  (format #f "Argument to ~a might be invalid" s) u)))
+		    v))
+	(else (unless (abstract-real? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (if (f v) (vlad-true) (vlad-false))))))
 
-(define (binary f s)
+(define (binary-ad f s)
  (lambda (v bs)
-  (unless (vlad-pair? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (f (vlad-car v) (vlad-cdr v))))
+  (cond (*abstract?*
+	 (map-union
+	  (lambda (u)
+	   (if (vlad-pair? u)
+	       (f (vlad-car u) (vlad-cdr u))
+	       (compile-time-warning
+		(format #f "Argument to ~a might be invalid" s) u)))
+	  v))
+	(else (unless (vlad-pair? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (f (vlad-car v) (vlad-cdr v))))))
 
 (define (binary-real f s)
  (lambda (v bs)
-  (unless (vlad-pair? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-   (unless (and (abstract-real? v1) (abstract-real? v2))
-    (run-time-error (format #f "Invalid argument to ~a" s) v))
-   ;; needs work: This may be imprecise for *, /, and atan.
-   (if (and (real? v1) (real? v2)) (f v1 v2) 'real))))
+  (cond (*abstract?*
+	 (map-union
+	  (lambda (u)
+	   (if (vlad-pair? u)
+	       (cross-union
+		(lambda (u1 u2)
+		 (if (and (abstract-real? u1) (abstract-real? u2))
+		     ;; needs work: This may be imprecise for *, /, and atan.
+		     (if (and (real? u1) (real? u2)) (f u1 u2) 'real)
+		     (compile-time-warning
+		      (format #f "Argument to ~a might be invalid" s) u)))
+		;; unions: what if these are ups
+		(vlad-car u)
+		(vlad-cdr u))
+	       (compile-time-warning
+		(format #f "Argument to ~a might be invalid" s) u)))
+	  v))
+	(else (unless (vlad-pair? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+	       (unless (and (abstract-real? v1) (abstract-real? v2))
+		(run-time-error (format #f "Argument to ~a is invalid" s) v))
+	       (f v1 v2))))))
 
 (define (binary-real-predicate f s)
  (lambda (v bs)
-  (unless (vlad-pair? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-   (unless (and (abstract-real? v1) (abstract-real? v2))
-    (run-time-error (format #f "Invalid argument to ~a" s) v))
-   (if (and (real? v1) (real? v2))
-       (if (f v1 v2) (vlad-true) (vlad-false))
-       'boolean))))
+  (cond (*abstract?*
+	 (map-union
+	  (lambda (u)
+	   (if (vlad-pair? u)
+	       (cross-union
+		(lambda (u1 u2)
+		 (if (and (abstract-real? u1) (abstract-real? u2))
+		     (if (and (real? u1) (real? u2))
+			 (if (f u1 u2) (vlad-true) (vlad-false))
+			 (abstract-boolean))
+		     (compile-time-warning
+		      (format #f "Argument to ~a might be invalid" s) u)))
+		;; unions: what if these are ups
+		(vlad-car u)
+		(vlad-cdr u))
+	       (compile-time-warning
+		(format #f "Argument to ~a might be invalid" s) u)))
+	  v))
+	(else (unless (vlad-pair? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+	       (unless (and (abstract-real? v1) (abstract-real? v2))
+		(run-time-error (format #f "Argument to ~a is invalid" s) v))
+	       (if (f v1 v2) (vlad-true) (vlad-false)))))))
 
 (define (ternary f s)
  (lambda (v bs)
-  (unless (vlad-pair? v)
-   (run-time-error (format #f "Invalid argument to ~a" s) v))
-  (let ((v23 (vlad-cdr v)))
-   (unless (vlad-pair? v23)
-    (run-time-error (format #f "Invalid argument to ~a" s) v))
-   (f (vlad-car v) (vlad-car v23) (vlad-cdr v23) bs))))
+  (cond (*abstract?*
+	 (map-union
+	  (lambda (u)
+	   (if (vlad-pair? u)
+	       (cross-union
+		(lambda (u1 u2)
+		 (if (vlad-pair? u2)
+		     (cross-union (lambda (u21 u22) (f u1 u21 u22 bs))
+				  ;; unions: what if these are ups
+				  (vlad-car u2)
+				  (vlad-cdr u2))
+		     (compile-time-warning
+		      (format #f "Argument to ~a might be invalid" s) u)))
+		;; unions: what if these are ups
+		(vlad-car u)
+		(vlad-cdr u))
+	       (compile-time-warning
+		(format #f "Argument to ~a might be invalid" s) u)))
+	  v))
+	(else (unless (vlad-pair? v)
+	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
+	      (let ((v23 (vlad-cdr v)))
+	       (unless (vlad-pair? v23)
+		(run-time-error (format #f "Argument to ~a is invalid" s) v))
+	       (f (vlad-car v) (vlad-car v23) (vlad-cdr v23) bs))))))
+
+(define (ternary-prime f s)
+ (lambda (v bs)
+  (unless *abstract?* (internal-error))
+  (map-reduce
+   abstract-analysis-union
+   (empty-abstract-analysis)
+   (lambda (u)
+    (cond
+     ((vlad-pair? u)
+      (reduce
+       abstract-analysis-union
+       (cross-product
+	(lambda (u1 u2)
+	 (cond ((vlad-pair? u2)
+		(reduce abstract-analysis-union
+			(cross-product
+			 (lambda (u21 u22) (f u1 u21 u22 bs))
+			 ;; unions: what if these are ups
+			 (union-values (vlad-car u2))
+			 (union-values (vlad-cdr u2)))
+			(empty-abstract-analysis)))
+	       (else (compile-time-warning
+		      (format #f "Argument to ~a might be invalid" s) u)
+		     (empty-abstract-analysis))))
+	;; unions: what if these are ups
+	(union-values (vlad-car u))
+	(union-values (vlad-cdr u)))
+       (empty-abstract-analysis)))
+     (else (compile-time-warning
+	    (format #f "Argument to ~a might be invalid" s) u)
+	   (empty-abstract-analysis))))
+   (union-values v))))
 
 (define (define-primitive-procedure x procedure generator forward reverse)
  (set! *value-bindings*
@@ -6661,33 +7058,22 @@
 	   (lambda ((sensitivity y)) (sensitize (cons reverse? (zero x))))))))
  (define-primitive-procedure 'if-procedure
   (ternary
-   (lambda (x1 x2 x3 bs)
-    (if *run?*
-	(if (vlad-false? x1)
-	    (concrete-apply x3 (vlad-empty-list))
-	    (concrete-apply x2 (vlad-empty-list)))
-	(cond ((eq? x1 'boolean)
-	       (let ((v2 (abstract-apply-closure
-			  (lambda (e vs) (abstract-eval1 e vs bs))
-			  x2
-			  (vlad-empty-list)))
-		     (v3 (abstract-apply-closure
-			  (lambda (e vs) (abstract-eval1 e vs bs))
-			  x3
-			  (vlad-empty-list))))
-		;; needs work: a little hokey
-		(cond ((abstract-top? v2) v3)
-		      ((abstract-top? v3) v2)
-		      (else (abstract-value-union v2 v3)))))
-	      ((vlad-false? x1)
-	       (abstract-apply-closure
-		(lambda (e vs) (abstract-eval1 e vs bs))
-		x3
-		(vlad-empty-list)))
-	      (else (abstract-apply-closure
-		     (lambda (e vs) (abstract-eval1 e vs bs))
-		     x2
-		     (vlad-empty-list))))))
+   (lambda (v1 v2 v3 bs)
+    (if *abstract?*
+	(if (vlad-false? v1)
+	    (abstract-apply-closure
+	     (lambda (e vs)
+	      (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
+	     v3
+	     (singleton (vlad-empty-list)))
+	    (abstract-apply-closure
+	     (lambda (e vs)
+	      (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
+	     v2
+	     (singleton (vlad-empty-list))))
+	(if (vlad-false? v1)
+	    (concrete-apply v3 (vlad-empty-list))
+	    (concrete-apply v2 (vlad-empty-list)))))
    "if-procedure")
   (lambda (v vs) (generate-builtin-name "if_procedure" v vs))
   '(lambda ((forward x))
@@ -6743,7 +7129,7 @@
     (cons (*j (read-real))
 	  (lambda ((sensitivity y)) (sensitize (cons read-real '()))))))
  (define-primitive-procedure 'real
-  (unary-real (lambda (x) (if *run?* x 'real)) "real")
+  (unary-real (lambda (v) (if *abstract?* 'real v)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
   ;; These widen the tangent and cotangent as well. Nothing requires us to do
   ;; so. It is just a design decision.
@@ -6756,9 +7142,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons real (real (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'write
-  (unary (lambda (x)
-	  (when *run?* ((if *pp?* pp write) (externalize x)) (newline))
-	  x)
+  (unary (lambda (v)
+	  (unless *abstract?* ((if *pp?* pp write) (externalize v)) (newline))
+	  v)
 	 "write")
   (lambda (v vs) (generate-builtin-name "write" v vs))
   '(lambda ((forward x))
@@ -6771,7 +7157,7 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons write (unsensitize (sensitivity y)))))))))
  (define-primitive-procedure 'zero
-  (unary zero "zero")
+  (unary-ad zero "zero")
   (lambda (v vs) (generate-builtin-name "zero" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -6782,7 +7168,7 @@
      (cons (*j (zero x))
 	   (lambda ((sensitivity y)) (sensitize (cons zero (zero x))))))))
  (define-primitive-procedure 'perturb
-  (unary perturb "perturb")
+  (unary-ad perturb "perturb")
   (lambda (v vs) (generate-builtin-name "perturb" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -6799,7 +7185,7 @@
 	(cons perturb
 	      (unperturb (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'unperturb
-  (unary unperturb "unperturb")
+  (unary-ad unperturb "unperturb")
   (lambda (v vs) (generate-builtin-name "unperturb" v vs))
   ;; The argument must be called x-perturbation so as not to confuse the tags.
   '(lambda ((forward x-perturbation))
@@ -6816,7 +7202,7 @@
 	    (sensitize
 	     (cons unperturb (perturb (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'primal
-  (unary primal "primal")
+  (unary-ad primal "primal")
   (lambda (v vs) (generate-builtin-name "primal" v vs))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -6836,7 +7222,7 @@
 		   (bundle (unsensitize (sensitivity y))
 			   (zero (tangent x-forward))))))))))
  (define-primitive-procedure 'tangent
-  (unary tangent "tangent")
+  (unary-ad tangent "tangent")
   (lambda (v vs) (generate-builtin-name "tangent" v vs))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -6858,7 +7244,7 @@
 		   (bundle (zero (primal x-forward))
 			   (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'bundle
-  (binary bundle "bundle")
+  (binary-ad bundle "bundle")
   (lambda (v vs) (generate-builtin-name "bundle" v vs))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
@@ -6882,7 +7268,7 @@
 	      (cons (primal (unsensitize (sensitivity y-forward)))
 		    (tangent (unsensitize (sensitivity y-forward)))))))))))
  (define-primitive-procedure 'sensitize
-  (unary sensitize "sensitize")
+  (unary-ad sensitize "sensitize")
   (lambda (v vs) (generate-builtin-name "sensitize" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -6899,7 +7285,7 @@
 	(cons sensitize
 	      (unsensitize (unsensitize (sensitivity y-sensitivity))))))))))
  (define-primitive-procedure 'unsensitize
-  (unary unsensitize "unsensitize")
+  (unary-ad unsensitize "unsensitize")
   (lambda (v vs) (generate-builtin-name "unsensitize" v vs))
   ;; The argument must be called x-sensitivity so as not to confuse the tags.
   '(lambda ((forward x-sensitivity))
@@ -6918,7 +7304,7 @@
 	;; The unsensitize composed with sensitize could be optimized away.
 	(cons unsensitize (sensitize (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'plus
-  (binary plus "plus")
+  (binary-ad plus "plus")
   (lambda (v vs) (generate-builtin-name "plus" v vs))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -6933,7 +7319,7 @@
 			     (cons (unsensitize (sensitivity y))
 				   (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure '*j
-  (unary *j "*j")
+  (unary-ad *j "*j")
   (lambda (v vs) (generate-builtin-name "starj" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -6948,7 +7334,7 @@
 	    (sensitize
 	     (cons *j (*j-inverse (unsensitize (sensitivity y-reverse))))))))))
  (define-primitive-procedure '*j-inverse
-  (unary *j-inverse "*j-inverse")
+  (unary-ad *j-inverse "*j-inverse")
   (lambda (v vs) (generate-builtin-name "starj_inverse" v vs))
   ;; The argument must be called x-reverse so as not to confuse the tags.
   '(lambda ((forward x-reverse))
