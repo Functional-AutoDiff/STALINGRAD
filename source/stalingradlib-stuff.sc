@@ -213,6 +213,14 @@
 (define (cross-product f l1 l2)
  (map-reduce append '() (lambda (x1) (map (lambda (x2) (f x1 x2)) l2)) l1))
 
+(define (without-abstract thunk)
+ ;; unions: to disable errors
+ (let ((abstract? *abstract?*))
+  (set! *abstract?* #f)
+  (let ((result (thunk)))
+   (set! *abstract?* abstract?)
+   result)))
+
 ;;; Error Handing
 
 (define (internal-error . arguments)
@@ -2244,7 +2252,9 @@
 
 (define (perturbation-transform e)
  (cond ((constant-expression? e)
-	(make-constant-expression (perturb (constant-expression-value e))))
+	(without-abstract
+	 (lambda ()
+	  (make-constant-expression (perturb (constant-expression-value e))))))
        ((variable-access-expression? e) (perturbationify-access e))
        ((lambda-expression? e)
 	(new-lambda-expression
@@ -2267,7 +2277,9 @@
 (define (perturbation-transform-inverse e)
  (cond
   ((constant-expression? e)
-   (make-constant-expression (unperturb (constant-expression-value e))))
+   (without-abstract
+    (lambda ()
+     (make-constant-expression (unperturb (constant-expression-value e))))))
   ((variable-access-expression? e) (unperturbationify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2292,7 +2304,9 @@
 
 (define (forward-transform e)
  (cond ((constant-expression? e)
-	(make-constant-expression (j* (constant-expression-value e))))
+	(without-abstract
+	 (lambda ()
+	  (make-constant-expression (j* (constant-expression-value e))))))
        ((variable-access-expression? e) (forwardify-access e))
        ((lambda-expression? e)
 	(new-lambda-expression
@@ -2315,7 +2329,9 @@
 (define (forward-transform-inverse e)
  (cond
   ((constant-expression? e)
-   (make-constant-expression (primal (constant-expression-value e))))
+   (without-abstract
+    (lambda ()
+     (make-constant-expression (primal (constant-expression-value e))))))
   ((variable-access-expression? e) (unforwardify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2668,7 +2684,9 @@
  ;; needs work: Could we not just apply sensitivity-transform to p?
  (cond
   ((constant-expression? p)
-   (make-constant-expression (sensitize (constant-expression-value p))))
+   (without-abstract
+    (lambda ()
+     (make-constant-expression (sensitize (constant-expression-value p))))))
   ((variable-access-expression? p) (sensitivityify-access p))
   ((lambda-expression? p) (sensitivity-transform p))
   ((letrec-expression? p)
@@ -2687,7 +2705,9 @@
 
 (define (reverseify-parameter p)
  (cond ((constant-expression? p)
-	(make-constant-expression (*j (constant-expression-value p))))
+	(without-abstract
+	 (lambda ()
+	  (make-constant-expression (*j (constant-expression-value p))))))
        ((variable-access-expression? p) (reverseify-access p))
        ((lambda-expression? p) (reverse-transform p))
        ((letrec-expression? p)
@@ -2715,8 +2735,10 @@
 
 (define (unreverseify-parameter p)
  (cond ((constant-expression? p)
-	(make-constant-expression
-	 (*j-inverse (constant-expression-value p))))
+	(without-abstract
+	 (lambda ()
+	  (make-constant-expression
+	   (*j-inverse (constant-expression-value p))))))
        ((variable-access-expression? p) (unreverseify-access p))
        ((lambda-expression? p) (reverse-transform-inverse p))
        ((letrec-expression? p)
@@ -2738,31 +2760,36 @@
        (else (internal-error))))
 
 (define (sensitivity-transform e)
- (cond ((constant-expression? e)
-	(make-constant-expression (sensitize (constant-expression-value e))))
-       ((variable-access-expression? e) (sensitivityify-access e))
-       ((lambda-expression? e)
-	(new-lambda-expression
-	 (sensitivity-transform (lambda-expression-parameter e))
-	 (sensitivity-transform (lambda-expression-body e))))
-       ((application? e)
-	(new-application (sensitivity-transform (application-callee e))
-			 (sensitivity-transform (application-argument e))))
-       ((letrec-expression? e)
-	(new-letrec-expression
-	 (map sensitivityify (letrec-expression-procedure-variables e))
-	 (map sensitivity-transform (letrec-expression-lambda-expressions e))
-	 (sensitivity-transform (letrec-expression-body e))))
-       ((cons-expression? e)
-	(new-cons-expression (add-tag 'sensitivity (cons-expression-tags e))
-			     (sensitivity-transform (cons-expression-car e))
-			     (sensitivity-transform (cons-expression-cdr e))))
-       (else (internal-error))))
+ (cond
+  ((constant-expression? e)
+   (without-abstract
+    (lambda ()
+     (make-constant-expression (sensitize (constant-expression-value e))))))
+  ((variable-access-expression? e) (sensitivityify-access e))
+  ((lambda-expression? e)
+   (new-lambda-expression
+    (sensitivity-transform (lambda-expression-parameter e))
+    (sensitivity-transform (lambda-expression-body e))))
+  ((application? e)
+   (new-application (sensitivity-transform (application-callee e))
+		    (sensitivity-transform (application-argument e))))
+  ((letrec-expression? e)
+   (new-letrec-expression
+    (map sensitivityify (letrec-expression-procedure-variables e))
+    (map sensitivity-transform (letrec-expression-lambda-expressions e))
+    (sensitivity-transform (letrec-expression-body e))))
+  ((cons-expression? e)
+   (new-cons-expression (add-tag 'sensitivity (cons-expression-tags e))
+			(sensitivity-transform (cons-expression-car e))
+			(sensitivity-transform (cons-expression-cdr e))))
+  (else (internal-error))))
 
 (define (sensitivity-transform-inverse e)
  (cond
   ((constant-expression? e)
-   (make-constant-expression (unsensitize (constant-expression-value e))))
+   (without-abstract
+    (lambda ()
+     (make-constant-expression (unsensitize (constant-expression-value e))))))
   ((variable-access-expression? e) (unsensitivityify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2826,7 +2853,9 @@
 	((constant-expression? e)
 	 (make-parameter-binding
 	  (reverseify-parameter p)
-	  (make-constant-expression (*j (constant-expression-value e)))))
+	  (without-abstract
+	   (lambda ()
+	    (make-constant-expression (*j (constant-expression-value e)))))))
 	;;            /   /
 	;;            _   _
 	;; p = e -~-> p = e
@@ -3018,8 +3047,10 @@
 	 ((constant-expression? e)
 	  (make-parameter-binding
 	   (unreverseify-parameter p)
-	   (make-constant-expression
-	    (*j-inverse (constant-expression-value e)))))
+	   (without-abstract
+	    (lambda ()
+	     (make-constant-expression
+	      (*j-inverse (constant-expression-value e)))))))
 	 ;; /   /
 	 ;; _   _
 	 ;; p = e -~-> p = e
@@ -3747,12 +3778,9 @@
 	  (format #f "Argument is not a matching tagged pair with tags ~s"
 		  (cons-expression-tags p))
 	  v))
-	;; This LET* is to specify the evaluation order.
-	(let* ((alist1 (concrete-destructure
-			(cons-expression-car p) (tagged-pair-car v)))
-	       (alist2 (concrete-destructure
-			(cons-expression-cdr p) (tagged-pair-cdr v))))
-	 (append alist1 alist2)))
+	(append
+	 (concrete-destructure (cons-expression-car p) (tagged-pair-car v))
+	 (concrete-destructure (cons-expression-cdr p) (tagged-pair-cdr v))))
        (else (internal-error))))
 
 (define (construct-concrete-nonrecursive-environment v1 v2)
@@ -4014,36 +4042,35 @@
   (free-variables (letrec-expression-body e))))
 
 (define (abstract-destructure p v)
- (unless (and (union? v) (closed? v)) (internal-error))
  (cond
   ((constant-expression? p)
    (cond ((abstract-value-nondisjoint?
 	   (concrete-value->abstract-value (constant-expression-value p))
-	   v)
+	   (singleton v))
 	  ;; A run-time error might still occur unless the extensions of both
 	  ;; the parameter value and the argument value are singletons.
-	  '())
+	  '(()))
 	 (else
 	  ;; Can't say will because the target might be a member of a union
 	  ;; that won't occur.
 	  (compile-time-warning "Argument might not be an equivalent value"
 				(constant-expression-value p)
 				v)
-	  #f)))
+	  '())))
   ((variable-access-expression? p)
-   (list (cons (variable-access-expression-variable p) v)))
+   (list (list (cons (variable-access-expression-variable p) (singleton v)))))
   ((lambda-expression? p)
    (cond
     ((and (nonrecursive-closure? v)
 	  (expression=? p
 			(nonrecursive-closure-lambda-expression v)))
-     (map cons (parameter-variables p) (nonrecursive-closure-values v)))
+     (list (map cons (parameter-variables p) (nonrecursive-closure-values v))))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching nonrecursive closure for ~s"
 	      (abstract->concrete p))
       v)
-     #f)))
+     '())))
   ((letrec-expression? p)
    (unless (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
@@ -4074,91 +4101,96 @@
 	   (every (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
 		  (vector->list (recursive-closure-lambda-expressions v))
 		  (letrec-expression-lambda-expressions p))))
-     (map cons (parameter-variables p) (recursive-closure-values v)))
+     (list (map cons (parameter-variables p) (recursive-closure-values v))))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching recursive closure for ~s"
 	      (abstract->concrete p))
       v)
-     #f)))
+     '())))
   ((cons-expression? p)
    (cond
     ((and (tagged-pair? v)
 	  (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-     ;; This LET* is to specify the evaluation order.
-     (let* ((alist1 (abstract-destructure
-		     (cons-expression-car p) (tagged-pair-car v)))
-	    (alist2 (abstract-destructure
-		     (cons-expression-cdr p) (tagged-pair-cdr v))))
-      (if (or (eq? alist1 #f) (eq? alist2 #f))
-	  #f
-	  (append alist1 alist2))))
+     (reduce
+      append
+      (cross-product
+       (lambda (u1 u2)
+	(cross-product append
+		       (abstract-destructure (cons-expression-car p) u1)
+		       (abstract-destructure (cons-expression-cdr p) u2)))
+       ;; unions: what if these are ups
+       (union-values (tagged-pair-car v))
+       (union-values (tagged-pair-cdr v)))
+      '()))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching tagged pair with tags ~s"
 	      (cons-expression-tags p))
       v)
-     #f)))
+     '())))
   (else (internal-error))))
 
-(define (construct-abstract-nonrecursive-environment v1 v2)
- (unless (and (union? v2) (closed? v2)) (internal-error))
- (let ((alist (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
-  (if (eq? alist #f)
-      #f
-      (map
-       (lambda (x)
-	(let ((result (assp variable=? x alist)))
-	 (if result
-	     (cdr result)
-	     (list-ref
-	      (nonrecursive-closure-values v1)
-	      (positionp variable=? x (nonrecursive-closure-variables v1))))))
-       (free-variables (lambda-expression-body
-			(nonrecursive-closure-lambda-expression v1)))))))
+(define (construct-abstract-nonrecursive-environments v1 v2)
+ (map
+  (lambda (alist)
+   (map (lambda (x)
+	 (let ((result (assp variable=? x alist)))
+	  (if result
+	      (cdr result)
+	      (list-ref
+	       (nonrecursive-closure-values v1)
+	       (positionp variable=? x (nonrecursive-closure-variables v1))))))
+	(free-variables (lambda-expression-body
+			 (nonrecursive-closure-lambda-expression v1)))))
+  (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
 
-(define (construct-abstract-recursive-environment v1 v2)
- (unless (and (union? v2) (closed? v2)) (internal-error))
- (let ((alist (abstract-destructure (recursive-closure-parameter v1) v2)))
-  (if (eq? alist #f)
-      #f
-      (map (lambda (x)
-	    (let ((result (assp variable=? x alist)))
-	     (cond
-	      (result (cdr result))
-	      ((some-vector (lambda (x1) (variable=? x x1))
-			    (recursive-closure-procedure-variables v1))
-	       (singleton
-		(new-recursive-closure
+(define (construct-abstract-recursive-environments v1 v2)
+ (map (lambda (alist)
+       (map (lambda (x)
+	     (let ((result (assp variable=? x alist)))
+	      (cond
+	       (result (cdr result))
+	       ((some-vector (lambda (x1) (variable=? x x1))
+			     (recursive-closure-procedure-variables v1))
+		(singleton
+		 (new-recursive-closure
+		  (recursive-closure-values v1)
+		  (recursive-closure-procedure-variables v1)
+		  (recursive-closure-lambda-expressions v1)
+		  (positionp-vector
+		   variable=? x (recursive-closure-procedure-variables v1)))))
+	       (else
+		(list-ref
 		 (recursive-closure-values v1)
-		 (recursive-closure-procedure-variables v1)
-		 (recursive-closure-lambda-expressions v1)
-		 (positionp-vector
-		  variable=? x (recursive-closure-procedure-variables v1)))))
-	      (else
-	       (list-ref
-		(recursive-closure-values v1)
-		(positionp variable=? x (recursive-closure-variables v1)))))))
-	   (free-variables
-	    (lambda-expression-body
-	     (vector-ref (recursive-closure-lambda-expressions v1)
-			 (recursive-closure-index v1))))))))
+		 (positionp variable=? x (recursive-closure-variables v1)))))))
+	    (free-variables
+	     (lambda-expression-body
+	      (vector-ref (recursive-closure-lambda-expressions v1)
+			  (recursive-closure-index v1))))))
+      (abstract-destructure (recursive-closure-parameter v1) v2)))
 
 (define (abstract-apply-closure p v1 v2)
- (unless (and (union? v2) (closed? v2)) (internal-error))
  (cond ((nonrecursive-closure? v1)
-	(p (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
-	   (construct-abstract-nonrecursive-environment v1 v2)))
+	(map (lambda (vs)
+	      (p (lambda-expression-body
+		  (nonrecursive-closure-lambda-expression v1))
+		 vs))
+	     (construct-abstract-nonrecursive-environments v1 v2)))
        ((recursive-closure? v1)
-	(p (lambda-expression-body
-	    (vector-ref (recursive-closure-lambda-expressions v1)
-			(recursive-closure-index v1)))
-	   (construct-abstract-recursive-environment v1 v2)))
+	(map (lambda (vs)
+	      (p (lambda-expression-body
+		  (vector-ref (recursive-closure-lambda-expressions v1)
+			      (recursive-closure-index v1)))
+		 vs))
+	     (construct-abstract-recursive-environments v1 v2)))
        (else (internal-error))))
 
 (define (abstract-apply v1 v2 bs)
  (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
   (internal-error))
+ ;; We don't do a cross-union of v1 and v2 since when u1 is a primitive
+ ;; procedure we want to apply it to all of v2 so we don't have to unroll it.
  (if (empty-abstract-value? v2)
      v2
      (map-union
@@ -4167,11 +4199,13 @@
        (cond
 	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2 bs))
 	((closure? u1)
-	 (abstract-apply-closure
-	  (lambda (e vs)
-	   (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
-	  u1
-	  v2))
+	 ;; unions: This can break when there are ups inside a u2 that point
+	 ;;         to v2. Need to unroll.
+	 (map-union (lambda (u2)
+		     (new-union
+		      (abstract-apply-closure
+		       (lambda (e vs) (abstract-eval1 e vs bs)) u1 u2)))
+		    v2))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
       v1)))
 
@@ -4230,34 +4264,37 @@
 	      ;; needs work: should put this into slots of the primitive
 	      ;;             procedures
 	      (if (eq? (primitive-procedure-name u1) 'if-procedure)
-		  ((ternary-prime (lambda (v1 v2 v3 bs)
-				   (if (vlad-false? v1)
-				       (abstract-apply-closure
-					(lambda (e vs)
-					 (if (eq? vs #f)
-					     (empty-abstract-analysis)
-					     (abstract-eval1-prime e vs bs)))
-					v3
-					(singleton (vlad-empty-list)))
-				       (abstract-apply-closure
-					(lambda (e vs)
-					 (if (eq? vs #f)
-					     (empty-abstract-analysis)
-					     (abstract-eval1-prime e vs bs)))
-					v2
-					(singleton (vlad-empty-list)))))
-				  "if-procedure")
+		  ((ternary-prime
+		    (lambda (v1 v2 v3 bs)
+		     (reduce
+		      abstract-analysis-union
+		      (if (vlad-false? v1)
+			  (abstract-apply-closure
+			   (lambda (e vs) (abstract-eval1-prime e vs bs))
+			   v3
+			   (vlad-empty-list))
+			  (abstract-apply-closure
+			   (lambda (e vs) (abstract-eval1-prime e vs bs))
+			   v2
+			   (vlad-empty-list)))
+		      (empty-abstract-analysis)))
+		    "if-procedure")
 		   v2
 		   bs)
 		  (empty-abstract-analysis)))
 	     ((closure? u1)
-	      (abstract-apply-closure
-	       (lambda (e vs)
-		(if (eq? vs #f)
-		    (empty-abstract-analysis)
-		    (abstract-eval1-prime e vs bs)))
-	       u1
-	       v2))
+	      (map-reduce
+	       abstract-analysis-union
+	       (empty-abstract-analysis)
+	       (lambda (u2)
+		(reduce
+		 abstract-analysis-union
+		 (abstract-apply-closure
+		  (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 u2)
+		 (empty-abstract-analysis)))
+	       ;; unions: This can break when there are ups inside a u2 that
+	       ;;         point to v2. Need to unroll.
+	       (union-values v2)))
 	     (else (compile-time-warning "Target might not be a procedure" u1)
 		   (empty-abstract-analysis))))
       (union-values v1))))
@@ -7060,17 +7097,14 @@
   (ternary
    (lambda (v1 v2 v3 bs)
     (if *abstract?*
-	(if (vlad-false? v1)
-	    (abstract-apply-closure
-	     (lambda (e vs)
-	      (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
-	     v3
-	     (singleton (vlad-empty-list)))
-	    (abstract-apply-closure
-	     (lambda (e vs)
-	      (if (eq? vs #f) (empty-abstract-value) (abstract-eval1 e vs bs)))
-	     v2
-	     (singleton (vlad-empty-list))))
+	(new-union
+	 (if (vlad-false? v1)
+	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs))
+				     v3
+				     (vlad-empty-list))
+	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs))
+				     v2
+				     (vlad-empty-list))))
 	(if (vlad-false? v1)
 	    (concrete-apply v3 (vlad-empty-list))
 	    (concrete-apply v2 (vlad-empty-list)))))
