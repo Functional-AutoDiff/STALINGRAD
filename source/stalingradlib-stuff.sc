@@ -46,9 +46,9 @@
 (include "c-externals.sc")
 (include "stalingradlib-stuff.sch")
 
-;;; unions
+;;; needs work
 ;;;  1. 'boolean
-;;;  2. vlad-boolean
+;;;  2. vlad-boolean?
 
 ;;; needs work
 ;;;  1. zero, perturb, unperturb, primal, tangent, bundle, sensitize,
@@ -214,7 +214,7 @@
  (map-reduce append '() (lambda (x1) (map (lambda (x2) (f x1 x2)) l2)) l1))
 
 (define (without-abstract thunk)
- ;; unions: to disable errors
+ ;; needs work: to disable errors
  (let ((abstract? *abstract?*))
   (set! *abstract?* #f)
   (let ((result (thunk)))
@@ -456,6 +456,17 @@
   ((reverse) (internal-error))
   (else (internal-error))))
 
+(define (unsensitivityify? x)
+ (and (pair? x)
+      (case (first x)
+       ((alpha) (unsensitivityify? (second x))) ;debugging
+       ((anf) #f)
+       ((perturbation) #f)
+       ((forward) #f)
+       ((sensitivity) #t)
+       ((reverse) #f)
+       (else #f))))
+
 (define (unsensitivityify x)
  (unless (pair? x) (internal-error))
  (case (first x)
@@ -506,6 +517,9 @@
 (define (unforwardify-access e)
  (make-variable-access-expression
   (unforwardify (variable-access-expression-variable e))))
+
+(define (unsensitivityify-access? e)
+ (unsensitivityify? (variable-access-expression-variable e)))
 
 (define (unsensitivityify-access e)
  (make-variable-access-expression
@@ -893,6 +907,7 @@
  ;; variables. The backpropagator variables are free in the nested let* context
  ;; context of the forward phase reverse transformed procedure but the
  ;; backpropagators are not reverse values.
+ ;; needs work: we don't do tag-check for now
  (unless *abstract?*
   (unless (every (lambda (x v)
 		  (or (empty-abstract-value? v)
@@ -914,6 +929,7 @@
   (internal-error))
  ;; See the note in new-nonrecursive-closure. While that hasn't happened in
  ;; practise, and I don't know whether it can, I removed it in principle.
+ ;; needs work: we don't do tag-check for now
  (unless *abstract?*
   (unless (every (lambda (x v)
 		  (or (empty-abstract-value? v)
@@ -1016,7 +1032,7 @@
 		(and (not (union? v-perturbation))
 		     (not (up? v-perturbation)))))
   (internal-error))
- ;; unions: Should check that v-perturbation conforms to v.
+ ;; needs work: Should check that v-perturbation conforms to v.
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
      (make-bundle v v-perturbation)))
@@ -1040,6 +1056,7 @@
 	    (or (and (not (union? v1)) (not (up? v1)))
 		(and (not (union? v2)) (not (up? v2)))))
   (internal-error))
+ ;; needs work: we don't do tag-check for now
  (unless *abstract?*
   (unless (and (or (empty-abstract-value? v1)
 		   (prefix-tags? tags (value-tags v1)))
@@ -2613,7 +2630,7 @@
      (if b
 	 (primitive-procedure-forward (value-binding-value b))
 	 (cond
-	  ;; unions: check conformance
+	  ;; needs work: check conformance
 	  ((vlad-empty-list? v)
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((vlad-true? v)
@@ -2750,8 +2767,8 @@
 	 (internal-error "Unsupported letrec-expression parameter"))
 	(new-letrec-expression
 	 (map unreverseify (letrec-expression-procedure-variables p))
-	 (map-indexed reverse-transform-inverse
-		      (letrec-expression-lambda-expressions p))
+	 (map reverse-transform-inverse
+	      (letrec-expression-lambda-expressions p))
 	 (unreverseify-access (letrec-expression-body p))))
        ((cons-expression? p)
 	(new-cons-expression (remove-tag 'reverse (cons-expression-tags p))
@@ -2782,6 +2799,29 @@
    (new-cons-expression (add-tag 'sensitivity (cons-expression-tags e))
 			(sensitivity-transform (cons-expression-car e))
 			(sensitivity-transform (cons-expression-cdr e))))
+  (else (internal-error))))
+
+(define (sensitivity-transform-inverse? e)
+ (cond
+  ((constant-expression? e)
+   (without-abstract (lambda () (unsensitize? (constant-expression-value e)))))
+  ((variable-access-expression? e) (unsensitivityify-access? e))
+  ((lambda-expression? e)
+   (and (sensitivity-transform-inverse? (lambda-expression-parameter e))
+	(sensitivity-transform-inverse? (lambda-expression-body e))))
+  ((application? e)
+   (and (sensitivity-transform-inverse? (application-callee e))
+	(sensitivity-transform-inverse? (application-argument e))))
+  ((letrec-expression? e)
+   (and
+    (every unsensitivityify? (letrec-expression-procedure-variables e))
+    (every sensitivity-transform-inverse?
+	   (letrec-expression-lambda-expressions e))
+    (sensitivity-transform-inverse? (letrec-expression-body e))))
+  ((cons-expression? e)
+   (and (tagged? 'sensitivity (cons-expression-tags e))
+	(sensitivity-transform-inverse? (cons-expression-car e))
+	(sensitivity-transform-inverse? (cons-expression-cdr e))))
   (else (internal-error))))
 
 (define (sensitivity-transform-inverse e)
@@ -3128,6 +3168,39 @@
    (new-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
 		    (sensitize (tagged-pair-car v))
 		    (sensitize (tagged-pair-cdr v))))
+  (else (internal-error))))
+
+(define (unsensitize? v-sensitivity)
+ (cond
+  ((union? v-sensitivity) (every unsensitize? (union-values v-sensitivity)))
+  ((up? v-sensitivity) #t)
+  ((vlad-empty-list? v-sensitivity) #f)
+  ((vlad-true? v-sensitivity) #f)
+  ((vlad-false? v-sensitivity) #f)
+  ((abstract-real? v-sensitivity) #f)
+  ((primitive-procedure? v-sensitivity) #f)
+  ((nonrecursive-closure? v-sensitivity)
+   (and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
+	;; See the note in abstract-environment=?.
+	(every unsensitize? (nonrecursive-closure-values v-sensitivity))
+	(sensitivity-transform-inverse?
+	 (nonrecursive-closure-lambda-expression v-sensitivity))))
+  ((recursive-closure? v-sensitivity)
+   (and (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
+	;; See the note in abstract-environment=?.
+	(every unsensitize? (recursive-closure-values v-sensitivity))
+	(every-vector unsensitivityify?
+		      (recursive-closure-procedure-variables v-sensitivity))
+	(every-vector sensitivity-transform-inverse?
+		      (recursive-closure-lambda-expressions v-sensitivity))))
+  ((perturbation-tagged-value? v-sensitivity) #f)
+  ((bundle? v-sensitivity) #f)
+  ((sensitivity-tagged-value? v-sensitivity) #t)
+  ((reverse-tagged-value? v-sensitivity) #f)
+  ((tagged-pair? v-sensitivity)
+   (and (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
+	(unsensitize? (tagged-pair-car v-sensitivity))
+	(unsensitize? (tagged-pair-cdr v-sensitivity))))
   (else (internal-error))))
 
 (define (unsensitize v-sensitivity)
@@ -3506,11 +3579,18 @@
 		 (else `(forward ,(loop (primal v) quote?)
 				 ,(loop (tangent v) quote?)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
-		(sensitivity-value? v))
+		(sensitivity-value? v)
+		;; This is to prevent attempts to unsensitize backpropagators.
+		(unsensitize? v))
 	   (cond (*unabbreviate-executably?*
 		  (when quote? (internal-error))
 		  `(sensitize ,(loop (unsensitize v) quote?)))
 		 (else `(sensitivity ,(loop (unsensitize v) quote?)))))
+	  ;; It may not be possible to apply *j-inverse to a closure whose
+	  ;; parameter is reverse tagged. Such a situation arises when you
+	  ;; externalize an analysis. It may contain closures that result from
+	  ;; lambda expressions that correspond to tails of anf forms of lambda
+	  ;; expression bodies.
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(reverse-value? v))
 	   (cond (*unabbreviate-executably?*
@@ -3996,6 +4076,252 @@
 		 (removeq b2 bs2))
 	   (cons (first bs1) bs2))))))
 
+;;; Widen
+
+;;; General
+
+(define *closure-depth-limit* 1)
+
+(define (make-list length fill) (map-n (lambda (i) fill) length))
+
+(define (replaceq x x-prime l) (map (lambda (e) (if (eq? e x) x-prime e)) l))
+
+(define (backpropagator? v)
+ ;; This is a kludge and might not work because some backpropagators might be
+ ;; unsensitizable.
+ (and (closure? v) (sensitivity-value? v) (not (unsensitize? v))))
+
+(define (closure-match? u1 u2)
+ (unless (and (closure? u1) (closure? u2))
+  (internal-error "u1 and u2 should both be closures"))
+ (or (and (nonrecursive-closure? u1)
+	  (nonrecursive-closure? u2)
+	  (nonrecursive-closure-match? u1 u2))
+     (and (recursive-closure? u1)
+	  (recursive-closure? u2)
+	  (recursive-closure-match? u1 u2))))
+
+(define (some-proto-abstract-value?-internal p u vs-above)
+ (when (or (union? u) (up? u)) (internal-error))
+ (and (not (scalar-value? u))
+      (some (lambda (v) (some-abstract-value?-internal p v vs-above))
+	    (aggregate-value-values u))))
+
+(define (some-abstract-value?-internal p v vs-above)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (or (p v vs-above)
+     (and (not (up? v))
+	  (some (lambda (u)
+		 (some-proto-abstract-value?-internal p u (cons v vs-above)))
+		(union-values v)))))
+
+(define (some-abstract-value? p v) (some-abstract-value?-internal p v '()))
+
+(define (free-up? v vs-above)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (and (up? v) (>= (up-index v) (length vs-above))))
+
+(define (free-up-index up vs-above)
+ (unless (free-up? up vs-above) (internal-error))
+ (- (up-index up) (length vs-above)))
+
+(define (make-free-up index vs-above)
+ (make-up (+ index (length vs-above))))
+
+(define (proto-abstract-value-process-free-ups-internal f u vs-above)
+ (when (or (union? u) (up? u)) (internal-error))
+ (if (scalar-value? u)
+     u
+     (make-aggregate-value-with-new-values
+      u
+      (map (lambda (v) (abstract-value-process-free-ups-internal f v vs-above))
+	   (aggregate-value-values u)))))
+
+(define (abstract-value-process-free-ups-internal f v vs-above)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (cond ((free-up? v vs-above) (f v vs-above))
+       ((up? v) v)
+       (else (map-union (lambda (u)
+			 (proto-abstract-value-process-free-ups-internal
+			  f u (cons v vs-above)))
+			v))))
+
+(define (abstract-value-process-free-ups f v)
+ (abstract-value-process-free-ups-internal f v '()))
+
+(define (decrement-free-ups v)
+ (abstract-value-process-free-ups
+  (lambda (up vs-above) (make-up (- (up-index up) 1))) v))
+
+;;; Many procedures below return (list v additions), a list of an abstract
+;;; value v and a list of additions. An addition is a set of abstract values.
+;;; The first set is to added to the parent abstract value of v, the second
+;;; set to the grandparent abstract value, and so on.
+;;; Each abstract value in the addition is treated as if it were a child
+;;; abstract value of the current abstract value.  This means that free
+;;; references (FREE-UP 0) refer to the current abstract value, (FREE-UP 1)
+;;; refer to the current abstract value's parent, and so on.
+
+(define (create-v-additions up v)
+ (unless (or (union? v) (up? v)) (internal-error))
+ ;; returns: (list v additions)
+ (list up (append (make-list (up-index up) '()) (list (list v)))))
+
+(define (abstract-value-union-without-unroll v1 v2)
+ (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
+       ((or (up? v1) (up? v2))
+	(internal-error "Can't union a union type with a backlink"))
+       ;; needs work: removed remove-redundant-proto-abstract-values
+       (else (make-union (append (union-values v1) (union-values v2))))))
+
+(define (move-values-up-value v additions)
+ (unless (or (union? v) (up? v)) (internal-error))
+ ;; returns: (list v additions)
+ (when (null? additions)
+  (internal-error "Shouldn't we NOT do this if (null? additions)?"))
+ (when (some up? (first additions))
+  (internal-error "No additions should be UPs...should they?"))
+ (let ((v-new (abstract-value-union-without-unroll
+	       v
+	       (reduce abstract-value-union-without-unroll
+		       (map decrement-free-ups (first additions))
+		       (empty-abstract-value)))))
+  (list v-new
+	(map-indexed
+	 (lambda (vs i)
+	  (append (map (lambda (v)
+			(if (and (up? v) (zero? (up-index v)))
+			    v-new
+			    (abstract-value-process-free-ups
+			     (lambda (v vs-above)
+			      (if (zero? (free-up-index v vs-above))
+				  (make-free-up i vs-above)
+				  (make-up (- (up-index v) 1))))
+			     v)))
+		       vs)
+		  (if (some (lambda (v)
+			     (and (or (not (up? v)) (not (zero? (up-index v))))
+				  (some-abstract-value?
+				   (lambda (v vs-above)
+				    (and (free-up? v vs-above)
+					 (zero? (free-up-index v vs-above))))
+				   v)))
+			    vs)
+		      (list v-new)
+		      '())))
+	 (rest additions)))))
+
+;;; Depth
+
+;;; A path is an alternating list of abstract values and proto abstract values.
+;;; The first element of the list is the root and the last element is a leaf.
+;;; The first element is an abstract value and the last element is either a
+;;; scalar proto abstract value, an aggregate proto abstract value that has no
+;;; children, an empty abstract value, or an up. Each proto abstract value is
+;;; a member of the preceeding abstract value and each abstract value is a
+;;; member of the aggregate values of the preceeding proto abstract value.
+
+(define (depth match? type? path)
+ (reduce max
+	 (map length
+	      (transitive-equivalence-classesp
+	       match? (remove-if-not type? (every-other (rest path)))))
+	 0))
+
+(define (path-of-depth-greater-than-k k match? type? v)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (let outer ((v v) (path '()))
+  (if (or (up? v) (empty-abstract-value? v))
+      (if (> (depth match? type? (reverse (cons v path))) k)
+	  (reverse (cons v path))
+	  #f)
+      (let middle ((us (union-values v)))
+       (if (null? us)
+	   #f
+	   (if (scalar-value? (first us))
+	       (if (> (depth
+		       match? type? (reverse (cons (first us) (cons v path))))
+		      k)
+		   (reverse (cons (first us) (cons v path)))
+		   (middle (rest us)))
+	       (let inner ((vs (aggregate-value-values (first us))))
+		(if (null? vs)
+		    (middle (rest us))
+		    (let ((path
+			   (outer (first vs) (cons (first us) (cons v path)))))
+		     (if (eq? path #f) (inner (rest vs)) path))))))))))
+
+(define (pick-values-to-coalesce match? type? path)
+ (let* ((classes (transitive-equivalence-classesp
+		  match? (remove-if-not type? (every-other (rest path)))))
+	(k (reduce max (map length classes) 0))
+	(positions
+	 (sort (map (lambda (u) (positionq u path))
+		    (find-if (lambda (us) (= (length us) k)) classes))
+	       >
+	       identity)))
+  ;; v1 must be closer to the root than v2
+  (list (list-ref path (- (second positions) 1))
+	(list-ref path (- (first positions) 1)))))
+
+(define (reduce-depth path v1 v2)
+ (unless (or (union? v1) (up? v1)) (internal-error))
+ (unless (or (union? v2) (up? v2)) (internal-error))
+ ;; v1 must be closer to the root than v2
+ (let ((v-additions
+	(let loop ((path path) (vs-above '()))
+	 (when (null? path) (internal-error))
+	 (if (eq? (first path) v2)
+	     (create-v-additions
+	      (make-up (positionq v1 vs-above)) (first path))
+	     (let* ((v-additions
+		     (loop (rest (rest path)) (cons (first path) vs-above)))
+		    (v (make-union
+			(replaceq
+			 (second path)
+			 (make-aggregate-value-with-new-values
+			  (second path)
+			  (replaceq (third path)
+				    (first v-additions)
+				    (aggregate-value-values (second path))))
+			 (union-values (first path))))))
+	      (if (null? (second v-additions))
+		  (list v '())
+		  (move-values-up-value v (second v-additions))))))))
+  (unless (null? (second v-additions))
+   (internal-error "Some addition wasn't applied"))
+  (first v-additions)))
+
+(define (limit-closure-depth v)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (if (eq? *closure-depth-limit* #f)
+     v
+     (let loop ((v v))
+      (let ((path (path-of-depth-greater-than-k
+		   *closure-depth-limit* closure-match? backpropagator? v)))
+       (if (eq? path #f)
+	   v
+	   (let ((v1-v2 (pick-values-to-coalesce
+			 closure-match? backpropagator? path)))
+	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
+
+;;; Syntactic Constraints
+
+(define (closure-depth-limit-met? v)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (or (not *closure-depth-limit*)
+     (eq? (path-of-depth-greater-than-k
+	   *closure-depth-limit* closure-match? backpropagator? v)
+	  #f)))
+
+(define (widen-abstract-value v)
+ (unless (or (union? v) (up? v)) (internal-error))
+ (let loop ((v v))
+  (if (closure-depth-limit-met? v)
+      v
+      ;; needs work: removed remove-redundant-proto-abstract-values*
+      (loop (limit-closure-depth v)))))
+
 ;;; Abstract Evaluator
 
 (define (make-abstract-analysis e vs)
@@ -4119,7 +4445,7 @@
 	(cross-product append
 		       (abstract-destructure (cons-expression-car p) u1)
 		       (abstract-destructure (cons-expression-cdr p) u2)))
-       ;; unions: what if these are ups
+       ;; needs work: what if these are ups
        (union-values (tagged-pair-car v))
        (union-values (tagged-pair-cdr v)))
       '()))
@@ -4195,12 +4521,12 @@
      v2
      (map-union
       (lambda (u1)
-       ;; unions: we don't do tag-check for now
+       ;; needs work: we don't do tag-check for now
        (cond
 	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2 bs))
 	((closure? u1)
-	 ;; unions: This can break when there are ups inside a u2 that point
-	 ;;         to v2. Need to unroll.
+	 ;; needs work: This can break when there are ups inside a u2 that
+	 ;;             point to v2. Need to unroll.
 	 (map-union (lambda (u2)
 		     (new-union
 		      (abstract-apply-closure
@@ -4229,7 +4555,7 @@
    (abstract-eval1
     (letrec-expression-body e) (abstract-letrec-nested-environment vs e) bs))
   ((cons-expression? e)
-   ;; unions: we don't do tag-check for now
+   ;; needs work: we don't do tag-check for now
    (singleton (new-tagged-pair
 	       (cons-expression-tags e)
 	       (abstract-eval1 (cons-expression-car e)
@@ -4259,7 +4585,7 @@
       abstract-analysis-union
       (empty-abstract-analysis)
       (lambda (u1)
-       ;; unions: we don't do tag-check for now
+       ;; needs work: we don't do tag-check for now
        (cond ((primitive-procedure? u1)
 	      ;; needs work: should put this into slots of the primitive
 	      ;;             procedures
@@ -4292,8 +4618,8 @@
 		 (abstract-apply-closure
 		  (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 u2)
 		 (empty-abstract-analysis)))
-	       ;; unions: This can break when there are ups inside a u2 that
-	       ;;         point to v2. Need to unroll.
+	       ;; needs work: This can break when there are ups inside a u2
+	       ;;             that point to v2. Need to unroll.
 	       (union-values v2)))
 	     (else (compile-time-warning "Target might not be a procedure" u1)
 		   (empty-abstract-analysis))))
@@ -4340,11 +4666,14 @@
        (make-expression-binding
 	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (make-environment-binding
-	       (environment-binding-values b2)
-	       (abstract-eval (expression-binding-expression b1)
-			      (environment-binding-values b2)
-			      bs)))
+	      (if (empty-abstract-value? (environment-binding-value b2))
+		  (make-environment-binding
+		   (environment-binding-values b2)
+		   (widen-abstract-value
+		    (abstract-eval (expression-binding-expression b1)
+				   (environment-binding-values b2)
+				   bs)))
+		  b2))
 	     (expression-binding-flow b1))))
       bs))
 
@@ -6529,7 +6858,7 @@
 		     (if (and (real? u1) (real? u2)) (f u1 u2) 'real)
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; unions: what if these are ups
+		;; needs work: what if these are ups
 		(vlad-car u)
 		(vlad-cdr u))
 	       (compile-time-warning
@@ -6556,7 +6885,7 @@
 			 (abstract-boolean))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; unions: what if these are ups
+		;; needs work: what if these are ups
 		(vlad-car u)
 		(vlad-cdr u))
 	       (compile-time-warning
@@ -6579,12 +6908,12 @@
 		(lambda (u1 u2)
 		 (if (vlad-pair? u2)
 		     (cross-union (lambda (u21 u22) (f u1 u21 u22 bs))
-				  ;; unions: what if these are ups
+				  ;; needs work: what if these are ups
 				  (vlad-car u2)
 				  (vlad-cdr u2))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; unions: what if these are ups
+		;; needs work: what if these are ups
 		(vlad-car u)
 		(vlad-cdr u))
 	       (compile-time-warning
@@ -6614,14 +6943,14 @@
 		(reduce abstract-analysis-union
 			(cross-product
 			 (lambda (u21 u22) (f u1 u21 u22 bs))
-			 ;; unions: what if these are ups
+			 ;; needs work: what if these are ups
 			 (union-values (vlad-car u2))
 			 (union-values (vlad-cdr u2)))
 			(empty-abstract-analysis)))
 	       (else (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)
 		     (empty-abstract-analysis))))
-	;; unions: what if these are ups
+	;; needs work: what if these are ups
 	(union-values (vlad-car u))
 	(union-values (vlad-cdr u)))
        (empty-abstract-analysis)))
