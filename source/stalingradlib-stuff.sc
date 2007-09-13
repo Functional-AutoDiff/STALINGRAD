@@ -172,7 +172,7 @@
 
 (define *imprecise-inexacts?* #f)
 
-(define *warnings?* #f)
+(define *warnings?* #t)			;debugging
 
 (define *abstract?* #f)
 
@@ -794,11 +794,52 @@
 
 ;;; Expression Equivalence
 
+(define (expression-eqv? e1 e2)
+ (or
+  ;; This is an optimization.
+  (eq? e1 e2)
+  (and (constant-expression? e1)
+       (constant-expression? e2)
+       (abstract-value=? (constant-expression-value e1)
+			 (constant-expression-value e2)))
+  (and (variable-access-expression? e1)
+       (variable-access-expression? e2)
+       (variable=? (variable-access-expression-variable e1)
+		   (variable-access-expression-variable e2)))
+  (and (lambda-expression? e1)
+       (lambda-expression? e2)
+       (expression-eqv? (lambda-expression-parameter e1)
+			(lambda-expression-parameter e2))
+       (expression-eqv? (lambda-expression-body e1)
+			(lambda-expression-body e2)))
+  (and (application? e1)
+       (application? e2)
+       (expression-eqv? (application-callee e1) (application-callee e2))
+       (expression-eqv? (application-argument e1)(application-argument e2)))
+  (and (letrec-expression? e1)
+       (letrec-expression? e2)
+       (= (length (letrec-expression-procedure-variables e1))
+	  (length (letrec-expression-procedure-variables e2)))
+       (every variable=?
+	      (letrec-expression-procedure-variables e1)
+	      (letrec-expression-procedure-variables e2))
+       (every expression-eqv?
+	      (letrec-expression-lambda-expressions e1)
+	      (letrec-expression-lambda-expressions e2))
+       (expression-eqv? (letrec-expression-body e1)
+			(letrec-expression-body e2)))
+  (and (cons-expression? e1) (cons-expression? e2)
+       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
+       (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
+       (expression-eqv? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
+
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
  ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
  ;; is assumed to be equivalent to the corresponding xs2_i.
  (or
+  ;; This is a sound optimization because of how we call alpha-equivalent?.
+  (eq? e1 e2)
   (and (constant-expression? e1)
        (constant-expression? e2)
        (abstract-value=? (constant-expression-value e1)
@@ -907,14 +948,13 @@
  ;; variables. The backpropagator variables are free in the nested let* context
  ;; context of the forward phase reverse transformed procedure but the
  ;; backpropagators are not reverse values.
- ;; needs work: we don't do tag-check for now
- (unless *abstract?*
-  (unless (every (lambda (x v)
-		  (or (empty-abstract-value? v)
-		      (prefix-tags? (variable-tags x) (value-tags v))))
-		 (free-variables e)
-		 vs)
-   (internal-error)))
+ (unless (every (lambda (x v)
+		 (or (empty-abstract-value? v)
+		     (up? v)
+		     (prefix-tags? (variable-tags x) (value-tags v))))
+		(free-variables e)
+		vs)
+  (internal-error))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-nonrecursive-closure vs e)))
@@ -929,23 +969,25 @@
   (internal-error))
  ;; See the note in new-nonrecursive-closure. While that hasn't happened in
  ;; practise, and I don't know whether it can, I removed it in principle.
- ;; needs work: we don't do tag-check for now
- (unless *abstract?*
-  (unless (every (lambda (x v)
-		  (or (empty-abstract-value? v)
-		      (prefix-tags? (variable-tags x) (value-tags v))))
-		 (recursive-closure-free-variables
-		  (vector->list xs) (vector->list es))
-		 vs)
-   (internal-error)))
+ (unless (every (lambda (x v)
+		 (or (empty-abstract-value? v)
+		     (up? v)
+		     (prefix-tags? (variable-tags x) (value-tags v))))
+		(recursive-closure-free-variables
+		 (vector->list xs) (vector->list es))
+		vs)
+  (internal-error))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-recursive-closure vs xs es i)))
 
 (define (nonrecursive-closure-match? v1 v2)
  (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
- (expression=? (nonrecursive-closure-lambda-expression v1)
-	       (nonrecursive-closure-lambda-expression v2)))
+ ;; The first condition is an optimization.
+ (and (= (length (nonrecursive-closure-values v1))
+	 (length (nonrecursive-closure-values v2)))
+      (expression=? (nonrecursive-closure-lambda-expression v1)
+		    (nonrecursive-closure-lambda-expression v2))))
 
 (define (recursive-closure-match? v1 v2)
  (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
@@ -954,6 +996,9 @@
 	 (vector-length (recursive-closure-procedure-variables v2)))
       (= (vector-length (recursive-closure-lambda-expressions v1))
 	 (vector-length (recursive-closure-lambda-expressions v2)))
+      ;; This is an optimization.
+      (= (length (recursive-closure-values v1))
+	 (length (recursive-closure-values v2)))
       (let ((xs1 (append
 		  (recursive-closure-variables v1)
 		  (vector->list (recursive-closure-procedure-variables v1))))
@@ -1032,6 +1077,15 @@
 		(and (not (union? v-perturbation))
 		     (not (up? v-perturbation)))))
   (internal-error))
+ (unless (or (empty-abstract-value? v)
+	     (up? v)
+	     (empty-abstract-value? v-perturbation)
+	     (up? v-perturbation)
+	     (and (tagged? 'perturbation (value-tags v-perturbation))
+		  (equal-tags?
+		   (value-tags v)
+		   (remove-tag 'perturbation (value-tags v-perturbation)))))
+  (internal-error))
  ;; needs work: Should check that v-perturbation conforms to v.
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
@@ -1056,13 +1110,13 @@
 	    (or (and (not (union? v1)) (not (up? v1)))
 		(and (not (union? v2)) (not (up? v2)))))
   (internal-error))
- ;; needs work: we don't do tag-check for now
- (unless *abstract?*
-  (unless (and (or (empty-abstract-value? v1)
-		   (prefix-tags? tags (value-tags v1)))
-	       (or (empty-abstract-value? v2)
-		   (prefix-tags? tags (value-tags v2))))
-   (internal-error)))
+ (unless (and (or (empty-abstract-value? v1)
+		  (up? v1)
+		  (prefix-tags? tags (value-tags v1)))
+	      (or (empty-abstract-value? v2)
+		  (up? v2)
+		  (prefix-tags? tags (value-tags v2))))
+  (internal-error))
  (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
      (make-tagged-pair tags v1 v2)))
@@ -1220,6 +1274,13 @@
 
 (define (value-tags v)
  (cond
+  ((union? v)
+   (when (empty-abstract-value? v) (internal-error))
+   (let ((tags (value-tags (first (union-values v)))))
+    (unless (every (lambda (u) (equal? tags (value-tags u)))
+		   (rest (union-values v)))
+     (internal-error))
+    tags))
   ((scalar-value? v) '())
   ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
   ((recursive-closure? v) (recursive-closure-tags v))
@@ -1257,6 +1318,8 @@
  ;; needed.
  (let loop ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
   (cond
+   ;; This is an optimization.
+   ((eq? v1 v2) #t)
    ((up? v1)
     (loop (list-ref vs1-above (up-index v1))
 	  v2
@@ -1291,7 +1354,7 @@
 	     ;; and this breaks -imprecise-inexacts.
 	     (or (and (real? v1) (real? v2) (equal? v1 v2))
 		 (and (real? v1) (eq? v2 'real))
-		 (and (eq? v1 'real) (eq? v1 'real))))
+		 (and (eq? v1 'real) (eq? v2 'real))))
 	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
 	(and (nonrecursive-closure? v1)
 	     (nonrecursive-closure? v2)
@@ -1448,6 +1511,34 @@
       (loop (tagged-pair-car v1) (tagged-pair-car v2) cs vs1-above vs2-above)
       (loop
        (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs vs1-above vs2-above)))))))
+
+;;; Abstract Value Union
+
+(define (unroll v)
+ (let loop ((v v) (vs-above '()))
+  (if (up? v)
+      (if (= (up-index v) (- (length vs-above) 1))
+	  (new-union
+	   (map (lambda (u)
+		 (if (scalar-value? u)
+		     u
+		     (make-aggregate-value-with-new-values
+		      u
+		      (map (lambda (v)
+			    (if (memq v vs-above)
+				(make-up (+ (positionq v vs-above) 1))
+				v))
+			   (aggregate-value-values u)))))
+		(union-values (last vs-above))))
+	  v)
+      (new-union (map (lambda (u)
+		       (if (scalar-value? u)
+			   u
+			   (make-aggregate-value-with-new-values
+			    u
+			    (map (lambda (v1) (loop v1 (cons v vs-above)))
+				 (aggregate-value-values u)))))
+		      (union-values v))))))
 
 (define (abstract-value-union v1 v2) (unimplemented "debugging"))
 
@@ -1761,7 +1852,7 @@
        ;; reverse transform is invertible.
        (list i e bs1 bs2)
        ;; This is used during parsing to guarantee that there is
-       ;;                                            ---    -
+       ;;                                            ___    _
        ;;                                            \      \
        ;; no binding like x = y,y which would become y,y += x
        ;; during reverse phase which incorrecty accumulates.
@@ -2643,14 +2734,16 @@
 	  ((nonrecursive-closure? v)
 	   ;; See the note in abstract-environment=?.
 	   (new-nonrecursive-closure
-	    (map bundle
+	    (map (lambda (v v-perturbation)
+		  (loop v v-perturbation cs vs-above vs-perturbation-above))
 		 (nonrecursive-closure-values v)
 		 (nonrecursive-closure-values v-perturbation))
 	    (forward-transform (nonrecursive-closure-lambda-expression v))))
 	  ((recursive-closure? v)
 	   ;; See the note in abstract-environment=?.
 	   (new-recursive-closure
-	    (map bundle
+	    (map (lambda (v v-perturbation)
+		  (loop v v-perturbation cs vs-above vs-perturbation-above))
 		 (recursive-closure-values v)
 		 (recursive-closure-values v-perturbation))
 	    (map-vector forwardify (recursive-closure-procedure-variables v))
@@ -2664,11 +2757,23 @@
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((reverse-tagged-value? v)
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((tagged-pair? v)
-	   (new-tagged-pair
-	    (add-tag 'forward (tagged-pair-tags v))
-	    (bundle (tagged-pair-car v) (tagged-pair-car v-perturbation))
-	    (bundle (tagged-pair-cdr v) (tagged-pair-cdr v-perturbation))))
+	  ((and (tagged-pair? v)
+		(tagged-pair? v-perturbation)
+		(tagged? 'perturbation (tagged-pair-tags v-perturbation))
+		(equal-tags?
+		 (tagged-pair-tags v)
+		 (remove-tag 'perturbation (tagged-pair-tags v-perturbation))))
+	   (new-tagged-pair (add-tag 'forward (tagged-pair-tags v))
+			    (loop (tagged-pair-car v)
+				  (tagged-pair-car v-perturbation)
+				  cs
+				  vs-above
+				  vs-perturbation-above)
+			    (loop (tagged-pair-cdr v)
+				  (tagged-pair-cdr v-perturbation)
+				  cs
+				  vs-above
+				  vs-perturbation-above)))
 	  (else
 	   (if *abstract?*
 	       (compile-time-warning
@@ -3044,7 +3149,7 @@
 	      ;; \
 	      ;; e
 	      e
-	      ;; ----------------------
+	      ;; ______________________
 	      ;; \
 	      ;; letrec xs0 = es0 in x0
 	      (new-letrec-expression
@@ -4051,36 +4156,44 @@
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
  (set-equalp? (lambda (b1 b2)
-	       (and (expression=? (expression-binding-expression b1)
-				  (expression-binding-expression b2))
+	       (and (expression-eqv? (expression-binding-expression b1)
+				     (expression-binding-expression b2))
 		    (abstract-flow=? (expression-binding-flow b1)
 				     (expression-binding-flow b2))))
 	      bs1
 	      bs2))
 
 (define (lookup-expression-binding e bs)
- (find-if (lambda (b) (expression=? e (expression-binding-expression b))) bs))
+ (when (>= (count-if
+	    (lambda (b) (expression-eqv? e (expression-binding-expression b)))
+	    bs)
+	   2)
+  (internal-error))
+ (find-if (lambda (b) (expression-eqv? e (expression-binding-expression b)))
+	  bs))
 
 (define (abstract-analysis-union bs1 bs2)
- (if (null? bs1)
-     bs2
-     (let ((b2 (lookup-expression-binding
-		(expression-binding-expression (first bs1)) bs2)))
-      (abstract-analysis-union
-       (rest bs1)
-       (if b2
-	   (cons (make-expression-binding
-		  (expression-binding-expression (first bs1))
-		  (abstract-flow-union (expression-binding-flow (first bs1))
-				       (expression-binding-flow b2)))
-		 (removeq b2 bs2))
-	   (cons (first bs1) bs2))))))
+ ;; The order here is an optimization.
+ (let loop ((bs1 bs2) (bs2 bs1))
+  (if (null? bs1)
+      bs2
+      (let ((b2 (lookup-expression-binding
+		 (expression-binding-expression (first bs1)) bs2)))
+       (loop
+	(rest bs1)
+	(if b2
+	    (cons (make-expression-binding
+		   (expression-binding-expression (first bs1))
+		   (abstract-flow-union (expression-binding-flow (first bs1))
+					(expression-binding-flow b2)))
+		  (removeq b2 bs2))
+	    (cons (first bs1) bs2)))))))
 
 ;;; Widen
 
 ;;; General
 
-(define *closure-depth-limit* 1)
+(define *closure-depth-limit* 1)	;debugging
 
 (define (make-list length fill) (map-n (lambda (i) fill) length))
 
@@ -4183,9 +4296,10 @@
   (internal-error "No additions should be UPs...should they?"))
  (let ((v-new (abstract-value-union-without-unroll
 	       v
-	       (reduce abstract-value-union-without-unroll
-		       (map decrement-free-ups (first additions))
-		       (empty-abstract-value)))))
+	       (map-reduce abstract-value-union-without-unroll
+			   (empty-abstract-value)
+			   decrement-free-ups
+			   (first additions)))))
   (list v-new
 	(map-indexed
 	 (lambda (vs i)
@@ -4222,11 +4336,11 @@
 ;;; member of the aggregate values of the preceeding proto abstract value.
 
 (define (depth match? type? path)
- (reduce max
-	 (map length
-	      (transitive-equivalence-classesp
-	       match? (remove-if-not type? (every-other (rest path)))))
-	 0))
+ (map-reduce max
+	     0
+	     length
+	     (transitive-equivalence-classesp
+	      match? (remove-if-not type? (every-other (rest path))))))
 
 (define (path-of-depth-greater-than-k k match? type? v)
  (unless (or (union? v) (up? v)) (internal-error))
@@ -4254,7 +4368,7 @@
 (define (pick-values-to-coalesce match? type? path)
  (let* ((classes (transitive-equivalence-classesp
 		  match? (remove-if-not type? (every-other (rest path)))))
-	(k (reduce max (map length classes) 0))
+	(k (map-reduce max 0 length classes))
 	(positions
 	 (sort (map (lambda (u) (positionq u path))
 		    (find-if (lambda (us) (= (length us) k)) classes))
@@ -4293,7 +4407,7 @@
   (first v-additions)))
 
 (define (limit-closure-depth v)
- (unless (or (union? v) (up? v)) (internal-error))
+ (unless (union? v) (internal-error))
  (if (eq? *closure-depth-limit* #f)
      v
      (let loop ((v v))
@@ -4308,19 +4422,18 @@
 ;;; Syntactic Constraints
 
 (define (closure-depth-limit-met? v)
- (unless (or (union? v) (up? v)) (internal-error))
+ (unless (union? v) (internal-error))
  (or (not *closure-depth-limit*)
      (eq? (path-of-depth-greater-than-k
 	   *closure-depth-limit* closure-match? backpropagator? v)
 	  #f)))
 
 (define (widen-abstract-value v)
- (unless (or (union? v) (up? v)) (internal-error))
- (let loop ((v v))
-  (if (closure-depth-limit-met? v)
-      v
-      ;; needs work: removed remove-redundant-proto-abstract-values*
-      (loop (limit-closure-depth v)))))
+ (unless (union? v) (internal-error))
+ (if (closure-depth-limit-met? v)
+     v
+     ;; needs work: removed remove-redundant-proto-abstract-values*
+     (widen-abstract-value (limit-closure-depth v))))
 
 ;;; Abstract Evaluator
 
@@ -4343,18 +4456,28 @@
       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
    (free-variables e))))
 
-(define (abstract-eval1 e vs bs)
+(define (lookup-environment-binding e vs bs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (let ((b (lookup-expression-binding e bs)))
-  (if b
-      (let ((b (find-if
-		(lambda (b)
-		 (abstract-environment=? vs (environment-binding-values b)))
-		(expression-binding-flow b))))
-       (if b (environment-binding-value b) (empty-abstract-value)))
-      (empty-abstract-value))))
+  (and b
+       (begin
+	(when (>= (count-if
+		   (lambda (b)
+		    (abstract-environment=? vs (environment-binding-values b)))
+		   (expression-binding-flow b))
+		  2)
+	 (internal-error))
+	(find-if (lambda (b)
+		  (abstract-environment=? vs (environment-binding-values b)))
+		 (expression-binding-flow b))))))
+
+(define (abstract-eval1 e vs bs)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
+ (let ((b (lookup-environment-binding e vs bs)))
+  (if b (environment-binding-value b) (empty-abstract-value))))
 
 (define (abstract-letrec-nested-environment vs e)
+ (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (map
   (lambda (x)
    (if (memp variable=? x (letrec-expression-procedure-variables e))
@@ -4445,9 +4568,8 @@
 	(cross-product append
 		       (abstract-destructure (cons-expression-car p) u1)
 		       (abstract-destructure (cons-expression-cdr p) u2)))
-       ;; needs work: what if these are ups
-       (union-values (tagged-pair-car v))
-       (union-values (tagged-pair-cdr v)))
+       (union-values (unroll (tagged-pair-car v)))
+       (union-values (unroll (tagged-pair-cdr v))))
       '()))
     (else
      (compile-time-warning
@@ -4458,6 +4580,13 @@
   (else (internal-error))))
 
 (define (construct-abstract-nonrecursive-environments v1 v2)
+ (unless (and (not (union? v1))
+	      (not (up? v1))
+	      (closed? v1)
+	      (not (union? v2))
+	      (not (up? v2))
+	      (closed? v2))
+  (internal-error))
  (map
   (lambda (alist)
    (map (lambda (x)
@@ -4472,6 +4601,13 @@
   (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
 
 (define (construct-abstract-recursive-environments v1 v2)
+ (unless (and (not (union? v1))
+	      (not (up? v1))
+	      (closed? v1)
+	      (not (union? v2))
+	      (not (up? v2))
+	      (closed? v2))
+  (internal-error))
  (map (lambda (alist)
        (map (lambda (x)
 	     (let ((result (assp variable=? x alist)))
@@ -4497,6 +4633,13 @@
       (abstract-destructure (recursive-closure-parameter v1) v2)))
 
 (define (abstract-apply-closure p v1 v2)
+ (unless (and (not (union? v1))
+	      (not (up? v1))
+	      (closed? v1)
+	      (not (union? v2))
+	      (not (up? v2))
+	      (closed? v2))
+  (internal-error))
  (cond ((nonrecursive-closure? v1)
 	(map (lambda (vs)
 	      (p (lambda-expression-body
@@ -4525,15 +4668,13 @@
        (cond
 	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2 bs))
 	((closure? u1)
-	 ;; needs work: This can break when there are ups inside a u2 that
-	 ;;             point to v2. Need to unroll.
 	 (map-union (lambda (u2)
 		     (new-union
 		      (abstract-apply-closure
 		       (lambda (e vs) (abstract-eval1 e vs bs)) u1 u2)))
-		    v2))
+		    (unroll v2)))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
-      v1)))
+      (unroll v1))))
 
 (define (abstract-eval e vs bs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
@@ -4568,13 +4709,14 @@
 
 (define (abstract-eval1-prime e vs bs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (let ((b (lookup-expression-binding e bs)))
-  (if (and b
-	   (some (lambda (b)
-		  (abstract-environment=? vs (environment-binding-values b)))
-		 (expression-binding-flow b)))
+ (let ((b (lookup-environment-binding e vs bs)))
+  (if b
       (empty-abstract-analysis)
-      (make-abstract-analysis e vs))))
+      (if #t				;debugging
+	  (make-abstract-analysis e vs)
+	  (abstract-analysis-union (make-abstract-analysis e vs)
+				   ;; This is an optimization.
+				   (abstract-eval-prime e vs bs))))))
 
 (define (abstract-apply-prime v1 v2 bs)
  (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
@@ -4618,12 +4760,10 @@
 		 (abstract-apply-closure
 		  (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 u2)
 		 (empty-abstract-analysis)))
-	       ;; needs work: This can break when there are ups inside a u2
-	       ;;             that point to v2. Need to unroll.
-	       (union-values v2)))
+	       (union-values (unroll v2))))
 	     (else (compile-time-warning "Target might not be a procedure" u1)
 		   (empty-abstract-analysis))))
-      (union-values v1))))
+      (union-values (unroll v1)))))
 
 (define (abstract-eval-prime e vs bs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
@@ -4666,84 +4806,181 @@
        (make-expression-binding
 	(expression-binding-expression b1)
 	(map (lambda (b2)
-	      (if (empty-abstract-value? (environment-binding-value b2))
-		  (make-environment-binding
-		   (environment-binding-values b2)
-		   (widen-abstract-value
-		    (abstract-eval (expression-binding-expression b1)
-				   (environment-binding-values b2)
-				   bs)))
-		  b2))
+	      ;; needs work: To explain why one can't do the optimization here.
+	      (make-environment-binding
+	       (environment-binding-values b2)
+	       (widen-abstract-value
+		(abstract-eval (expression-binding-expression b1)
+			       (environment-binding-values b2)
+			       bs))))
 	     (expression-binding-flow b1))))
       bs))
 
 (define (update-analysis-domains bs)
- (map-reduce abstract-analysis-union
-	     (empty-abstract-analysis)
-	     (lambda (b1)
-	      (map-reduce abstract-analysis-union
-			  (empty-abstract-analysis)
-			  (lambda (b2)
-			   (abstract-eval-prime
-			    (expression-binding-expression b1)
-			    (environment-binding-values b2)
-			    bs))
-			  (expression-binding-flow b1)))
-	     bs))
+ (map-reduce
+  abstract-analysis-union
+  (empty-abstract-analysis)
+  (lambda (b1)
+   (map-reduce abstract-analysis-union
+	       (empty-abstract-analysis)
+	       (lambda (b2)
+		(if (or #t		;debugging
+			(empty-abstract-value? (environment-binding-value b2)))
+		    (abstract-eval-prime
+		     (expression-binding-expression b1)
+		     (environment-binding-values b2)
+		     bs)
+		    ;; This is an optimization.
+		    (empty-abstract-analysis)))
+	       (expression-binding-flow b1)))
+  bs))
 
-(define (concrete-reals-in v)
+(define (value-contains-union? v)
+ (or (and (union? v) (>= (length (union-values v)) 2))
+     (and (not (union? v))
+	  (not (up? v))
+	  (not (scalar-value? v))
+	  (some value-contains-union? (aggregate-value-values v)))))
+
+(define (unions-in-value v)
+ (cond ((union? v)
+	(+ (if (>= (length (union-values v)) 2) 1 0)
+	   (map-reduce + 0 unions-in-value (union-values v))))
+       ((up? v) 0)
+       ((scalar-value? v) 0)
+       (else (map-reduce + 0 unions-in-value (aggregate-value-values v)))))
+
+(define (concrete-reals-in-value v)
  (cond
-  ((union? v) (map-reduce unionv '() concrete-reals-in (union-values v)))
+  ((union? v) (map-reduce unionv '() concrete-reals-in-value (union-values v)))
   ((up? v) '())
   ((real? v) (list v))
   ((scalar-value? v) '())
-  (else (map-reduce unionv '() concrete-reals-in (aggregate-value-values v)))))
+  (else (map-reduce
+	 unionv '() concrete-reals-in-value (aggregate-value-values v)))))
+
+(define (value-max-depth v)
+ (cond
+  ((union? v) (map-reduce max 0 value-max-depth (union-values v)))
+  ((up? v) 0)
+  ((scalar-value? v) 0)
+  (else (+ (map-reduce max 0 value-max-depth (aggregate-value-values v)) 1))))
+
+(define (value-max-width v)
+ (cond ((union? v)
+	(max (length (union-values v))
+	     (map-reduce max 0 value-max-width (union-values v))))
+       ((up? v) 0)
+       ((scalar-value? v) 0)
+       (else (map-reduce max 0 value-max-width (aggregate-value-values v)))))
+
+(define (analysis-size bs)
+ (map-reduce + 0 (lambda (b) (length (expression-binding-flow b))) bs))
+
+(define (max-flow-size bs)
+ (map-reduce
+  max minus-infinity (lambda (b) (length (expression-binding-flow b))) bs))
+
+(define (analysis-contains-union? bs)
+ (some (lambda (b)
+	(some (lambda (b)
+	       (or (some value-contains-union?
+			 (environment-binding-values b))
+		   (value-contains-union? (environment-binding-value b))))
+	      (expression-binding-flow b)))
+       bs))
+
+(define (unions-in-analysis bs)
+ (map-reduce
+  +
+  0
+  (lambda (b)
+   (map-reduce
+    +
+    0
+    (lambda (b)
+     (+ (map-reduce + 0 unions-in-value (environment-binding-values b))
+	(unions-in-value (environment-binding-value b))))
+    (expression-binding-flow b)))
+  bs))
+
+(define (concrete-reals-in-analysis bs)
+ (map-reduce
+  unionv
+  '()
+  (lambda (b)
+   (map-reduce
+    unionv
+    '()
+    (lambda (b)
+     (unionv
+      (map-reduce
+       unionv '() concrete-reals-in-value (environment-binding-values b))
+      (concrete-reals-in-value (environment-binding-value b))))
+    (expression-binding-flow b)))
+  bs))
+
+(define (bottoms-in-analysis bs)
+ (map-reduce
+  +
+  0
+  (lambda (b)
+   (count-if (lambda (b) (empty-abstract-value? (environment-binding-value b)))
+	     (expression-binding-flow b)))
+  bs))
+
+(define (analysis-max-depth bs)
+ (map-reduce
+  max
+  0
+  (lambda (b)
+   (map-reduce
+    max
+    0
+    (lambda (b)
+     (max (map-reduce max 0 value-max-depth (environment-binding-values b))
+	  (value-max-depth (environment-binding-value b))))
+    (expression-binding-flow b)))
+  bs))
+
+(define (analysis-max-width bs)
+ (map-reduce
+  max
+  0
+  (lambda (b)
+   (map-reduce
+    max
+    0
+    (lambda (b)
+     (max (map-reduce max 0 value-max-width (environment-binding-values b))
+	  (value-max-width (environment-binding-value b))))
+    (expression-binding-flow b)))
+  bs))
 
 (define (flow-analysis e bs)
  (set! *abstract?* #t)
  (let loop ((bs (initial-abstract-analysis e bs)) (i 0))
-  (when *verbose?* (format #t "~s: " i))
   (let ((bs1 (if *verbose?*
 		 (time
-		  "~a, "
+		  "Time: ~a~%"
 		  (lambda ()
 		   (abstract-analysis-union (update-analysis-ranges bs)
 					    (update-analysis-domains bs))))
 		 (abstract-analysis-union (update-analysis-ranges bs)
 					  (update-analysis-domains bs)))))
    (when *verbose?*
-    (format #t "|analysis|=~s~%"
-	    (map-reduce
-	     + 0 (lambda (b) (length (expression-binding-flow b))) bs1)))
-   (when *verbose?*
-    (format #t "expressions: ~s, max flow size: ~s, bottoms: ~s, concrete reals: ~s~%"
+    (format #t
+	    "iteration: ~s, expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
+	    i
 	    (length bs)
-	    (map-reduce max
-			minus-infinity
-			(lambda (b) (length (expression-binding-flow b)))
-			bs)
-	    (map-reduce
-	     +
-	     0
-	     (lambda (b)
-	      (count-if (lambda (b)
-			 (empty-abstract-value? (environment-binding-value b)))
-			(expression-binding-flow b)))
-	     bs)
-	    (map-reduce
-	     unionv
-	     '()
-	     (lambda (b)
-	      (map-reduce
-	       unionv
-	       '()
-	       (lambda (b)
-		(unionv
-		 (map-reduce
-		  unionv '() concrete-reals-in (environment-binding-values b))
-		 (concrete-reals-in (environment-binding-value b))))
-	       (expression-binding-flow b)))
-	     bs)))
+	    (analysis-size bs)
+	    (max-flow-size bs)
+	    (unions-in-analysis bs)
+	    (bottoms-in-analysis bs)
+	    (analysis-max-depth bs)
+	    (analysis-max-width bs)
+	    (concrete-reals-in-analysis bs)))
+   ;; needs work: To explain why one can't do the optimization here.
    (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
 
 ;;; Code Generator
@@ -6793,14 +7030,15 @@
 	       "Argument is not an equivalent value" (vlad-empty-list) v))
 	     (unimplemented "read-real"))))
 
-(define (unary f s) (lambda (v bs) (if *abstract?* (map-union f v) (f v))))
+(define (unary f s)
+ (lambda (v bs) (if *abstract?* (map-union f (unroll v)) (f v))))
 
 (define (unary-ad f s) (lambda (v bs) (f v)))
 
 (define (unary-predicate f s)
  (lambda (v bs)
   (if *abstract?*
-      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)
+      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) (unroll v))
       (if (f v) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
@@ -6811,7 +7049,7 @@
 			 (if (real? u) (f u) 'real)
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v))
+		    (unroll v)))
 	(else (unless (abstract-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f v)))))
@@ -6826,7 +7064,7 @@
 			     (abstract-boolean))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v))
+		    (unroll v)))
 	(else (unless (abstract-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (if (f v) (vlad-true) (vlad-false))))))
@@ -6840,7 +7078,7 @@
 	       (f (vlad-car u) (vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
+	  (unroll v)))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f (vlad-car v) (vlad-cdr v))))))
@@ -6858,12 +7096,11 @@
 		     (if (and (real? u1) (real? u2)) (f u1 u2) 'real)
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; needs work: what if these are ups
-		(vlad-car u)
-		(vlad-cdr u))
+		(unroll (vlad-car u))
+		(unroll (vlad-cdr u)))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
+	  (unroll v)))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -6885,12 +7122,11 @@
 			 (abstract-boolean))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; needs work: what if these are ups
-		(vlad-car u)
-		(vlad-cdr u))
+		(unroll (vlad-car u))
+		(unroll (vlad-cdr u)))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
+	  (unroll v)))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -6908,17 +7144,15 @@
 		(lambda (u1 u2)
 		 (if (vlad-pair? u2)
 		     (cross-union (lambda (u21 u22) (f u1 u21 u22 bs))
-				  ;; needs work: what if these are ups
-				  (vlad-car u2)
-				  (vlad-cdr u2))
+				  (unroll (vlad-car u2))
+				  (unroll (vlad-cdr u2)))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		;; needs work: what if these are ups
-		(vlad-car u)
-		(vlad-cdr u))
+		(unroll (vlad-car u))
+		(unroll (vlad-cdr u)))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
+	  (unroll v)))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v23 (vlad-cdr v)))
@@ -6943,21 +7177,19 @@
 		(reduce abstract-analysis-union
 			(cross-product
 			 (lambda (u21 u22) (f u1 u21 u22 bs))
-			 ;; needs work: what if these are ups
-			 (union-values (vlad-car u2))
-			 (union-values (vlad-cdr u2)))
+			 (union-values (unroll (vlad-car u2)))
+			 (union-values (unroll (vlad-cdr u2))))
 			(empty-abstract-analysis)))
 	       (else (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)
 		     (empty-abstract-analysis))))
-	;; needs work: what if these are ups
-	(union-values (vlad-car u))
-	(union-values (vlad-cdr u)))
+	(union-values (unroll (vlad-car u)))
+	(union-values (unroll (vlad-cdr u))))
        (empty-abstract-analysis)))
      (else (compile-time-warning
 	    (format #f "Argument to ~a might be invalid" s) u)
 	   (empty-abstract-analysis))))
-   (union-values v))))
+   (union-values (unroll v)))))
 
 (define (define-primitive-procedure x procedure generator forward reverse)
  (set! *value-bindings*
