@@ -74,18 +74,57 @@
 
 ;;; Structures
 
-(define-structure constant-expression value)
+(define-structure constant-expression
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ value)
 
-(define-structure variable-access-expression variable)
+(define-structure variable-access-expression
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ variable)
 
-(define-structure lambda-expression free-variables parameter body)
+(define-structure lambda-expression
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ free-variables
+ parameter
+ body)
 
-(define-structure application free-variables callee argument)
+(define-structure application
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ free-variables
+ callee
+ argument)
 
 (define-structure letrec-expression
- free-variables procedure-variables lambda-expressions body)
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ free-variables
+ procedure-variables
+ lambda-expressions
+ body)
 
-(define-structure cons-expression free-variables tags car cdr)
+(define-structure cons-expression
+ perturbation-transform-inverse
+ forward-transform-inverse
+ sensitivity-transform-inverse
+ reverse-transform-inverse
+ free-variables
+ tags
+ car
+ cdr)
 
 (define-structure variable-binding variable expression)
 
@@ -541,21 +580,6 @@
  (new-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
 
-(define (unperturbationify-access e)
- (new-variable-access-expression
-  (unperturbationify (variable-access-expression-variable e))))
-
-(define (unforwardify-access e)
- (new-variable-access-expression
-  (unforwardify (variable-access-expression-variable e))))
-
-(define (unsensitivityify-access? e)
- (unsensitivityify? (variable-access-expression-variable e)))
-
-(define (unsensitivityify-access e)
- (new-variable-access-expression
-  (unsensitivityify (variable-access-expression-variable e))))
-
 (define (unreverseify-access e)
  (new-variable-access-expression
   (unreverseify (variable-access-expression-variable e))))
@@ -656,7 +680,7 @@
 		    *constant-expressions*)))
   (if e0
       e0
-      (let ((e0 (make-constant-expression value)))
+      (let ((e0 (make-constant-expression #f #f #f #f value)))
        (set! *constant-expressions* (cons e0 *constant-expressions*))
        e0))))
 
@@ -667,7 +691,7 @@
 	    *variable-access-expressions*)))
   (if e0
       e0
-      (let ((e0 (make-variable-access-expression variable)))
+      (let ((e0 (make-variable-access-expression #f #f #f #f variable)))
        (set! *variable-access-expressions*
 	     (cons e0 *variable-access-expressions*))
        e0))))
@@ -681,6 +705,10 @@
   (if e0
       e0
       (let ((e0 (make-lambda-expression
+		 #f
+		 #f
+		 #f
+		 #f
 		 (sort-variables (set-differencep variable=?
 						  (free-variables e)
 						  (parameter-variables p)))
@@ -697,6 +725,10 @@
   (if e0
       e0
       (let ((e0 (make-application
+		 #f
+		 #f
+		 #f
+		 #f
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 e1
@@ -723,6 +755,10 @@
       (if e0
 	  e0
 	  (let ((e0 (make-letrec-expression
+		     #f
+		     #f
+		     #f
+		     #f
 		     (sort-variables
 		      (set-differencep
 		       variable=?
@@ -745,6 +781,10 @@
   (if e0
       e0
       (let ((e0 (make-cons-expression
+		 #f
+		 #f
+		 #f
+		 #f
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 tags
@@ -752,6 +792,122 @@
 		 e2)))
        (set! *cons-expressions* (cons e0 *cons-expressions*))
        e0))))
+
+(define (expression-perturbation-transform-inverse e)
+ ((cond
+   ((constant-expression? e)
+    constant-expression-perturbation-transform-inverse)
+   ((variable-access-expression? e)
+    variable-access-expression-perturbation-transform-inverse)
+   ((lambda-expression? e) lambda-expression-perturbation-transform-inverse)
+   ((application? e) application-perturbation-transform-inverse)
+   ((letrec-expression? e) letrec-expression-perturbation-transform-inverse)
+   ((cons-expression? e) cons-expression-perturbation-transform-inverse)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-perturbation-transform-inverse! e e1)
+ ((cond
+   ((constant-expression? e)
+    set-constant-expression-perturbation-transform-inverse!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-perturbation-transform-inverse!)
+   ((lambda-expression? e)
+    set-lambda-expression-perturbation-transform-inverse!)
+   ((application? e) set-application-perturbation-transform-inverse!)
+   ((letrec-expression? e)
+    set-letrec-expression-perturbation-transform-inverse!)
+   ((cons-expression? e) set-cons-expression-perturbation-transform-inverse!)
+   (else (internal-error)))
+  e
+  e1))
+
+(define (expression-forward-transform-inverse e)
+ ((cond
+   ((constant-expression? e)
+    constant-expression-forward-transform-inverse)
+   ((variable-access-expression? e)
+    variable-access-expression-forward-transform-inverse)
+   ((lambda-expression? e) lambda-expression-forward-transform-inverse)
+   ((application? e) application-forward-transform-inverse)
+   ((letrec-expression? e) letrec-expression-forward-transform-inverse)
+   ((cons-expression? e) cons-expression-forward-transform-inverse)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-forward-transform-inverse! e e1)
+ ((cond
+   ((constant-expression? e)
+    set-constant-expression-forward-transform-inverse!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-forward-transform-inverse!)
+   ((lambda-expression? e)
+    set-lambda-expression-forward-transform-inverse!)
+   ((application? e) set-application-forward-transform-inverse!)
+   ((letrec-expression? e)
+    set-letrec-expression-forward-transform-inverse!)
+   ((cons-expression? e) set-cons-expression-forward-transform-inverse!)
+   (else (internal-error)))
+  e
+  e1))
+
+(define (expression-sensitivity-transform-inverse e)
+ ((cond
+   ((constant-expression? e)
+    constant-expression-sensitivity-transform-inverse)
+   ((variable-access-expression? e)
+    variable-access-expression-sensitivity-transform-inverse)
+   ((lambda-expression? e) lambda-expression-sensitivity-transform-inverse)
+   ((application? e) application-sensitivity-transform-inverse)
+   ((letrec-expression? e) letrec-expression-sensitivity-transform-inverse)
+   ((cons-expression? e) cons-expression-sensitivity-transform-inverse)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-sensitivity-transform-inverse! e e1)
+ ((cond
+   ((constant-expression? e)
+    set-constant-expression-sensitivity-transform-inverse!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-sensitivity-transform-inverse!)
+   ((lambda-expression? e)
+    set-lambda-expression-sensitivity-transform-inverse!)
+   ((application? e) set-application-sensitivity-transform-inverse!)
+   ((letrec-expression? e)
+    set-letrec-expression-sensitivity-transform-inverse!)
+   ((cons-expression? e) set-cons-expression-sensitivity-transform-inverse!)
+   (else (internal-error)))
+  e
+  e1))
+
+(define (expression-reverse-transform-inverse e)
+ ((cond
+   ((constant-expression? e)
+    constant-expression-reverse-transform-inverse)
+   ((variable-access-expression? e)
+    variable-access-expression-reverse-transform-inverse)
+   ((lambda-expression? e) lambda-expression-reverse-transform-inverse)
+   ((application? e) application-reverse-transform-inverse)
+   ((letrec-expression? e) letrec-expression-reverse-transform-inverse)
+   ((cons-expression? e) cons-expression-reverse-transform-inverse)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-reverse-transform-inverse! e e1)
+ ((cond
+   ((constant-expression? e)
+    set-constant-expression-reverse-transform-inverse!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-reverse-transform-inverse!)
+   ((lambda-expression? e)
+    set-lambda-expression-reverse-transform-inverse!)
+   ((application? e) set-application-reverse-transform-inverse!)
+   ((letrec-expression? e)
+    set-letrec-expression-reverse-transform-inverse!)
+   ((cons-expression? e) set-cons-expression-reverse-transform-inverse!)
+   (else (internal-error)))
+  e
+  e1))
 
 ;;; Derived expression constructors
 
@@ -2441,106 +2597,70 @@
 ;;; Forward Mode
 
 (define (perturbation-transform e)
- (cond ((constant-expression? e)
-	(without-abstract
-	 (lambda ()
-	  (new-constant-expression (perturb (constant-expression-value e))))))
-       ((variable-access-expression? e) (perturbationify-access e))
-       ((lambda-expression? e)
-	(new-lambda-expression
-	 (perturbation-transform (lambda-expression-parameter e))
-	 (perturbation-transform (lambda-expression-body e))))
-       ((application? e)
-	(new-application (perturbation-transform (application-callee e))
-			 (perturbation-transform (application-argument e))))
-       ((letrec-expression? e)
-	(new-letrec-expression
-	 (map perturbationify (letrec-expression-procedure-variables e))
-	 (map perturbation-transform (letrec-expression-lambda-expressions e))
-	 (perturbation-transform (letrec-expression-body e))))
-       ((cons-expression? e)
-	(new-cons-expression (add-tag 'perturbation (cons-expression-tags e))
-			     (perturbation-transform (cons-expression-car e))
-			     (perturbation-transform (cons-expression-cdr e))))
-       (else (internal-error))))
+ (let ((e1 (cond
+	    ((constant-expression? e)
+	     (without-abstract
+	      (lambda ()
+	       (new-constant-expression
+		(perturb (constant-expression-value e))))))
+	    ((variable-access-expression? e) (perturbationify-access e))
+	    ((lambda-expression? e)
+	     (new-lambda-expression
+	      (perturbation-transform (lambda-expression-parameter e))
+	      (perturbation-transform (lambda-expression-body e))))
+	    ((application? e)
+	     (new-application
+	      (perturbation-transform (application-callee e))
+	      (perturbation-transform (application-argument e))))
+	    ((letrec-expression? e)
+	     (new-letrec-expression
+	      (map perturbationify (letrec-expression-procedure-variables e))
+	      (map perturbation-transform
+		   (letrec-expression-lambda-expressions e))
+	      (perturbation-transform (letrec-expression-body e))))
+	    ((cons-expression? e)
+	     (new-cons-expression
+	      (add-tag 'perturbation (cons-expression-tags e))
+	      (perturbation-transform (cons-expression-car e))
+	      (perturbation-transform (cons-expression-cdr e))))
+	    (else (internal-error)))))
+  (set-expression-perturbation-transform-inverse! e1 e)
+  e1))
 
 (define (perturbation-transform-inverse e)
- (cond
-  ((constant-expression? e)
-   (without-abstract
-    (lambda ()
-     (new-constant-expression (unperturb (constant-expression-value e))))))
-  ((variable-access-expression? e) (unperturbationify-access e))
-  ((lambda-expression? e)
-   (new-lambda-expression
-    (perturbation-transform-inverse (lambda-expression-parameter e))
-    (perturbation-transform-inverse (lambda-expression-body e))))
-  ((application? e)
-   (new-application (perturbation-transform-inverse (application-callee e))
-		    (perturbation-transform-inverse (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression
-    (map unperturbationify (letrec-expression-procedure-variables e))
-    (map perturbation-transform-inverse
-	 (letrec-expression-lambda-expressions e))
-    (perturbation-transform-inverse (letrec-expression-body e))))
-  ((cons-expression? e)
-   (unless (tagged? 'perturbation (cons-expression-tags e)) (internal-error))
-   (new-cons-expression
-    (remove-tag 'perturbation (cons-expression-tags e))
-    (perturbation-transform-inverse (cons-expression-car e))
-    (perturbation-transform-inverse (cons-expression-cdr e))))
-  (else (internal-error))))
+ (unless (expression-perturbation-transform-inverse e) (internal-error))
+ (expression-perturbation-transform-inverse e))
 
 (define (forward-transform e)
- (cond ((constant-expression? e)
-	(without-abstract
-	 (lambda ()
-	  (new-constant-expression (j* (constant-expression-value e))))))
-       ((variable-access-expression? e) (forwardify-access e))
-       ((lambda-expression? e)
-	(new-lambda-expression
-	 (forward-transform (lambda-expression-parameter e))
-	 (forward-transform (lambda-expression-body e))))
-       ((application? e)
-	(new-application (forward-transform (application-callee e))
-			 (forward-transform (application-argument e))))
-       ((letrec-expression? e)
-	(new-letrec-expression
-	 (map forwardify (letrec-expression-procedure-variables e))
-	 (map forward-transform (letrec-expression-lambda-expressions e))
-	 (forward-transform (letrec-expression-body e))))
-       ((cons-expression? e)
-	(new-cons-expression (add-tag 'forward (cons-expression-tags e))
-			     (forward-transform (cons-expression-car e))
-			     (forward-transform (cons-expression-cdr e))))
-       (else (internal-error))))
+ (let ((e1 (cond
+	    ((constant-expression? e)
+	     (without-abstract
+	      (lambda ()
+	       (new-constant-expression (j* (constant-expression-value e))))))
+	    ((variable-access-expression? e) (forwardify-access e))
+	    ((lambda-expression? e)
+	     (new-lambda-expression
+	      (forward-transform (lambda-expression-parameter e))
+	      (forward-transform (lambda-expression-body e))))
+	    ((application? e)
+	     (new-application (forward-transform (application-callee e))
+			      (forward-transform (application-argument e))))
+	    ((letrec-expression? e)
+	     (new-letrec-expression
+	      (map forwardify (letrec-expression-procedure-variables e))
+	      (map forward-transform (letrec-expression-lambda-expressions e))
+	      (forward-transform (letrec-expression-body e))))
+	    ((cons-expression? e)
+	     (new-cons-expression (add-tag 'forward (cons-expression-tags e))
+				  (forward-transform (cons-expression-car e))
+				  (forward-transform (cons-expression-cdr e))))
+	    (else (internal-error)))))
+  (set-expression-forward-transform-inverse! e1 e)
+  e1))
 
 (define (forward-transform-inverse e)
- (cond
-  ((constant-expression? e)
-   (without-abstract
-    (lambda ()
-     (new-constant-expression (primal (constant-expression-value e))))))
-  ((variable-access-expression? e) (unforwardify-access e))
-  ((lambda-expression? e)
-   (new-lambda-expression
-    (forward-transform-inverse (lambda-expression-parameter e))
-    (forward-transform-inverse (lambda-expression-body e))))
-  ((application? e)
-   (new-application (forward-transform-inverse (application-callee e))
-		    (forward-transform-inverse (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression
-    (map unforwardify (letrec-expression-procedure-variables e))
-    (map forward-transform-inverse (letrec-expression-lambda-expressions e))
-    (forward-transform-inverse (letrec-expression-body e))))
-  ((cons-expression? e)
-   (unless (tagged? 'forward (cons-expression-tags e)) (internal-error))
-   (new-cons-expression (remove-tag 'forward (cons-expression-tags e))
-			(forward-transform-inverse (cons-expression-car e))
-			(forward-transform-inverse (cons-expression-cdr e))))
-  (else (internal-error))))
+ (unless (expression-forward-transform-inverse e) (internal-error))
+ (expression-forward-transform-inverse e))
 
 (define (perturb v)
  (cond
@@ -2884,28 +3004,7 @@
 
 (define (make-*j-inverse e) (new-application (added-variable '*j-inverse) e))
 
-(define (sensitivityify-parameter p)
- ;; needs work: Could we not just apply sensitivity-transform to p?
- (cond
-  ((constant-expression? p)
-   (without-abstract
-    (lambda ()
-     (new-constant-expression (sensitize (constant-expression-value p))))))
-  ((variable-access-expression? p) (sensitivityify-access p))
-  ((lambda-expression? p) (sensitivity-transform p))
-  ((letrec-expression? p)
-   (unless (and (variable-access-expression? (letrec-expression-body p))
-		(memp variable=?
-		      (variable-access-expression-variable
-		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p)))
-    (internal-error "Unsupported letrec-expression parameter"))
-   (sensitivity-transform p))
-  ((cons-expression? p)
-   (new-cons-expression (add-tag 'sensitivity (cons-expression-tags p))
-			(sensitivityify-parameter (cons-expression-car p))
-			(sensitivityify-parameter (cons-expression-cdr p))))
-  (else (internal-error))))
+(define (sensitivityify-parameter p) (sensitivity-transform p))
 
 (define (reverseify-parameter p)
  (cond ((constant-expression? p)
@@ -2964,80 +3063,42 @@
        (else (internal-error))))
 
 (define (sensitivity-transform e)
- (cond
-  ((constant-expression? e)
-   (without-abstract
-    (lambda ()
-     (new-constant-expression (sensitize (constant-expression-value e))))))
-  ((variable-access-expression? e) (sensitivityify-access e))
-  ((lambda-expression? e)
-   (new-lambda-expression
-    (sensitivity-transform (lambda-expression-parameter e))
-    (sensitivity-transform (lambda-expression-body e))))
-  ((application? e)
-   (new-application (sensitivity-transform (application-callee e))
-		    (sensitivity-transform (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression
-    (map sensitivityify (letrec-expression-procedure-variables e))
-    (map sensitivity-transform (letrec-expression-lambda-expressions e))
-    (sensitivity-transform (letrec-expression-body e))))
-  ((cons-expression? e)
-   (new-cons-expression (add-tag 'sensitivity (cons-expression-tags e))
-			(sensitivity-transform (cons-expression-car e))
-			(sensitivity-transform (cons-expression-cdr e))))
-  (else (internal-error))))
+ (let ((e1 (cond
+	    ((constant-expression? e)
+	     (without-abstract
+	      (lambda ()
+	       (new-constant-expression
+		(sensitize (constant-expression-value e))))))
+	    ((variable-access-expression? e) (sensitivityify-access e))
+	    ((lambda-expression? e)
+	     (new-lambda-expression
+	      (sensitivity-transform (lambda-expression-parameter e))
+	      (sensitivity-transform (lambda-expression-body e))))
+	    ((application? e)
+	     (new-application
+	      (sensitivity-transform (application-callee e))
+	      (sensitivity-transform (application-argument e))))
+	    ((letrec-expression? e)
+	     (new-letrec-expression
+	      (map sensitivityify (letrec-expression-procedure-variables e))
+	      (map sensitivity-transform
+		   (letrec-expression-lambda-expressions e))
+	      (sensitivity-transform (letrec-expression-body e))))
+	    ((cons-expression? e)
+	     (new-cons-expression
+	      (add-tag 'sensitivity (cons-expression-tags e))
+	      (sensitivity-transform (cons-expression-car e))
+	      (sensitivity-transform (cons-expression-cdr e))))
+	    (else (internal-error)))))
+  (set-expression-sensitivity-transform-inverse! e1 e)
+  e1))
 
 (define (sensitivity-transform-inverse? e)
- (cond
-  ((constant-expression? e)
-   (without-abstract (lambda () (unsensitize? (constant-expression-value e)))))
-  ((variable-access-expression? e) (unsensitivityify-access? e))
-  ((lambda-expression? e)
-   (and (sensitivity-transform-inverse? (lambda-expression-parameter e))
-	(sensitivity-transform-inverse? (lambda-expression-body e))))
-  ((application? e)
-   (and (sensitivity-transform-inverse? (application-callee e))
-	(sensitivity-transform-inverse? (application-argument e))))
-  ((letrec-expression? e)
-   (and
-    (every unsensitivityify? (letrec-expression-procedure-variables e))
-    (every sensitivity-transform-inverse?
-	   (letrec-expression-lambda-expressions e))
-    (sensitivity-transform-inverse? (letrec-expression-body e))))
-  ((cons-expression? e)
-   (and (tagged? 'sensitivity (cons-expression-tags e))
-	(sensitivity-transform-inverse? (cons-expression-car e))
-	(sensitivity-transform-inverse? (cons-expression-cdr e))))
-  (else (internal-error))))
+ (not (not (expression-sensitivity-transform-inverse e))))
 
 (define (sensitivity-transform-inverse e)
- (cond
-  ((constant-expression? e)
-   (without-abstract
-    (lambda ()
-     (new-constant-expression (unsensitize (constant-expression-value e))))))
-  ((variable-access-expression? e) (unsensitivityify-access e))
-  ((lambda-expression? e)
-   (new-lambda-expression
-    (sensitivity-transform-inverse (lambda-expression-parameter e))
-    (sensitivity-transform-inverse (lambda-expression-body e))))
-  ((application? e)
-   (new-application (sensitivity-transform-inverse (application-callee e))
-		    (sensitivity-transform-inverse (application-argument e))))
-  ((letrec-expression? e)
-   (new-letrec-expression
-    (map unsensitivityify (letrec-expression-procedure-variables e))
-    (map sensitivity-transform-inverse
-	 (letrec-expression-lambda-expressions e))
-    (sensitivity-transform-inverse (letrec-expression-body e))))
-  ((cons-expression? e)
-   (unless (tagged? 'sensitivity (cons-expression-tags e)) (internal-error))
-   (new-cons-expression
-    (remove-tag 'sensitivity (cons-expression-tags e))
-    (sensitivity-transform-inverse (cons-expression-car e))
-    (sensitivity-transform-inverse (cons-expression-cdr e))))
-  (else (internal-error))))
+ (unless (expression-sensitivity-transform-inverse e) (internal-error))
+ (expression-sensitivity-transform-inverse e))
 
 (define (reverse-transform-internal e xs0 es0 i)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
