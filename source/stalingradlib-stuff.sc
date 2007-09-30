@@ -353,6 +353,7 @@
 		     or
 		     alpha
 		     anf
+		     backpropagator
 		     perturbation
 		     forward
 		     sensitivity
@@ -370,6 +371,12 @@
      (and (list? x)
 	  (= (length x) 2)
 	  (eq? (first x) 'anf)
+	  (integer? (second x))
+	  (exact? (second x))
+	  (not (negative? (second x))))
+     (and (list? x)
+	  (= (length x) 2)
+	  (eq? (first x) 'backpropagator)
 	  (integer? (second x))
 	  (exact? (second x))
 	  (not (negative? (second x))))
@@ -397,7 +404,9 @@
    (case (first x)
     ((alpha) (variable-anf-max (second x)))
     ((anf) (second x))
-    ((perturbation forward sensitivity reverse) (variable-anf-max (second x)))
+    ((backpropagator) 0)
+    ((perturbation forward sensitivity reverse)
+     (variable-anf-max (second x)))
     (else (internal-error))))
   (else (internal-error))))
 
@@ -420,13 +429,14 @@
 	 #f
 	 (if (eq? (first x1) (first x2))
 	     (case (first x1)
-	      ((anf) (< (second x1) (second x2)))
+	      ((anf backpropagator) (< (second x1) (second x2)))
 	      ((perturbation forward sensitivity reverse)
 	       (variable<? (second x1) (second x2)))
 	      (else (internal-error)))
 	     (not (not (memq (first x2)
 			     (memq (first x1)
 				   '(anf
+				     backpropagator
 				     perturbation
 				     forward
 				     sensitivity
@@ -439,6 +449,8 @@
 	   (reverse (variable-alpha x1)) (reverse (variable-alpha x2))))))
 
 (define (sort-variables xs) (sort xs variable<? identity))
+
+(define (backpropagatorify i) `(backpropagator ,i))
 
 (define (perturbationify x) `(perturbation ,x))
 
@@ -453,6 +465,7 @@
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
+  ((backpropagator) (internal-error))
   ((perturbation) (second x))
   ((forward) (internal-error))
   ((sensitivity) (internal-error))
@@ -464,6 +477,7 @@
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
+  ((backpropagator) (internal-error))
   ((perturbation) (internal-error))
   ((forward) (second x))
   ((sensitivity) (internal-error))
@@ -475,6 +489,7 @@
       (case (first x)
        ((alpha) (unsensitivityify? (second x))) ;debugging
        ((anf) #f)
+       ((backpropagator) #f)
        ((perturbation) #f)
        ((forward) #f)
        ((sensitivity) #t)
@@ -486,6 +501,7 @@
  (case (first x)
   ((alpha) (unsensitivityify (second x))) ;debugging
   ((anf) (internal-error))
+  ((backpropagator) (internal-error))
   ((perturbation) (internal-error))
   ((forward) (internal-error))
   ((sensitivity) (second x))
@@ -497,6 +513,7 @@
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
+  ((backpropagator) (internal-error))
   ((perturbation) (internal-error))
   ((forward) (internal-error))
   ((sensitivity) (internal-error))
@@ -548,6 +565,7 @@
      (case (first x)
       ((alpha) (variable-tags (second x)))
       ((anf) (empty-tags))
+      ((backpropagator) (empty-tags))
       ((perturbation) (add-tag 'perturbation (variable-tags (second x))))
       ((forward) (add-tag 'forward (variable-tags (second x))))
       ((sensitivity) (add-tag 'sensitivity (variable-tags (second x))))
@@ -3042,7 +3060,7 @@
 	(es1 (if (letrec-expression? e1)
 		 (letrec-expression-lambda-expressions e1)
 		 '()))
-	(xs (map (lambda () (gensym)) (anf-let*-parameters e1))))
+	(xs (map-n backpropagatorify (length (anf-let*-parameters e1)))))
   (new-lambda-expression
    (reverseify-parameter p)
    (new-letrec-expression
