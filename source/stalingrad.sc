@@ -71,8 +71,6 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
-		 (at-most-one ("ebs" ebs?))
-		 (at-most-one ("from-ebs" from-ebs?))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("trace-primitive-procedures"
 			       trace-primitive-procedures?))
@@ -134,65 +132,31 @@
 	 (cond
 	  (flow-analysis?
 	   (set! *run?* #f)
-	   (if from-ebs?
-	       (let* ((ebs (read-ebs-from-file pathname))
-		      (bs (second ebs))
-		      (bs1 (expression-binding-flow
-			    (lookup-expression-binding (first ebs) bs))))
-		(unless (= (length bs1) 1) (internal-error))
-		(pp (externalize (environment-binding-value (first bs1))))
-		(newline)
-		(pp (externalize-analysis bs))
-		(newline))
-	       (let* ((bs (flow-analysis (first result) (second result)))
-		      (bs1 (expression-binding-flow
-			    (lookup-expression-binding (first result) bs))))
-		(unless (= (length bs1) 1) (internal-error))
-		(pp (externalize (environment-binding-value (first bs1))))
-		(newline)
-		(pp (externalize-analysis bs))
-		(newline))))
+	   ;; needs work: With the new formulation, can't run flow analysis
+	   ;;             more than once.
+	   (flow-analysis! (first result) (second result))
+	   (let* ((bs (expression-environment-bindings (first result))))
+	    (unless (= (length bs) 1) (internal-error))
+	    (pp (externalize (environment-binding-value (first bs))))
+	    (newline)
+	    (pp (externalize-analysis))
+	    (newline)))
 	  (flow-analysis-result?
+	   (flow-analysis! (first result) (second result))
 	   (set! *run?* #f)
-	   (if from-ebs?
-	       (let* ((ebs (read-ebs-from-file pathname))
-		      (bs (expression-binding-flow
-			   (lookup-expression-binding
-			    (first ebs) (second ebs)))))
-		(unless (= (length bs) 1) (internal-error))
-		(pp (externalize (environment-binding-value (first bs))))
-		(newline))
-	       (let ((bs (expression-binding-flow
-			  (lookup-expression-binding
-			   (first result)
-			   (flow-analysis (first result) (second result))))))
-		(unless (= (length bs) 1) (internal-error))
-		(pp (externalize (environment-binding-value (first bs))))
-		(newline))))
+	   (let ((bs (expression-environment-bindings (first result))))
+	    (unless (= (length bs) 1) (internal-error))
+	    (pp (externalize (environment-binding-value (first bs))))
+	    (newline)))
 	  (compile?
 	   (set! *run?* #f)
-	   (if from-ebs?
-	       (let ((ebs (read-ebs-from-file pathname)))
-		(generate-file
-		 (generate (first ebs) (second ebs) (second result))
-		 pathname)
-		;; needs work: -c -k -cc -copt
-		(system (format #f "gcc -o ~a -Wall ~a -lm"
-				(strip-extension pathname)
-				(replace-extension pathname "c"))))
-	       (let ((bs (flow-analysis (first result) (second result))))
-		;; needs work: This overwrites the code file and the ebs file
-		;;             for all but the last top-level expression. And
-		;;             it fails to delete those files if there is no
-		;;             top-level expression.
-		(when ebs?
-		 (write-ebs-to-file (list (first result) bs) pathname))
-		(generate-file
-		 (generate (first result) bs (second result)) pathname)
-		;; needs work: -c -k -cc -copt
-		(system (format #f "gcc -o ~a -Wall ~a -lm"
-				(strip-extension pathname)
-				(replace-extension pathname "c"))))))
+	   (flow-analysis! (first result) (second result))
+	   (generate-file
+	    (generate (first result) 'needs-work (second result)) pathname)
+	   ;; needs work: -c -k -cc -copt
+	   (system (format #f "gcc -o ~a -Wall ~a -lm"
+			   (strip-extension pathname)
+			   (replace-extension pathname "c"))))
 	  (else
 	   (set! *run?* #t)
 	   (when metered?
