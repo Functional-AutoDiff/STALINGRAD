@@ -197,8 +197,6 @@
 
 (define-structure environment-binding values value)
 
-(define-structure expression-binding expression environment-bindings)
-
 ;;; Variables
 
 (define *gensym* 0)
@@ -228,6 +226,10 @@
 (define *letrec-expressions* '())
 
 (define *cons-expressions* '())
+
+(define *expressions* '())
+
+(define *again?* #f)
 
 ;;; Parameters
 
@@ -732,6 +734,7 @@
       (let ((e0 (make-constant-expression
 		 #f #f #f #f #f #f #f #f '() '() value)))
        (set! *constant-expressions* (cons e0 *constant-expressions*))
+       (set! *expressions* (cons e0 *expressions*))
        e0))))
 
 (define (new-variable-access-expression variable)
@@ -745,6 +748,7 @@
 		 #f #f #f #f #f #f #f #f '() '() variable)))
        (set! *variable-access-expressions*
 	     (cons e0 *variable-access-expressions*))
+       (set! *expressions* (cons e0 *expressions*))
        e0))))
 
 (define (new-lambda-expression p e)
@@ -772,6 +776,7 @@
 		 p
 		 e)))
        (set! *lambda-expressions* (cons e0 *lambda-expressions*))
+       (set! *expressions* (cons e0 *expressions*))
        e0))))
 
 (define (new-application e1 e2)
@@ -797,6 +802,7 @@
 		 e1
 		 e2)))
        (set! *applications* (cons e0 *applications*))
+       (set! *expressions* (cons e0 *expressions*))
        (set-expression-parents! e1 (cons e0 (expression-parents e1)))
        (set-expression-parents! e2 (cons e0 (expression-parents e2)))
        e0))))
@@ -841,6 +847,7 @@
 		     es
 		     e)))
 	   (set! *letrec-expressions* (cons e0 *letrec-expressions*))
+	   (set! *expressions* (cons e0 *expressions*))
 	   (set-expression-parents! e (cons e0 (expression-parents e)))
 	   (for-each
 	    (lambda (e)
@@ -873,6 +880,7 @@
 		 e1
 		 e2)))
        (set! *cons-expressions* (cons e0 *cons-expressions*))
+       (set! *expressions* (cons e0 *expressions*))
        (set-expression-parents! e1 (cons e0 (expression-parents e1)))
        (set-expression-parents! e2 (cons e0 (expression-parents e2)))
        e0))))
@@ -4300,16 +4308,13 @@
  (unless (and (list? bs) (every environment-binding? bs)) (internal-error))
  (map (lambda (b) (externalize-environment-binding xs b)) bs))
 
-(define (externalize-expression-binding b)
- (unless (expression-binding? b) (internal-error))
- (list (abstract->concrete (expression-binding-expression b))
-       (externalize-environment-bindings
-	(free-variables (expression-binding-expression b))
-	(expression-binding-environment-bindings b))))
-
-(define (externalize-analysis bs)
- (unless (and (list? bs) (every expression-binding? bs)) (internal-error))
- (map externalize-expression-binding bs))
+(define (externalize-analysis)
+ (map (lambda (e)
+       (list (abstract->concrete e)
+	     (externalize-environment-bindings
+	      (free-variables e)
+	      (expression-environment-bindings e))))
+      *expressions*))
 
 ;;; Concrete Evaluator
 
@@ -4473,7 +4478,7 @@
    v1 (+ (primitive-procedure-meter v1) 1)))
  (let ((result
 	(cond
-	 ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2 #f))
+	 ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2))
 	 ((nonrecursive-closure? v1)
 	  (concrete-eval
 	   (lambda-expression-body (nonrecursive-closure-lambda-expression v1))
@@ -4570,72 +4575,6 @@
 		     (concrete-value->abstract-value (tagged-pair-car v))
 		     (concrete-value->abstract-value (tagged-pair-cdr v))))
    (else (internal-error)))))
-
-;;; Abstract Flows
-
-(define (environment-binding=? b1 b2)
- (and (abstract-environment=? (environment-binding-values b1)
-			      (environment-binding-values b2))
-      (abstract-value=? (environment-binding-value b1)
-			(environment-binding-value b2))))
-
-(define (abstract-flow=? bs1 bs2)
- ;; This is a conservative approximation. A #t result is precise.
- ;; Only used for fixpoint convergence check.
- ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp? environment-binding=? bs1 bs2))
-
-(define (abstract-flow-union bs1 bs2) (unionp environment-binding=? bs1 bs2))
-
-;;; Abstract Analyses
-;;; It's possible that the order of expressions in abstract analyses (for the
-;;;   whole program) never changes.  There will be abstract analyses (lists of
-;;;   abstract expression bindings) which result from the procedure
-;;;   update-abstract-analysis-domains which don't have entries for each
-;;;   expression (and may not be properly ordered).  However, the analysis for
-;;;   the whole program's order doesn't change, I think.
-
-(define (empty-abstract-analysis) '())
-
-(define (abstract-analysis=? bs1 bs2)
- ;; This is a conservative approximation. A #t result is precise.
- ;; Only used for fixpoint convergence check.
- ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp?
-  (lambda (b1 b2)
-   (and (expression-eqv? (expression-binding-expression b1)
-			 (expression-binding-expression b2))
-	(abstract-flow=? (expression-binding-environment-bindings b1)
-			 (expression-binding-environment-bindings b2))))
-  bs1
-  bs2))
-
-(define (lookup-expression-binding e bs)
- (when (>= (count-if
-	    (lambda (b) (expression-eqv? e (expression-binding-expression b)))
-	    bs)
-	   2)
-  (internal-error))
- (find-if (lambda (b) (expression-eqv? e (expression-binding-expression b)))
-	  bs))
-
-(define (abstract-analysis-union bs1 bs2)
- ;; The order here is an optimization.
- (let loop ((bs1 bs2) (bs2 bs1))
-  (if (null? bs1)
-      bs2
-      (let ((b2 (lookup-expression-binding
-		 (expression-binding-expression (first bs1)) bs2)))
-       (loop
-	(rest bs1)
-	(if b2
-	    (cons (make-expression-binding
-		   (expression-binding-expression (first bs1))
-		   (abstract-flow-union
-		    (expression-binding-environment-bindings (first bs1))
-		    (expression-binding-environment-bindings b2)))
-		  (removeq b2 bs2))
-	    (cons (first bs1) bs2)))))))
 
 ;;; Widen
 
@@ -4904,43 +4843,35 @@
 
 ;;; Abstract Evaluator
 
-(define (make-abstract-analysis e vs)
- (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (unless (= (length vs) (length (free-variables e))) (internal-error))
- (if (some empty-abstract-value? vs)
-     (empty-abstract-analysis)
-     (list (make-expression-binding
-	    e (list (make-environment-binding vs (empty-abstract-value)))))))
-
-(define (initial-abstract-analysis e bs)
+(define (initial-abstract-analysis! e bs)
  ;; This (like update-analysis-domains) only makes domains.
- (make-abstract-analysis
+ (set-expression-environment-bindings!
   e
-  (map
-   (lambda (x)
-    (singleton
-     (value-binding-value
-      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-   (free-variables e))))
+  (list
+   (make-environment-binding
+    (map
+     (lambda (x)
+      (singleton
+       (value-binding-value
+	(find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
+     (free-variables e))
+    (empty-abstract-value)))))
 
-(define (lookup-environment-binding e vs bs)
+(define (lookup-environment-binding e vs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (let ((b (lookup-expression-binding e bs)))
-  (and b
-       (begin
-	(when (>= (count-if
-		   (lambda (b)
-		    (abstract-environment=? vs (environment-binding-values b)))
-		   (expression-binding-environment-bindings b))
-		  2)
-	 (internal-error))
-	(find-if (lambda (b)
-		  (abstract-environment=? vs (environment-binding-values b)))
-		 (expression-binding-environment-bindings b))))))
+ (when (>= (count-if
+	    (lambda (b)
+	     (abstract-environment=? vs (environment-binding-values b)))
+	    (expression-environment-bindings e))
+	   2)
+  (internal-error))
+ (find-if
+  (lambda (b) (abstract-environment=? vs (environment-binding-values b)))
+  (expression-environment-bindings e)))
 
-(define (abstract-eval1 e vs bs)
+(define (abstract-eval1 e vs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (let ((b (lookup-environment-binding e vs bs)))
+ (let ((b (lookup-environment-binding e vs)))
   (if b (environment-binding-value b) (empty-abstract-value))))
 
 (define (abstract-letrec-nested-environment vs e)
@@ -5122,7 +5053,7 @@
 	     (construct-abstract-recursive-environments v1 v2)))
        (else (internal-error))))
 
-(define (abstract-apply v1 v2 bs)
+(define (abstract-apply v1 v2)
  (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
   (internal-error))
  ;; We don't do a cross-union of v1 and v2 since when u1 is a primitive
@@ -5133,17 +5064,16 @@
       (lambda (u1)
        ;; needs work: we don't do tag-check for now
        (cond
-	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2 bs))
+	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2))
 	((closure? u1)
 	 (map-union (lambda (u2)
-		     (new-union
-		      (abstract-apply-closure
-		       (lambda (e vs) (abstract-eval1 e vs bs)) u1 u2)))
+		     (new-union (abstract-apply-closure
+				 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
 		    (unroll v2)))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
       (unroll v1))))
 
-(define (abstract-eval e vs bs)
+(define (abstract-eval e vs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (cond
   ((constant-expression? e)
@@ -5153,154 +5083,137 @@
   ((application? e)
    (abstract-apply
     (abstract-eval1 (application-callee e)
-		    (restrict-environment vs e application-callee)
-		    bs)
+		    (restrict-environment vs e application-callee))
     (abstract-eval1 (application-argument e)
-		    (restrict-environment vs e application-argument)
-		    bs)
-    bs))
+		    (restrict-environment vs e application-argument))))
   ((letrec-expression? e)
    (abstract-eval1
-    (letrec-expression-body e) (abstract-letrec-nested-environment vs e) bs))
+    (letrec-expression-body e) (abstract-letrec-nested-environment vs e)))
   ((cons-expression? e)
    ;; needs work: we don't do tag-check for now
-   (singleton (new-tagged-pair
-	       (cons-expression-tags e)
-	       (abstract-eval1 (cons-expression-car e)
-			       (restrict-environment vs e cons-expression-car)
-			       bs)
-	       (abstract-eval1 (cons-expression-cdr e)
-			       (restrict-environment vs e cons-expression-cdr)
-			       bs))))
+   (singleton
+    (new-tagged-pair
+     (cons-expression-tags e)
+     (abstract-eval1 (cons-expression-car e)
+		     (restrict-environment vs e cons-expression-car))
+     (abstract-eval1 (cons-expression-cdr e)
+		     (restrict-environment vs e cons-expression-cdr)))))
   (else (internal-error))))
 
-(define (abstract-eval1-prime e vs bs)
+(define (abstract-eval1-prime! e vs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (let ((b (lookup-environment-binding e vs bs)))
-  (if b
-      (empty-abstract-analysis)
-      (if #t				;debugging
-	  (make-abstract-analysis e vs)
-	  (abstract-analysis-union (make-abstract-analysis e vs)
-				   ;; This is an optimization.
-				   (abstract-eval-prime e vs bs))))))
+ (unless (lookup-environment-binding e vs)
+  (set-expression-environment-bindings!
+   e
+   (cons (make-environment-binding vs (empty-abstract-value))
+	 (expression-environment-bindings e)))
+  (set! *again?* #t)
+  ;; debugging
+  ;; This is an optimization.
+  (when #f (abstract-eval-prime! e vs))))
 
-(define (abstract-apply-prime v1 v2 bs)
+(define (abstract-apply-closure! p v1 v2)
+ (unless (and (not (union? v1))
+	      (not (up? v1))
+	      (closed? v1)
+	      (not (union? v2))
+	      (not (up? v2))
+	      (closed? v2))
+  (internal-error))
+ (cond ((nonrecursive-closure? v1)
+	(for-each (lambda (vs)
+		   (p (lambda-expression-body
+		       (nonrecursive-closure-lambda-expression v1))
+		      vs))
+		  (construct-abstract-nonrecursive-environments v1 v2)))
+       ((recursive-closure? v1)
+	(for-each (lambda (vs)
+		   (p (lambda-expression-body
+		       (vector-ref (recursive-closure-lambda-expressions v1)
+				   (recursive-closure-index v1)))
+		      vs))
+		  (construct-abstract-recursive-environments v1 v2)))
+       (else (internal-error))))
+
+(define (abstract-apply-prime! v1 v2)
  (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
   (internal-error))
- (if (empty-abstract-value? v2)
-     (empty-abstract-analysis)
-     (map-reduce
-      abstract-analysis-union
-      (empty-abstract-analysis)
-      (lambda (u1)
-       ;; needs work: we don't do tag-check for now
-       (cond ((primitive-procedure? u1)
-	      ;; needs work: should put this into slots of the primitive
-	      ;;             procedures
-	      (if (eq? (primitive-procedure-name u1) 'if-procedure)
-		  ((ternary-prime
-		    (lambda (v1 v2 v3 bs)
-		     (reduce
-		      abstract-analysis-union
-		      (if (vlad-false? v1)
-			  (abstract-apply-closure
-			   (lambda (e vs) (abstract-eval1-prime e vs bs))
-			   v3
-			   (vlad-empty-list))
-			  (abstract-apply-closure
-			   (lambda (e vs) (abstract-eval1-prime e vs bs))
-			   v2
-			   (vlad-empty-list)))
-		      (empty-abstract-analysis)))
-		    "if-procedure")
-		   v2
-		   bs)
-		  (empty-abstract-analysis)))
-	     ((closure? u1)
-	      (map-reduce
-	       abstract-analysis-union
-	       (empty-abstract-analysis)
-	       (lambda (u2)
-		(reduce
-		 abstract-analysis-union
-		 (abstract-apply-closure
-		  (lambda (e vs) (abstract-eval1-prime e vs bs)) u1 u2)
-		 (empty-abstract-analysis)))
-	       (union-values (unroll v2))))
-	     (else (compile-time-warning "Target might not be a procedure" u1)
-		   (empty-abstract-analysis))))
-      (union-values (unroll v1)))))
+ (unless (empty-abstract-value? v2)
+  (for-each
+   (lambda (u1)
+    ;; needs work: we don't do tag-check for now
+    (cond ((primitive-procedure? u1)
+	   ;; needs work: should put this into slots of the primitive
+	   ;;             procedures
+	   (when (eq? (primitive-procedure-name u1) 'if-procedure)
+	    ((ternary-prime
+	      (lambda (v1 v2 v3)
+	       (if (vlad-false? v1)
+		   (abstract-apply-closure!
+		    (lambda (e vs) (abstract-eval1-prime! e vs))
+		    v3
+		    (vlad-empty-list))
+		   (abstract-apply-closure!
+		    (lambda (e vs) (abstract-eval1-prime! e vs))
+		    v2
+		    (vlad-empty-list))))
+	      "if-procedure")
+	     v2)))
+	  ((closure? u1)
+	   (for-each (lambda (u2)
+		      (abstract-apply-closure!
+		       (lambda (e vs) (abstract-eval1-prime! e vs)) u1 u2))
+		     (union-values (unroll v2))))
+	  (else (compile-time-warning "Target might not be a procedure" u1))))
+   (union-values (unroll v1)))))
 
-(define (abstract-eval-prime e vs bs)
+(define (abstract-eval-prime! e vs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
  (cond
-  ((constant-expression? e) (empty-abstract-analysis))
-  ((variable-access-expression? e) (empty-abstract-analysis))
-  ((lambda-expression? e) (empty-abstract-analysis))
+  ((constant-expression? e) #f)
+  ((variable-access-expression? e) #f)
+  ((lambda-expression? e) #f)
   ((application? e)
-   (abstract-analysis-union
-    (abstract-analysis-union
-     (abstract-eval1-prime (application-callee e)
-			   (restrict-environment vs e application-callee)
-			   bs)
-     (abstract-eval1-prime (application-argument e)
-			   (restrict-environment vs e application-argument)
-			   bs))
-    (abstract-apply-prime
-     (abstract-eval1 (application-callee e)
-		     (restrict-environment vs e application-callee)
-		     bs)
-     (abstract-eval1 (application-argument e)
-		     (restrict-environment vs e application-argument)
-		     bs)
-     bs)))
+   (abstract-eval1-prime! (application-callee e)
+			  (restrict-environment vs e application-callee))
+   (abstract-eval1-prime! (application-argument e)
+			  (restrict-environment vs e application-argument))
+   (abstract-apply-prime!
+    (abstract-eval1 (application-callee e)
+		    (restrict-environment vs e application-callee))
+    (abstract-eval1 (application-argument e)
+		    (restrict-environment vs e application-argument))))
   ((letrec-expression? e)
-   (abstract-eval1-prime
-    (letrec-expression-body e) (abstract-letrec-nested-environment vs e) bs))
+   (abstract-eval1-prime!
+    (letrec-expression-body e) (abstract-letrec-nested-environment vs e)))
   ((cons-expression? e)
-   (abstract-analysis-union
-    (abstract-eval1-prime (cons-expression-car e)
-			  (restrict-environment vs e cons-expression-car)
-			  bs)
-    (abstract-eval1-prime (cons-expression-cdr e)
-			  (restrict-environment vs e cons-expression-cdr)
-			  bs)))
+   (abstract-eval1-prime! (cons-expression-car e)
+			  (restrict-environment vs e cons-expression-car))
+   (abstract-eval1-prime! (cons-expression-cdr e)
+			  (restrict-environment vs e cons-expression-cdr)))
   (else (internal-error))))
 
-(define (update-analysis-ranges bs)
- (map (lambda (b1)
-       (make-expression-binding
-	(expression-binding-expression b1)
-	(map (lambda (b2)
-	      ;; needs work: To explain why one can't do the optimization here.
-	      (make-environment-binding
-	       (environment-binding-values b2)
-	       (widen-abstract-value
-		(abstract-eval (expression-binding-expression b1)
-			       (environment-binding-values b2)
-			       bs))))
-	     (expression-binding-environment-bindings b1))))
-      bs))
+(define (update-analysis-ranges!)
+ (for-each
+  (lambda (e)
+   (for-each (lambda (b)
+	      (let ((v (widen-abstract-value
+			(abstract-eval e (environment-binding-values b)))))
+	       (unless (abstract-value-subset? (environment-binding-value b) v)
+		(internal-error))
+	       (unless (abstract-value=? (environment-binding-value b) v)
+		(set! *again?* #t))
+	       (set-environment-binding-value! b v)))
+	     (expression-environment-bindings e)))
+  *expressions*))
 
-(define (update-analysis-domains bs)
- (map-reduce
-  abstract-analysis-union
-  (empty-abstract-analysis)
-  (lambda (b1)
-   (map-reduce abstract-analysis-union
-	       (empty-abstract-analysis)
-	       (lambda (b2)
-		(if (or #t		;debugging
-			(empty-abstract-value? (environment-binding-value b2)))
-		    (abstract-eval-prime
-		     (expression-binding-expression b1)
-		     (environment-binding-values b2)
-		     bs)
-		    ;; This is an optimization.
-		    (empty-abstract-analysis)))
-	       (expression-binding-environment-bindings b1)))
-  bs))
+(define (update-analysis-domains!)
+ (for-each
+  (lambda (e)
+   (for-each
+    (lambda (b) (abstract-eval-prime! e (environment-binding-values b)))
+    (expression-environment-bindings e)))
+  *expressions*))
 
 (define (value-contains-union? v)
  (or (and (union? v) (>= (length (union-values v)) 2))
@@ -5344,30 +5257,32 @@
        ((scalar-value? v) 0)
        (else (map-reduce max 0 value-max-width (aggregate-value-values v)))))
 
-(define (analysis-size bs)
- (map-reduce
-  + 0 (lambda (b) (length (expression-binding-environment-bindings b))) bs))
+(define (analysis-size)
+ (map-reduce +
+	     0
+	     (lambda (e) (length (expression-environment-bindings e)))
+	     *expressions*))
 
-(define (max-flow-size bs)
+(define (max-flow-size)
  (map-reduce max
 	     minus-infinity
-	     (lambda (b) (length (expression-binding-environment-bindings b)))
-	     bs))
+	     (lambda (e) (length (expression-environment-bindings e)))
+	     *expressions*))
 
-(define (analysis-contains-union? bs)
- (some (lambda (b)
+(define (analysis-contains-union?)
+ (some (lambda (e)
 	(some (lambda (b)
 	       (or (some value-contains-union?
 			 (environment-binding-values b))
 		   (value-contains-union? (environment-binding-value b))))
-	      (expression-binding-environment-bindings b)))
-       bs))
+	      (expression-environment-bindings e)))
+       *expressions*))
 
-(define (unions-in-analysis bs)
+(define (unions-in-analysis)
  (map-reduce
   +
   0
-  (lambda (b)
+  (lambda (e)
    (map-reduce
     +
     0
@@ -5375,14 +5290,14 @@
      (+ (map-reduce
 	 + 0 unions-in-abstract-value (environment-binding-values b))
 	(unions-in-abstract-value (environment-binding-value b))))
-    (expression-binding-environment-bindings b)))
-  bs))
+    (expression-environment-bindings e)))
+  *expressions*))
 
-(define (concrete-reals-in-analysis bs)
+(define (concrete-reals-in-analysis)
  (map-reduce
   unionv
   '()
-  (lambda (b)
+  (lambda (e)
    (map-reduce
     unionv
     '()
@@ -5393,45 +5308,45 @@
 		  concrete-reals-in-abstract-value
 		  (environment-binding-values b))
       (concrete-reals-in-abstract-value (environment-binding-value b))))
-    (expression-binding-environment-bindings b)))
-  bs))
+    (expression-environment-bindings e)))
+  *expressions*))
 
-(define (bottoms-in-analysis bs)
+(define (bottoms-in-analysis)
  (map-reduce
   +
   0
-  (lambda (b)
+  (lambda (e)
    (count-if (lambda (b) (empty-abstract-value? (environment-binding-value b)))
-	     (expression-binding-environment-bindings b)))
-  bs))
+	     (expression-environment-bindings e)))
+  *expressions*))
 
-(define (analysis-max-depth bs)
+(define (analysis-max-depth)
  (map-reduce
   max
   0
-  (lambda (b)
+  (lambda (e)
    (map-reduce
     max
     0
     (lambda (b)
      (max (map-reduce max 0 value-max-depth (environment-binding-values b))
 	  (value-max-depth (environment-binding-value b))))
-    (expression-binding-environment-bindings b)))
-  bs))
+    (expression-environment-bindings e)))
+  *expressions*))
 
-(define (analysis-max-width bs)
+(define (analysis-max-width)
  (map-reduce
   max
   0
-  (lambda (b)
+  (lambda (e)
    (map-reduce
     max
     0
     (lambda (b)
      (max (map-reduce max 0 value-max-width (environment-binding-values b))
 	  (value-max-width (environment-binding-value b))))
-    (expression-binding-environment-bindings b)))
-  bs))
+    (expression-environment-bindings e)))
+  *expressions*))
 
 (define (check-abstract-value! v)
  (let loop ((v v) (vs-above '()))
@@ -5452,41 +5367,40 @@
    (else
     (for-each (lambda (v1) (loop v1 vs-above)) (aggregate-value-values v))))))
 
-(define (check-analysis! bs)
+(define (check-analysis!)
  (for-each
-  (lambda (b)
+  (lambda (e)
    (for-each (lambda (b)
 	      (for-each check-abstract-value! (environment-binding-values b))
 	      (check-abstract-value! (environment-binding-value b)))
-	     (expression-binding-environment-bindings b)))
-  bs))
+	     (expression-environment-bindings e)))
+  *expressions*))
 
-(define (flow-analysis e bs)
+(define (flow-analysis! e bs)
  (set! *abstract?* #t)
- (let loop ((bs (initial-abstract-analysis e bs)) (i 0))
-  (check-analysis! bs)
-  (let ((bs1 (if *verbose?*
-		 (time
-		  "Time: ~a~%"
-		  (lambda ()
-		   (abstract-analysis-union (update-analysis-ranges bs)
-					    (update-analysis-domains bs))))
-		 (abstract-analysis-union (update-analysis-ranges bs)
-					  (update-analysis-domains bs)))))
-   (when *verbose?*
-    (format #t
-	    "iteration: ~s, expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
-	    i
-	    (length bs)
-	    (analysis-size bs)
-	    (max-flow-size bs)
-	    (unions-in-analysis bs)
-	    (bottoms-in-analysis bs)
-	    (analysis-max-depth bs)
-	    (analysis-max-width bs)
-	    (concrete-reals-in-analysis bs)))
-   ;; needs work: To explain why one can't do the optimization here.
-   (if (abstract-analysis=? bs1 bs) bs (loop bs1 (+ i 1))))))
+ (initial-abstract-analysis! e bs)
+ (let loop ((i 0))
+  (set! *again?* #f)
+  (check-analysis!)
+  (cond (*verbose?* (time "Time: ~a~%"
+			  (lambda ()
+			   (update-analysis-ranges!)
+			   (update-analysis-domains!))))
+	(else (update-analysis-ranges!)
+	      (update-analysis-domains!)))
+  (when *verbose?*
+   (format #t
+	   "iteration: ~s, expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
+	   i
+	   (length *expressions*)
+	   (analysis-size)
+	   (max-flow-size)
+	   (unions-in-analysis)
+	   (bottoms-in-analysis)
+	   (analysis-max-depth)
+	   (analysis-max-width)
+	   (concrete-reals-in-analysis)))
+  (when *again?* (loop (+ i 1)))))
 
 ;;; Code Generator
 
@@ -5589,11 +5503,11 @@
        (else (internal-error))))
 
 (define (all-variables bs)
- (map-reduce
-  (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-  '()
-  (lambda (b) (all-variables-in-expression (expression-binding-expression b)))
-  bs))
+ ;; needs work: to get rid of bs
+ (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+	     '()
+	     all-variables-in-expression
+	     *expressions*))
 
 (define (generate-variable-name x xs)
  (let ((i (positionp variable=? x xs)))
@@ -5642,15 +5556,15 @@
  (map-reduce
   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
   '()
-  (lambda (b)
+  (lambda (e)
    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 	       '()
 	       (lambda (b)
 		(remove-duplicatesp abstract-value=?
 				    (cons (environment-binding-value b)
 					  (environment-binding-values b))))
-	       (expression-binding-environment-bindings b)))
-  bs))
+	       (expression-environment-bindings e)))
+  *expressions*))
 
 (define (all-unary-abstract-subvalues p? v)
  (let loop ((v v))
@@ -5784,18 +5698,63 @@
   (map-reduce
    (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
    '()
-   (lambda (b)
-    (let ((e (expression-binding-expression b)))
-     (cond
-      ((constant-expression? e)
-       (map-reduce
-	(lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
-	'()
-	(lambda (b)
-	 (all-subwidenings (constant-expression-value e)
-			   (environment-binding-value b)))
-	(expression-binding-environment-bindings b)))
-      ((application? e)
+   (lambda (e)
+    (cond
+     ((constant-expression? e)
+      (map-reduce
+       (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+       '()
+       (lambda (b)
+	(all-subwidenings (constant-expression-value e)
+			  (environment-binding-value b)))
+       (expression-environment-bindings e)))
+     ((application? e)
+      (map-reduce
+       (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+       '()
+       (lambda (b)
+	(let ((v1 (abstract-eval1 (application-callee e)
+				  (restrict-environment
+				   (environment-binding-values b)
+				   e
+				   application-callee))))
+	 (if (and (primitive-procedure? v1)
+		  (eq? (primitive-procedure-name v1) 'if-procedure))
+	     (let* ((v (abstract-eval1 (application-argument e)
+				       (restrict-environment
+					(environment-binding-values b)
+					e
+					application-argument))))
+	      (let* ((v1 (vlad-car v))
+		     (v2 (vlad-cdr v))
+		     (v3 (vlad-car v2))
+		     (v4 (vlad-cdr v2))
+		     (v5 (cond
+			  ((eq? v1 'boolean)
+			   (abstract-value-union
+			    (abstract-apply v3 (vlad-empty-list))
+			    (abstract-apply v4 (vlad-empty-list))))
+			  ((vlad-false? v1)
+			   (abstract-apply v4 (vlad-empty-list)))
+			  (else (abstract-apply v3 (vlad-empty-list))))))
+	       (if (and (not (void? v5)) (eq? v1 'boolean))
+		   (let ((v6 (abstract-apply v3 (vlad-empty-list)))
+			 (v7 (abstract-apply v4 (vlad-empty-list))))
+		    (unionp abstract-value-pair=?
+			    (all-subwidenings v6 v5)
+			    (all-subwidenings v7 v5)))
+		   '())))
+	     '())))
+       (expression-environment-bindings e)))
+     (else '())))
+   *expressions*)))
+
+(define (all-functions bs)
+ (map-reduce
+  (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+  '()
+  (lambda (e)
+   (if (application? e)
        (map-reduce
 	(lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
 	'()
@@ -5804,131 +5763,76 @@
 				   (restrict-environment
 				    (environment-binding-values b)
 				    e
-				    application-callee)
-				   bs)))
-	  (if (and (primitive-procedure? v1)
-		   (eq? (primitive-procedure-name v1) 'if-procedure))
-	      (let* ((v (abstract-eval1 (application-argument e)
+				    application-callee))))
+	  (cond
+	   ((closure? v1)
+	    (list (list v1
+			(abstract-eval1 (application-argument e)
 					(restrict-environment
 					 (environment-binding-values b)
 					 e
-					 application-argument)
-					bs)))
-	       (let* ((v1 (vlad-car v))
-		      (v2 (vlad-cdr v))
-		      (v3 (vlad-car v2))
-		      (v4 (vlad-cdr v2))
-		      (v5 (cond
-			   ((eq? v1 'boolean)
+					 application-argument)))))
+	   ((and (primitive-procedure? v1)
+		 (eq? (primitive-procedure-name v1) 'if-procedure))
+	    (let* ((v (abstract-eval1 (application-argument e)
+				      (restrict-environment
+				       (environment-binding-values b)
+				       e
+				       application-argument))))
+	     (let* ((v1 (vlad-car v))
+		    (v2 (vlad-cdr v))
+		    (v3 (vlad-car v2))
+		    (v4 (vlad-cdr v2))
+		    (v5
+		     (cond ((eq? v1 'boolean)
 			    (abstract-value-union
-			     (abstract-apply v3 (vlad-empty-list) bs)
-			     (abstract-apply v4 (vlad-empty-list) bs)))
+			     (abstract-apply v3 (vlad-empty-list))
+			     (abstract-apply v4 (vlad-empty-list))))
 			   ((vlad-false? v1)
-			    (abstract-apply v4 (vlad-empty-list) bs))
-			   (else (abstract-apply v3 (vlad-empty-list) bs)))))
-		(if (and (not (void? v5)) (eq? v1 'boolean))
-		    (let ((v6 (abstract-apply v3 (vlad-empty-list) bs))
-			  (v7 (abstract-apply v4 (vlad-empty-list) bs)))
-		     (unionp abstract-value-pair=?
-			     (all-subwidenings v6 v5)
-			     (all-subwidenings v7 v5)))
-		    '())))
-	      '())))
-	(expression-binding-environment-bindings b)))
-      (else '()))))
-   bs)))
-
-(define (all-functions bs)
- (map-reduce
-  (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
-  '()
-  (lambda (b)
-   (let ((e (expression-binding-expression b)))
-    (if (application? e)
-	(map-reduce
-	 (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
-	 '()
-	 (lambda (b)
-	  (let ((v1 (abstract-eval1 (application-callee e)
-				    (restrict-environment
-				     (environment-binding-values b)
-				     e
-				     application-callee)
-				    bs)))
-	   (cond
-	    ((closure? v1)
-	     (list (list v1
-			 (abstract-eval1 (application-argument e)
-					 (restrict-environment
-					  (environment-binding-values b)
-					  e
-					  application-argument)
-					 bs))))
-	    ((and (primitive-procedure? v1)
-		  (eq? (primitive-procedure-name v1) 'if-procedure))
-	     (let* ((v (abstract-eval1 (application-argument e)
-				       (restrict-environment
-					(environment-binding-values b)
-					e
-					application-argument)
-				       bs)))
-	      (let* ((v1 (vlad-car v))
-		     (v2 (vlad-cdr v))
-		     (v3 (vlad-car v2))
-		     (v4 (vlad-cdr v2))
-		     (v5
-		      (cond ((eq? v1 'boolean)
-			     (abstract-value-union
-			      (abstract-apply v3 (vlad-empty-list) bs)
-			      (abstract-apply v4 (vlad-empty-list) bs)))
-			    ((vlad-false? v1)
-			     (abstract-apply v4 (vlad-empty-list) bs))
-			    (else (abstract-apply v3 (vlad-empty-list) bs)))))
-	       (if (void? v5)
-		   '()
-		   (cond ((eq? v1 'boolean)
-			  ;; We make the assumption that v3 and v4 will not
-			  ;; be abstract-value=?. If this assumption is false
-			  ;; then there may be duplicates.
-			  (list (list v3 (vlad-empty-list))
-				(list v4 (vlad-empty-list))))
-			 ((vlad-false? v1) (list (list v4 (vlad-empty-list))))
-			 (else (list (list v3 (vlad-empty-list)))))))))
-	    (else '()))))
-	 (expression-binding-environment-bindings b))
-	'())))
-  bs))
+			    (abstract-apply v4 (vlad-empty-list)))
+			   (else (abstract-apply v3 (vlad-empty-list))))))
+	      (if (void? v5)
+		  '()
+		  (cond ((eq? v1 'boolean)
+			 ;; We make the assumption that v3 and v4 will not
+			 ;; be abstract-value=?. If this assumption is false
+			 ;; then there may be duplicates.
+			 (list (list v3 (vlad-empty-list))
+			       (list v4 (vlad-empty-list))))
+			((vlad-false? v1) (list (list v4 (vlad-empty-list))))
+			(else (list (list v3 (vlad-empty-list)))))))))
+	   (else '()))))
+	(expression-environment-bindings e))
+       '()))
+  *expressions*))
 
 (define (all-primitives s bs)
  (map-reduce
   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
   '()
-  (lambda (b)
-   (let ((e (expression-binding-expression b)))
-    (if (application? e)
-	(remove-duplicatesp
-	 abstract-value=?
-	 (removeq
-	  #f
-	  (map (lambda (b)
-		(let ((v1 (abstract-eval1 (application-callee e)
-					  (restrict-environment
-					   (environment-binding-values b)
-					   e
-					   application-callee)
-					  bs)))
-		 (if (and (primitive-procedure? v1)
-			  (eq? (primitive-procedure-name v1) s))
-		     (abstract-eval1 (application-argument e)
-				     (restrict-environment
-				      (environment-binding-values b)
-				      e
-				      application-argument)
-				     bs)
-		     #f)))
-	       (expression-binding-environment-bindings b))))
-	'())))
-  bs))
+  (lambda (e)
+   (if (application? e)
+       (remove-duplicatesp
+	abstract-value=?
+	(removeq
+	 #f
+	 (map (lambda (b)
+	       (let ((v1 (abstract-eval1 (application-callee e)
+					 (restrict-environment
+					  (environment-binding-values b)
+					  e
+					  application-callee))))
+		(if (and (primitive-procedure? v1)
+			 (eq? (primitive-procedure-name v1) s))
+		    (abstract-eval1 (application-argument e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-argument))
+		    #f)))
+	      (expression-environment-bindings e))))
+       '()))
+  *expressions*))
 
 (define (generate-builtin-name s v vs)
  (let ((i (positionp abstract-value=? v vs)))
@@ -6115,14 +6019,12 @@
    (application? e)
    (or (and (let ((v1 (abstract-eval1
 		       (application-callee e)
-		       (restrict-environment vs e application-callee)
-		       bs)))
+		       (restrict-environment vs e application-callee))))
 	     (and (primitive-procedure? v1)
 		  (eq? (primitive-procedure-name v1) 'if-procedure)))
 	    (abstract-value=?
 	     (abstract-eval1 (application-argument e)
-			     (restrict-environment vs e application-argument)
-			     bs)
+			     (restrict-environment vs e application-argument))
 	     v2))
        (calls-if-procedure? (application-callee e)
 			    v2
@@ -6152,14 +6054,12 @@
 	  (or (and (abstract-value=?
 		    (abstract-eval1
 		     (application-callee e)
-		     (restrict-environment vs e application-callee)
-		     bs)
+		     (restrict-environment vs e application-callee))
 		    v1)
 		   (abstract-value=?
 		    (abstract-eval1
 		     (application-argument e)
-		     (restrict-environment vs e application-argument)
-		     bs)
+		     (restrict-environment vs e application-argument))
 		    v2))
 	      (calls? (application-callee e)
 		      v1
@@ -6234,10 +6134,10 @@
 	    (v5
 	     (cond ((eq? v1 'boolean)
 		    (abstract-value-union
-		     (abstract-apply v3 (vlad-empty-list) bs)
-		     (abstract-apply v4 (vlad-empty-list) bs)))
-		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list) bs))
-		   (else (abstract-apply v3 (vlad-empty-list) bs)))))
+		     (abstract-apply v3 (vlad-empty-list))
+		     (abstract-apply v4 (vlad-empty-list))))
+		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
+		   (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
 	  '()
 	  (list "static INLINE "
@@ -6252,7 +6152,7 @@
      (let* ((v1v2 (second thing))
 	    (v1 (first v1v2))
 	    (v2 (second v1v2))
-	    (v3 (abstract-apply v1 v2 bs)))
+	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
@@ -6407,10 +6307,10 @@
 	    (v5
 	     (cond ((eq? v1 'boolean)
 		    (abstract-value-union
-		     (abstract-apply v3 (vlad-empty-list) bs)
-		     (abstract-apply v4 (vlad-empty-list) bs)))
-		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list) bs))
-		   (else (abstract-apply v3 (vlad-empty-list) bs)))))
+		     (abstract-apply v3 (vlad-empty-list))
+		     (abstract-apply v4 (vlad-empty-list))))
+		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
+		   (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
 	  '()
 	  (list
@@ -6423,8 +6323,8 @@
 	   "){return "
 	   (cond
 	    ((eq? v1 'boolean)
-	     (let ((v6 (abstract-apply v3 (vlad-empty-list) bs))
-		   (v7 (abstract-apply v4 (vlad-empty-list) bs)))
+	     (let ((v6 (abstract-apply v3 (vlad-empty-list)))
+		   (v7 (abstract-apply v4 (vlad-empty-list))))
 	      (list "x.a?"
 		    (generate-widen
 		     v6
@@ -6458,7 +6358,7 @@
      (let* ((v1v2 (second thing))
 	    (v1 (first v1v2))
 	    (v2 (second v1v2))
-	    (v3 (abstract-apply v1 v2 bs)))
+	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
@@ -6511,7 +6411,7 @@
        (else (generate-variable-name x xs1))))
 
 (define (generate-expression e vs xs xs2 bs xs1 vs1 v1v2s v1v2s1)
- (let ((v (abstract-eval1 e vs bs)))
+ (let ((v (abstract-eval1 e vs)))
   (cond
    ((constant-expression? e)
     (unless (void? (constant-expression-value e)) (internal-error))
@@ -6531,11 +6431,10 @@
      ")"))
    ((application? e)
     (let ((v1 (abstract-eval1 (application-callee e)
-			      (restrict-environment vs e application-callee)
-			      bs))
-	  (v2 (abstract-eval1 (application-argument e)
-			      (restrict-environment vs e application-argument)
-			      bs)))
+			      (restrict-environment vs e application-callee)))
+	  (v2 (abstract-eval1
+	       (application-argument e)
+	       (restrict-environment vs e application-argument))))
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
 	 (list
@@ -6599,11 +6498,10 @@
 			 v1v2s1))
    ((cons-expression? e)
     (let ((v1 (abstract-eval1 (cons-expression-car e)
-			      (restrict-environment vs e cons-expression-car)
-			      bs))
-	  (v2 (abstract-eval1 (cons-expression-cdr e)
-			      (restrict-environment vs e cons-expression-cdr)
-			      bs)))
+			      (restrict-environment vs e cons-expression-car)))
+	  (v2 (abstract-eval1
+	       (cons-expression-cdr e)
+	       (restrict-environment vs e cons-expression-cdr))))
      (list (generate-builtin-name "m" v vs1)
 	   "("
 	   (commas-between
@@ -6637,7 +6535,7 @@
    (else (internal-error)))))
 
 (define (generate-letrec-bindings  e vs xs xs2 bs xs1 vs1 v1v2s)
- (let ((v (abstract-eval1 e vs bs)))
+ (let ((v (abstract-eval1 e vs)))
   (cond
    ((void? v) '())
    ((constant-expression? e) '())
@@ -6645,11 +6543,10 @@
    ((lambda-expression? e) '())
    ((application? e)
     (let ((v1 (abstract-eval1 (application-callee e)
-			      (restrict-environment vs e application-callee)
-			      bs))
-	  (v2 (abstract-eval1 (application-argument e)
-			      (restrict-environment vs e application-argument)
-			      bs)))
+			      (restrict-environment vs e application-callee)))
+	  (v2 (abstract-eval1
+	       (application-argument e)
+	       (restrict-environment vs e application-argument))))
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
 	 ;; needs work: This unsoundly removes the code from the callee, and
@@ -6727,11 +6624,10 @@
 			       v1v2s)))
    ((cons-expression? e)
     (let ((v1 (abstract-eval1 (cons-expression-car e)
-			      (restrict-environment vs e cons-expression-car)
-			      bs))
-	  (v2 (abstract-eval1 (cons-expression-cdr e)
-			      (restrict-environment vs e cons-expression-cdr)
-			      bs)))
+			      (restrict-environment vs e cons-expression-car)))
+	  (v2 (abstract-eval1
+	       (cons-expression-cdr e)
+	       (restrict-environment vs e cons-expression-cdr))))
      ;; needs work: This unsoundly removes code that might do I/O, signal an
      ;;             error, or not terminate.
      (list (if (void? v1)
@@ -6770,32 +6666,29 @@
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
-    (lambda (b)
-     (let ((e (expression-binding-expression b)))
-      (if (application? e)
-	  (remove-duplicatesp
-	   abstract-value=?
-	   (removeq #f
-		    (map (lambda (b)
-			  (let ((v1 (abstract-eval1
-				     (application-callee e)
-				     (restrict-environment
-				      (environment-binding-values b)
-				      e
-				      application-callee)
-				     bs)))
-			   (if (and (primitive-procedure? v1)
-				    (eq? (primitive-procedure-name v1) s))
-			       (abstract-eval1 (application-argument e)
-					       (restrict-environment
-						(environment-binding-values b)
-						e
-						application-argument)
-					       bs)
-			       #f)))
-			 (expression-binding-environment-bindings b))))
-	  '())))
-    bs))))
+    (lambda (e)
+     (if (application? e)
+	 (remove-duplicatesp
+	  abstract-value=?
+	  (removeq #f
+		   (map (lambda (b)
+			 (let ((v1 (abstract-eval1
+				    (application-callee e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-callee))))
+			  (if (and (primitive-procedure? v1)
+				   (eq? (primitive-procedure-name v1) s))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument))
+			      #f)))
+			(expression-environment-bindings e))))
+	 '()))
+    *expressions*))))
 
 (define (all-binary-ad p? g s f f-inverse bs)
  ;; This topological sort is needed so that all INLINE definitions come before
@@ -6811,32 +6704,29 @@
    (map-reduce
     (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
     '()
-    (lambda (b)
-     (let ((e (expression-binding-expression b)))
-      (if (application? e)
-	  (remove-duplicatesp
-	   abstract-value=?
-	   (removeq #f
-		    (map (lambda (b)
-			  (let ((v1 (abstract-eval1
-				     (application-callee e)
-				     (restrict-environment
-				      (environment-binding-values b)
-				      e
-				      application-callee)
-				     bs)))
-			   (if (and (primitive-procedure? v1)
-				    (eq? (primitive-procedure-name v1) s))
-			       (abstract-eval1 (application-argument e)
-					       (restrict-environment
-						(environment-binding-values b)
-						e
-						application-argument)
-					       bs)
-			       #f)))
-			 (expression-binding-environment-bindings b))))
-	  '())))
-    bs))))
+    (lambda (e)
+     (if (application? e)
+	 (remove-duplicatesp
+	  abstract-value=?
+	  (removeq #f
+		   (map (lambda (b)
+			 (let ((v1 (abstract-eval1
+				    (application-callee e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-callee))))
+			  (if (and (primitive-procedure? v1)
+				   (eq? (primitive-procedure-name v1) s))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument))
+			      #f)))
+			(expression-environment-bindings e))))
+	 '()))
+    *expressions*))))
 
 (define (generate-unary-ad-declarations p? f s s1 bs vs)
  (map (lambda (v)
@@ -7371,9 +7261,7 @@
     "int main(void){"
     (generate-letrec-bindings
      e
-     (environment-binding-values
-      (first (expression-binding-environment-bindings
-	      (lookup-expression-binding e bs))))
+     (environment-binding-values (first (expression-environment-bindings e)))
      (free-variables e)
      '()
      bs
@@ -7382,27 +7270,22 @@
      v1v2s)
     ;; needs work: This unsoundly removes code that might do I/O, signal
     ;;             an error, or not terminate.
-    (if (void?
-	 (abstract-eval1
-	  e
-	  (environment-binding-values
-	   (first (expression-binding-environment-bindings
-		   (lookup-expression-binding e bs))))
-	  bs))
+    (if (void? (abstract-eval1
+		e
+		(environment-binding-values
+		 (first (expression-environment-bindings e)))))
 	'()
 	(list
-	 (generate-expression
-	  e
-	  (environment-binding-values
-	   (first (expression-binding-environment-bindings
-		   (lookup-expression-binding e bs))))
-	  (free-variables e)
-	  '()
-	  bs
-	  xs
-	  vs
-	  v1v2s
-	  v1v2s1)
+	 (generate-expression e
+			      (environment-binding-values
+			       (first (expression-environment-bindings e)))
+			      (free-variables e)
+			      '()
+			      bs
+			      xs
+			      vs
+			      v1v2s
+			      v1v2s1)
 	 ";"))
     "return 0;}"
     #\newline))))
@@ -7539,18 +7422,18 @@
 	     (unimplemented "read-real"))))
 
 (define (unary f s)
- (lambda (v bs) (if *abstract?* (map-union f (unroll v)) (f v))))
+ (lambda (v) (if *abstract?* (map-union f (unroll v)) (f v))))
 
-(define (unary-ad f s) (lambda (v bs) (f v)))
+(define (unary-ad f s) f)
 
 (define (unary-predicate f s)
- (lambda (v bs)
+ (lambda (v)
   (if *abstract?*
       (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) (unroll v))
       (if (f v) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union (lambda (u)
 		     (if (abstract-real? u)
@@ -7563,7 +7446,7 @@
 	      (f v)))))
 
 (define (unary-real-predicate f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union (lambda (u)
 		     (if (abstract-real? u)
@@ -7578,7 +7461,7 @@
 	      (if (f v) (vlad-true) (vlad-false))))))
 
 (define (binary-ad f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union
 	  (lambda (u)
@@ -7592,7 +7475,7 @@
 	      (f (vlad-car v) (vlad-cdr v))))))
 
 (define (binary-real f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union
 	  (lambda (u)
@@ -7617,7 +7500,7 @@
 	       (f v1 v2))))))
 
 (define (binary-real-predicate f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union
 	  (lambda (u)
@@ -7643,7 +7526,7 @@
 	       (if (f v1 v2) (vlad-true) (vlad-false)))))))
 
 (define (ternary f s)
- (lambda (v bs)
+ (lambda (v)
   (cond (*abstract?*
 	 (map-union
 	  (lambda (u)
@@ -7651,7 +7534,7 @@
 	       (cross-union
 		(lambda (u1 u2)
 		 (if (vlad-pair? u2)
-		     (cross-union (lambda (u21 u22) (f u1 u21 u22 bs))
+		     (cross-union (lambda (u21 u22) (f u1 u21 u22))
 				  (unroll (vlad-car u2))
 				  (unroll (vlad-cdr u2)))
 		     (compile-time-warning
@@ -7666,37 +7549,30 @@
 	      (let ((v23 (vlad-cdr v)))
 	       (unless (vlad-pair? v23)
 		(run-time-error (format #f "Argument to ~a is invalid" s) v))
-	       (f (vlad-car v) (vlad-car v23) (vlad-cdr v23) bs))))))
+	       (f (vlad-car v) (vlad-car v23) (vlad-cdr v23)))))))
 
 (define (ternary-prime f s)
- (lambda (v bs)
+ (lambda (v)
   (unless *abstract?* (internal-error))
-  (map-reduce
-   abstract-analysis-union
-   (empty-abstract-analysis)
+  (for-each
    (lambda (u)
     (cond
      ((vlad-pair? u)
-      (reduce
-       abstract-analysis-union
-       (cross-product
-	(lambda (u1 u2)
-	 (cond ((vlad-pair? u2)
-		(reduce abstract-analysis-union
-			(cross-product
-			 (lambda (u21 u22) (f u1 u21 u22 bs))
-			 (union-values (unroll (vlad-car u2)))
-			 (union-values (unroll (vlad-cdr u2))))
-			(empty-abstract-analysis)))
-	       (else (compile-time-warning
-		      (format #f "Argument to ~a might be invalid" s) u)
-		     (empty-abstract-analysis))))
-	(union-values (unroll (vlad-car u)))
-	(union-values (unroll (vlad-cdr u))))
-       (empty-abstract-analysis)))
+      (for-each
+       (lambda (u1)
+	(for-each
+	 (lambda (u2)
+	  (cond ((vlad-pair? u2)
+		 (for-each (lambda (u21)
+			    (for-each (lambda (u22) (f u1 u21 u22))
+				      (union-values (unroll (vlad-cdr u2)))))
+			   (union-values (unroll (vlad-car u2)))))
+		(else (compile-time-warning
+		       (format #f "Argument to ~a might be invalid" s) u))))
+	 (union-values (unroll (vlad-cdr u)))))
+       (union-values (unroll (vlad-car u)))))
      (else (compile-time-warning
-	    (format #f "Argument to ~a might be invalid" s) u)
-	   (empty-abstract-analysis))))
+	    (format #f "Argument to ~a might be invalid" s) u))))
    (union-values (unroll v)))))
 
 (define (define-primitive-procedure x procedure generator forward reverse)
@@ -8164,14 +8040,14 @@
 	   (lambda ((sensitivity y)) (sensitize (cons reverse? (zero x))))))))
  (define-primitive-procedure 'if-procedure
   (ternary
-   (lambda (v1 v2 v3 bs)
+   (lambda (v1 v2 v3)
     (if *abstract?*
 	(new-union
 	 (if (vlad-false? v1)
-	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs))
+	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs))
 				     v3
 				     (vlad-empty-list))
-	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs bs))
+	     (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs))
 				     v2
 				     (vlad-empty-list))))
 	(if (vlad-false? v1)
