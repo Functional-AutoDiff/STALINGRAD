@@ -95,6 +95,9 @@
 		 (at-most-one ("pp" pp?))
 		 (at-most-one ("verbose" verbose?))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
+		 (at-most-one ("no-warnings" no-warnings?))
+		 (at-most-one
+		  ("no-closure-depth-limit" no-closure-depth-limit?))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -118,6 +121,8 @@
  (set! *pp?* pp?)
  (set! *verbose?* verbose?)
  (set! *imprecise-inexacts?* imprecise-inexacts?)
+ (set! *warnings?* (not no-warnings?))
+ (set! *closure-depth-limit* (if no-closure-depth-limit? #f 1))
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
