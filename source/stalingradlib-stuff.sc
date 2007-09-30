@@ -1004,6 +1004,29 @@
   e
   e1))
 
+(define (expression-reverse-transform e)
+ ((cond ((constant-expression? e) constant-expression-reverse-transform)
+	((variable-access-expression? e)
+	 variable-access-expression-reverse-transform)
+	((lambda-expression? e) lambda-expression-reverse-transform)
+	((application? e) application-reverse-transform)
+	((letrec-expression? e) letrec-expression-reverse-transform)
+	((cons-expression? e) cons-expression-reverse-transform)
+	(else (internal-error)))
+  e))
+
+(define (set-expression-reverse-transform! e e1)
+ ((cond ((constant-expression? e) set-constant-expression-reverse-transform!)
+	((variable-access-expression? e)
+	 set-variable-access-expression-reverse-transform!)
+	((lambda-expression? e) set-lambda-expression-reverse-transform!)
+	((application? e) set-application-reverse-transform!)
+	((letrec-expression? e) set-letrec-expression-reverse-transform!)
+	((cons-expression? e) set-cons-expression-reverse-transform!)
+	(else (internal-error)))
+  e
+  e1))
+
 (define (expression-reverse-transform-inverse e)
  ((cond
    ((constant-expression? e) constant-expression-reverse-transform-inverse)
@@ -3493,7 +3516,13 @@
 	 ;; This is the sensitivity to the argument.
 	 (sensitivityify-parameter p))))))))))
 
-(define (reverse-transform e) (reverse-transform-internal e '() '() -1))
+(define (reverse-transform e)
+ (if (expression-reverse-transform e)
+     (expression-reverse-transform e)
+     (let ((e1 (reverse-transform-internal e '() '() -1)))
+      (set-expression-reverse-transform! e e1)
+      (set-expression-reverse-transform-inverse! e1 e)
+      e1)))
 
 (define (result-cons-expression? p1 p2 e1 e2 e)
  ;; p1=(lambda ...)
@@ -3568,16 +3597,24 @@
   (unreverseify-access (cons-expression-car (last (let*-expressions e))))))
 
 (define (reverse-transform-inverse e)
- (new-lambda-expression
-  (unreverseify-parameter (lambda-expression-parameter e))
-  (let ((e (lambda-expression-body e)))
-   (if (letrec-expression? e)
-       (new-letrec-expression
-	(map unreverseify (letrec-expression-procedure-variables e))
-	(map reverse-transform-inverse
-	     (letrec-expression-lambda-expressions e))
-	(reverse-transform-inverse-internal (letrec-expression-body e)))
-       (reverse-transform-inverse-internal e)))))
+ (if (expression-reverse-transform-inverse e)
+     (expression-reverse-transform-inverse e)
+     (let ((e1 (new-lambda-expression
+		(unreverseify-parameter (lambda-expression-parameter e))
+		(let ((e (lambda-expression-body e)))
+		 (if (letrec-expression? e)
+		     (new-letrec-expression
+		      (map unreverseify
+			   (letrec-expression-procedure-variables e))
+		      (map reverse-transform-inverse
+			   (letrec-expression-lambda-expressions e))
+		      (reverse-transform-inverse-internal
+		       (letrec-expression-body e)))
+		     (reverse-transform-inverse-internal e))))))
+      ;; Note that we don't set the reverse transform of e1 to e because
+      ;; reverse-transform-inverse is many to one and thus not invertible.
+      (set-expression-reverse-transform-inverse! e e1)
+      e1)))
 
 (define (sensitize v)
  (cond
