@@ -83,6 +83,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  value)
 
 (define-structure variable-access-expression
@@ -94,6 +96,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  variable)
 
 (define-structure lambda-expression
@@ -105,6 +109,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  free-variables
  parameter
  body)
@@ -118,6 +124,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  free-variables
  callee
  argument)
@@ -131,6 +139,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  free-variables
  procedure-variables
  lambda-expressions
@@ -145,6 +155,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ parents
+ environment-bindings
  free-variables
  tags
  car
@@ -185,7 +197,7 @@
 
 (define-structure environment-binding values value)
 
-(define-structure expression-binding expression flow)
+(define-structure expression-binding expression environment-bindings)
 
 ;;; Variables
 
@@ -717,7 +729,8 @@
 		    *constant-expressions*)))
   (if e0
       e0
-      (let ((e0 (make-constant-expression #f #f #f #f #f #f #f #f value)))
+      (let ((e0 (make-constant-expression
+		 #f #f #f #f #f #f #f #f '() '() value)))
        (set! *constant-expressions* (cons e0 *constant-expressions*))
        e0))))
 
@@ -729,7 +742,7 @@
   (if e0
       e0
       (let ((e0 (make-variable-access-expression
-		 #f #f #f #f #f #f #f #f variable)))
+		 #f #f #f #f #f #f #f #f '() '() variable)))
        (set! *variable-access-expressions*
 	     (cons e0 *variable-access-expressions*))
        e0))))
@@ -751,6 +764,8 @@
 		 #f
 		 #f
 		 #f
+		 '()
+		 '()
 		 (sort-variables (set-differencep variable=?
 						  (free-variables e)
 						  (parameter-variables p)))
@@ -775,11 +790,15 @@
 		 #f
 		 #f
 		 #f
+		 '()
+		 '()
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 e1
 		 e2)))
        (set! *applications* (cons e0 *applications*))
+       (set-expression-parents! e1 (cons e0 (expression-parents e1)))
+       (set-expression-parents! e2 (cons e0 (expression-parents e2)))
        e0))))
 
 (define (new-letrec-expression xs es e)
@@ -809,6 +828,8 @@
 		     #f
 		     #f
 		     #f
+		     '()
+		     '()
 		     (sort-variables
 		      (set-differencep
 		       variable=?
@@ -820,6 +841,11 @@
 		     es
 		     e)))
 	   (set! *letrec-expressions* (cons e0 *letrec-expressions*))
+	   (set-expression-parents! e (cons e0 (expression-parents e)))
+	   (for-each
+	    (lambda (e)
+	     (set-expression-parents! e (cons e0 (expression-parents e))))
+	    es)
 	   e0)))))
 
 (define (new-cons-expression tags e1 e2)
@@ -839,12 +865,16 @@
 		 #f
 		 #f
 		 #f
+		 '()
+		 '()
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 tags
 		 e1
 		 e2)))
        (set! *cons-expressions* (cons e0 *cons-expressions*))
+       (set-expression-parents! e1 (cons e0 (expression-parents e1)))
+       (set-expression-parents! e2 (cons e0 (expression-parents e2)))
        e0))))
 
 ;;; Generic expression accessors and mutators
@@ -1052,6 +1082,52 @@
    (else (internal-error)))
   e
   e1))
+
+(define (expression-parents e)
+ ((cond ((constant-expression? e) constant-expression-parents)
+	((variable-access-expression? e) variable-access-expression-parents)
+	((lambda-expression? e) lambda-expression-parents)
+	((application? e) application-parents)
+	((letrec-expression? e) letrec-expression-parents)
+	((cons-expression? e) cons-expression-parents)
+	(else (internal-error)))
+  e))
+
+(define (set-expression-parents! e es)
+ ((cond
+   ((constant-expression? e) set-constant-expression-parents!)
+   ((variable-access-expression? e) set-variable-access-expression-parents!)
+   ((lambda-expression? e) set-lambda-expression-parents!)
+   ((application? e) set-application-parents!)
+   ((letrec-expression? e) set-letrec-expression-parents!)
+   ((cons-expression? e) set-cons-expression-parents!)
+   (else (internal-error)))
+  e
+  es))
+
+(define (expression-environment-bindings e)
+ ((cond ((constant-expression? e) constant-expression-environment-bindings)
+	((variable-access-expression? e)
+	 variable-access-expression-environment-bindings)
+	((lambda-expression? e) lambda-expression-environment-bindings)
+	((application? e) application-environment-bindings)
+	((letrec-expression? e) letrec-expression-environment-bindings)
+	((cons-expression? e) cons-expression-environment-bindings)
+	(else (internal-error)))
+  e))
+
+(define (set-expression-environment-bindings! e es)
+ ((cond
+   ((constant-expression? e) set-constant-expression-environment-bindings!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-environment-bindings!)
+   ((lambda-expression? e) set-lambda-expression-environment-bindings!)
+   ((application? e) set-application-environment-bindings!)
+   ((letrec-expression? e) set-letrec-expression-environment-bindings!)
+   ((cons-expression? e) set-cons-expression-environment-bindings!)
+   (else (internal-error)))
+  e
+  es))
 
 ;;; Derived expression constructors
 
@@ -4212,30 +4288,27 @@
       v)))
 
 (define (externalize-environment xs vs)
- (unless (and (list? vs) (= (length xs) (length vs)))
-  (internal-error "Not an environment"))
+ (unless (and (list? vs) (= (length xs) (length vs))) (internal-error))
  (map (lambda (x v) (list x (externalize v))) xs vs))
 
 (define (externalize-environment-binding xs b)
- (unless (environment-binding? b)
-  (internal-error "Not an environment binding"))
+ (unless (environment-binding? b) (internal-error))
  (list (externalize-environment xs (environment-binding-values b))
        (externalize (environment-binding-value b))))
 
-(define (externalize-flow xs bs)
- (unless (and (list? bs) (every environment-binding? bs))
-  (internal-error "Not a flow"))
+(define (externalize-environment-bindings xs bs)
+ (unless (and (list? bs) (every environment-binding? bs)) (internal-error))
  (map (lambda (b) (externalize-environment-binding xs b)) bs))
 
 (define (externalize-expression-binding b)
- (unless (expression-binding? b) (internal-error "Not an expression binding"))
+ (unless (expression-binding? b) (internal-error))
  (list (abstract->concrete (expression-binding-expression b))
-       (externalize-flow (free-variables (expression-binding-expression b))
-			 (expression-binding-flow b))))
+       (externalize-environment-bindings
+	(free-variables (expression-binding-expression b))
+	(expression-binding-environment-bindings b))))
 
 (define (externalize-analysis bs)
- (unless (and (list? bs) (every expression-binding? bs))
-  (internal-error "Not an analysis"))
+ (unless (and (list? bs) (every expression-binding? bs)) (internal-error))
  (map externalize-expression-binding bs))
 
 ;;; Concrete Evaluator
@@ -4528,13 +4601,14 @@
  ;; This is a conservative approximation. A #t result is precise.
  ;; Only used for fixpoint convergence check.
  ;; needs work: Can make O(n) instead of O(n^2).
- (set-equalp? (lambda (b1 b2)
-	       (and (expression-eqv? (expression-binding-expression b1)
-				     (expression-binding-expression b2))
-		    (abstract-flow=? (expression-binding-flow b1)
-				     (expression-binding-flow b2))))
-	      bs1
-	      bs2))
+ (set-equalp?
+  (lambda (b1 b2)
+   (and (expression-eqv? (expression-binding-expression b1)
+			 (expression-binding-expression b2))
+	(abstract-flow=? (expression-binding-environment-bindings b1)
+			 (expression-binding-environment-bindings b2))))
+  bs1
+  bs2))
 
 (define (lookup-expression-binding e bs)
  (when (>= (count-if
@@ -4557,8 +4631,9 @@
 	(if b2
 	    (cons (make-expression-binding
 		   (expression-binding-expression (first bs1))
-		   (abstract-flow-union (expression-binding-flow (first bs1))
-					(expression-binding-flow b2)))
+		   (abstract-flow-union
+		    (expression-binding-environment-bindings (first bs1))
+		    (expression-binding-environment-bindings b2)))
 		  (removeq b2 bs2))
 	    (cons (first bs1) bs2)))))))
 
@@ -4856,12 +4931,12 @@
 	(when (>= (count-if
 		   (lambda (b)
 		    (abstract-environment=? vs (environment-binding-values b)))
-		   (expression-binding-flow b))
+		   (expression-binding-environment-bindings b))
 		  2)
 	 (internal-error))
 	(find-if (lambda (b)
 		  (abstract-environment=? vs (environment-binding-values b)))
-		 (expression-binding-flow b))))))
+		 (expression-binding-environment-bindings b))))))
 
 (define (abstract-eval1 e vs bs)
  (unless (and (every union? vs) (every closed? vs)) (internal-error))
@@ -5205,7 +5280,7 @@
 		(abstract-eval (expression-binding-expression b1)
 			       (environment-binding-values b2)
 			       bs))))
-	     (expression-binding-flow b1))))
+	     (expression-binding-environment-bindings b1))))
       bs))
 
 (define (update-analysis-domains bs)
@@ -5224,7 +5299,7 @@
 		     bs)
 		    ;; This is an optimization.
 		    (empty-abstract-analysis)))
-	       (expression-binding-flow b1)))
+	       (expression-binding-environment-bindings b1)))
   bs))
 
 (define (value-contains-union? v)
@@ -5270,11 +5345,14 @@
        (else (map-reduce max 0 value-max-width (aggregate-value-values v)))))
 
 (define (analysis-size bs)
- (map-reduce + 0 (lambda (b) (length (expression-binding-flow b))) bs))
+ (map-reduce
+  + 0 (lambda (b) (length (expression-binding-environment-bindings b))) bs))
 
 (define (max-flow-size bs)
- (map-reduce
-  max minus-infinity (lambda (b) (length (expression-binding-flow b))) bs))
+ (map-reduce max
+	     minus-infinity
+	     (lambda (b) (length (expression-binding-environment-bindings b)))
+	     bs))
 
 (define (analysis-contains-union? bs)
  (some (lambda (b)
@@ -5282,7 +5360,7 @@
 	       (or (some value-contains-union?
 			 (environment-binding-values b))
 		   (value-contains-union? (environment-binding-value b))))
-	      (expression-binding-flow b)))
+	      (expression-binding-environment-bindings b)))
        bs))
 
 (define (unions-in-analysis bs)
@@ -5297,7 +5375,7 @@
      (+ (map-reduce
 	 + 0 unions-in-abstract-value (environment-binding-values b))
 	(unions-in-abstract-value (environment-binding-value b))))
-    (expression-binding-flow b)))
+    (expression-binding-environment-bindings b)))
   bs))
 
 (define (concrete-reals-in-analysis bs)
@@ -5315,7 +5393,7 @@
 		  concrete-reals-in-abstract-value
 		  (environment-binding-values b))
       (concrete-reals-in-abstract-value (environment-binding-value b))))
-    (expression-binding-flow b)))
+    (expression-binding-environment-bindings b)))
   bs))
 
 (define (bottoms-in-analysis bs)
@@ -5324,7 +5402,7 @@
   0
   (lambda (b)
    (count-if (lambda (b) (empty-abstract-value? (environment-binding-value b)))
-	     (expression-binding-flow b)))
+	     (expression-binding-environment-bindings b)))
   bs))
 
 (define (analysis-max-depth bs)
@@ -5338,7 +5416,7 @@
     (lambda (b)
      (max (map-reduce max 0 value-max-depth (environment-binding-values b))
 	  (value-max-depth (environment-binding-value b))))
-    (expression-binding-flow b)))
+    (expression-binding-environment-bindings b)))
   bs))
 
 (define (analysis-max-width bs)
@@ -5352,7 +5430,7 @@
     (lambda (b)
      (max (map-reduce max 0 value-max-width (environment-binding-values b))
 	  (value-max-width (environment-binding-value b))))
-    (expression-binding-flow b)))
+    (expression-binding-environment-bindings b)))
   bs))
 
 (define (check-abstract-value! v)
@@ -5380,7 +5458,7 @@
    (for-each (lambda (b)
 	      (for-each check-abstract-value! (environment-binding-values b))
 	      (check-abstract-value! (environment-binding-value b)))
-	     (expression-binding-flow b)))
+	     (expression-binding-environment-bindings b)))
   bs))
 
 (define (flow-analysis e bs)
@@ -5571,7 +5649,7 @@
 		(remove-duplicatesp abstract-value=?
 				    (cons (environment-binding-value b)
 					  (environment-binding-values b))))
-	       (expression-binding-flow b)))
+	       (expression-binding-environment-bindings b)))
   bs))
 
 (define (all-unary-abstract-subvalues p? v)
@@ -5716,7 +5794,7 @@
 	(lambda (b)
 	 (all-subwidenings (constant-expression-value e)
 			   (environment-binding-value b)))
-	(expression-binding-flow b)))
+	(expression-binding-environment-bindings b)))
       ((application? e)
        (map-reduce
 	(lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
@@ -5756,7 +5834,7 @@
 			     (all-subwidenings v7 v5)))
 		    '())))
 	      '())))
-	(expression-binding-flow b)))
+	(expression-binding-environment-bindings b)))
       (else '()))))
    bs)))
 
@@ -5817,7 +5895,7 @@
 			 ((vlad-false? v1) (list (list v4 (vlad-empty-list))))
 			 (else (list (list v3 (vlad-empty-list)))))))))
 	    (else '()))))
-	 (expression-binding-flow b))
+	 (expression-binding-environment-bindings b))
 	'())))
   bs))
 
@@ -5848,7 +5926,7 @@
 				      application-argument)
 				     bs)
 		     #f)))
-	       (expression-binding-flow b))))
+	       (expression-binding-environment-bindings b))))
 	'())))
   bs))
 
@@ -6715,7 +6793,7 @@
 						application-argument)
 					       bs)
 			       #f)))
-			 (expression-binding-flow b))))
+			 (expression-binding-environment-bindings b))))
 	  '())))
     bs))))
 
@@ -6756,7 +6834,7 @@
 						application-argument)
 					       bs)
 			       #f)))
-			 (expression-binding-flow b))))
+			 (expression-binding-environment-bindings b))))
 	  '())))
     bs))))
 
@@ -7294,7 +7372,8 @@
     (generate-letrec-bindings
      e
      (environment-binding-values
-      (first (expression-binding-flow (lookup-expression-binding e bs))))
+      (first (expression-binding-environment-bindings
+	      (lookup-expression-binding e bs))))
      (free-variables e)
      '()
      bs
@@ -7307,14 +7386,16 @@
 	 (abstract-eval1
 	  e
 	  (environment-binding-values
-	   (first (expression-binding-flow (lookup-expression-binding e bs))))
+	   (first (expression-binding-environment-bindings
+		   (lookup-expression-binding e bs))))
 	  bs))
 	'()
 	(list
 	 (generate-expression
 	  e
 	  (environment-binding-values
-	   (first (expression-binding-flow (lookup-expression-binding e bs))))
+	   (first (expression-binding-environment-bindings
+		   (lookup-expression-binding e bs))))
 	  (free-variables e)
 	  '()
 	  bs
