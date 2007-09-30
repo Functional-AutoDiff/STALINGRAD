@@ -126,6 +126,7 @@
  reverse-transform-inverse
  parents
  environment-bindings
+ enqueue?
  free-variables
  callee
  argument)
@@ -141,6 +142,7 @@
  reverse-transform-inverse
  parents
  environment-bindings
+ enqueue?
  free-variables
  procedure-variables
  lambda-expressions
@@ -157,6 +159,7 @@
  reverse-transform-inverse
  parents
  environment-bindings
+ enqueue?
  free-variables
  tags
  car
@@ -228,6 +231,8 @@
 (define *cons-expressions* '())
 
 (define *expressions* '())
+
+(define *queue* '())
 
 ;;; Parameters
 
@@ -795,6 +800,7 @@
 		 #f
 		 '()
 		 '()
+		 #f
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 e1
@@ -832,6 +838,7 @@
 		     #f
 		     '()
 		     '()
+		     #f
 		     (sort-variables
 		      (set-differencep
 		       variable=?
@@ -865,6 +872,7 @@
 		 #f
 		 '()
 		 '()
+		 #f
 		 (sort-variables
 		  (union-variables (free-variables e1) (free-variables e2)))
 		 tags
@@ -1123,6 +1131,21 @@
    ((letrec-expression? e) set-letrec-expression-environment-bindings!)
    ((cons-expression? e) set-cons-expression-environment-bindings!)
    (else (internal-error)))
+  e
+  es))
+
+(define (expression-enqueue? e)
+ ((cond ((application? e) application-enqueue?)
+	((letrec-expression? e) letrec-expression-enqueue?)
+	((cons-expression? e) cons-expression-enqueue?)
+	(else (internal-error)))
+  e))
+
+(define (set-expression-enqueue?! e es)
+ ((cond ((application? e) set-application-enqueue?!)
+	((letrec-expression? e) set-letrec-expression-enqueue?!)
+	((cons-expression? e) set-cons-expression-enqueue?!)
+	(else (internal-error)))
   e
   es))
 
@@ -5045,6 +5068,11 @@
 	(else (compile-time-warning "Target might not be a procedure" u1))))
       (unroll v1))))
 
+(define (enqueue! e)
+ (unless (expression-enqueue? e)
+  (set-expression-enqueue?! e #t)
+  (set! *queue* (cons e *queue*))))
+
 (define (abstract-eval! e)
  (cond
   ((application? e)
@@ -5072,11 +5100,16 @@
 		 (application-argument e)
 		 (restrict-environment
 		  (environment-binding-values b) e application-argument))))))
-      (unless (abstract-value-subset? (environment-binding-value b) v)
+      ;; needs work: To explain why can't do this.
+      (when #f
+       (unless (abstract-value-subset? (environment-binding-value b) v)
+	(internal-error)))
+      (unless (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b)))
        (internal-error))
-      (unless (abstract-value=? (environment-binding-value b) v)
+      (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
-       (for-each abstract-eval! (expression-parents e)))))
+       (for-each enqueue! (expression-parents e)))))
     (expression-environment-bindings e)))
   ((letrec-expression? e)
    (for-each
@@ -5084,11 +5117,16 @@
      (let ((v (abstract-eval1 (letrec-expression-body e)
 			      (abstract-letrec-nested-environment
 			       (environment-binding-values b) e))))
-      (unless (abstract-value-subset? (environment-binding-value b) v)
+      ;; needs work: To explain why can't do this.
+      (when #f
+       (unless (abstract-value-subset? (environment-binding-value b) v)
+	(internal-error)))
+      (unless (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b)))
        (internal-error))
-      (unless (abstract-value=? (environment-binding-value b) v)
+      (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
-       (for-each abstract-eval! (expression-parents e)))))
+       (for-each enqueue! (expression-parents e)))))
     (expression-environment-bindings e)))
   ((cons-expression? e)
    ;; needs work: we don't do tag-check for now
@@ -5106,11 +5144,16 @@
 		  (cons-expression-cdr e)
 		  (restrict-environment
 		   (environment-binding-values b) e cons-expression-cdr)))))))
-      (unless (abstract-value-subset? (environment-binding-value b) v)
+      ;; needs work: To explain why can't do this.
+      (when #f
+       (unless (abstract-value-subset? (environment-binding-value b) v)
+	(internal-error)))
+      (unless (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b)))
        (internal-error))
-      (unless (abstract-value=? (environment-binding-value b) v)
+      (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
-       (for-each abstract-eval! (expression-parents e)))))
+       (for-each enqueue! (expression-parents e)))))
     (expression-environment-bindings e)))
   (else (internal-error))))
 
@@ -5130,7 +5173,7 @@
 	       ;; See note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
-		(abstract-eval! e))
+		(enqueue! e))
 	       (p e1 vs)))
 	     (construct-abstract-nonrecursive-environments v1 v2)))
   ((recursive-closure? v1)
@@ -5141,7 +5184,7 @@
 	       ;; See note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
-		(abstract-eval! e))
+		(enqueue! e))
 	       (p e1 vs)))
 	     (construct-abstract-recursive-environments v1 v2)))
   (else (internal-error))))
@@ -5196,13 +5239,13 @@
 	    (widen-abstract-value
 	     (concrete-value->abstract-value (constant-expression-value e))))
 	   (expression-environment-bindings e)))
-    (for-each abstract-eval! (expression-parents e)))
+    (for-each enqueue! (expression-parents e)))
    ((variable-access-expression? e)
     (set-expression-environment-bindings!
      e
      (cons (make-environment-binding vs (widen-abstract-value (first vs)))
 	   (expression-environment-bindings e)))
-    (for-each abstract-eval! (expression-parents e)))
+    (for-each enqueue! (expression-parents e)))
    ((lambda-expression? e)
     (set-expression-environment-bindings!
      e
@@ -5210,7 +5253,7 @@
 	    vs
 	    (widen-abstract-value (singleton (new-nonrecursive-closure vs e))))
 	   (expression-environment-bindings e)))
-    (for-each abstract-eval! (expression-parents e)))
+    (for-each enqueue! (expression-parents e)))
    ((application? e)
     (set-expression-environment-bindings!
      e
@@ -5222,19 +5265,17 @@
 	     expression-eqv? e (expression-parents (application-callee e)))
      (set-expression-parents!
       (application-callee e)
-      (cons e (expression-parents (application-callee e))))
-     (abstract-eval! e))
+      (cons e (expression-parents (application-callee e)))))
     (unless (memp
 	     expression-eqv? e (expression-parents (application-argument e)))
      (set-expression-parents!
       (application-argument e)
-      (cons e (expression-parents (application-argument e))))
-     (abstract-eval! e))
+      (cons e (expression-parents (application-argument e)))))
     (abstract-eval-prime! (application-callee e)
 			  (restrict-environment vs e application-callee))
     (abstract-eval-prime! (application-argument e)
 			  (restrict-environment vs e application-argument))
-    (abstract-eval! e))
+    (enqueue! e))
    ((letrec-expression? e)
     (set-expression-environment-bindings!
      e
@@ -5245,11 +5286,10 @@
 	     expression-eqv? e (expression-parents (letrec-expression-body e)))
      (set-expression-parents!
       (letrec-expression-body e)
-      (cons e (expression-parents (letrec-expression-body e))))
-     (abstract-eval! e))
+      (cons e (expression-parents (letrec-expression-body e)))))
     (abstract-eval-prime!
      (letrec-expression-body e) (abstract-letrec-nested-environment vs e))
-    (abstract-eval! e))
+    (enqueue! e))
    ((cons-expression? e)
     (set-expression-environment-bindings!
      e
@@ -5260,19 +5300,17 @@
 	     expression-eqv? e (expression-parents (cons-expression-car e)))
      (set-expression-parents!
       (cons-expression-car e)
-      (cons e (expression-parents (cons-expression-car e))))
-     (abstract-eval! e))
+      (cons e (expression-parents (cons-expression-car e)))))
     (unless (memp
 	     expression-eqv? e (expression-parents (cons-expression-cdr e)))
      (set-expression-parents!
       (cons-expression-cdr e)
-      (cons e (expression-parents (cons-expression-cdr e))))
-     (abstract-eval! e))
+      (cons e (expression-parents (cons-expression-cdr e)))))
     (abstract-eval-prime! (cons-expression-car e)
 			  (restrict-environment vs e cons-expression-car))
     (abstract-eval-prime! (cons-expression-cdr e)
 			  (restrict-environment vs e cons-expression-cdr))
-    (abstract-eval! e))
+    (enqueue! e))
    (else (internal-error)))))
 
 (define (value-contains-union? v)
@@ -5446,6 +5484,28 @@
      (value-binding-value
       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
    (free-variables e)))
+ (let loop ((i 0))
+  (when (zero? (remainder i 100))
+   (when *verbose?*
+    (format #t
+	    "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
+	    (count-if
+	     (lambda (e) (not (null? (expression-environment-bindings e))))
+	     *expressions*)
+	    (analysis-size)
+	    (max-flow-size)
+	    (unions-in-analysis)
+	    (bottoms-in-analysis)
+	    (analysis-max-depth)
+	    (analysis-max-width)
+	    (concrete-reals-in-analysis))))
+  (unless (null? *queue*)
+   (let ((e (first *queue*)))
+    (set! *queue* (rest *queue*))
+    (unless (expression-enqueue? e) (internal-error))
+    (set-expression-enqueue?! e #f)
+    (abstract-eval! e))
+   (loop (+ i 1))))
  (check-analysis!)
  (when *verbose?*
   (format #t
