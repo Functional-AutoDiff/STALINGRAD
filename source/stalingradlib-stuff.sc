@@ -142,6 +142,18 @@
 
 (define *run?* #f)
 
+(define *constant-expressions* '())
+
+(define *variable-access-expressions* '())
+
+(define *lambda-expressions* '())
+
+(define *applications* '())
+
+(define *letrec-expressions* '())
+
+(define *cons-expressions* '())
+
 ;;; Parameters
 
 (define *include-path* '())
@@ -492,43 +504,43 @@
   (else (internal-error))))
 
 (define (sensitivity-access x)
- (make-variable-access-expression (sensitivityify x)))
+ (new-variable-access-expression (sensitivityify x)))
 
-(define (reverse-access x) (make-variable-access-expression (reverseify x)))
+(define (reverse-access x) (new-variable-access-expression (reverseify x)))
 
 (define (perturbationify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (perturbationify (variable-access-expression-variable e))))
 
 (define (forwardify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (forwardify (variable-access-expression-variable e))))
 
 (define (sensitivityify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (sensitivityify (variable-access-expression-variable e))))
 
 (define (reverseify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
 
 (define (unperturbationify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (unperturbationify (variable-access-expression-variable e))))
 
 (define (unforwardify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (unforwardify (variable-access-expression-variable e))))
 
 (define (unsensitivityify-access? e)
  (unsensitivityify? (variable-access-expression-variable e)))
 
 (define (unsensitivityify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (unsensitivityify (variable-access-expression-variable e))))
 
 (define (unreverseify-access e)
- (make-variable-access-expression
+ (new-variable-access-expression
   (unreverseify (variable-access-expression-variable e))))
 
 (define (variable-tags x)
@@ -620,19 +632,110 @@
 
 ;;; Expression constructors
 
+(define (new-constant-expression value)
+ (let ((e0 (find-if (lambda (e0)
+		     (abstract-value=? (constant-expression-value e0) value))
+		    *constant-expressions*)))
+  (if e0
+      e0
+      (let ((e0 (make-constant-expression value)))
+       (set! *constant-expressions* (cons e0 *constant-expressions*))
+       e0))))
+
+(define (new-variable-access-expression variable)
+ (let ((e0 (find-if
+	    (lambda (e0)
+	     (variable=? (variable-access-expression-variable e0) variable))
+	    *variable-access-expressions*)))
+  (if e0
+      e0
+      (let ((e0 (make-variable-access-expression variable)))
+       (set! *variable-access-expressions*
+	     (cons e0 *variable-access-expressions*))
+       e0))))
+
 (define (new-lambda-expression p e)
  (when (duplicatesp? variable=? (parameter-variables p)) (internal-error))
- (make-lambda-expression
-  (sort-variables
-   (set-differencep variable=? (free-variables e) (parameter-variables p)))
-  p
-  e))
+ (let ((e0 (find-if (lambda (e0)
+		     (and (expression-eqv? (lambda-expression-parameter e0) p)
+			  (expression-eqv? (lambda-expression-body e0) e)))
+		    *lambda-expressions*)))
+  (if e0
+      e0
+      (let ((e0 (make-lambda-expression
+		 (sort-variables (set-differencep variable=?
+						  (free-variables e)
+						  (parameter-variables p)))
+		 p
+		 e)))
+       (set! *lambda-expressions* (cons e0 *lambda-expressions*))
+       e0))))
 
 (define (new-application e1 e2)
- (make-application
-  (sort-variables (union-variables (free-variables e1) (free-variables e2)))
-  e1
-  e2))
+ (let ((e0 (find-if (lambda (e0)
+		     (and (expression-eqv? (application-callee e0) e1)
+			  (expression-eqv? (application-argument e0) e2)))
+		    *applications*)))
+  (if e0
+      e0
+      (let ((e0 (make-application
+		 (sort-variables
+		  (union-variables (free-variables e1) (free-variables e2)))
+		 e1
+		 e2)))
+       (set! *applications* (cons e0 *applications*))
+       e0))))
+
+(define (new-letrec-expression xs es e)
+ (unless (= (length xs) (length es)) (internal-error))
+ (if (null? xs)
+     e
+     (let ((e0 (find-if
+		(lambda (e0)
+		 (and
+		  (= (length xs)
+		     (length (letrec-expression-procedure-variables e0)))
+		  (every
+		   variable=? xs (letrec-expression-procedure-variables e0))
+		  (every expression-eqv?
+			 es
+			 (letrec-expression-lambda-expressions e0))
+		  (expression-eqv? e (letrec-expression-body e0))))
+		*letrec-expressions*)))
+      (if e0
+	  e0
+	  (let ((e0 (make-letrec-expression
+		     (sort-variables
+		      (set-differencep
+		       variable=?
+		       (union-variables
+			(map-reduce union-variables '() free-variables es)
+			(free-variables e))
+		       xs))
+		     xs
+		     es
+		     e)))
+	   (set! *letrec-expressions* (cons e0 *letrec-expressions*))
+	   e0)))))
+
+(define (new-cons-expression tags e1 e2)
+ (let ((e0 (find-if (lambda (e0)
+		     (and (equal-tags? (cons-expression-tags e0) tags)
+			  (expression-eqv? (cons-expression-car e0) e1)
+			  (expression-eqv? (cons-expression-cdr e0) e2)))
+		    *cons-expressions*)))
+  (if e0
+      e0
+      (let ((e0 (make-cons-expression
+		 (sort-variables
+		  (union-variables (free-variables e1) (free-variables e2)))
+		 tags
+		 e1
+		 e2)))
+       (set! *cons-expressions* (cons e0 *cons-expressions*))
+       e0))))
+
+;;; Derived expression constructors
 
 (define (new-let* ps es e)
  (if (null? ps)
@@ -645,20 +748,6 @@
  (new-let* (map parameter-binding-parameter bs)
 	   (map parameter-binding-expression bs)
 	   e))
-
-(define (new-letrec-expression xs es e)
- (if (null? xs)
-     e
-     (make-letrec-expression
-      (sort-variables
-       (set-differencep
-	variable=?
-	(union-variables (map-reduce union-variables '() free-variables es)
-			 (free-variables e))
-	xs))
-      xs
-      es
-      e)))
 
 (define (reference-graph xs es e)
  ;; needs work: Should have structure instead of list.
@@ -745,16 +834,9 @@
 		 (first cluster))
 	    (loop (rest clusters)))
 	   (let ((x (first (first cluster))))
-	    (new-let* (list (make-variable-access-expression x))
+	    (new-let* (list (new-variable-access-expression x))
 		      (list (list-ref es (positionp variable=? x xs)))
 		      (loop (rest clusters)))))))))
-
-(define (new-cons-expression tags e1 e2)
- (make-cons-expression
-  (sort-variables (union-variables (free-variables e1) (free-variables e2)))
-  tags
-  e1
-  e2))
 
 (define (create-cons-expression e1 e2)
  (new-cons-expression (empty-tags) e1 e2))
@@ -796,44 +878,7 @@
 
 ;;; Expression Equivalence
 
-(define (expression-eqv? e1 e2)
- (or
-  ;; This is an optimization.
-  (eq? e1 e2)
-  (and (constant-expression? e1)
-       (constant-expression? e2)
-       (abstract-value=? (constant-expression-value e1)
-			 (constant-expression-value e2)))
-  (and (variable-access-expression? e1)
-       (variable-access-expression? e2)
-       (variable=? (variable-access-expression-variable e1)
-		   (variable-access-expression-variable e2)))
-  (and (lambda-expression? e1)
-       (lambda-expression? e2)
-       (expression-eqv? (lambda-expression-parameter e1)
-			(lambda-expression-parameter e2))
-       (expression-eqv? (lambda-expression-body e1)
-			(lambda-expression-body e2)))
-  (and (application? e1)
-       (application? e2)
-       (expression-eqv? (application-callee e1) (application-callee e2))
-       (expression-eqv? (application-argument e1)(application-argument e2)))
-  (and (letrec-expression? e1)
-       (letrec-expression? e2)
-       (= (length (letrec-expression-procedure-variables e1))
-	  (length (letrec-expression-procedure-variables e2)))
-       (every variable=?
-	      (letrec-expression-procedure-variables e1)
-	      (letrec-expression-procedure-variables e2))
-       (every expression-eqv?
-	      (letrec-expression-lambda-expressions e1)
-	      (letrec-expression-lambda-expressions e2))
-       (expression-eqv? (letrec-expression-body e1)
-			(letrec-expression-body e2)))
-  (and (cons-expression? e1) (cons-expression? e2)
-       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
-       (expression-eqv? (cons-expression-car e1) (cons-expression-car e2))
-       (expression-eqv? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
+(define (expression-eqv? e1 e2) (eq? e1 e2))
 
 (define (alpha-equivalent? e1 e2 xs1 xs2)
  ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
@@ -1659,7 +1704,7 @@
   ((variable-access-expression? p)
    (let ((x (alphaify (variable-access-expression-variable p) xs)))
     (list
-     (make-variable-access-expression x)
+     (new-variable-access-expression x)
      (cons x xs)
      (list (make-alpha-binding (variable-access-expression-variable p) x)))))
   ((lambda-expression? p)
@@ -1698,7 +1743,7 @@
  (cond
   ((constant-expression? e) (list e xs))
   ((variable-access-expression? e)
-   (list (make-variable-access-expression
+   (list (new-variable-access-expression
 	  (alpha-binding-variable2
 	   (find-if (lambda (b)
 		     (variable=? (alpha-binding-variable1 b)
@@ -1859,7 +1904,7 @@
  ;; needs work: Should have structure instead of list.
  (cond
   ((constant-expression? e)
-   (let* ((i (+ i 1)) (p (make-variable-access-expression `(anf ,i))))
+   (let* ((i (+ i 1)) (p (new-variable-access-expression `(anf ,i))))
     ;; result
     (list i p (cons (make-parameter-binding p e) bs1) bs2)))
   ;; result
@@ -1876,7 +1921,7 @@
        ;; no binding like x = y,y which would become y,y += x
        ;; during reverse phase which incorrecty accumulates.
        ;; result
-       (let* ((i (+ i 1)) (p (make-variable-access-expression `(anf ,i))))
+       (let* ((i (+ i 1)) (p (new-variable-access-expression `(anf ,i))))
 	;; result
 	(list i p (cons (make-parameter-binding p e) bs1) bs2))))
   ((lambda-expression? e)
@@ -1885,7 +1930,7 @@
 	  (result2 (anf-convert-expression
 		    (first result1) (lambda-expression-body e) '() '() p?))
 	  (i (+ (first result2) 1))
-	  (p (make-variable-access-expression `(anf ,i))))
+	  (p (new-variable-access-expression `(anf ,i))))
     ;; result
     (list i
 	  p
@@ -1917,7 +1962,7 @@
 					   (fourth result1)
 					   p?))
 	  (i (+ (first result2) 1))
-	  (p (make-variable-access-expression `(anf ,i))))
+	  (p (new-variable-access-expression `(anf ,i))))
     ;; result
     (list
      i
@@ -1959,7 +2004,7 @@
 					   (fourth result1)
 					   p?))
 	  (i (+ (first result2) 1))
-	  (p (make-variable-access-expression `(anf ,i))))
+	  (p (new-variable-access-expression `(anf ,i))))
     ;; result
     (list i
 	  p
@@ -2299,10 +2344,10 @@
  (cond
   ((boolean? e) (concrete->abstract `',e))
   ((real? e) (concrete->abstract `',e))
-  ((variable? e) (make-variable-access-expression e))
+  ((variable? e) (new-variable-access-expression e))
   ((and (list? e) (not (null? e)))
    (case (first e)
-    ((quote) (make-constant-expression (internalize (second e))))
+    ((quote) (new-constant-expression (internalize (second e))))
     ((lambda)
      (case (length (second e))
       ((0) (concrete->abstract (macro-expand e)))
@@ -2381,7 +2426,7 @@
  (cond ((constant-expression? e)
 	(without-abstract
 	 (lambda ()
-	  (make-constant-expression (perturb (constant-expression-value e))))))
+	  (new-constant-expression (perturb (constant-expression-value e))))))
        ((variable-access-expression? e) (perturbationify-access e))
        ((lambda-expression? e)
 	(new-lambda-expression
@@ -2406,7 +2451,7 @@
   ((constant-expression? e)
    (without-abstract
     (lambda ()
-     (make-constant-expression (unperturb (constant-expression-value e))))))
+     (new-constant-expression (unperturb (constant-expression-value e))))))
   ((variable-access-expression? e) (unperturbationify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2433,7 +2478,7 @@
  (cond ((constant-expression? e)
 	(without-abstract
 	 (lambda ()
-	  (make-constant-expression (j* (constant-expression-value e))))))
+	  (new-constant-expression (j* (constant-expression-value e))))))
        ((variable-access-expression? e) (forwardify-access e))
        ((lambda-expression? e)
 	(new-lambda-expression
@@ -2458,7 +2503,7 @@
   ((constant-expression? e)
    (without-abstract
     (lambda ()
-     (make-constant-expression (primal (constant-expression-value e))))))
+     (new-constant-expression (primal (constant-expression-value e))))))
   ((variable-access-expression? e) (unforwardify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2805,7 +2850,7 @@
 ;;; Reverse Mode
 
 (define (added-variable x)
- (make-constant-expression
+ (new-constant-expression
   (value-binding-value
    (find-if (lambda (b) (variable=? x (value-binding-variable b)))
 	    *value-bindings*))))
@@ -2827,7 +2872,7 @@
   ((constant-expression? p)
    (without-abstract
     (lambda ()
-     (make-constant-expression (sensitize (constant-expression-value p))))))
+     (new-constant-expression (sensitize (constant-expression-value p))))))
   ((variable-access-expression? p) (sensitivityify-access p))
   ((lambda-expression? p) (sensitivity-transform p))
   ((letrec-expression? p)
@@ -2848,7 +2893,7 @@
  (cond ((constant-expression? p)
 	(without-abstract
 	 (lambda ()
-	  (make-constant-expression (*j (constant-expression-value p))))))
+	  (new-constant-expression (*j (constant-expression-value p))))))
        ((variable-access-expression? p) (reverseify-access p))
        ((lambda-expression? p) (reverse-transform p))
        ((letrec-expression? p)
@@ -2878,7 +2923,7 @@
  (cond ((constant-expression? p)
 	(without-abstract
 	 (lambda ()
-	  (make-constant-expression
+	  (new-constant-expression
 	   (*j-inverse (constant-expression-value p))))))
        ((variable-access-expression? p) (unreverseify-access p))
        ((lambda-expression? p) (reverse-transform-inverse p))
@@ -2905,7 +2950,7 @@
   ((constant-expression? e)
    (without-abstract
     (lambda ()
-     (make-constant-expression (sensitize (constant-expression-value e))))))
+     (new-constant-expression (sensitize (constant-expression-value e))))))
   ((variable-access-expression? e) (sensitivityify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -2953,7 +2998,7 @@
   ((constant-expression? e)
    (without-abstract
     (lambda ()
-     (make-constant-expression (unsensitize (constant-expression-value e))))))
+     (new-constant-expression (unsensitize (constant-expression-value e))))))
   ((variable-access-expression? e) (unsensitivityify-access e))
   ((lambda-expression? e)
    (new-lambda-expression
@@ -3019,7 +3064,7 @@
 	  (reverseify-parameter p)
 	  (without-abstract
 	   (lambda ()
-	    (make-constant-expression (*j (constant-expression-value e)))))))
+	    (new-constant-expression (*j (constant-expression-value e)))))))
 	;;            /   /
 	;;            _   _
 	;; p = e -~-> p = e
@@ -3038,7 +3083,7 @@
 	((application? e)
 	 (make-parameter-binding
 	  (create-cons-expression (reverseify-parameter p)
-				  (make-variable-access-expression x))
+				  (new-variable-access-expression x))
 	  (new-application (reverseify-access (application-callee e))
 			   (reverseify-access (application-argument e)))))
 	;;                /   /  / /
@@ -3118,7 +3163,7 @@
 		    (add-tag 'sensitivity (empty-tags))
 		    (sensitivityify-access (application-callee e))
 		    (sensitivityify-access (application-argument e)))
-		   (new-application (make-variable-access-expression x)
+		   (new-application (new-variable-access-expression x)
 				    (sensitivityify-parameter p))))
 		 ;;                __ _ __    _
 		 ;;                \  \ \     \
@@ -3144,7 +3189,7 @@
 	       (make-plus-binding
 		(sensitivity-transform
 		 (new-letrec-expression
-		  xs1 es1 (make-variable-access-expression x1)))
+		  xs1 es1 (new-variable-access-expression x1)))
 		(sensitivity-access x1)))
 	      xs1)
 	 (map (lambda (x0)
@@ -3154,7 +3199,7 @@
 	       (make-plus-binding
 		(sensitivity-transform
 		 (new-letrec-expression
-		  xs0 es0 (make-variable-access-expression x0)))
+		  xs0 es0 (new-variable-access-expression x0)))
 		(sensitivity-access x0)))
 	      xs0))
 	;; This conses the sensitivity to the target with the sensitivity to
@@ -3172,7 +3217,7 @@
 	      ;; \
 	      ;; letrec xs0 = es0 in x0
 	      (new-letrec-expression
-	       xs0 es0 (make-variable-access-expression (list-ref xs0 i)))))
+	       xs0 es0 (new-variable-access-expression (list-ref xs0 i)))))
 	 ;; This is the sensitivity to the argument.
 	 (sensitivityify-parameter p))))))))))
 
@@ -3213,7 +3258,7 @@
 	   (unreverseify-parameter p)
 	   (without-abstract
 	    (lambda ()
-	     (make-constant-expression
+	     (new-constant-expression
 	      (*j-inverse (constant-expression-value e)))))))
 	 ;; /   /
 	 ;; _   _
@@ -4750,7 +4795,7 @@
  (let ((b (lookup-environment-binding e vs bs)))
   (if b
       (empty-abstract-analysis)
-      (if #f				;debugging
+      (if #t				;debugging
 	  (make-abstract-analysis e vs)
 	  (abstract-analysis-union (make-abstract-analysis e vs)
 				   ;; This is an optimization.
@@ -5888,7 +5933,7 @@
      v))
    (map (lambda (x v)
 	 (generate-destructure
-	  (make-variable-access-expression x)
+	  (new-variable-access-expression x)
 	  e
 	  v
 	  (list c
@@ -5935,7 +5980,7 @@
      v))
    (map (lambda (x v)
 	 (generate-destructure
-	  (make-variable-access-expression x)
+	  (new-variable-access-expression x)
 	  e
 	  v
 	  (list c
@@ -7281,7 +7326,7 @@
 			   (variable=? (variable-access-expression-variable e)
 				       (value-binding-variable b)))
 			  *value-bindings*)))
-	 (if b (make-constant-expression (value-binding-value b)) e)))
+	 (if b (new-constant-expression (value-binding-value b)) e)))
        ((lambda-expression? e)
 	(new-lambda-expression
 	 (lambda-expression-parameter e)
