@@ -67,6 +67,7 @@
 		  ("I"
 		   include-path?
 		   (include-path "include-directory" string-argument)))
+		 (at-most-one ("no-assert" no-assert?))
 		 (at-most-one ("wizard" wizard?))
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
@@ -103,6 +104,7 @@
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
+ (set! *assert?* (not no-assert?))
  (set! *wizard?* wizard?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
@@ -128,37 +130,37 @@
        (loop (rest es) (cons (first es) ds))
        (let ((e (expand-definitions (reverse ds) (first es))))
 	(syntax-check-expression! e)
-	(let ((result (parse e)))
+	(let* ((result (parse e)) (e (first result)) (bs (second result)))
 	 (cond
 	  (flow-analysis?
-	   (set! *run?* #f)
 	   ;; needs work: With the new formulation, can't run flow analysis
 	   ;;             more than once.
-	   (flow-analysis! (first result) (second result))
-	   (let* ((bs (expression-environment-bindings (first result))))
+	   (flow-analysis! e bs)
+	   (let* ((bs (expression-environment-bindings e)))
 	    (unless (= (length bs) 1) (internal-error))
 	    (pp (externalize (environment-binding-value (first bs))))
 	    (newline)
 	    (pp (externalize-analysis))
 	    (newline)))
 	  (flow-analysis-result?
-	   (flow-analysis! (first result) (second result))
-	   (set! *run?* #f)
-	   (let ((bs (expression-environment-bindings (first result))))
+	   ;; needs work: With the new formulation, can't run flow analysis
+	   ;;             more than once.
+	   (flow-analysis! e bs)
+	   (let ((bs (expression-environment-bindings e)))
 	    (unless (= (length bs) 1) (internal-error))
 	    (pp (externalize (environment-binding-value (first bs))))
 	    (newline)))
 	  (compile?
-	   (set! *run?* #f)
-	   (flow-analysis! (first result) (second result))
-	   (generate-file
-	    (generate (first result) 'needs-work (second result)) pathname)
+	   ;; needs work: With the new formulation, can't run flow analysis
+	   ;;             more than once.
+	   (flow-analysis! e bs)
+	   ;; needs work: to update call to generate
+	   (generate-file (generate e 'needs-work bs) pathname)
 	   ;; needs work: -c -k -cc -copt
 	   (system (format #f "gcc -o ~a -Wall ~a -lm"
 			   (strip-extension pathname)
 			   (replace-extension pathname "c"))))
 	  (else
-	   (set! *run?* #t)
 	   (when metered?
 	    (for-each (lambda (b)
 		       (let ((v (value-binding-value b)))
@@ -173,9 +175,7 @@
 	      (lambda ()
 	       ((if *pp?* pp write)
 		(externalize
-		 (concrete-eval
-		  (first result)
-		  (map value-binding-value (second result)))))))))
+		 (concrete-eval e (map value-binding-value bs))))))))
 	   (newline)
 	   (when metered?
 	    (for-each (lambda (b)
