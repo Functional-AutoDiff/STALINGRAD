@@ -72,6 +72,12 @@
 
 ;;; Macros
 
+(define-macro assert
+ (lambda (form expander)
+  (unless (= (length form) 2)
+   (error 'assert "Wrong number of arguments: ~s" form))
+  (expander `(assert-internal (lambda () ,(second form))) expander)))
+
 ;;; Structures
 
 (define-structure constant-expression
@@ -216,8 +222,6 @@
 
 (define *abstract?* #f)
 
-(define *run?* #f)
-
 (define *constant-expressions* '())
 
 (define *variable-access-expressions* '())
@@ -237,6 +241,8 @@
 ;;; Parameters
 
 (define *include-path* '())
+
+(define *assert?* #f)
 
 (define *wizard?* #f)
 
@@ -324,6 +330,9 @@
 	    (format #f "Internal error: ~a" (first arguments))
 	    (rest arguments))))
 
+(define (assert-internal thunk)
+ (when *assert?* (unless (thunk) (internal-error))))
+
 (define (unimplemented . arguments)
  (if (null? arguments)
      (panic "Not (yet) implemented")
@@ -337,7 +346,7 @@
  (exit -1))
 
 (define (compile-time-warning message . vs)
- (unless *abstract?* (internal-error))
+ (assert *abstract?*)
  (when *warnings?*
   (for-each (lambda (v)
 	     ((if *pp?* pp write) (externalize v) stderr-port)
@@ -349,7 +358,7 @@
  (empty-abstract-value))
 
 (define (run-time-error message . vs)
- (when *abstract?* (internal-error))
+ (assert (not *abstract?*))
  (when *error?*
   (display "Nested error: " stderr-port)
   (display message stderr-port)
@@ -360,7 +369,7 @@
   (exit -1))
  (set! *error* message)
  (set! *error?* #t)
- (when *run?*
+ (unless *abstract?*
   (format stderr-port "Stack trace~%")
   (for-each (lambda (record)
 	     (display "Procedure: " stderr-port)
@@ -397,7 +406,7 @@
 (define (tagged? tag tags) (and (not (null? tags)) (eq? (first tags) tag)))
 
 (define (remove-tag tag tags)
- (unless (tagged? tag tags) (internal-error))
+ (assert (tagged? tag tags))
  (rest tags))
 
 (define (prefix-tags? tags1 tags2)
@@ -541,7 +550,7 @@
 (define (reverseify x) `(reverse ,x))
 
 (define (unperturbationify x)
- (unless (pair? x) (internal-error))
+ (assert (pair? x))
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
@@ -553,7 +562,7 @@
   (else (internal-error))))
 
 (define (unforwardify x)
- (unless (pair? x) (internal-error))
+ (assert (pair? x))
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
@@ -580,7 +589,7 @@
        (else #f))))
 
 (define (unsensitivityify x)
- (unless (pair? x) (internal-error))
+ (assert (pair? x))
  (case (first x)
   ;; This case needs to be this way because of the call to
   ;; sensitivity-transform in reverse-transform-internal which is subsequently
@@ -595,7 +604,7 @@
   (else (internal-error))))
 
 (define (unreverseify x)
- (unless (pair? x) (internal-error))
+ (assert (pair? x))
  (case (first x)
   ((alpha) (internal-error))
   ((anf) (internal-error))
@@ -659,12 +668,11 @@
 	(variable-tags (variable-access-expression-variable p)))
        ((lambda-expression? p) (lambda-expression-tags p))
        ((letrec-expression? p)
-	(unless (and (variable-access-expression? (letrec-expression-body p))
+	(assert (and (variable-access-expression? (letrec-expression-body p))
 		     (memp variable=?
 			   (variable-access-expression-variable
 			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	 (internal-error "Unsupported letrec-expression parameter"))
+			   (letrec-expression-procedure-variables p))))
 	;; It is also possible to derive this from the tags of one of the
 	;; procedure variables.
 	(lambda-expression-tags
@@ -714,12 +722,11 @@
 	(list (variable-access-expression-variable p)))
        ((lambda-expression? p) (free-variables p))
        ((letrec-expression? p)
-	(unless (and (variable-access-expression? (letrec-expression-body p))
+	(assert (and (variable-access-expression? (letrec-expression-body p))
 		     (memp variable=?
 			   (variable-access-expression-variable
 			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	 (internal-error "Unsupported letrec-expression parameter"))
+			   (letrec-expression-procedure-variables p))))
 	(letrec-expression-variables p))
        ((cons-expression? p)
 	(append (parameter-variables (cons-expression-car p))
@@ -727,6 +734,11 @@
        (else (internal-error))))
 
 ;;; Expression constructors
+
+;;; We cannot eliminate hash consing of expressions in the current
+;;; architecture. Many procedures use *expressions* during compilation. Even
+;;; the interpreter fails on triple.vlad and hessian.vlad because the assertion
+;;; fails in forward-transform-inverse.
 
 (define (new-constant-expression value)
  (let ((e0 (find-if (lambda (e0)
@@ -741,10 +753,10 @@
        e0))))
 
 (define (new-variable-access-expression variable)
- (let ((e0 (find-if
-	    (lambda (e0)
-	     (variable=? (variable-access-expression-variable e0) variable))
-	    *variable-access-expressions*)))
+ (let ((e0 (find-if (lambda (e0)
+		     (variable=? (variable-access-expression-variable e0)
+				 variable))
+		    *variable-access-expressions*)))
   (if e0
       e0
       (let ((e0 (make-variable-access-expression
@@ -755,7 +767,7 @@
        e0))))
 
 (define (new-lambda-expression p e)
- (when (duplicatesp? variable=? (parameter-variables p)) (internal-error))
+ (assert (not (duplicatesp? variable=? (parameter-variables p))))
  (let ((e0 (find-if (lambda (e0)
 		     (and (expression-eqv? (lambda-expression-parameter e0) p)
 			  (expression-eqv? (lambda-expression-body e0) e)))
@@ -810,7 +822,7 @@
        e0))))
 
 (define (new-letrec-expression xs es e)
- (unless (= (length xs) (length es)) (internal-error))
+ (assert (= (length xs) (length es)))
  (if (null? xs)
      e
      (let ((e0 (find-if
@@ -1370,7 +1382,7 @@
 (define (vlad-empty-list) '())
 
 (define (vlad-empty-list? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (null? v))
 
 ;;; Booleans
@@ -1380,11 +1392,11 @@
 (define (vlad-false) #f)
 
 (define (vlad-true? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (eq? v #t))
 
 (define (vlad-false? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (eq? v #f))
 
 (define (vlad-boolean? v) (or (vlad-true? v) (vlad-false? v)))
@@ -1392,16 +1404,15 @@
 ;;; Reals
 
 (define (abstract-real? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (real? v) (eq? v 'real)))
 
 ;;; Closures
 
 (define (new-nonrecursive-closure vs e)
- (when (and *abstract?*
-	    (some (lambda (v) (and (not (union? v)) (not (up? v)))) vs))
-  (internal-error))
- (unless (= (length vs) (length (free-variables e))) (internal-error))
+ (assert (or (not *abstract?*)
+	     (every (lambda (v) (or (union? v) (up? v))) vs)))
+ (assert (= (length vs) (length (free-variables e))))
  ;; We used to enforce the constraint that the tags of the parameter of e
  ;; (as an indication of the tags of the resulting closure) were a prefix of
  ;; the tags of each v in vs. But this does not hold of the let* bindings
@@ -1409,41 +1420,38 @@
  ;; variables. The backpropagator variables are free in the nested let* context
  ;; context of the forward phase reverse transformed procedure but the
  ;; backpropagators are not reverse values.
- (unless (every (lambda (x v)
+ (assert (every (lambda (x v)
 		 (or (empty-abstract-value? v)
 		     (up? v)
 		     (prefix-tags? (variable-tags x) (value-tags v))))
 		(free-variables e)
-		vs)
-  (internal-error))
+		vs))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-nonrecursive-closure vs e)))
 
 (define (new-recursive-closure vs xs es i)
- (when (and *abstract?*
-	    (some (lambda (v) (and (not (union? v)) (not (up? v)))) vs))
-  (internal-error))
- (unless (= (length vs)
+ (assert (or (not *abstract?*)
+	     (every (lambda (v) (or (union? v) (up? v))) vs)))
+ (assert (= (length vs)
 	    (length (recursive-closure-free-variables
-		     (vector->list xs) (vector->list es))))
-  (internal-error))
+		     (vector->list xs) (vector->list es)))))
  ;; See the note in new-nonrecursive-closure. While that hasn't happened in
  ;; practise, and I don't know whether it can, I removed it in principle.
- (unless (every (lambda (x v)
+ (assert (every (lambda (x v)
 		 (or (empty-abstract-value? v)
 		     (up? v)
 		     (prefix-tags? (variable-tags x) (value-tags v))))
 		(recursive-closure-free-variables
 		 (vector->list xs) (vector->list es))
-		vs)
-  (internal-error))
+		vs))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-recursive-closure vs xs es i)))
 
 (define (nonrecursive-closure-match? v1 v2)
- (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
+ (assert
+  (and (not (union? v1)) (not (up? v1)) (not (union? v2)) (not (up? v2))))
  ;; The first condition is an optimization.
  (and (= (length (nonrecursive-closure-values v1))
 	 (length (nonrecursive-closure-values v2)))
@@ -1451,7 +1459,8 @@
 		    (nonrecursive-closure-lambda-expression v2))))
 
 (define (recursive-closure-match? v1 v2)
- (when (or (union? v1) (up? v1) (union? v2) (up? v2)) (internal-error))
+ (assert
+  (and (not (union? v1)) (not (up? v1)) (not (union? v2)) (not (up? v2))))
  (and (= (recursive-closure-index v1) (recursive-closure-index v2))
       (= (vector-length (recursive-closure-procedure-variables v1))
 	 (vector-length (recursive-closure-procedure-variables v2)))
@@ -1471,15 +1480,15 @@
 		     (recursive-closure-lambda-expressions v2)))))
 
 (define (closure? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (nonrecursive-closure? v) (recursive-closure? v)))
 
 (define (nonrecursive-closure-variables v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (free-variables (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-variables v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (recursive-closure-free-variables
   (vector->list (recursive-closure-procedure-variables v))
   (vector->list (recursive-closure-lambda-expressions v))))
@@ -1490,11 +1499,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-parameter v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (lambda-expression-parameter (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-parameter v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (lambda-expression-parameter
   (vector-ref (recursive-closure-lambda-expressions v)
 	      (recursive-closure-index v))))
@@ -1505,11 +1514,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-tags v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (parameter-tags (nonrecursive-closure-parameter v)))
 
 (define (recursive-closure-tags v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (parameter-tags (recursive-closure-parameter v)))
 
 (define (closure-body v)
@@ -1521,32 +1530,29 @@
 	(else (internal-error)))))
 
 (define (vlad-procedure? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (primitive-procedure? v) (closure? v)))
 
 ;;; Perturbation Tagged Values
 
 (define (new-perturbation-tagged-value v)
- (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (assert (or (not *abstract?*) (union? v) (up? v)))
  (if (empty-abstract-value? v) v (make-perturbation-tagged-value v)))
 
 ;;; Bundles
 
 (define (new-bundle v v-perturbation)
- (when (and *abstract?*
-	    (or (and (not (union? v)) (not (up? v)))
-		(and (not (union? v-perturbation))
-		     (not (up? v-perturbation)))))
-  (internal-error))
- (unless (or (empty-abstract-value? v)
+ (assert (or (not *abstract?*)
+	     (and (or (union? v) (up? v))
+		  (or (union? v-perturbation) (up? v-perturbation)))))
+ (assert (or (empty-abstract-value? v)
 	     (up? v)
 	     (empty-abstract-value? v-perturbation)
 	     (up? v-perturbation)
 	     (and (tagged? 'perturbation (value-tags v-perturbation))
 		  (equal-tags?
 		   (value-tags v)
-		   (remove-tag 'perturbation (value-tags v-perturbation)))))
-  (internal-error))
+		   (remove-tag 'perturbation (value-tags v-perturbation))))))
  ;; needs work: Should check that v-perturbation conforms to v.
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
@@ -1555,43 +1561,40 @@
 ;;; Sensitivity Tagged Values
 
 (define (new-sensitivity-tagged-value v)
- (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (assert (or (not *abstract?*) (union? v) (up? v)))
  (if (empty-abstract-value? v) v (make-sensitivity-tagged-value v)))
 
 ;;; Reverse Tagged Values
 
 (define (new-reverse-tagged-value v)
- (when (and *abstract?* (not (union? v)) (not (up? v))) (internal-error))
+ (assert (or (not *abstract?*) (union? v) (up? v)))
  (if (empty-abstract-value? v) v (make-reverse-tagged-value v)))
 
 ;;; Pairs
 
 (define (new-tagged-pair tags v1 v2)
- (when (and *abstract?*
-	    (or (and (not (union? v1)) (not (up? v1)))
-		(and (not (union? v2)) (not (up? v2)))))
-  (internal-error))
- (unless (and (or (empty-abstract-value? v1)
+ (assert (or (not *abstract?*)
+	     (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2)))))
+ (assert (and (or (empty-abstract-value? v1)
 		  (up? v1)
 		  (prefix-tags? tags (value-tags v1)))
 	      (or (empty-abstract-value? v2)
 		  (up? v2)
-		  (prefix-tags? tags (value-tags v2))))
-  (internal-error))
+		  (prefix-tags? tags (value-tags v2)))))
  (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
      (make-tagged-pair tags v1 v2)))
 
 (define (vlad-pair? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (and (tagged-pair? v) (empty-tags? (tagged-pair-tags v))))
 
 (define (vlad-car v)
- (unless (vlad-pair? v) (internal-error))
+ (assert (vlad-pair? v))
  (tagged-pair-car v))
 
 (define (vlad-cdr v)
- (unless (vlad-pair? v) (internal-error))
+ (assert (vlad-pair? v))
  (tagged-pair-cdr v))
 
 (define (vlad-cons v1 v2) (new-tagged-pair (empty-tags) v1 v2))
@@ -1603,12 +1606,12 @@
 (define (empty-abstract-value? v) (and (union? v) (null? (union-values v))))
 
 (define (singleton v)
- (cond (*abstract?*
-	(when (or (and (union? v) (not (empty-abstract-value? v))) (up? v))
-	 (internal-error))
-	(if (empty-abstract-value? v) v (make-union (list v))))
-       (else (when (or (union? v) (up? v)) (internal-error))
-	     v)))
+ (cond
+  (*abstract?*
+   (assert (and (or (not (union? v)) (empty-abstract-value? v)) (not (up? v))))
+   (if (empty-abstract-value? v) v (make-union (list v))))
+  (else (assert (and (not (union? v)) (not (up? v))))
+	v)))
 
 (define (abstract-boolean) (make-union (list (vlad-true) (vlad-false))))
 
@@ -1620,7 +1623,7 @@
 	(else (every (lambda (v) (loop v n)) (aggregate-value-values v))))))
 
 (define (union-members v)
- (when (up? v) (internal-error))
+ (assert (not (up? v)))
  (if (union? v)
      (map-reduce append '() union-members (union-values v))
      (list v)))
@@ -1649,7 +1652,7 @@
 ;;; Generic
 
 (define (perturbation-value? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (and (nonrecursive-closure? v)
 	  (perturbation-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1658,7 +1661,7 @@
      (and (tagged-pair? v) (tagged? 'perturbation (tagged-pair-tags v)))))
 
 (define (forward-value? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (and (nonrecursive-closure? v)
 	  (forward-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1671,7 +1674,7 @@
  ;; unsensitize them. You need to invoke backpropagators so we can't prohibit
  ;; invocation of sensitivity-tagged procedures. Perhaps we could/should
  ;; prohibit invocation of perturbation-tagged procedures.
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (and (nonrecursive-closure? v)
 	  (sensitivity-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1680,7 +1683,7 @@
      (and (tagged-pair? v) (tagged? 'sensitivity (tagged-pair-tags v)))))
 
 (define (reverse-value? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (and (nonrecursive-closure? v)
 	  (reverse-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1689,7 +1692,7 @@
      (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
 
 (define (scalar-value? v)
- (when (or (union? v) (up? v)) (internal-error))
+ (assert (and (not (union? v)) (not (up? v))))
  (or (vlad-empty-list? v)
      (vlad-true? v)
      (vlad-false? v)
@@ -1717,30 +1720,29 @@
 			  (recursive-closure-lambda-expressions v)
 			  (recursive-closure-index v)))
   ((perturbation-tagged-value? v)
-   (unless (= (length vs) 1) (internal-error))
+   (assert (= (length vs) 1))
    (new-perturbation-tagged-value (first vs)))
   ((bundle? v)
-   (unless (= (length vs) 2) (internal-error))
+   (assert (= (length vs) 2))
    (new-bundle (first vs) (second vs)))
   ((sensitivity-tagged-value? v)
-   (unless (= (length vs) 1) (internal-error))
+   (assert (= (length vs) 1))
    (new-sensitivity-tagged-value (first vs)))
   ((reverse-tagged-value? v)
-   (unless (= (length vs) 1) (internal-error))
+   (assert (= (length vs) 1))
    (new-reverse-tagged-value (first vs)))
   ((tagged-pair? v)
-   (unless (= (length vs) 2) (internal-error))
+   (assert (= (length vs) 2))
    (new-tagged-pair (tagged-pair-tags v) (first vs) (second vs)))
   (else (internal-error))))
 
 (define (value-tags v)
  (cond
   ((union? v)
-   (when (empty-abstract-value? v) (internal-error))
+   (assert (not (empty-abstract-value? v)))
    (let ((tags (value-tags (first (union-values v)))))
-    (unless (every (lambda (u) (equal? tags (value-tags u)))
-		   (rest (union-values v)))
-     (internal-error))
+    (assert (every (lambda (u) (equal? tags (value-tags u)))
+		   (rest (union-values v))))
     tags))
   ((scalar-value? v) '())
   ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
@@ -2018,7 +2020,7 @@
 				 (aggregate-value-values u)))))
 		      (union-values v))))))
 
-(define (abstract-value-union v1 v2) (unimplemented "debugging"))
+(define (abstract-value-union v1 v2) (unimplemented "abstract-value-union"))
 
 ;;; Abstract Environment Equivalence
 
@@ -2225,16 +2227,14 @@
 
 (define (anf-result result)
  ;; needs work: Should have structure instead of list.
- (when (and (not (null? (fourth result)))
-	    ;; needs work: to abstract this
-	    (not
+ (assert (or (null? (fourth result))
+	     ;; needs work: to abstract this
 	     (null?
 	      (rest
 	       (remove-duplicates
 		(map (lambda (b)
 		      (lambda-expression-tags (variable-binding-expression b)))
 		     (fourth result)))))))
-  (internal-error))
  (new-letrec-expression
   (map variable-binding-variable (reverse (fourth result)))
   (map variable-binding-expression (reverse (fourth result)))
@@ -2277,12 +2277,11 @@
     (list (first result2)
 	  (new-lambda-expression (second result1) (anf-result result2)))))
   ((letrec-expression? p)
-   (unless (and (variable-access-expression? (letrec-expression-body p))
+   (assert (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
 		      (variable-access-expression-variable
 		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p)))
-    (internal-error "Unsupported letrec-expression parameter"))
+		      (letrec-expression-procedure-variables p))))
    (let loop ((i i) (es (letrec-expression-lambda-expressions p)) (es1 '()))
     (if (null? es)
 	;; result
@@ -2872,7 +2871,7 @@
       e1)))
 
 (define (perturbation-transform-inverse e)
- (unless (expression-perturbation-transform-inverse e) (internal-error))
+ (assert (expression-perturbation-transform-inverse e))
  (expression-perturbation-transform-inverse e))
 
 (define (forward-transform e)
@@ -2910,7 +2909,7 @@
       e1)))
 
 (define (forward-transform-inverse e)
- (unless (expression-forward-transform-inverse e) (internal-error))
+ (assert (expression-forward-transform-inverse e))
  (expression-forward-transform-inverse e))
 
 (define (perturb v)
@@ -3266,12 +3265,11 @@
        ((variable-access-expression? p) (reverseify-access p))
        ((lambda-expression? p) (reverse-transform p))
        ((letrec-expression? p)
-	(unless (and (variable-access-expression? (letrec-expression-body p))
+	(assert (and (variable-access-expression? (letrec-expression-body p))
 		     (memp variable=?
 			   (variable-access-expression-variable
 			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	 (internal-error "Unsupported letrec-expression parameter"))
+			   (letrec-expression-procedure-variables p))))
 	(new-letrec-expression
 	 (map reverseify (letrec-expression-procedure-variables p))
 	 (map-indexed (lambda (e i)
@@ -3297,12 +3295,11 @@
        ((variable-access-expression? p) (unreverseify-access p))
        ((lambda-expression? p) (reverse-transform-inverse p))
        ((letrec-expression? p)
-	(unless (and (variable-access-expression? (letrec-expression-body p))
+	(assert (and (variable-access-expression? (letrec-expression-body p))
 		     (memp variable=?
 			   (variable-access-expression-variable
 			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	 (internal-error "Unsupported letrec-expression parameter"))
+			   (letrec-expression-procedure-variables p))))
 	(new-letrec-expression
 	 (map unreverseify (letrec-expression-procedure-variables p))
 	 (map reverse-transform-inverse
@@ -3400,8 +3397,7 @@
 		       (letrec-expression-lambda-expressions e))
 		  (sensitivity-transform-inverse (letrec-expression-body e))))
 		((cons-expression? e)
-		 (unless (tagged? 'sensitivity (cons-expression-tags e))
-		  (internal-error))
+		 (assert (tagged? 'sensitivity (cons-expression-tags e)))
 		 (new-cons-expression
 		  (remove-tag 'sensitivity (cons-expression-tags e))
 		  (sensitivity-transform-inverse (cons-expression-car e))
@@ -3636,14 +3632,13 @@
   (expression=? e p2)))
 
 (define (reverse-transform-inverse-internal e)
- (unless (and (let*? e)
+ (assert (and (let*? e)
 	      (>= (length (let*-parameters e)) 2)
 	      (result-cons-expression? (last (but-last (let*-parameters e)))
 				       (last (let*-parameters e))
 				       (last (but-last (let*-expressions e)))
 				       (last (let*-expressions e))
-				       (let*-body e)))
-  (internal-error))
+				       (let*-body e))))
  (create-let*
   (map (lambda (p e)
 	(cond
@@ -4141,13 +4136,13 @@
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(perturbation-value? v))
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  `(perturb ,(loop (unperturb v) quote?)))
 		 (else `(perturbation ,(loop (unperturb v) quote?)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(forward-value? v))
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  `(bundle ,(loop (primal v) quote?)
 			   ,(loop (tangent v) quote?)))
 		 (else `(forward ,(loop (primal v) quote?)
@@ -4157,7 +4152,7 @@
 		;; This is to prevent attempts to unsensitize backpropagators.
 		(unsensitize? v))
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  `(sensitize ,(loop (unsensitize v) quote?)))
 		 (else `(sensitivity ,(loop (unsensitize v) quote?)))))
 	  ;; It may not be possible to apply *j-inverse to a closure whose
@@ -4168,7 +4163,7 @@
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(reverse-value? v))
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  `(*j ,(loop (*j-inverse v) quote?)))
 		 (else `(reverse ,(loop (*j-inverse v) quote?)))))
 	  ((vlad-empty-list? v)
@@ -4188,7 +4183,7 @@
 	       (cons (loop (vlad-car v) quote?) (loop (vlad-cdr v) quote?))))
 	  ((primitive-procedure? v)
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  (string->symbol
 		   (string-append (symbol->string (primitive-procedure-name v))
 				  (symbol->string '-primitive))))
@@ -4196,7 +4191,7 @@
 	  ((nonrecursive-closure? v)
 	   (cond
 	    (*unabbreviate-executably?*
-	     (when quote? (internal-error))
+	     (assert (not quote?))
 	     (case (length (nonrecursive-closure-variables v))
 	      ((0)
 	       (abstract->concrete (nonrecursive-closure-lambda-expression v)))
@@ -4222,7 +4217,7 @@
 	  ((recursive-closure? v)
 	   (cond
 	    (*unabbreviate-executably?*
-	     (when quote? (internal-error))
+	     (assert (not quote?))
 	     (case (length (recursive-closure-variables v))
 	      ((0) `(letrec ,(vector->list
 			      (map-vector
@@ -4268,14 +4263,14 @@
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond
 	    (*unabbreviate-executably?*
-	     (when quote? (internal-error))
+	     (assert (not quote?))
 	     `(perturb ,(loop (perturbation-tagged-value-primal v) quote?)))
 	    (else `(perturbation
 		    ,(loop (perturbation-tagged-value-primal v) quote?)))))
 	  ((bundle? v)
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond (*unabbreviate-executably?*
-		  (when quote? (internal-error))
+		  (assert (not quote?))
 		  `(bundle ,(loop (bundle-primal v) quote?)
 			   ,(loop (bundle-tangent v) quote?)))
 		 (else `(forward ,(loop (bundle-primal v) quote?)
@@ -4284,7 +4279,7 @@
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond
 	    (*unabbreviate-executably?*
-	     (when quote? (internal-error))
+	     (assert (not quote?))
 	     `(sensitize ,(loop (sensitivity-tagged-value-primal v) quote?)))
 	    (else `(sensitivity
 		    ,(loop (sensitivity-tagged-value-primal v) quote?)))))
@@ -4292,7 +4287,7 @@
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond
 	    (*unabbreviate-executably?*
-	     (when quote? (internal-error))
+	     (assert (not quote?))
 	     `(*j ,(loop (reverse-tagged-value-primal v) quote?)))
 	    (else `(reverse ,(loop (reverse-tagged-value-primal v) quote?)))))
 	  (else (internal-error))))))
@@ -4308,16 +4303,16 @@
       v)))
 
 (define (externalize-environment xs vs)
- (unless (and (list? vs) (= (length xs) (length vs))) (internal-error))
+ (assert (and (list? vs) (= (length xs) (length vs))))
  (map (lambda (x v) (list x (externalize v))) xs vs))
 
 (define (externalize-environment-binding xs b)
- (unless (environment-binding? b) (internal-error))
+ (assert (environment-binding? b))
  (list (externalize-environment xs (environment-binding-values b))
        (externalize (environment-binding-value b))))
 
 (define (externalize-environment-bindings xs bs)
- (unless (and (list? bs) (every environment-binding? bs)) (internal-error))
+ (assert (and (list? bs) (every environment-binding? bs)))
  (map (lambda (b) (externalize-environment-binding xs b)) bs))
 
 (define (externalize-analysis)
@@ -4385,12 +4380,11 @@
 	  v))
 	(map cons (parameter-variables p) (nonrecursive-closure-values v)))
        ((letrec-expression? p)
-	(unless (and (variable-access-expression? (letrec-expression-body p))
+	(assert (and (variable-access-expression? (letrec-expression-body p))
 		     (memp variable=?
 			   (variable-access-expression-variable
 			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	 (internal-error "Unsupported letrec-expression parameter"))
+			   (letrec-expression-procedure-variables p))))
 	(unless (and (recursive-closure? v)
 		     (= (recursive-closure-index v)
 			(positionp variable=?
@@ -4603,8 +4597,7 @@
  (and (closure? v) (sensitivity-value? v) (not (unsensitize? v))))
 
 (define (closure-match? u1 u2)
- (unless (and (closure? u1) (closure? u2))
-  (internal-error "u1 and u2 should both be closures"))
+ (assert (and (closure? u1) (closure? u2)))
  (or (and (nonrecursive-closure? u1)
 	  (nonrecursive-closure? u2)
 	  (nonrecursive-closure-match? u1 u2))
@@ -4613,13 +4606,13 @@
 	  (recursive-closure-match? u1 u2))))
 
 (define (some-proto-abstract-value?-internal p u vs-above)
- (when (or (union? u) (up? u)) (internal-error))
+ (assert (and (not (union? u)) (not (up? u))))
  (and (not (scalar-value? u))
       (some (lambda (v) (some-abstract-value?-internal p v vs-above))
 	    (aggregate-value-values u))))
 
 (define (some-abstract-value?-internal p v vs-above)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  (or (p v vs-above)
      (and (not (up? v))
 	  (some (lambda (u)
@@ -4629,18 +4622,18 @@
 (define (some-abstract-value? p v) (some-abstract-value?-internal p v '()))
 
 (define (free-up? v vs-above)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  (and (up? v) (>= (up-index v) (length vs-above))))
 
 (define (free-up-index up vs-above)
- (unless (free-up? up vs-above) (internal-error))
+ (assert (free-up? up vs-above))
  (- (up-index up) (length vs-above)))
 
 (define (make-free-up index vs-above)
  (make-up (+ index (length vs-above))))
 
 (define (proto-abstract-value-process-free-ups-internal f u vs-above)
- (when (or (union? u) (up? u)) (internal-error))
+ (assert (and (not (union? u)) (not (up? u))))
  (if (scalar-value? u)
      u
      (make-aggregate-value-with-new-values
@@ -4649,7 +4642,7 @@
 	   (aggregate-value-values u)))))
 
 (define (abstract-value-process-free-ups-internal f v vs-above)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  (cond ((free-up? v vs-above) (f v vs-above))
        ((up? v) v)
        (else (map-union (lambda (u)
@@ -4674,7 +4667,7 @@
 ;;; refer to the current abstract value's parent, and so on.
 
 (define (create-v-additions up v)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  ;; returns: (list v additions)
  (list up (append (make-list (up-index up) '()) (list (list v)))))
 
@@ -4686,12 +4679,10 @@
        (else (make-union (append (union-values v1) (union-values v2))))))
 
 (define (move-values-up-value v additions)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  ;; returns: (list v additions)
- (when (null? additions)
-  (internal-error "Shouldn't we NOT do this if (null? additions)?"))
- (when (some up? (first additions))
-  (internal-error "No additions should be UPs...should they?"))
+ (assert (not (null? additions)))
+ (assert (every (lambda (v) (not (up? v))) (first additions)))
  (let ((v-new (abstract-value-union-without-unroll
 	       v
 	       (map-reduce abstract-value-union-without-unroll
@@ -4741,7 +4732,7 @@
 	      match? (remove-if-not type? (every-other (rest path))))))
 
 (define (path-of-depth-greater-than-k k match? type? v)
- (unless (or (union? v) (up? v)) (internal-error))
+ (assert (or (union? v) (up? v)))
  (let outer ((v v) (path '()))
   (if (or (up? v) (empty-abstract-value? v))
       (if (> (depth match? type? (reverse (cons v path))) k)
@@ -4777,12 +4768,12 @@
 	(list-ref path (- (first positions) 1)))))
 
 (define (reduce-depth path v1 v2)
- (unless (or (union? v1) (up? v1)) (internal-error))
- (unless (or (union? v2) (up? v2)) (internal-error))
+ (assert (or (union? v1) (up? v1)))
+ (assert (or (union? v2) (up? v2)))
  ;; v1 must be closer to the root than v2
  (let ((v-additions
 	(let loop ((path path) (vs-above '()))
-	 (when (null? path) (internal-error))
+	 (assert (not (null? path)))
 	 (if (eq? (first path) v2)
 	     (create-v-additions
 	      (make-up (positionq v1 vs-above)) (first path))
@@ -4800,12 +4791,11 @@
 	      (if (null? (second v-additions))
 		  (list v '())
 		  (move-values-up-value v (second v-additions))))))))
-  (unless (null? (second v-additions))
-   (internal-error "Some addition wasn't applied"))
+  (assert (null? (second v-additions)))
   (first v-additions)))
 
 (define (limit-closure-depth v)
- (unless (and (union? v) (closed? v)) (internal-error))
+ (assert (and (union? v) (closed? v)))
  (if (eq? *closure-depth-limit* #f)
      v
      (let loop ((v v))
@@ -4818,7 +4808,7 @@
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
 (define (remove-redundant-proto-abstract-values* v)
- (unless (and (union? v) (closed? v)) (internal-error))
+ (assert (and (union? v) (closed? v)))
  (let loop ((v v) (vs-above '()))
   (cond
    ((union? v)
@@ -4840,14 +4830,14 @@
 ;;; Syntactic Constraints
 
 (define (closure-depth-limit-met? v)
- (unless (and (union? v) (closed? v)) (internal-error))
+ (assert (and (union? v) (closed? v)))
  (or (not *closure-depth-limit*)
      (eq? (path-of-depth-greater-than-k
 	   *closure-depth-limit* closure-match? backpropagator? v)
 	  #f)))
 
 (define (widen-abstract-value v)
- (unless (and (union? v) (closed? v)) (internal-error))
+ (assert (and (union? v) (closed? v)))
  (let loop ((v (remove-redundant-proto-abstract-values* v)))
   (if (closure-depth-limit-met? v)
       v
@@ -4857,20 +4847,19 @@
 ;;; Abstract Evaluator
 
 (define (abstract-eval1 e vs)
- (unless (and (every union? vs) (every closed? vs)) (internal-error))
- (when (>= (count-if
-	    (lambda (b)
-	     (abstract-environment=? vs (environment-binding-values b)))
-	    (expression-environment-bindings e))
-	   2)
-  (internal-error))
+ (assert (and (every union? vs) (every closed? vs)))
+ (assert (< (count-if
+	     (lambda (b)
+	      (abstract-environment=? vs (environment-binding-values b)))
+	     (expression-environment-bindings e))
+	    2))
  (let ((b (find-if (lambda (b)
 		    (abstract-environment=? vs (environment-binding-values b)))
 		   (expression-environment-bindings e))))
   (if b (environment-binding-value b) (empty-abstract-value))))
 
 (define (abstract-letrec-nested-environment vs e)
- (unless (and (every union? vs) (every closed? vs)) (internal-error))
+ (assert (and (every union? vs) (every closed? vs)))
  (map
   (lambda (x)
    (if (memp variable=? x (letrec-expression-procedure-variables e))
@@ -4914,12 +4903,11 @@
       v)
      '())))
   ((letrec-expression? p)
-   (unless (and (variable-access-expression? (letrec-expression-body p))
+   (assert (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
 		      (variable-access-expression-variable
 		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p)))
-    (internal-error "Unsupported letrec-expression parameter"))
+		      (letrec-expression-procedure-variables p))))
    (cond
     ((and (recursive-closure? v)
 	  (= (recursive-closure-index v)
@@ -4973,13 +4961,12 @@
   (else (internal-error))))
 
 (define (construct-abstract-nonrecursive-environments v1 v2)
- (unless (and (not (union? v1))
+ (assert (and (not (union? v1))
 	      (not (up? v1))
 	      (closed? v1)
 	      (not (union? v2))
 	      (not (up? v2))
-	      (closed? v2))
-  (internal-error))
+	      (closed? v2)))
  (map
   (lambda (alist)
    (map (lambda (x)
@@ -4994,13 +4981,12 @@
   (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
 
 (define (construct-abstract-recursive-environments v1 v2)
- (unless (and (not (union? v1))
+ (assert (and (not (union? v1))
 	      (not (up? v1))
 	      (closed? v1)
 	      (not (union? v2))
 	      (not (up? v2))
-	      (closed? v2))
-  (internal-error))
+	      (closed? v2)))
  (map (lambda (alist)
        (map (lambda (x)
 	     (let ((result (assp variable=? x alist)))
@@ -5026,13 +5012,12 @@
       (abstract-destructure (recursive-closure-parameter v1) v2)))
 
 (define (abstract-apply-closure p v1 v2)
- (unless (and (not (union? v1))
+ (assert (and (not (union? v1))
 	      (not (up? v1))
 	      (closed? v1)
 	      (not (union? v2))
 	      (not (up? v2))
-	      (closed? v2))
-  (internal-error))
+	      (closed? v2)))
  (cond ((nonrecursive-closure? v1)
 	(map (lambda (vs)
 	      (p (lambda-expression-body
@@ -5049,8 +5034,7 @@
        (else (internal-error))))
 
 (define (abstract-apply v1 v2)
- (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
-  (internal-error))
+ (assert (and (union? v1) (closed? v1) (union? v2) (closed? v2)))
  ;; We don't do a cross-union of v1 and v2 since when u1 is a primitive
  ;; procedure we want to apply it to all of v2 so we don't have to unroll it.
  (if (empty-abstract-value? v2)
@@ -5102,11 +5086,9 @@
 		  (environment-binding-values b) e application-argument))))))
       ;; needs work: To explain why can't do this.
       (when #f
-       (unless (abstract-value-subset? (environment-binding-value b) v)
-	(internal-error)))
-      (unless (or (abstract-value-subset? (environment-binding-value b) v)
-		  (abstract-value-subset? v (environment-binding-value b)))
-       (internal-error))
+       (assert (abstract-value-subset? (environment-binding-value b) v)))
+      (assert (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -5119,11 +5101,9 @@
 			       (environment-binding-values b) e))))
       ;; needs work: To explain why can't do this.
       (when #f
-       (unless (abstract-value-subset? (environment-binding-value b) v)
-	(internal-error)))
-      (unless (or (abstract-value-subset? (environment-binding-value b) v)
-		  (abstract-value-subset? v (environment-binding-value b)))
-       (internal-error))
+       (assert (abstract-value-subset? (environment-binding-value b) v)))
+      (assert (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -5146,11 +5126,9 @@
 		   (environment-binding-values b) e cons-expression-cdr)))))))
       ;; needs work: To explain why can't do this.
       (when #f
-       (unless (abstract-value-subset? (environment-binding-value b) v)
-	(internal-error)))
-      (unless (or (abstract-value-subset? (environment-binding-value b) v)
-		  (abstract-value-subset? v (environment-binding-value b)))
-       (internal-error))
+       (assert (abstract-value-subset? (environment-binding-value b) v)))
+      (assert (or (abstract-value-subset? (environment-binding-value b) v)
+		  (abstract-value-subset? v (environment-binding-value b))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -5158,13 +5136,12 @@
   (else (internal-error))))
 
 (define (abstract-apply-closure! e p v1 v2)
- (unless (and (not (union? v1))
+ (assert (and (not (union? v1))
 	      (not (up? v1))
 	      (closed? v1)
 	      (not (union? v2))
 	      (not (up? v2))
-	      (closed? v2))
-  (internal-error))
+	      (closed? v2)))
  (cond
   ((nonrecursive-closure? v1)
    (for-each (lambda (vs)
@@ -5190,8 +5167,7 @@
   (else (internal-error))))
 
 (define (abstract-apply-prime! e v1 v2)
- (unless (and (union? v1) (closed? v1) (union? v2) (closed? v2))
-  (internal-error))
+ (assert (and (union? v1) (closed? v1) (union? v2) (closed? v2)))
  (unless (empty-abstract-value? v2)
   (for-each
    (lambda (u1)
@@ -5224,7 +5200,7 @@
    (union-values (unroll v1)))))
 
 (define (abstract-eval-prime! e vs)
- (unless (and (every union? vs) (every closed? vs)) (internal-error))
+ (assert (and (every union? vs) (every closed? vs)))
  ;; Can't give an error if entry already exists since we call this
  ;; indiscriminantly in abstract-apply-prime! and abstract-apply-closure!.
  (unless (some (lambda (b)
@@ -5454,9 +5430,10 @@
      (lambda (u1)
       (for-each
        (lambda (u2)
-	(when (and (not (eq? u1 u2))
-		   (contextual-abstract-value-subset? u1 u2 (cons v vs-above)))
-	 (internal-error)))
+	(assert
+	 (or (eq? u1 u2)
+	     (not
+	      (contextual-abstract-value-subset? u1 u2 (cons v vs-above))))))
        (union-values v)))
      (union-values v))
     (for-each (lambda (u) (loop u (cons v vs-above))) (union-values v)))
@@ -5474,39 +5451,7 @@
 	     (expression-environment-bindings e)))
   *expressions*))
 
-(define (flow-analysis! e bs)
- (set! *abstract?* #t)
- (abstract-eval-prime!
-  e
-  (map
-   (lambda (x)
-    (singleton
-     (value-binding-value
-      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
-   (free-variables e)))
- (let loop ((i 0))
-  (when (zero? (remainder i 100))
-   (when *verbose?*
-    (format #t
-	    "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
-	    (count-if
-	     (lambda (e) (not (null? (expression-environment-bindings e))))
-	     *expressions*)
-	    (analysis-size)
-	    (max-flow-size)
-	    (unions-in-analysis)
-	    (bottoms-in-analysis)
-	    (analysis-max-depth)
-	    (analysis-max-width)
-	    (concrete-reals-in-analysis))))
-  (unless (null? *queue*)
-   (let ((e (first *queue*)))
-    (set! *queue* (rest *queue*))
-    (unless (expression-enqueue? e) (internal-error))
-    (set-expression-enqueue?! e #f)
-    (abstract-eval! e))
-   (loop (+ i 1))))
- (check-analysis!)
+(define (verbosity)
  (when *verbose?*
   (format #t
 	  "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
@@ -5520,6 +5465,28 @@
 	  (analysis-max-depth)
 	  (analysis-max-width)
 	  (concrete-reals-in-analysis))))
+
+(define (flow-analysis! e bs)
+ (set! *abstract?* #t)
+ (abstract-eval-prime!
+  e
+  (map
+   (lambda (x)
+    (singleton
+     (value-binding-value
+      (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
+   (free-variables e)))
+ (let loop ((i 0))
+  (when (zero? (remainder i 100)) (verbosity))
+  (unless (null? *queue*)
+   (let ((e (first *queue*)))
+    (set! *queue* (rest *queue*))
+    (assert (expression-enqueue? e))
+    (set-expression-enqueue?! e #f)
+    (abstract-eval! e))
+   (loop (+ i 1))))
+ (check-analysis!)
+ (verbosity))
 
 ;;; Code Generator
 
@@ -5630,15 +5597,15 @@
 
 (define (generate-variable-name x xs)
  (let ((i (positionp variable=? x xs)))
-  (unless i (internal-error))
+  (assert i)
   (list "x" i)))
 
 (define (generate-specifier v vs)
- (when (void? v) (internal-error))
+ (assert (not (void? v)))
  (cond ((vlad-boolean? v) "int")
        ((abstract-real? v) "double")
        (else (let ((i (positionp abstract-value=? v vs)))
-	      (unless i (internal-error))
+	      (assert i)
 	      (list "struct s" i)))))
 
 (define (generate-slot-names v xs)
@@ -5735,7 +5702,7 @@
    (if (null? l)
        (reverse c)
        (let ((xs (set-differenceq l (map second graph))))
-	(when (null? xs) (internal-error))
+	(assert (not (null? xs)))
 	(loop (set-differenceq l xs)
 	      (append xs c)
 	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
@@ -5763,7 +5730,7 @@
 		       (and (eq? (first x) 'function)
 			    (recursive-closure? (first (second x)))))
 		      l)))
-	     (unless x (internal-error))
+	     (assert x)
 	     (loop (removeq x l)
 		   c1
 		   (cons x c2)
@@ -5955,17 +5922,17 @@
 
 (define (generate-builtin-name s v vs)
  (let ((i (positionp abstract-value=? v vs)))
-  (unless i (internal-error))
+  (assert i)
   (list s i)))
 
 (define (generate-function-name v1 v2 v1v2s)
  (let ((i (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
-  (unless i (internal-error))
+  (assert i)
   (list "f" i)))
 
 (define (generate-widener-name v1 v2 v1v2s)
  (let ((i (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
-  (unless i (internal-error))
+  (assert i)
   (list "widen" i)))
 
 (define (commas-between-void codes)
@@ -6076,7 +6043,7 @@
 
 (define (generate-real-primitive-declarations s s1 s2 bs vs)
  (map (lambda (v)
-       (unless (abstract-real? v) (internal-error))
+       (assert (abstract-real? v))
        (list "static INLINE "
 	     s1
 	     " "
@@ -6089,7 +6056,7 @@
 
 (define (generate-real-primitive-definitions s s1 s2 s3 bs vs)
  (map (lambda (v)
-       (unless (abstract-real? v) (internal-error))
+       (assert (abstract-real? v))
        (list "static INLINE "
 	     s1
 	     " "
@@ -6105,7 +6072,7 @@
 (define (generate-real*real-primitive-declarations s s1 s2 bs vs)
  (map (lambda (v)
        (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	(unless (and (abstract-real? v1) (abstract-real? v2)) (internal-error))
+	(assert (and (abstract-real? v1) (abstract-real? v2)))
 	(list "static INLINE "
 	      s1
 	      " "
@@ -6119,7 +6086,7 @@
 (define (generate-real*real-primitive-definitions s s1 s2 s3 bs vs)
  (map (lambda (v)
        (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	(unless (and (abstract-real? v1) (abstract-real? v2)) (internal-error))
+	(assert (and (abstract-real? v1) (abstract-real? v2)))
 	(list "static INLINE "
 	      s1
 	      " "
@@ -6351,12 +6318,11 @@
 	(parameter-variables p)
 	(nonrecursive-closure-values v)))
   ((letrec-expression? p)
-   (unless (and (variable-access-expression? (letrec-expression-body p))
+   (assert (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
 		      (variable-access-expression-variable
 		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p)))
-    (internal-error "Unsupported letrec-expression parameter"))
+		      (letrec-expression-procedure-variables p))))
    (unless (and (recursive-closure? v)
 		(= (recursive-closure-index v)
 		   (positionp variable=?
@@ -6533,7 +6499,7 @@
  (let ((v (abstract-eval1 e vs)))
   (cond
    ((constant-expression? e)
-    (unless (void? (constant-expression-value e)) (internal-error))
+    (assert (void? (constant-expression-value e)))
     (generate-widen (constant-expression-value e) v '() v1v2s1))
    ((variable-access-expression? e)
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
@@ -7672,7 +7638,7 @@
 
 (define (ternary-prime f s)
  (lambda (v)
-  (unless *abstract?* (internal-error))
+  (assert *abstract?*)
   (for-each
    (lambda (u)
     (cond
