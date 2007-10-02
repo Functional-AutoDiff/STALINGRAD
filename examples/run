@@ -1,4 +1,5 @@
 #!/bin/tcsh -f
+setenv SCMAXHEAP 1500
 time stalingrad $1 factorial
 time stalingrad $1 even-odd
 time stalingrad $1 bug-a
