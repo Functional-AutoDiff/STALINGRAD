@@ -49,6 +49,8 @@
 ;;; needs work
 ;;;  1. 'boolean
 ;;;  2. vlad-boolean?
+;;;  3. abstract-boolean?
+;;;  4. abstract-real?
 
 ;;; needs work
 ;;;  1. zero, perturb, unperturb, primal, tangent, bundle, sensitize,
@@ -89,6 +91,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ reverse-parameter-transform
+ reverse-parameter-transform-inverse
  parents
  environment-bindings
  value)
@@ -102,6 +106,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ reverse-parameter-transform
+ reverse-parameter-transform-inverse
  parents
  environment-bindings
  variable)
@@ -115,6 +121,10 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ ;; The next two slots are technically not needed as they should be the same
+ ;; as the above two slots.
+ reverse-parameter-transform
+ reverse-parameter-transform-inverse
  parents
  environment-bindings
  free-variables
@@ -146,6 +156,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ reverse-parameter-transform
+ reverse-parameter-transform-inverse
  parents
  environment-bindings
  enqueue?
@@ -163,6 +175,8 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
+ reverse-parameter-transform
+ reverse-parameter-transform-inverse
  parents
  environment-bindings
  enqueue?
@@ -221,6 +235,8 @@
 (define *error?* #f)
 
 (define *abstract?* #f)
+
+(define *hash-cons-expressions?* #f)
 
 (define *constant-expressions* '())
 
@@ -487,17 +503,16 @@
 	  (variable? (second x)))))
 
 (define (variable-anf-max x)
- (cond
-  ((symbol? x) 0)
-  ((list? x)
-   (case (first x)
-    ((alpha) (variable-anf-max (second x)))
-    ((anf) (second x))
-    ((backpropagator) 0)
-    ((perturbation forward sensitivity reverse)
-     (variable-anf-max (second x)))
-    (else (internal-error))))
-  (else (internal-error))))
+ (cond ((symbol? x) 0)
+       ((list? x)
+	(case (first x)
+	 ((alpha) (variable-anf-max (second x)))
+	 ((anf) (second x))
+	 ((backpropagator) 0)
+	 ((perturbation forward sensitivity reverse)
+	  (variable-anf-max (second x)))
+	 (else (internal-error))))
+       (else (internal-error))))
 
 (define (variable=? x1 x2) (equal? x1 x2))
 
@@ -636,6 +651,18 @@
  (new-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
 
+(define (unperturbationify-access e)
+ ;; needs work: Only needed for experimentation with eliminating hash consing
+ ;;             of expressions.
+ (new-variable-access-expression
+  (unperturbationify (variable-access-expression-variable e))))
+
+(define (unforwardify-access e)
+ ;; needs work: Only needed for experimentation with eliminating hash consing
+ ;;             of expressions.
+ (new-variable-access-expression
+  (unforwardify (variable-access-expression-variable e))))
+
 (define (unsensitivityify-access? e)
  (unsensitivityify? (variable-access-expression-variable e)))
 
@@ -740,106 +767,100 @@
 ;;; the interpreter fails on triple.vlad and hessian.vlad because the assertion
 ;;; fails in forward-transform-inverse.
 
+;;; We have put back in the elimination of hash consing of expressions in the
+;;; interpreter to explore the source of inefficiency.
+
 (define (new-constant-expression value)
- (let ((e0 (find-if (lambda (e0)
-		     (abstract-value=? (constant-expression-value e0) value))
-		    *constant-expressions*)))
-  (if e0
-      e0
-      (let ((e0 (make-constant-expression
-		 #f #f #f #f #f #f #f #f '() '() value)))
-       (set! *constant-expressions* (cons e0 *constant-expressions*))
-       (set! *expressions* (cons e0 *expressions*))
-       e0))))
+ (if *hash-cons-expressions?*
+     (let ((e0 (find-if
+		(lambda (e0)
+		 (abstract-value=? (constant-expression-value e0) value))
+		*constant-expressions*)))
+      (if e0
+	  e0
+	  (let ((e0 (make-constant-expression
+		     #f #f #f #f #f #f #f #f #f #f '() '() value)))
+	   (set! *constant-expressions* (cons e0 *constant-expressions*))
+	   (set! *expressions* (cons e0 *expressions*))
+	   e0)))
+     (make-constant-expression #f #f #f #f #f #f #f #f #f #f '() '() value)))
 
 (define (new-variable-access-expression variable)
- (let ((e0 (find-if (lambda (e0)
-		     (variable=? (variable-access-expression-variable e0)
-				 variable))
-		    *variable-access-expressions*)))
-  (if e0
-      e0
-      (let ((e0 (make-variable-access-expression
-		 #f #f #f #f #f #f #f #f '() '() variable)))
-       (set! *variable-access-expressions*
-	     (cons e0 *variable-access-expressions*))
-       (set! *expressions* (cons e0 *expressions*))
-       e0))))
+ (if *hash-cons-expressions?*
+     (let ((e0 (find-if (lambda (e0)
+			 (variable=? (variable-access-expression-variable e0)
+				     variable))
+			*variable-access-expressions*)))
+      (if e0
+	  e0
+	  (let ((e0 (make-variable-access-expression
+		     #f #f #f #f #f #f #f #f #f #f '() '() variable)))
+	   (set! *variable-access-expressions*
+		 (cons e0 *variable-access-expressions*))
+	   (set! *expressions* (cons e0 *expressions*))
+	   e0)))
+     (make-variable-access-expression
+      #f #f #f #f #f #f #f #f #f #f '() '() variable)))
 
 (define (new-lambda-expression p e)
  (assert (not (duplicatesp? variable=? (parameter-variables p))))
- (let ((e0 (find-if (lambda (e0)
-		     (and (expression-eqv? (lambda-expression-parameter e0) p)
-			  (expression-eqv? (lambda-expression-body e0) e)))
-		    *lambda-expressions*)))
-  (if e0
-      e0
-      (let ((e0 (make-lambda-expression
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 '()
-		 '()
-		 (sort-variables (set-differencep variable=?
-						  (free-variables e)
-						  (parameter-variables p)))
-		 p
-		 e)))
-       (set! *lambda-expressions* (cons e0 *lambda-expressions*))
-       (set! *expressions* (cons e0 *expressions*))
-       e0))))
-
-(define (new-application e1 e2)
- (let ((e0 (find-if (lambda (e0)
-		     (and (expression-eqv? (application-callee e0) e1)
-			  (expression-eqv? (application-argument e0) e2)))
-		    *applications*)))
-  (if e0
-      e0
-      (let ((e0 (make-application
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 '()
-		 '()
-		 #f
-		 (sort-variables
-		  (union-variables (free-variables e1) (free-variables e2)))
-		 e1
-		 e2)))
-       (set! *applications* (cons e0 *applications*))
-       (set! *expressions* (cons e0 *expressions*))
-       e0))))
-
-(define (new-letrec-expression xs es e)
- (assert (= (length xs) (length es)))
- (if (null? xs)
-     e
+ (if *hash-cons-expressions?*
      (let ((e0 (find-if
 		(lambda (e0)
-		 (and
-		  (= (length xs)
-		     (length (letrec-expression-procedure-variables e0)))
-		  (every
-		   variable=? xs (letrec-expression-procedure-variables e0))
-		  (every expression-eqv?
-			 es
-			 (letrec-expression-lambda-expressions e0))
-		  (expression-eqv? e (letrec-expression-body e0))))
-		*letrec-expressions*)))
+		 (and (expression-eqv? (lambda-expression-parameter e0) p)
+		      (expression-eqv? (lambda-expression-body e0) e)))
+		*lambda-expressions*)))
       (if e0
 	  e0
-	  (let ((e0 (make-letrec-expression
+	  (let ((e0 (make-lambda-expression
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     '()
+		     '()
+		     (sort-variables (set-differencep variable=?
+						      (free-variables e)
+						      (parameter-variables p)))
+		     p
+		     e)))
+	   (set! *lambda-expressions* (cons e0 *lambda-expressions*))
+	   (set! *expressions* (cons e0 *expressions*))
+	   e0)))
+     (make-lambda-expression
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      '()
+      '()
+      (sort-variables (set-differencep variable=?
+				       (free-variables e)
+				       (parameter-variables p)))
+      p
+      e)))
+
+(define (new-application e1 e2)
+ (if *hash-cons-expressions?*
+     (let ((e0 (find-if (lambda (e0)
+			 (and (expression-eqv? (application-callee e0) e1)
+			      (expression-eqv? (application-argument e0) e2)))
+			*applications*)))
+      (if e0
+	  e0
+	  (let ((e0 (make-application
 		     #f
 		     #f
 		     #f
@@ -852,47 +873,155 @@
 		     '()
 		     #f
 		     (sort-variables
-		      (set-differencep
-		       variable=?
-		       (union-variables
-			(map-reduce union-variables '() free-variables es)
-			(free-variables e))
-		       xs))
-		     xs
-		     es
-		     e)))
-	   (set! *letrec-expressions* (cons e0 *letrec-expressions*))
+		      (union-variables
+		       (free-variables e1) (free-variables e2)))
+		     e1
+		     e2)))
+	   (set! *applications* (cons e0 *applications*))
 	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))))
+	   e0)))
+     (make-application
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      '()
+      '()
+      #f
+      (sort-variables
+       (union-variables
+	(free-variables e1) (free-variables e2)))
+      e1
+      e2)))
+
+(define (new-letrec-expression xs es e)
+ (assert (= (length xs) (length es)))
+ (if (null? xs)
+     e
+     (if *hash-cons-expressions?*
+	 (let ((e0 (find-if
+		    (lambda (e0)
+		     (and
+		      (= (length xs)
+			 (length (letrec-expression-procedure-variables e0)))
+		      (every variable=?
+			     xs
+			     (letrec-expression-procedure-variables e0))
+		      (every expression-eqv?
+			     es
+			     (letrec-expression-lambda-expressions e0))
+		      (expression-eqv? e (letrec-expression-body e0))))
+		    *letrec-expressions*)))
+	  (if e0
+	      e0
+	      (let ((e0 (make-letrec-expression
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 '()
+			 '()
+			 #f
+			 (sort-variables
+			  (set-differencep
+			   variable=?
+			   (union-variables
+			    (map-reduce union-variables '() free-variables es)
+			    (free-variables e))
+			   xs))
+			 xs
+			 es
+			 e)))
+	       (set! *letrec-expressions* (cons e0 *letrec-expressions*))
+	       (set! *expressions* (cons e0 *expressions*))
+	       e0)))
+	 (make-letrec-expression
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  #f
+	  '()
+	  '()
+	  #f
+	  (sort-variables
+	   (set-differencep
+	    variable=?
+	    (union-variables
+	     (map-reduce union-variables '() free-variables es)
+	     (free-variables e))
+	    xs))
+	  xs
+	  es
+	  e))))
 
 (define (new-cons-expression tags e1 e2)
- (let ((e0 (find-if (lambda (e0)
-		     (and (equal-tags? (cons-expression-tags e0) tags)
-			  (expression-eqv? (cons-expression-car e0) e1)
-			  (expression-eqv? (cons-expression-cdr e0) e2)))
-		    *cons-expressions*)))
-  (if e0
-      e0
-      (let ((e0 (make-cons-expression
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 #f
-		 '()
-		 '()
-		 #f
-		 (sort-variables
-		  (union-variables (free-variables e1) (free-variables e2)))
-		 tags
-		 e1
-		 e2)))
-       (set! *cons-expressions* (cons e0 *cons-expressions*))
-       (set! *expressions* (cons e0 *expressions*))
-       e0))))
+ (if *hash-cons-expressions?*
+     (let ((e0 (find-if (lambda (e0)
+			 (and (equal-tags? (cons-expression-tags e0) tags)
+			      (expression-eqv? (cons-expression-car e0) e1)
+			      (expression-eqv? (cons-expression-cdr e0) e2)))
+			*cons-expressions*)))
+      (if e0
+	  e0
+	  (let ((e0 (make-cons-expression
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     '()
+		     '()
+		     #f
+		     (sort-variables
+		      (union-variables
+		       (free-variables e1) (free-variables e2)))
+		     tags
+		     e1
+		     e2)))
+	   (set! *cons-expressions* (cons e0 *cons-expressions*))
+	   (set! *expressions* (cons e0 *expressions*))
+	   e0)))
+     (make-cons-expression
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      #f
+      '()
+      '()
+      #f
+      (sort-variables
+       (union-variables
+	(free-variables e1) (free-variables e2)))
+      tags
+      e1
+      e2)))
 
 ;;; Generic expression accessors and mutators
 
@@ -1097,6 +1226,59 @@
    ((letrec-expression? e) set-letrec-expression-reverse-transform-inverse!)
    ((cons-expression? e) set-cons-expression-reverse-transform-inverse!)
    (else (internal-error)))
+  e
+  e1))
+
+(define (expression-reverse-parameter-transform e)
+ ((cond
+   ((constant-expression? e) constant-expression-reverse-parameter-transform)
+   ((variable-access-expression? e)
+    variable-access-expression-reverse-parameter-transform)
+   ((lambda-expression? e) lambda-expression-reverse-parameter-transform)
+   ((letrec-expression? e) letrec-expression-reverse-parameter-transform)
+   ((cons-expression? e) cons-expression-reverse-parameter-transform)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-reverse-parameter-transform! e e1)
+ ((cond
+   ((constant-expression? e)
+    set-constant-expression-reverse-parameter-transform!)
+   ((variable-access-expression? e)
+    set-variable-access-expression-reverse-parameter-transform!)
+   ((lambda-expression? e) set-lambda-expression-reverse-parameter-transform!)
+   ((letrec-expression? e) set-letrec-expression-reverse-parameter-transform!)
+   ((cons-expression? e) set-cons-expression-reverse-parameter-transform!)
+   (else (internal-error)))
+  e
+  e1))
+
+(define (expression-reverse-parameter-transform-inverse e)
+ ((cond
+   ((constant-expression? e)
+    constant-expression-reverse-parameter-transform-inverse)
+   ((variable-access-expression? e)
+    variable-access-expression-reverse-parameter-transform-inverse)
+   ((lambda-expression? e)
+    lambda-expression-reverse-parameter-transform-inverse)
+   ((letrec-expression? e)
+    letrec-expression-reverse-parameter-transform-inverse)
+   ((cons-expression? e) cons-expression-reverse-parameter-transform-inverse)
+   (else (internal-error)))
+  e))
+
+(define (set-expression-reverse-parameter-transform-inverse! e e1)
+ ((cond ((constant-expression? e)
+	 set-constant-expression-reverse-parameter-transform-inverse!)
+	((variable-access-expression? e)
+	 set-variable-access-expression-reverse-parameter-transform-inverse!)
+	((lambda-expression? e)
+	 set-lambda-expression-reverse-parameter-transform-inverse!)
+	((letrec-expression? e)
+	 set-letrec-expression-reverse-parameter-transform-inverse!)
+	((cons-expression? e)
+	 set-cons-expression-reverse-parameter-transform-inverse!)
+	(else (internal-error)))
   e
   e1))
 
@@ -1403,48 +1585,56 @@
 
 ;;; Reals
 
-(define (abstract-real? v)
+(define (abstract-real) 'real)
+
+(define (is-abstract-real? v)
  (assert (and (not (union? v)) (not (up? v))))
- (or (real? v) (eq? v 'real)))
+ (eq? v 'real))
+
+(define (vlad-real? v)
+ (assert (and (not (union? v)) (not (up? v))))
+ (or (real? v) (is-abstract-real? v)))
 
 ;;; Closures
 
 (define (new-nonrecursive-closure vs e)
- (assert (or (not *abstract?*)
-	     (every (lambda (v) (or (union? v) (up? v))) vs)))
- (assert (= (length vs) (length (free-variables e))))
- ;; We used to enforce the constraint that the tags of the parameter of e
- ;; (as an indication of the tags of the resulting closure) were a prefix of
- ;; the tags of each v in vs. But this does not hold of the let* bindings
- ;; taken as lambda expressions for results paired with backpropagator
- ;; variables. The backpropagator variables are free in the nested let* context
- ;; context of the forward phase reverse transformed procedure but the
- ;; backpropagators are not reverse values.
- (assert (every (lambda (x v)
-		 (or (empty-abstract-value? v)
-		     (up? v)
-		     (prefix-tags? (variable-tags x) (value-tags v))))
-		(free-variables e)
-		vs))
+ (assert
+  (and (or (not *abstract?*) (every (lambda (v) (or (union? v) (up? v))) vs))
+       (= (length vs) (length (free-variables e)))
+       ;; We used to enforce the constraint that the tags of the parameter of e
+       ;; (as an indication of the tags of the resulting closure) were a prefix
+       ;; of the tags of each v in vs. But this does not hold of the let*
+       ;; bindings taken as lambda expressions for results paired with
+       ;; backpropagator variables. The backpropagator variables are free in
+       ;; the nested let* context context of the forward phase reverse
+       ;; transformed procedure but the backpropagators are not reverse values.
+       (every (lambda (x v)
+	       (or (empty-abstract-value? v)
+		   (up? v)
+		   (prefix-tags? (variable-tags x) (value-tags v))))
+	      (free-variables e)
+	      vs)))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-nonrecursive-closure vs e)))
 
 (define (new-recursive-closure vs xs es i)
- (assert (or (not *abstract?*)
-	     (every (lambda (v) (or (union? v) (up? v))) vs)))
- (assert (= (length vs)
-	    (length (recursive-closure-free-variables
-		     (vector->list xs) (vector->list es)))))
- ;; See the note in new-nonrecursive-closure. While that hasn't happened in
- ;; practise, and I don't know whether it can, I removed it in principle.
- (assert (every (lambda (x v)
-		 (or (empty-abstract-value? v)
-		     (up? v)
-		     (prefix-tags? (variable-tags x) (value-tags v))))
-		(recursive-closure-free-variables
-		 (vector->list xs) (vector->list es))
-		vs))
+ (assert
+  (and (or (not *abstract?*)
+	   (every (lambda (v) (or (union? v) (up? v))) vs))
+       (= (length vs)
+	  (length (recursive-closure-free-variables
+		   (vector->list xs) (vector->list es))))
+       ;; See the note in new-nonrecursive-closure. While that hasn't happened
+       ;; in practise, and I don't know whether it can, I removed it in
+       ;; principle.
+       (every (lambda (x v)
+	       (or (empty-abstract-value? v)
+		   (up? v)
+		   (prefix-tags? (variable-tags x) (value-tags v))))
+	      (recursive-closure-free-variables
+	       (vector->list xs) (vector->list es))
+	      vs)))
  (if (some empty-abstract-value? vs)
      (empty-abstract-value)
      (make-recursive-closure vs xs es i)))
@@ -1542,17 +1732,18 @@
 ;;; Bundles
 
 (define (new-bundle v v-perturbation)
- (assert (or (not *abstract?*)
-	     (and (or (union? v) (up? v))
-		  (or (union? v-perturbation) (up? v-perturbation)))))
- (assert (or (empty-abstract-value? v)
-	     (up? v)
-	     (empty-abstract-value? v-perturbation)
-	     (up? v-perturbation)
-	     (and (tagged? 'perturbation (value-tags v-perturbation))
-		  (equal-tags?
-		   (value-tags v)
-		   (remove-tag 'perturbation (value-tags v-perturbation))))))
+ (assert
+  (and (or (not *abstract?*)
+	   (and (or (union? v) (up? v))
+		(or (union? v-perturbation) (up? v-perturbation))))
+       (or (empty-abstract-value? v)
+	   (up? v)
+	   (empty-abstract-value? v-perturbation)
+	   (up? v-perturbation)
+	   (and (tagged? 'perturbation (value-tags v-perturbation))
+		(equal-tags?
+		 (value-tags v)
+		 (remove-tag 'perturbation (value-tags v-perturbation)))))))
  ;; needs work: Should check that v-perturbation conforms to v.
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
@@ -1573,9 +1764,9 @@
 ;;; Pairs
 
 (define (new-tagged-pair tags v1 v2)
- (assert (or (not *abstract?*)
-	     (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2)))))
- (assert (and (or (empty-abstract-value? v1)
+ (assert (and (or (not *abstract?*)
+		  (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2))))
+	      (or (empty-abstract-value? v1)
 		  (up? v1)
 		  (prefix-tags? tags (value-tags v1)))
 	      (or (empty-abstract-value? v2)
@@ -1696,7 +1887,7 @@
  (or (vlad-empty-list? v)
      (vlad-true? v)
      (vlad-false? v)
-     (abstract-real? v)
+     (vlad-real? v)
      (primitive-procedure? v)))
 
 (define (aggregate-value-values v)
@@ -1810,13 +2001,13 @@
    (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
        (and (vlad-true? v1) (vlad-true? v2))
        (and (vlad-false? v1) (vlad-false? v2))
-       (and (abstract-real? v1)
-	    (abstract-real? v2)
+       (and (vlad-real? v1)
+	    (vlad-real? v2)
 	    ;; This was = but then it equates exact values with inexact values
 	    ;; and this breaks -imprecise-inexacts.
 	    (or (and (real? v1) (real? v2) (equal? v1 v2))
-		(and (real? v1) (eq? v2 'real))
-		(and (eq? v1 'real) (eq? v2 'real))))
+		(and (real? v1) (is-abstract-real? v2))
+		(and (is-abstract-real? v1) (is-abstract-real? v2))))
        (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
        (and (nonrecursive-closure? v1)
 	    (nonrecursive-closure? v2)
@@ -1936,10 +2127,10 @@
      (and (vlad-empty-list? v1) (vlad-empty-list? v2))
      (and (vlad-true? v1) (vlad-true? v2))
      (and (vlad-false? v1) (vlad-false? v2))
-     (and (abstract-real? v1)
-	  (abstract-real? v2)
-	  (or (eq? v1 'real)
-	      (eq? v2 'real)
+     (and (vlad-real? v1)
+	  (vlad-real? v2)
+	  (or (is-abstract-real? v1)
+	      (is-abstract-real? v2)
 	      ;; This was = but then it equates exact values with inexact
 	      ;; values and this breaks -imprecise-inexacts.
 	      (equal? v1 v2)))
@@ -2806,7 +2997,7 @@
   ((vlad-empty-list? v) v)
   ((vlad-true? v) v)
   ((vlad-false? v) v)
-  ((abstract-real? v) 0)
+  ((vlad-real? v) 0)
   ((primitive-procedure? v) v)
   ((nonrecursive-closure? v)
    ;; See the note in abstract-environment=?.
@@ -2866,13 +3057,60 @@
 		  (perturbation-transform (cons-expression-car e))
 		  (perturbation-transform (cons-expression-cdr e))))
 		(else (internal-error)))))
+      (assert (not (expression-perturbation-transform e)))
+      (assert (not (expression-perturbation-transform-inverse e1)))
       (set-expression-perturbation-transform! e e1)
       (set-expression-perturbation-transform-inverse! e1 e)
       e1)))
 
 (define (perturbation-transform-inverse e)
- (assert (expression-perturbation-transform-inverse e))
- (expression-perturbation-transform-inverse e))
+ ;; here I am: There are cache misses in the interpreter. This appears to
+ ;;            happen only when we disable hash consing of expressions. I don't
+ ;;            understand why. In other words, we take
+ ;;            perturbation-transform-inverse of things that don't result from
+ ;;            perturbation-transform.
+ ;; debugging
+ (when #t
+  (unless (expression-perturbation-transform-inverse e)
+   (display "perturbation-transform-inverse cache miss")
+   (newline)))
+ (if (expression-perturbation-transform-inverse e)
+     (expression-perturbation-transform-inverse e)
+     (let ((e1 (cond
+		((constant-expression? e)
+		 (without-abstract
+		  (lambda ()
+		   (new-constant-expression
+		    (unperturb (constant-expression-value e))))))
+		((variable-access-expression? e) (unperturbationify-access e))
+		((lambda-expression? e)
+		 (new-lambda-expression
+		  (perturbation-transform-inverse
+		   (lambda-expression-parameter e))
+		  (perturbation-transform-inverse (lambda-expression-body e))))
+		((application? e)
+		 (new-application
+		  (perturbation-transform-inverse (application-callee e))
+		  (perturbation-transform-inverse (application-argument e))))
+		((letrec-expression? e)
+		 (new-letrec-expression
+		  (map unperturbationify
+		       (letrec-expression-procedure-variables e))
+		  (map perturbation-transform-inverse
+		       (letrec-expression-lambda-expressions e))
+		  (perturbation-transform-inverse (letrec-expression-body e))))
+		((cons-expression? e)
+		 (assert (tagged? 'perturbation (cons-expression-tags e)))
+		 (new-cons-expression
+		  (remove-tag 'perturbation (cons-expression-tags e))
+		  (perturbation-transform-inverse (cons-expression-car e))
+		  (perturbation-transform-inverse (cons-expression-cdr e))))
+		(else (internal-error)))))
+      (assert (not (expression-perturbation-transform-inverse e)))
+      (assert (not (expression-perturbation-transform e1)))
+      (set-expression-perturbation-transform-inverse! e e1)
+      (set-expression-perturbation-transform! e1 e)
+      e1)))
 
 (define (forward-transform e)
  (if (expression-forward-transform e)
@@ -2904,13 +3142,58 @@
 		  (forward-transform (cons-expression-car e))
 		  (forward-transform (cons-expression-cdr e))))
 		(else (internal-error)))))
+      (assert (not (expression-forward-transform e)))
+      (assert (not (expression-forward-transform-inverse e1)))
       (set-expression-forward-transform! e e1)
       (set-expression-forward-transform-inverse! e1 e)
       e1)))
 
 (define (forward-transform-inverse e)
- (assert (expression-forward-transform-inverse e))
- (expression-forward-transform-inverse e))
+ ;; here I am: There are cache misses in the interpreter. This appears to
+ ;;            happen only when we disable hash consing of expressions. I don't
+ ;;            understand why. In other words, we take
+ ;;            forward-transform-inverse of things that don't result from
+ ;;            forward-transform.
+ ;; debugging
+ (when #t
+  (unless (expression-forward-transform-inverse e)
+   (display "forward-transform-inverse cache miss")
+   (newline)))
+ (if (expression-forward-transform-inverse e)
+     (expression-forward-transform-inverse e)
+     (let ((e1 (cond
+		((constant-expression? e)
+		 (without-abstract
+		  (lambda ()
+		   (new-constant-expression
+		    (primal (constant-expression-value e))))))
+		((variable-access-expression? e) (unforwardify-access e))
+		((lambda-expression? e)
+		 (new-lambda-expression
+		  (forward-transform-inverse (lambda-expression-parameter e))
+		  (forward-transform-inverse (lambda-expression-body e))))
+		((application? e)
+		 (new-application
+		  (forward-transform-inverse (application-callee e))
+		  (forward-transform-inverse (application-argument e))))
+		((letrec-expression? e)
+		 (new-letrec-expression
+		  (map unforwardify (letrec-expression-procedure-variables e))
+		  (map forward-transform-inverse
+		       (letrec-expression-lambda-expressions e))
+		  (forward-transform-inverse (letrec-expression-body e))))
+		((cons-expression? e)
+		 (assert (tagged? 'forward (cons-expression-tags e)))
+		 (new-cons-expression
+		  (remove-tag 'forward (cons-expression-tags e))
+		  (forward-transform-inverse (cons-expression-car e))
+		  (forward-transform-inverse (cons-expression-cdr e))))
+		(else (internal-error)))))
+      (assert (not (expression-forward-transform-inverse e)))
+      (assert (not (expression-forward-transform e1)))
+      (set-expression-forward-transform-inverse! e e1)
+      (set-expression-forward-transform! e1 e)
+      e1)))
 
 (define (perturb v)
  (cond
@@ -2919,7 +3202,7 @@
   ((vlad-empty-list? v) (new-perturbation-tagged-value (singleton v)))
   ((vlad-true? v) (new-perturbation-tagged-value (singleton v)))
   ((vlad-false? v) (new-perturbation-tagged-value (singleton v)))
-  ((abstract-real? v) (new-perturbation-tagged-value (singleton v)))
+  ((vlad-real? v) (new-perturbation-tagged-value (singleton v)))
   ((primitive-procedure? v) (new-perturbation-tagged-value (singleton v)))
   ((nonrecursive-closure? v)
    ;; See the note in abstract-environment=?.
@@ -2958,7 +3241,7 @@
   ((vlad-false? v-perturbation)
    (ad-error
     "Argument to unperturb ~a a non-perturbation value" v-perturbation))
-  ((abstract-real? v-perturbation)
+  ((vlad-real? v-perturbation)
    (ad-error
     "Argument to unperturb ~a a non-perturbation value" v-perturbation))
   ((primitive-procedure? v-perturbation)
@@ -3025,7 +3308,7 @@
 	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
 	 ((vlad-false? v-forward)
 	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
-	 ((abstract-real? v-forward)
+	 ((vlad-real? v-forward)
 	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
 	 ((primitive-procedure? v-forward)
 	  (ad-error "Argument to primal ~a a non-forward value" v-forward))
@@ -3087,7 +3370,7 @@
 	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
 	 ((vlad-false? v-forward)
 	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
-	 ((abstract-real? v-forward)
+	 ((vlad-real? v-forward)
 	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
 	 ((primitive-procedure? v-forward)
 	  (ad-error "Argument to tangent ~a a non-forward value" v-forward))
@@ -3180,7 +3463,7 @@
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((vlad-false? v)
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((abstract-real? v)
+	  ((vlad-real? v)
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((primitive-procedure? v) (internal-error))
 	  ((nonrecursive-closure? v)
@@ -3258,58 +3541,89 @@
 (define (sensitivityify-parameter p) (sensitivity-transform p))
 
 (define (reverseify-parameter p)
- (cond ((constant-expression? p)
-	(without-abstract
-	 (lambda ()
-	  (new-constant-expression (*j (constant-expression-value p))))))
-       ((variable-access-expression? p) (reverseify-access p))
-       ((lambda-expression? p) (reverse-transform p))
-       ((letrec-expression? p)
-	(assert (and (variable-access-expression? (letrec-expression-body p))
-		     (memp variable=?
-			   (variable-access-expression-variable
-			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p))))
-	(new-letrec-expression
-	 (map reverseify (letrec-expression-procedure-variables p))
-	 (map-indexed (lambda (e i)
-		       (reverse-transform-internal
-			e
-			(letrec-expression-procedure-variables p)
-			(letrec-expression-lambda-expressions p)
-			i))
-		      (letrec-expression-lambda-expressions p))
-	 (reverseify-access (letrec-expression-body p))))
-       ((cons-expression? p)
-	(new-cons-expression (add-tag 'reverse (cons-expression-tags p))
-			     (reverseify-parameter (cons-expression-car p))
-			     (reverseify-parameter (cons-expression-cdr p))))
-       (else (internal-error))))
+ (if (expression-reverse-parameter-transform p)
+     (expression-reverse-parameter-transform p)
+     (let ((p1 (cond
+		((constant-expression? p)
+		 (without-abstract
+		  (lambda ()
+		   (new-constant-expression
+		    (*j (constant-expression-value p))))))
+		((variable-access-expression? p) (reverseify-access p))
+		((lambda-expression? p) (reverse-transform p))
+		((letrec-expression? p)
+		 (assert
+		  (and (variable-access-expression? (letrec-expression-body p))
+		       (memp variable=?
+			     (variable-access-expression-variable
+			      (letrec-expression-body p))
+			     (letrec-expression-procedure-variables p))))
+		 (new-letrec-expression
+		  (map reverseify (letrec-expression-procedure-variables p))
+		  (map-indexed (lambda (e i)
+				(reverse-transform-internal
+				 e
+				 (letrec-expression-procedure-variables p)
+				 (letrec-expression-lambda-expressions p)
+				 i))
+			       (letrec-expression-lambda-expressions p))
+		  (reverseify-access (letrec-expression-body p))))
+		((cons-expression? p)
+		 (new-cons-expression
+		  (add-tag 'reverse (cons-expression-tags p))
+		  (reverseify-parameter (cons-expression-car p))
+		  (reverseify-parameter (cons-expression-cdr p))))
+		(else (internal-error)))))
+      (assert (not (expression-reverse-parameter-transform p)))
+      (assert (not (expression-reverse-parameter-transform-inverse p1)))
+      (set-expression-reverse-parameter-transform! p p1)
+      (set-expression-reverse-parameter-transform-inverse! p1 p)
+      p1)))
 
 (define (unreverseify-parameter p)
- (cond ((constant-expression? p)
-	(without-abstract
-	 (lambda ()
-	  (new-constant-expression
-	   (*j-inverse (constant-expression-value p))))))
-       ((variable-access-expression? p) (unreverseify-access p))
-       ((lambda-expression? p) (reverse-transform-inverse p))
-       ((letrec-expression? p)
-	(assert (and (variable-access-expression? (letrec-expression-body p))
-		     (memp variable=?
-			   (variable-access-expression-variable
-			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p))))
-	(new-letrec-expression
-	 (map unreverseify (letrec-expression-procedure-variables p))
-	 (map reverse-transform-inverse
-	      (letrec-expression-lambda-expressions p))
-	 (unreverseify-access (letrec-expression-body p))))
-       ((cons-expression? p)
-	(new-cons-expression (remove-tag 'reverse (cons-expression-tags p))
-			     (unreverseify-parameter (cons-expression-car p))
-			     (unreverseify-parameter (cons-expression-cdr p))))
-       (else (internal-error))))
+ ;; here I am: There are cache misses in the interpreter irrespective of
+ ;;            whether hash consing of expressions is enabled. I don't
+ ;;            understand why. In other words, we take
+ ;;            unreverseify-parameter of things that don't result from
+ ;;            reverseify-parameter.
+ ;; debugging
+ (when #t
+  (unless (expression-reverse-parameter-transform-inverse p)
+   (display "reverse-parameter-transform-inverse cache miss")
+   (newline)))
+ (if (expression-reverse-parameter-transform-inverse p)
+     (expression-reverse-parameter-transform-inverse p)
+     (let ((p1 (cond
+		((constant-expression? p)
+		 (without-abstract
+		  (lambda ()
+		   (new-constant-expression
+		    (*j-inverse (constant-expression-value p))))))
+		((variable-access-expression? p) (unreverseify-access p))
+		((lambda-expression? p) (reverse-transform-inverse p))
+		((letrec-expression? p)
+		 (assert
+		  (and (variable-access-expression? (letrec-expression-body p))
+		       (memp variable=?
+			     (variable-access-expression-variable
+			      (letrec-expression-body p))
+			     (letrec-expression-procedure-variables p))))
+		 (new-letrec-expression
+		  (map unreverseify (letrec-expression-procedure-variables p))
+		  (map reverse-transform-inverse
+		       (letrec-expression-lambda-expressions p))
+		  (unreverseify-access (letrec-expression-body p))))
+		((cons-expression? p)
+		 (new-cons-expression
+		  (remove-tag 'reverse (cons-expression-tags p))
+		  (unreverseify-parameter (cons-expression-car p))
+		  (unreverseify-parameter (cons-expression-cdr p))))
+		(else (internal-error)))))
+      ;; Note that we don't set the reverse parameter transform of p1 to p
+      ;; because unreverseify-parameter is many to one and thus not invertible.
+      (assert (not (expression-reverse-parameter-transform-inverse p)))
+      (set-expression-reverse-parameter-transform-inverse! p p1)
+      p1)))
 
 (define (sensitivity-transform e)
  (if (expression-sensitivity-transform e)
@@ -3342,6 +3656,8 @@
 		  (sensitivity-transform (cons-expression-car e))
 		  (sensitivity-transform (cons-expression-cdr e))))
 		(else (internal-error)))))
+      (assert (not (expression-sensitivity-transform e)))
+      (assert (not (expression-sensitivity-transform-inverse e1)))
       (set-expression-sensitivity-transform! e e1)
       (set-expression-sensitivity-transform-inverse! e1 e)
       e1)))
@@ -3371,6 +3687,16 @@
   (else (internal-error))))
 
 (define (sensitivity-transform-inverse e)
+ ;; here I am: There are cache misses in the interpreter irrespective of
+ ;;            whether hash consing of expressions is enabled. I don't
+ ;;            understand why. In other words, we take
+ ;;            sensitivity-transform-inverse of things that don't result from
+ ;;            sensitivity-transform.
+ ;; debugging
+ (when #f
+  (unless (expression-sensitivity-transform-inverse e)
+   (display "sensitivity-transform-inverse cache miss")
+   (newline)))
  (if (expression-sensitivity-transform-inverse e)
      (expression-sensitivity-transform-inverse e)
      (let ((e1 (cond
@@ -3405,6 +3731,7 @@
 		(else (internal-error)))))
       ;; Note that we don't set the sensitivity transform of e1 to e because
       ;; sensitivity-transform-inverse is many to one and thus not invertible.
+      (assert (not (expression-sensitivity-transform-inverse e)))
       (set-expression-sensitivity-transform-inverse! e e1)
       e1)))
 
@@ -3429,6 +3756,10 @@
 	(es1 (if (letrec-expression? e1)
 		 (letrec-expression-lambda-expressions e1)
 		 '()))
+	;; I am not 100% sure that this cannot cause name clash. One way to
+	;; guarantee that there is no name clash is to find the highest index
+	;; of a backpropagator variable in e1 and generate new indices larger
+	;; than that.
 	(xs (map-n backpropagatorify (length (anf-let*-parameters e1)))))
   (new-lambda-expression
    (reverseify-parameter p)
@@ -3612,6 +3943,8 @@
  (if (expression-reverse-transform e)
      (expression-reverse-transform e)
      (let ((e1 (reverse-transform-internal e '() '() -1)))
+      (assert (not (expression-reverse-transform e)))
+      (assert (not (expression-reverse-transform-inverse e1)))
       (set-expression-reverse-transform! e e1)
       (set-expression-reverse-transform-inverse! e1 e)
       e1)))
@@ -3688,6 +4021,16 @@
   (unreverseify-access (cons-expression-car (last (let*-expressions e))))))
 
 (define (reverse-transform-inverse e)
+ ;; here I am: There are cache misses in the interpreter irrespective of
+ ;;            whether hash consing of expressions is enabled. I don't
+ ;;            understand why. In other words, we take
+ ;;            reverse-transform-inverse of things that don't result from
+ ;;            reverse-transform.
+ ;; debugging
+ (when #f
+  (unless (expression-reverse-transform-inverse e)
+   (display "reverse-transform-inverse cache miss")
+   (newline)))
  (if (expression-reverse-transform-inverse e)
      (expression-reverse-transform-inverse e)
      (let ((e1 (new-lambda-expression
@@ -3704,6 +4047,7 @@
 		     (reverse-transform-inverse-internal e))))))
       ;; Note that we don't set the reverse transform of e1 to e because
       ;; reverse-transform-inverse is many to one and thus not invertible.
+      (assert (not (expression-reverse-transform-inverse e)))
       (set-expression-reverse-transform-inverse! e e1)
       e1)))
 
@@ -3714,7 +4058,7 @@
   ((vlad-empty-list? v) (new-sensitivity-tagged-value (singleton v)))
   ((vlad-true? v) (new-sensitivity-tagged-value (singleton v)))
   ((vlad-false? v) (new-sensitivity-tagged-value (singleton v)))
-  ((abstract-real? v) (new-sensitivity-tagged-value (singleton v)))
+  ((vlad-real? v) (new-sensitivity-tagged-value (singleton v)))
   ((primitive-procedure? v) (new-sensitivity-tagged-value (singleton v)))
   ((nonrecursive-closure? v)
    ;; See the note in abstract-environment=?.
@@ -3746,7 +4090,7 @@
   ((vlad-empty-list? v-sensitivity) #f)
   ((vlad-true? v-sensitivity) #f)
   ((vlad-false? v-sensitivity) #f)
-  ((abstract-real? v-sensitivity) #f)
+  ((vlad-real? v-sensitivity) #f)
   ((primitive-procedure? v-sensitivity) #f)
   ((nonrecursive-closure? v-sensitivity)
    (and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
@@ -3785,7 +4129,7 @@
   ((vlad-false? v-sensitivity)
    (ad-error
     "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
-  ((abstract-real? v-sensitivity)
+  ((vlad-real? v-sensitivity)
    (ad-error
     "Argument to unsensitize ~a a non-sensitivity value" v-sensitivity))
   ((primitive-procedure? v-sensitivity)
@@ -3862,8 +4206,8 @@
    ((and (vlad-empty-list? v1) (vlad-empty-list? v2)) v1)
    ((and (vlad-true? v1) (vlad-true? v2)) v1)
    ((and (vlad-false? v1) (vlad-false? v2)) v1)
-   ((and (eq? v1 'real) (abstract-real? v2)) 'real)
-   ((and (abstract-real? v1) (eq? v2 'real)) 'real)
+   ((and (is-abstract-real? v1) (vlad-real? v2)) v1)
+   ((and (vlad-real? v1) (is-abstract-real? v2)) v2)
    ((and (real? v1) (real? v2)) (+ v1 v2))
    ((and (primitive-procedure? v1)
 	 (primitive-procedure? v2)
@@ -3942,7 +4286,7 @@
 	 ((vlad-empty-list? v) (new-reverse-tagged-value (singleton v)))
 	 ((vlad-true? v) (new-reverse-tagged-value (singleton v)))
 	 ((vlad-false? v) (new-reverse-tagged-value (singleton v)))
-	 ((abstract-real? v) (new-reverse-tagged-value (singleton v)))
+	 ((vlad-real? v) (new-reverse-tagged-value (singleton v)))
 	 ((primitive-procedure? v) (internal-error))
 	 ((nonrecursive-closure? v)
 	  ;; See the note in abstract-environment=?.
@@ -4000,7 +4344,7 @@
 	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
 	 ((vlad-false? v-reverse)
 	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
-	 ((abstract-real? v-reverse)
+	 ((vlad-real? v-reverse)
 	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
 	 ((primitive-procedure? v-reverse)
 	  (ad-error "Argument to *j-inverse ~a a non-reverse value" v-reverse))
@@ -4107,7 +4451,7 @@
        ((vlad-true? v) #t)
        ((vlad-false? v) #t)
        ((real? v) #t)
-       ((eq? v 'real) #f)
+       ((is-abstract-real? v) #f)
        ((vlad-pair? v) (and (quotable? (vlad-car v)) (quotable? (vlad-cdr v))))
        ((primitive-procedure? v) #f)
        ((closure? v) #f)
@@ -4171,10 +4515,10 @@
 	  ((vlad-true? v) #t)
 	  ((vlad-false? v) #f)
 	  ((real? v) v)
-	  ((eq? v 'real)
+	  ((is-abstract-real? v)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably"v))
-	   'real)
+	   v)
 	  ((vlad-pair? v)
 	   (if (and *unabbreviate-executably?* (not quote?))
 	       (if (quotable? v)
@@ -4554,7 +4898,7 @@
  (singleton
   (cond
    ((scalar-value? v)
-    (if (and *imprecise-inexacts?* (real? v) (inexact? v)) 'real v))
+    (if (and *imprecise-inexacts?* (real? v) (inexact? v)) (abstract-real) v))
    ((nonrecursive-closure? v)
     (new-nonrecursive-closure
      (map concrete-value->abstract-value (nonrecursive-closure-values v))
@@ -4679,10 +5023,10 @@
        (else (make-union (append (union-values v1) (union-values v2))))))
 
 (define (move-values-up-value v additions)
- (assert (or (union? v) (up? v)))
  ;; returns: (list v additions)
- (assert (not (null? additions)))
- (assert (every (lambda (v) (not (up? v))) (first additions)))
+ (assert (and (or (union? v) (up? v))
+	      (not (null? additions))
+	      (every (lambda (v) (not (up? v))) (first additions))))
  (let ((v-new (abstract-value-union-without-unroll
 	       v
 	       (map-reduce abstract-value-union-without-unroll
@@ -4768,8 +5112,8 @@
 	(list-ref path (- (first positions) 1)))))
 
 (define (reduce-depth path v1 v2)
- (assert (or (union? v1) (up? v1)))
- (assert (or (union? v2) (up? v2)))
+ (assert (and (or (union? v1) (up? v1))
+	      (or (union? v2) (up? v2))))
  ;; v1 must be closer to the root than v2
  (let ((v-additions
 	(let loop ((path path) (vs-above '()))
@@ -4847,12 +5191,13 @@
 ;;; Abstract Evaluator
 
 (define (abstract-eval1 e vs)
- (assert (and (every union? vs) (every closed? vs)))
- (assert (< (count-if
-	     (lambda (b)
-	      (abstract-environment=? vs (environment-binding-values b)))
-	     (expression-environment-bindings e))
-	    2))
+ (assert (and (every union? vs)
+	      (every closed? vs)
+	      (< (count-if
+		  (lambda (b)
+		   (abstract-environment=? vs (environment-binding-values b)))
+		  (expression-environment-bindings e))
+		 2)))
  (let ((b (find-if (lambda (b)
 		    (abstract-environment=? vs (environment-binding-values b)))
 		   (expression-environment-bindings e))))
@@ -5532,32 +5877,56 @@
 ;;; bundle#
 ;;; main
 
+(define (singleton? v) (unimplemented))
+
+(define (value v) (unimplemented))
+
+(define (abstract-boolean? v)
+ ;; particular to union-free
+ (assert (union? v))
+ (and (every vlad-boolean? (union-values v))
+      (some vlad-true? (union-values v))
+      (some vlad-false? (union-values v))))
+
+(define (abstract-real? v)
+ ;; particular to union-free
+ (assert (union? v))
+ (and (every vlad-real? (union-values v))
+      (some is-abstract-real? (union-values v))))
+
 (define (void? v)
- (and (not (eq? v 'boolean))
-      (not (eq? v 'real))
-      (or (scalar-value? v) (every void? (aggregate-value-values v)))))
+ (assert (union? v))
+ (and (not (abstract-boolean? v))
+      (not (abstract-real? v))
+      (or (scalar-value? (value v))
+	  (every void? (aggregate-value-values (value v))))))
 
 (define (all-variables-in-abstract-value v)
- (if (scalar-value? v)
-     '()
-     (unionp variable=?
-	     (map-reduce
-	      (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-	      '()
-	      all-variables-in-abstract-value
-	      (aggregate-value-values v))
-	     (cond ((nonrecursive-closure? v)
-		    (all-variables-in-expression
-		     (nonrecursive-closure-lambda-expression v)))
-		   ((recursive-closure? v)
-		    (unionp
-		     variable=?
-		     (recursive-closure-procedure-variables v)
-		     (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-				 '()
-				 all-variables-in-expression
-				 (recursive-closure-lambda-expressions v))))
-		   (else '())))))
+ (cond
+  ((union? v) (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+			  '()
+			  all-variables-in-abstract-value
+			  (union-values v)))
+  ((up? v) '())
+  ((scalar-value? v) '())
+  (else (unionp
+	 variable=?
+	 (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+		     '()
+		     all-variables-in-abstract-value
+		     (aggregate-value-values v))
+	 (cond ((nonrecursive-closure? v)
+		(all-variables-in-expression
+		 (nonrecursive-closure-lambda-expression v)))
+	       ((recursive-closure? v)
+		(unionp
+		 variable=?
+		 (recursive-closure-procedure-variables v)
+		 (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+			     '()
+			     all-variables-in-expression
+			     (recursive-closure-lambda-expressions v))))
+	       (else '()))))))
 
 (define (all-variables-in-expression e)
  (cond ((constant-expression? e)
@@ -5588,43 +5957,40 @@
 		(all-variables-in-expression (cons-expression-cdr e))))
        (else (internal-error))))
 
-(define (all-variables bs)
- ;; needs work: to get rid of bs
+(define (all-variables)
  (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
 	     '()
 	     all-variables-in-expression
 	     *expressions*))
 
 (define (generate-variable-name x xs)
- (let ((i (positionp variable=? x xs)))
-  (assert i)
-  (list "x" i)))
+ (assert (memp variable=? x xs))
+ (list "x" (positionp variable=? x xs)))
 
 (define (generate-specifier v vs)
  (assert (not (void? v)))
- (cond ((vlad-boolean? v) "int")
+ (cond ((abstract-boolean? v) "int")
        ((abstract-real? v) "double")
-       (else (let ((i (positionp abstract-value=? v vs)))
-	      (assert i)
-	      (list "struct s" i)))))
+       (else (assert (memp abstract-value=? v vs))
+	     (list "struct s" (positionp abstract-value=? v vs)))))
 
 (define (generate-slot-names v xs)
- (cond ((nonrecursive-closure? v)
+ (cond ((nonrecursive-closure? (value v))
 	(map (lambda (x) (generate-variable-name x xs))
-	     (nonrecursive-closure-variables v)))
-       ((recursive-closure? v)
+	     (nonrecursive-closure-variables (value v))))
+       ((recursive-closure? (value v))
 	(map (lambda (x) (generate-variable-name x xs))
-	     (recursive-closure-variables v)))
-       ((perturbation-tagged-value? v) '("p"))
-       ((bundle? v) '("p" "t"))
-       ((sensitivity-tagged-value? v) '("p"))
-       ((reverse-tagged-value? v) '("p"))
-       ((tagged-pair? v) '("a" "d"))
+	     (recursive-closure-variables (value v))))
+       ((perturbation-tagged-value? (value v)) '("p"))
+       ((bundle? (value v)) '("p" "t"))
+       ((sensitivity-tagged-value? (value v)) '("p"))
+       ((reverse-tagged-value? (value v)) '("p"))
+       ((tagged-pair? (value v)) '("a" "d"))
        (else (internal-error))))
 
 (define (generate-struct-declarations xs vs)
  (map (lambda (v)
-       (if (or (void? v) (vlad-boolean? v) (abstract-real? v))
+       (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
 	   '()
 	   (list (generate-specifier v vs)
 		 "{"
@@ -5633,12 +5999,12 @@
 			   '()
 			   (list (generate-specifier v vs) " " s ";")))
 		      (generate-slot-names v xs)
-		      (aggregate-value-values v))
+		      (aggregate-value-values (value v)))
 		 "};"
 		 #\newline)))
       vs))
 
-(define (all-abstract-values bs)
+(define (all-abstract-values)
  (map-reduce
   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
   '()
@@ -5655,35 +6021,40 @@
 (define (all-unary-abstract-subvalues p? v)
  (let loop ((v v))
   (cons v
-	(if (or (scalar-value? v) (not (p? v)))
+	;; needs work: what if v is an abstract boolean
+	(if (or (scalar-value? (value v)) (not (p? v)))
 	    '()
 	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 			'()
 			loop
-			(aggregate-value-values v))))))
+			(aggregate-value-values (value v)))))))
 
 (define (all-binary-abstract-subvalues p? f f-inverse v)
- (let loop ((v1 (vlad-car v)) (v2 (f-inverse (vlad-cdr v))))
+ (let loop ((v1 (vlad-car (value v))) (v2 (f-inverse (vlad-cdr (value v)))))
   (cons (vlad-cons v1 (f v2))
-	(if (or (scalar-value? v1) (not (p? v1)))
+	;; needs work: what if v1 is an abstract boolean
+	(if (or (scalar-value? (value v1)) (not (p? v1)))
 	    '()
 	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 			'()
 			loop
-			(aggregate-value-values v1)
-			(aggregate-value-values v2))))))
+			(aggregate-value-values (value v1))
+			(aggregate-value-values (value v2)))))))
 
 (define (component*? v1 v2)
  (or (abstract-value=? v1 v2)
-     (and (not (scalar-value? v2))
-	  (memp component*? v1 (aggregate-value-values v2)))))
+     ;; needs work: what if v2 is an abstract boolean
+     (and (not (scalar-value? (value v2)))
+	  (memp component*? v1 (aggregate-value-values (value v2))))))
 
 (define (component? v1 v2)
- (and (not (scalar-value? v2))
-      (memp abstract-value=? v1 (aggregate-value-values v2))))
+ ;; needs work: what if v2 is an abstract boolean
+ (and (not (scalar-value? (value v2)))
+      (memp abstract-value=? v1 (aggregate-value-values (value v2)))))
 
 (define (components-before v2)
- (if (scalar-value? v2) '() (aggregate-value-values v2)))
+ ;; needs work: what if v2 is an abstract boolean
+ (if (scalar-value? (value v2)) '() (aggregate-value-values (value v2))))
 
 (define (cached-topological-sort p l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
@@ -5743,23 +6114,24 @@
 	     c2
 	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
 
-(define (all-nested-abstract-values bs)
+(define (all-nested-abstract-values)
  (cached-topological-sort
   component?
   (unionp
    abstract-value=?
    (unionp abstract-value=?
 	   (all-binary-ad (lambda (v)
-			   (and (not (perturbation-tagged-value? v))
-				(not (bundle? v))
-				(not (sensitivity-tagged-value? v))
-				(not (reverse-tagged-value? v))))
-			  bundle 'bundle perturb unperturb bs)
-	   (all-binary-ad (lambda (v) #t) plus 'plus identity identity bs))
+			   ;; needs work: what if v is an abstract boolean
+			   (and (not (perturbation-tagged-value? (value v)))
+				(not (bundle? (value v)))
+				(not (sensitivity-tagged-value? (value v)))
+				(not (reverse-tagged-value? (value v)))))
+			  bundle 'bundle perturb unperturb)
+	   (all-binary-ad (lambda (v) #t) plus 'plus identity identity))
    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 	       '()
 	       (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
-	       (all-abstract-values bs)))))
+	       (all-abstract-values)))))
 
 (define (abstract-value-pair=? v1v2a v1v2b)
  (and (abstract-value=? (first v1v2a) (first v1v2b))
@@ -5767,16 +6139,18 @@
 
 (define (all-subwidenings v1 v2)
  (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
-       ((scalar-value? v2) (list (list v1 v2)))
+       ;; needs work: what if v2 is an abstract boolean
+       ((scalar-value? (value v2)) (list (list v1 v2)))
        (else (cons (list v1 v2)
 		   (map-reduce (lambda (v1v2sa v2v2sb)
 				(unionp abstract-value-pair=? v1v2sa v2v2sb))
 			       '()
 			       all-subwidenings
-			       (aggregate-value-values v1)
-			       (aggregate-value-values v2))))))
+			       (aggregate-value-values (value v1))
+			       (aggregate-value-values (value v2)))))))
 
-(define (all-widenings bs)
+(define (all-widenings)
+ ;; here I am
  (cached-topological-sort
   (lambda (v1v2a v1v2b)
    (or (component? (first v1v2a) (first v1v2b))
@@ -5804,17 +6178,18 @@
 				   (environment-binding-values b)
 				   e
 				   application-callee))))
-	 (if (and (primitive-procedure? v1)
-		  (eq? (primitive-procedure-name v1) 'if-procedure))
+	 (if (and (singleton? v1)
+		  (primitive-procedure? (value v1))
+		  (eq? (primitive-procedure-name (value v1)) 'if-procedure))
 	     (let* ((v (abstract-eval1 (application-argument e)
 				       (restrict-environment
 					(environment-binding-values b)
 					e
 					application-argument))))
-	      (let* ((v1 (vlad-car v))
-		     (v2 (vlad-cdr v))
-		     (v3 (vlad-car v2))
-		     (v4 (vlad-cdr v2))
+	      (let* ((v1 (vlad-car (value v)))
+		     (v2 (vlad-cdr (value v)))
+		     (v3 (vlad-car (value v2)))
+		     (v4 (vlad-cdr (value v2)))
 		     (v5 (cond
 			  ((eq? v1 'boolean)
 			   (abstract-value-union
@@ -5835,7 +6210,8 @@
      (else '())))
    *expressions*)))
 
-(define (all-functions bs)
+(define (all-functions)
+ ;; here I am
  (map-reduce
   (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
   '()
@@ -5892,7 +6268,7 @@
        '()))
   *expressions*))
 
-(define (all-primitives s bs)
+(define (all-primitives s)
  (map-reduce
   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
   '()
@@ -5908,8 +6284,9 @@
 					  (environment-binding-values b)
 					  e
 					  application-callee))))
-		(if (and (primitive-procedure? v1)
-			 (eq? (primitive-procedure-name v1) s))
+		(if (and (singleton? v1)
+			 (primitive-procedure? (value v1))
+			 (eq? (primitive-procedure-name (value v1)) s))
 		    (abstract-eval1 (application-argument e)
 				    (restrict-environment
 				     (environment-binding-values b)
@@ -5921,19 +6298,16 @@
   *expressions*))
 
 (define (generate-builtin-name s v vs)
- (let ((i (positionp abstract-value=? v vs)))
-  (assert i)
-  (list s i)))
+ (assert (memp abstract-value=? v vs))
+ (list s (positionp abstract-value=? v vs)))
 
 (define (generate-function-name v1 v2 v1v2s)
- (let ((i (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
-  (assert i)
-  (list "f" i)))
+ (assert (memp abstract-value-pair=? (list v1 v2) v1v2s))
+ (list "f" (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
 
 (define (generate-widener-name v1 v2 v1v2s)
- (let ((i (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
-  (assert i)
-  (list "widen" i)))
+ (assert (memp abstract-value-pair=? (list v1 v2) v1v2s))
+ (list "widen" (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
 
 (define (commas-between-void codes)
  (let ((codes (removeq #f codes)))
@@ -5949,10 +6323,12 @@
    ((null? (rest codes)) (first codes))
    (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '())))))
 
+;;; here I am
+
 (define (generate-constructor-declarations xs vs)
  (map
   (lambda (v)
-   (if (or (void? v) (vlad-boolean? v) (abstract-real? v))
+   (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
        '()
        (list "static INLINE "
 	     (generate-specifier v vs)
@@ -5971,7 +6347,7 @@
 (define (generate-constructor-definitions xs vs)
  (map
   (lambda (v)
-   (if (or (void? v) (vlad-boolean? v) (abstract-real? v))
+   (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
        '()
        (list "static INLINE "
 	     (generate-specifier v vs)
@@ -6017,7 +6393,7 @@
 	  "("
 	  (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
 	  "){return "
-	  (cond ((vlad-boolean? v2) (if (vlad-false? v1) "FALSE" "TRUE"))
+	  (cond ((abstract-boolean? v2) (if (vlad-false? v1) "FALSE" "TRUE"))
 		;; This assumes that Scheme inexact numbers are printed as C
 		;; doubles.
 		((abstract-real? v1) (exact->inexact v1))
@@ -6052,7 +6428,7 @@
 	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
 	     ");"
 	     #\newline))
-      (all-primitives s bs)))
+      (all-primitives s)))
 
 (define (generate-real-primitive-definitions s s1 s2 s3 bs vs)
  (map (lambda (v)
@@ -6067,7 +6443,7 @@
 	     (format #f s3 (if (void? v) v "x"))
 	     ";}"
 	     #\newline))
-      (all-primitives s bs)))
+      (all-primitives s)))
 
 (define (generate-real*real-primitive-declarations s s1 s2 bs vs)
  (map (lambda (v)
@@ -6081,7 +6457,7 @@
 	      (if (void? v) "void" (list (generate-specifier v vs) " x"))
 	      ");"
 	      #\newline)))
-      (all-primitives s bs)))
+      (all-primitives s)))
 
 (define (generate-real*real-primitive-definitions s s1 s2 s3 bs vs)
  (map (lambda (v)
@@ -6097,7 +6473,7 @@
 	      (format #f s3 (if (void? v1) v1 "x.a") (if (void? v2) v2 "x.d"))
 	      ";}"
 	      #\newline)))
-      (all-primitives s bs)))
+      (all-primitives s)))
 
 (define (calls-if-procedure? e v2 vs bs)
  (or
@@ -6204,7 +6580,7 @@
 	  (abstract-apply-closure
 	   (lambda (e vs) vs) (first (second thing2)) (second (second thing2)))
 	  bs))))
-  (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure bs))
+  (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure))
 	  (map (lambda (v1v2) (list 'function v1v2)) v1v2s))))
 
 (define (generate-if-and-function-declarations bs vs v1v2s things1-things2)
@@ -6739,7 +7115,7 @@
 		v1v2s)))))
    (else (internal-error)))))
 
-(define (all-unary-ad p? s bs)
+(define (all-unary-ad p? s)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
@@ -6775,7 +7151,7 @@
 	 '()))
     *expressions*))))
 
-(define (all-binary-ad p? g s f f-inverse bs)
+(define (all-binary-ad p? g s f f-inverse)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (cached-topological-sort
@@ -6826,7 +7202,7 @@
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
 		  #\newline))))
-      (all-unary-ad p? s bs)))
+      (all-unary-ad p? s)))
 
 (define (generate-binary-ad-declarations p? g s s1 f f-inverse bs vs)
  (map (lambda (v)
@@ -6841,7 +7217,7 @@
 		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
 		  ");"
 		  #\newline))))
-      (all-binary-ad p? g s f f-inverse bs)))
+      (all-binary-ad p? g s f f-inverse)))
 
 (define (generate-unary-ad-definitions p? g f s s1 bs xs vs)
  (map (lambda (v)
@@ -6858,7 +7234,7 @@
 		  (g v)
 		  ";}"
 		  #\newline))))
-      (all-unary-ad p? s bs)))
+      (all-unary-ad p? s)))
 
 (define (generate-binary-ad-definitions p? h g s s1 f f-inverse bs xs vs)
  (map (lambda (v)
@@ -6875,14 +7251,14 @@
 		  (h v)
 		  ";}"
 		  #\newline))))
-      (all-binary-ad p? g s f f-inverse bs)))
+      (all-binary-ad p? g s f f-inverse)))
 
 (define (generate-zero-definitions bs xs vs)
  (generate-unary-ad-definitions
   (lambda (v) #t)
   (lambda (v)
    (cond
-    ((vlad-boolean? v) "x")
+    ((abstract-boolean? v) "x")
     ((abstract-real? v) "0.0")
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (list (generate-builtin-name "m" (zero v) vs)
@@ -6910,7 +7286,7 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (vlad-boolean? v)
+    ((or (abstract-boolean? v)
 	 (abstract-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
@@ -7014,7 +7390,7 @@
   (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
     (cond
-     ((or (vlad-boolean? v1)
+     ((or (abstract-boolean? v1)
 	  (abstract-real? v1)
 	  (perturbation-tagged-value? v1)
 	  (bundle? v1)
@@ -7061,7 +7437,7 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (vlad-boolean? v)
+    ((or (abstract-boolean? v)
 	 (abstract-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
@@ -7115,7 +7491,7 @@
   (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
     (cond
-     ((vlad-boolean? v1)
+     ((abstract-boolean? v1)
       ;; needs work: To generate run-time conformance check when the primal
       ;;             and/or tangent are abstract booleans.
       (if (void? v1)
@@ -7175,7 +7551,7 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (vlad-boolean? v)
+    ((or (abstract-boolean? v)
 	 (abstract-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
@@ -7223,10 +7599,10 @@
   *j-inverse '*j-inverse "starj_inverse" bs xs vs))
 
 (define (generate e bs bs0)
- (let* ((xs (all-variables bs))
-	(vs (all-nested-abstract-values bs))
-	(v1v2s (all-functions bs))
-	(v1v2s1 (all-widenings bs))
+ (let* ((xs (all-variables))
+	(vs (all-nested-abstract-values))
+	(v1v2s (all-functions))
+	(v1v2s1 (all-widenings))
 	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
   (list
    "#include <math.h>" #\newline
@@ -7498,7 +7874,7 @@
 (define (read-real v)
  (cond (*abstract?*
 	(if (vlad-empty-list? v)
-	    'real
+	    (abstract-real)
 	    (compile-time-warning
 	     "Argument might not be an equivalent value" (vlad-empty-list) v)))
        (else (unless (vlad-empty-list? v)
@@ -7521,12 +7897,12 @@
  (lambda (v)
   (cond (*abstract?*
 	 (map-union (lambda (u)
-		     (if (abstract-real? u)
-			 (if (real? u) (f u) 'real)
+		     (if (vlad-real? u)
+			 (if (real? u) (f u) (abstract-real))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
 		    (unroll v)))
-	(else (unless (abstract-real? v)
+	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f v)))))
 
@@ -7534,14 +7910,14 @@
  (lambda (v)
   (cond (*abstract?*
 	 (map-union (lambda (u)
-		     (if (abstract-real? u)
+		     (if (vlad-real? u)
 			 (if (real? u)
 			     (if (f u) (vlad-true) (vlad-false))
 			     (abstract-boolean))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
 		    (unroll v)))
-	(else (unless (abstract-real? v)
+	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (if (f v) (vlad-true) (vlad-false))))))
 
@@ -7567,9 +7943,9 @@
 	   (if (vlad-pair? u)
 	       (cross-union
 		(lambda (u1 u2)
-		 (if (and (abstract-real? u1) (abstract-real? u2))
+		 (if (and (vlad-real? u1) (vlad-real? u2))
 		     ;; needs work: This may be imprecise for *, /, and atan.
-		     (if (and (real? u1) (real? u2)) (f u1 u2) 'real)
+		     (if (and (real? u1) (real? u2)) (f u1 u2) (abstract-real))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
 		(unroll (vlad-car u))
@@ -7580,7 +7956,7 @@
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	       (unless (and (abstract-real? v1) (abstract-real? v2))
+	       (unless (and (vlad-real? v1) (vlad-real? v2))
 		(run-time-error (format #f "Argument to ~a is invalid" s) v))
 	       (f v1 v2))))))
 
@@ -7592,7 +7968,7 @@
 	   (if (vlad-pair? u)
 	       (cross-union
 		(lambda (u1 u2)
-		 (if (and (abstract-real? u1) (abstract-real? u2))
+		 (if (and (vlad-real? u1) (vlad-real? u2))
 		     (if (and (real? u1) (real? u2))
 			 (if (f u1 u2) (vlad-true) (vlad-false))
 			 (abstract-boolean))
@@ -7606,7 +7982,7 @@
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	       (unless (and (abstract-real? v1) (abstract-real? v2))
+	       (unless (and (vlad-real? v1) (vlad-real? v2))
 		(run-time-error (format #f "Argument to ~a is invalid" s) v))
 	       (if (f v1 v2) (vlad-true) (vlad-false)))))))
 
@@ -8040,7 +8416,7 @@
      (cons (*j (boolean? x))
 	   (lambda ((sensitivity y)) (sensitize (cons boolean? (zero x))))))))
  (define-primitive-procedure 'real?
-  (unary-predicate abstract-real? "real?")
+  (unary-predicate vlad-real? "real?")
   (lambda (v vs) (unimplemented "real?"))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -8193,7 +8569,7 @@
     (cons (*j (read-real))
 	  (lambda ((sensitivity y)) (sensitize (cons read-real '()))))))
  (define-primitive-procedure 'real
-  (unary-real (lambda (v) (if *abstract?* 'real v)) "real")
+  (unary-real (lambda (v) (if *abstract?* (abstract-real) v)) "real")
   (lambda (v vs) (generate-builtin-name "real" v vs))
   ;; These widen the tangent and cotangent as well. Nothing requires us to do
   ;; so. It is just a design decision.
