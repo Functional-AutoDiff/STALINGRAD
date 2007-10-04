@@ -106,6 +106,9 @@
        (append '(".") include-path '("/usr/local/stalingrad/include")))
  (set! *assert?* (not no-assert?))
  (set! *wizard?* wizard?)
+ (set! *hash-cons-expressions?*
+       (or #t				;debugging
+	   flow-analysis? flow-analysis-result? compile?))
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
  (set! *metered?* metered?)
