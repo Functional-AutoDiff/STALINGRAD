@@ -1611,6 +1611,14 @@
        (every (lambda (x v)
 	       (or (empty-abstract-value? v)
 		   (up? v)
+		   ;; needs work: See the note in value-tags. Generally, need
+		   ;;             to check that the variable tags is a prefix
+		   ;;             of some value tags of some member of the
+		   ;;             extension. But even with such a lax condition
+		   ;;             you cannot abort when it is violated because
+		   ;;             it may result from an execution path that
+		   ;;             won't actually occur. so all you can soundly
+		   ;;             do is return an empty abstract value.
 		   (prefix-tags? (variable-tags x) (value-tags v))))
 	      (free-variables e)
 	      vs)))
@@ -1631,6 +1639,7 @@
        (every (lambda (x v)
 	       (or (empty-abstract-value? v)
 		   (up? v)
+		   ;; needs work: See the note in new-nonrecursive-closure.
 		   (prefix-tags? (variable-tags x) (value-tags v))))
 	      (recursive-closure-free-variables
 	       (vector->list xs) (vector->list es))
@@ -1731,6 +1740,107 @@
 
 ;;; Bundles
 
+(define (bundlable? v v-perturbation)
+ (let loop ((v v)
+	    (v-perturbation v-perturbation)
+	    (cs '())
+	    (vs-above '())
+	    (vs-perturbation-above '()))
+  (cond
+   ((up? v)
+    (loop (list-ref vs-above (up-index v))
+	  v-perturbation
+	  cs
+	  (rest* vs-above (+ (up-index v) 1))
+	  vs-perturbation-above))
+   ((up? v-perturbation)
+    (loop v
+	  (list-ref vs-perturbation-above (up-index v-perturbation))
+	  cs
+	  vs-above
+	  (rest* vs-perturbation-above (+ (up-index v-perturbation) 1))))
+   (else
+    (or
+     (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+     (and (union? v)
+	  (union? v-perturbation)
+	  (some (lambda (u)
+		 (some (lambda (u-perturbation)
+			(loop u
+			      u-perturbation
+			      (cons (cons v v-perturbation) cs)
+			      (cons v vs-above)
+			      (cons v-perturbation vs-perturbation-above)))
+		       (union-values v-perturbation)))
+		(union-values v)))
+     (and (vlad-empty-list? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (vlad-empty-list? (perturbation-tagged-value-primal v-perturbation)))
+     (and (vlad-true? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (vlad-true? (perturbation-tagged-value-primal v-perturbation)))
+     (and (vlad-false? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (vlad-false? (perturbation-tagged-value-primal v-perturbation)))
+     (and (vlad-real? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (vlad-real? (perturbation-tagged-value-primal v-perturbation)))
+     (and (primitive-procedure? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (primitive-procedure?
+	   (perturbation-tagged-value-primal v-perturbation))
+	  (eq? v (perturbation-tagged-value-primal v-perturbation)))
+     (and (perturbation-tagged-value? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (perturbation-tagged-value?
+	   (perturbation-tagged-value-primal v-perturbation))
+	  (loop (perturbation-tagged-value-primal v)
+		(new-perturbation-tagged-value
+		 (perturbation-tagged-value-primal
+		  (perturbation-tagged-value-primal v-perturbation)))
+		cs
+		vs-above
+		vs-perturbation-above))
+     (and (bundle? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (bundle? (perturbation-tagged-value-primal v-perturbation))
+	  (loop (bundle-primal v)
+		(new-perturbation-tagged-value
+		 (bundle-primal
+		  (perturbation-tagged-value-primal v-perturbation)))
+		cs
+		vs-above
+		vs-perturbation-above)
+	  (loop (bundle-tangent v)
+		(new-perturbation-tagged-value
+		 (bundle-tangent
+		  (perturbation-tagged-value-primal v-perturbation)))
+		cs
+		vs-above
+		vs-perturbation-above))
+     (and (sensitivity-tagged-value? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (sensitivity-tagged-value?
+	   (perturbation-tagged-value-primal v-perturbation))
+	  (loop (sensitivity-tagged-value-primal v)
+		(new-perturbation-tagged-value
+		 (sensitivity-tagged-value-primal
+		  (perturbation-tagged-value-primal v-perturbation)))
+		cs
+		vs-above
+		vs-perturbation-above))
+     (and (reverse-tagged-value? v)
+	  (perturbation-tagged-value? v-perturbation)
+	  (reverse-tagged-value?
+	   (perturbation-tagged-value-primal v-perturbation))
+	  (loop (reverse-tagged-value-primal v)
+		(new-perturbation-tagged-value
+		 (reverse-tagged-value-primal
+		  (perturbation-tagged-value-primal v-perturbation)))
+		cs
+		vs-above
+		vs-perturbation-above)))))))
+
 (define (new-bundle v v-perturbation)
  (assert
   (and (or (not *abstract?*)
@@ -1740,11 +1850,8 @@
 	   (up? v)
 	   (empty-abstract-value? v-perturbation)
 	   (up? v-perturbation)
-	   (and (tagged? 'perturbation (value-tags v-perturbation))
-		(equal-tags?
-		 (value-tags v)
-		 (remove-tag 'perturbation (value-tags v-perturbation)))))))
- ;; needs work: Should check that v-perturbation conforms to v.
+	   ;; needs work: See the note in new-nonrecursive-closure.
+	   (bundlable? v v-perturbation))))
  (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
      (empty-abstract-value)
      (make-bundle v v-perturbation)))
@@ -1768,9 +1875,11 @@
 		  (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2))))
 	      (or (empty-abstract-value? v1)
 		  (up? v1)
+		  ;; needs work: See the note in new-nonrecursive-closure.
 		  (prefix-tags? tags (value-tags v1)))
 	      (or (empty-abstract-value? v2)
 		  (up? v2)
+		  ;; needs work: See the note in new-nonrecursive-closure.
 		  (prefix-tags? tags (value-tags v2)))))
  (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
@@ -1931,6 +2040,9 @@
  (cond
   ((union? v)
    (assert (not (empty-abstract-value? v)))
+   ;; needs work: This might not work when imprecision yields unions because it
+   ;;             might be the case that different union members have
+   ;;             different tag stacks.
    (let ((tags (value-tags (first (union-values v)))))
     (assert (every (lambda (u) (equal? tags (value-tags u)))
 		   (rest (union-values v))))
@@ -2401,55 +2513,11 @@
 	  (second result2))))
   (else (internal-error))))
 
-(define (expression-equal? e1 e2)
- ;; debugging: This is here just to check idemopotency of alpha-convert and
- ;;            anf-convert.
- (or
-  (and (constant-expression? e1)
-       (constant-expression? e2)
-       (abstract-value=? (constant-expression-value e1)
-			 (constant-expression-value e2)))
-  (and (variable-access-expression? e1)
-       (variable-access-expression? e2)
-       (variable=? (variable-access-expression-variable e1)
-		   (variable-access-expression-variable e2)))
-  (and (lambda-expression? e1)
-       (lambda-expression? e2)
-       (expression-equal? (lambda-expression-parameter e1)
-			  (lambda-expression-parameter e2))
-       (expression-equal? (lambda-expression-body e1)
-			  (lambda-expression-body e2)))
-  (and (application? e1)
-       (application? e2)
-       (expression-equal? (application-callee e1) (application-callee e2))
-       (expression-equal? (application-argument e1)(application-argument e2)))
-  (and (letrec-expression? e1)
-       (letrec-expression? e2)
-       (= (length (letrec-expression-procedure-variables e1))
-	  (length (letrec-expression-procedure-variables e2)))
-       (every variable=?
-	      (letrec-expression-procedure-variables e1)
-	      (letrec-expression-procedure-variables e2))
-       (every expression-equal?
-	      (letrec-expression-lambda-expressions e1)
-	      (letrec-expression-lambda-expressions e2))
-       (expression-equal? (letrec-expression-body e1)
-			  (letrec-expression-body e2)))
-  (and (cons-expression? e1) (cons-expression? e2)
-       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
-       (expression-equal? (cons-expression-car e1) (cons-expression-car e2))
-       (expression-equal? (cons-expression-cdr e1) (cons-expression-cdr e2)))))
-
 (define (alpha-convert e)
- ;; debugging: To check idempotency.
- (define (alpha-convert e)
-  (first (alpha-convert-expression
-	  e
-	  (free-variables e)
-	  (map make-alpha-binding (free-variables e) (free-variables e)))))
- (let* ((e1 (alpha-convert e)) (e2 (alpha-convert e1)))
-  (unless (expression-equal? e1 e2) (internal-error "idempotency"))
-  e1))
+ (first (alpha-convert-expression
+	 e
+	 (free-variables e)
+	 (map make-alpha-binding (free-variables e) (free-variables e)))))
 
 ;;; ANF conversion
 
@@ -2767,24 +2835,11 @@
  (anf-result (anf-convert-expression (anf-max e) e '() '() p?)))
 
 (define (anf-convert-lambda-expression e p?)
- ;; debugging: To check idempotency.
- (define (anf-convert-lambda-expression e p?)
-  (let* ((result1 (anf-convert-parameter
-		   (anf-max e) (lambda-expression-parameter e) p?))
-	 (result2 (anf-convert-expression
-		   (first result1) (lambda-expression-body e) '() '() p?)))
-   (new-lambda-expression (second result1) (anf-result result2))))
- (if p?
-     (let* ((e1 (anf-convert-lambda-expression e p?))
-	    (e2 (anf-convert-lambda-expression e1 p?)))
-      (unless (expression-equal? e1 e2)
-       (pp (abstract->concrete e1))
-       (newline)
-       (pp (abstract->concrete e2))
-       (newline)
-       (internal-error "idempotency"))
-      e1)
-     (anf-convert-lambda-expression e p?)))
+ (let* ((result1 (anf-convert-parameter
+		  (anf-max e) (lambda-expression-parameter e) p?))
+	(result2 (anf-convert-expression
+		  (first result1) (lambda-expression-body e) '() '() p?)))
+  (new-lambda-expression (second result1) (anf-result result2))))
 
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
@@ -3127,10 +3182,13 @@
  ;;            perturbation-transform-inverse of things that don't result from
  ;;            perturbation-transform.
  ;; debugging
- (when #f
+ (when #t
   (unless (expression-perturbation-transform-inverse e)
+   (pp (abstract->concrete e))
+   (newline)
    (display "perturbation-transform-inverse cache miss")
-   (newline)))
+   (newline)
+   (exit -1)))
  (if (expression-perturbation-transform-inverse e)
      (expression-perturbation-transform-inverse e)
      (let ((e1 (cond
@@ -3212,10 +3270,13 @@
  ;;            forward-transform-inverse of things that don't result from
  ;;            forward-transform.
  ;; debugging
- (when #f
+ (when #t
   (unless (expression-forward-transform-inverse e)
+   (pp (abstract->concrete e))
+   (newline)
    (display "forward-transform-inverse cache miss")
-   (newline)))
+   (newline)
+   (exit -1)))
  (if (expression-forward-transform-inverse e)
      (expression-forward-transform-inverse e)
      (let ((e1 (cond
@@ -3513,17 +3574,20 @@
      (if b
 	 (primitive-procedure-forward (value-binding-value b))
 	 (cond
-	  ;; needs work: check conformance
-	  ((vlad-empty-list? v)
+	  ((and (vlad-empty-list? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((vlad-true? v)
+	  ((and (vlad-true? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((vlad-false? v)
+	  ((and (vlad-false? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((vlad-real? v)
+	  ((and (vlad-real? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((primitive-procedure? v) (internal-error))
-	  ((nonrecursive-closure? v)
+	  ((and (nonrecursive-closure? v)
+		(nonrecursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (nonrecursive-closure-parameter v-perturbation))
+		(nonrecursive-closure-match? v (unperturb v-perturbation)))
 	   ;; See the note in abstract-environment=?.
 	   (new-nonrecursive-closure
 	    (map (lambda (v v-perturbation)
@@ -3531,7 +3595,11 @@
 		 (nonrecursive-closure-values v)
 		 (nonrecursive-closure-values v-perturbation))
 	    (forward-transform (nonrecursive-closure-lambda-expression v))))
-	  ((recursive-closure? v)
+	  ((and (recursive-closure? v)
+		(recursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (recursive-closure-parameter v-perturbation))
+		(recursive-closure-match? v (unperturb v-perturbation)))
 	   ;; See the note in abstract-environment=?.
 	   (new-recursive-closure
 	    (map (lambda (v v-perturbation)
@@ -3542,12 +3610,13 @@
 	    (map-vector forward-transform
 			(recursive-closure-lambda-expressions v))
 	    (recursive-closure-index v)))
-	  ((perturbation-tagged-value? v)
+	  ((and (perturbation-tagged-value? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((bundle? v) (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((sensitivity-tagged-value? v)
+	  ((and (bundle? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
-	  ((reverse-tagged-value? v)
+	  ((and (sensitivity-tagged-value? v) (bundlable? v v-perturbation))
+	   (new-bundle (singleton v) (singleton v-perturbation)))
+	  ((and (reverse-tagged-value? v) (bundlable? v v-perturbation))
 	   (new-bundle (singleton v) (singleton v-perturbation)))
 	  ((and (tagged-pair? v)
 		(tagged-pair? v-perturbation)
@@ -3644,10 +3713,13 @@
  ;;            unreverseify-parameter of things that don't result from
  ;;            reverseify-parameter.
  ;; debugging
- (when #f
+ (when #t
   (unless (expression-reverse-parameter-transform-inverse p)
+   (pp (abstract->concrete p))
+   (newline)
    (display "reverse-parameter-transform-inverse cache miss")
-   (newline)))
+   (newline)
+   (exit -1)))
  (if (expression-reverse-parameter-transform-inverse p)
      (expression-reverse-parameter-transform-inverse p)
      (let ((p1 (cond
@@ -3750,10 +3822,13 @@
  ;;            sensitivity-transform-inverse of things that don't result from
  ;;            sensitivity-transform.
  ;; debugging
- (when #f
+ (when #t
   (unless (expression-sensitivity-transform-inverse e)
+   (pp (abstract->concrete e))
+   (newline)
    (display "sensitivity-transform-inverse cache miss")
-   (newline)))
+   (newline)
+   (exit -1)))
  (if (expression-sensitivity-transform-inverse e)
      (expression-sensitivity-transform-inverse e)
      (let ((e1 (cond
@@ -4103,10 +4178,13 @@
  ;;            reverse-transform-inverse of things that don't result from
  ;;            reverse-transform.
  ;; debugging
- (when #f
+ (when #t
   (unless (expression-reverse-transform-inverse e)
+   (pp (abstract->concrete e))
+   (newline)
    (display "reverse-transform-inverse cache miss")
-   (newline)))
+   (newline)
+   (exit -1)))
  (if (expression-reverse-transform-inverse e)
      (expression-reverse-transform-inverse e)
      (let ((e1 (new-lambda-expression
@@ -5562,7 +5640,7 @@
    (for-each (lambda (vs)
 	      (let ((e1 (lambda-expression-body
 			 (nonrecursive-closure-lambda-expression v1))))
-	       ;; See note in abstract-eval-prime!
+	       ;; See the note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
 		(enqueue! e))
@@ -5573,7 +5651,7 @@
 	      (let ((e1 (lambda-expression-body
 			 (vector-ref (recursive-closure-lambda-expressions v1)
 				     (recursive-closure-index v1)))))
-	       ;; See note in abstract-eval-prime!
+	       ;; See the note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
 		(enqueue! e))
