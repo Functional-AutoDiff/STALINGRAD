@@ -107,7 +107,7 @@
  (set! *assert?* (not no-assert?))
  (set! *wizard?* wizard?)
  (set! *hash-cons-expressions?*
-       (or #t				;debugging
+       (or #f				;debugging
 	   flow-analysis? flow-analysis-result? compile?))
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
