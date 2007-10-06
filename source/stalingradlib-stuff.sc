@@ -83,19 +83,11 @@
 ;;; Structures
 
 (define-structure constant-expression
- sensitivity-transform
- sensitivity-transform-inverse
- reverse-parameter-transform
- reverse-parameter-transform-inverse
  parents
  environment-bindings
  value)
 
 (define-structure variable-access-expression
- sensitivity-transform
- sensitivity-transform-inverse
- reverse-parameter-transform
- reverse-parameter-transform-inverse
  parents
  environment-bindings
  variable)
@@ -109,10 +101,6 @@
  sensitivity-transform-inverse
  reverse-transform
  reverse-transform-inverse
- ;; The next two slots are technically not needed as they should be the same
- ;; as the above two slots.
- reverse-parameter-transform
- reverse-parameter-transform-inverse
  parents
  environment-bindings
  free-variables
@@ -120,8 +108,6 @@
  body)
 
 (define-structure application
- sensitivity-transform
- sensitivity-transform-inverse
  parents
  environment-bindings
  enqueue?
@@ -130,10 +116,6 @@
  argument)
 
 (define-structure letrec-expression
- sensitivity-transform
- sensitivity-transform-inverse
- reverse-parameter-transform
- reverse-parameter-transform-inverse
  parents
  environment-bindings
  enqueue?
@@ -143,10 +125,6 @@
  body)
 
 (define-structure cons-expression
- sensitivity-transform
- sensitivity-transform-inverse
- reverse-parameter-transform
- reverse-parameter-transform-inverse
  parents
  environment-bindings
  enqueue?
@@ -621,28 +599,12 @@
  (new-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
 
-(define (unperturbationify-access e)
- ;; needs work: Only needed for experimentation with eliminating hash consing
- ;;             of expressions.
- (new-variable-access-expression
-  (unperturbationify (variable-access-expression-variable e))))
-
-(define (unforwardify-access e)
- ;; needs work: Only needed for experimentation with eliminating hash consing
- ;;             of expressions.
- (new-variable-access-expression
-  (unforwardify (variable-access-expression-variable e))))
-
 (define (unsensitivityify-access? e)
  (unsensitivityify? (variable-access-expression-variable e)))
 
 (define (unsensitivityify-access e)
  (new-variable-access-expression
   (unsensitivityify (variable-access-expression-variable e))))
-
-(define (unreverseify-access e)
- (new-variable-access-expression
-  (unreverseify (variable-access-expression-variable e))))
 
 (define (variable-tags x)
  (if (pair? x)
@@ -733,9 +695,7 @@
 ;;; Expression constructors
 
 ;;; We cannot eliminate hash consing of expressions in the current
-;;; architecture. Many procedures use *expressions* during compilation. Even
-;;; the interpreter fails on triple.vlad and hessian.vlad because the assertion
-;;; fails in forward-transform-inverse.
+;;; architecture. Many procedures use *expressions* during compilation.
 
 ;;; We have put back in the elimination of hash consing of expressions in the
 ;;; interpreter to explore the source of inefficiency.
@@ -748,11 +708,11 @@
 		*constant-expressions*)))
       (if e0
 	  e0
-	  (let ((e0 (make-constant-expression #f #f #f #f '() '() value)))
+	  (let ((e0 (make-constant-expression '() '() value)))
 	   (set! *constant-expressions* (cons e0 *constant-expressions*))
 	   (set! *expressions* (cons e0 *expressions*))
 	   e0)))
-     (make-constant-expression #f #f #f #f '() '() value)))
+     (make-constant-expression '() '() value)))
 
 (define (new-variable-access-expression variable)
  (if *hash-cons-expressions?*
@@ -762,13 +722,12 @@
 			*variable-access-expressions*)))
       (if e0
 	  e0
-	  (let ((e0 (make-variable-access-expression
-		     #f #f #f #f '() '() variable)))
+	  (let ((e0 (make-variable-access-expression '() '() variable)))
 	   (set! *variable-access-expressions*
 		 (cons e0 *variable-access-expressions*))
 	   (set! *expressions* (cons e0 *expressions*))
 	   e0)))
-     (make-variable-access-expression #f #f #f #f '() '() variable)))
+     (make-variable-access-expression '() '() variable)))
 
 (define (new-lambda-expression p e)
  (assert (not (duplicatesp? variable=? (parameter-variables p))))
@@ -781,8 +740,6 @@
       (if e0
 	  e0
 	  (let ((e0 (make-lambda-expression
-		     #f
-		     #f
 		     #f
 		     #f
 		     #f
@@ -810,8 +767,6 @@
       #f
       #f
       #f
-      #f
-      #f
       '()
       '()
       (sort-variables (set-differencep variable=?
@@ -829,8 +784,6 @@
       (if e0
 	  e0
 	  (let ((e0 (make-application
-		     #f
-		     #f
 		     '()
 		     '()
 		     #f
@@ -843,8 +796,6 @@
 	   (set! *expressions* (cons e0 *expressions*))
 	   e0)))
      (make-application
-      #f
-      #f
       '()
       '()
       #f
@@ -874,10 +825,6 @@
 	  (if e0
 	      e0
 	      (let ((e0 (make-letrec-expression
-			 #f
-			 #f
-			 #f
-			 #f
 			 '()
 			 '()
 			 #f
@@ -895,10 +842,6 @@
 	       (set! *expressions* (cons e0 *expressions*))
 	       e0)))
 	 (make-letrec-expression
-	  #f
-	  #f
-	  #f
-	  #f
 	  '()
 	  '()
 	  #f
@@ -922,10 +865,6 @@
       (if e0
 	  e0
 	  (let ((e0 (make-cons-expression
-		     #f
-		     #f
-		     #f
-		     #f
 		     '()
 		     '()
 		     #f
@@ -939,10 +878,6 @@
 	   (set! *expressions* (cons e0 *expressions*))
 	   e0)))
      (make-cons-expression
-      #f
-      #f
-      #f
-      #f
       '()
       '()
       #f
@@ -953,111 +888,6 @@
       e2)))
 
 ;;; Generic expression accessors and mutators
-
-(define (expression-sensitivity-transform e)
- ((cond ((constant-expression? e) constant-expression-sensitivity-transform)
-	((variable-access-expression? e)
-	 variable-access-expression-sensitivity-transform)
-	((lambda-expression? e) lambda-expression-sensitivity-transform)
-	((application? e) application-sensitivity-transform)
-	((letrec-expression? e) letrec-expression-sensitivity-transform)
-	((cons-expression? e) cons-expression-sensitivity-transform)
-	(else (internal-error)))
-  e))
-
-(define (set-expression-sensitivity-transform! e e1)
- ((cond
-   ((constant-expression? e) set-constant-expression-sensitivity-transform!)
-   ((variable-access-expression? e)
-    set-variable-access-expression-sensitivity-transform!)
-   ((lambda-expression? e) set-lambda-expression-sensitivity-transform!)
-   ((application? e) set-application-sensitivity-transform!)
-   ((letrec-expression? e) set-letrec-expression-sensitivity-transform!)
-   ((cons-expression? e) set-cons-expression-sensitivity-transform!)
-   (else (internal-error)))
-  e
-  e1))
-
-(define (expression-sensitivity-transform-inverse e)
- ((cond
-   ((constant-expression? e) constant-expression-sensitivity-transform-inverse)
-   ((variable-access-expression? e)
-    variable-access-expression-sensitivity-transform-inverse)
-   ((lambda-expression? e) lambda-expression-sensitivity-transform-inverse)
-   ((application? e) application-sensitivity-transform-inverse)
-   ((letrec-expression? e) letrec-expression-sensitivity-transform-inverse)
-   ((cons-expression? e) cons-expression-sensitivity-transform-inverse)
-   (else (internal-error)))
-  e))
-
-(define (set-expression-sensitivity-transform-inverse! e e1)
- ((cond
-   ((constant-expression? e)
-    set-constant-expression-sensitivity-transform-inverse!)
-   ((variable-access-expression? e)
-    set-variable-access-expression-sensitivity-transform-inverse!)
-   ((lambda-expression? e)
-    set-lambda-expression-sensitivity-transform-inverse!)
-   ((application? e) set-application-sensitivity-transform-inverse!)
-   ((letrec-expression? e)
-    set-letrec-expression-sensitivity-transform-inverse!)
-   ((cons-expression? e) set-cons-expression-sensitivity-transform-inverse!)
-   (else (internal-error)))
-  e
-  e1))
-
-(define (expression-reverse-parameter-transform e)
- ((cond
-   ((constant-expression? e) constant-expression-reverse-parameter-transform)
-   ((variable-access-expression? e)
-    variable-access-expression-reverse-parameter-transform)
-   ((lambda-expression? e) lambda-expression-reverse-parameter-transform)
-   ((letrec-expression? e) letrec-expression-reverse-parameter-transform)
-   ((cons-expression? e) cons-expression-reverse-parameter-transform)
-   (else (internal-error)))
-  e))
-
-(define (set-expression-reverse-parameter-transform! e e1)
- ((cond
-   ((constant-expression? e)
-    set-constant-expression-reverse-parameter-transform!)
-   ((variable-access-expression? e)
-    set-variable-access-expression-reverse-parameter-transform!)
-   ((lambda-expression? e) set-lambda-expression-reverse-parameter-transform!)
-   ((letrec-expression? e) set-letrec-expression-reverse-parameter-transform!)
-   ((cons-expression? e) set-cons-expression-reverse-parameter-transform!)
-   (else (internal-error)))
-  e
-  e1))
-
-(define (expression-reverse-parameter-transform-inverse e)
- ((cond
-   ((constant-expression? e)
-    constant-expression-reverse-parameter-transform-inverse)
-   ((variable-access-expression? e)
-    variable-access-expression-reverse-parameter-transform-inverse)
-   ((lambda-expression? e)
-    lambda-expression-reverse-parameter-transform-inverse)
-   ((letrec-expression? e)
-    letrec-expression-reverse-parameter-transform-inverse)
-   ((cons-expression? e) cons-expression-reverse-parameter-transform-inverse)
-   (else (internal-error)))
-  e))
-
-(define (set-expression-reverse-parameter-transform-inverse! e e1)
- ((cond ((constant-expression? e)
-	 set-constant-expression-reverse-parameter-transform-inverse!)
-	((variable-access-expression? e)
-	 set-variable-access-expression-reverse-parameter-transform-inverse!)
-	((lambda-expression? e)
-	 set-lambda-expression-reverse-parameter-transform-inverse!)
-	((letrec-expression? e)
-	 set-letrec-expression-reverse-parameter-transform-inverse!)
-	((cons-expression? e)
-	 set-cons-expression-reverse-parameter-transform-inverse!)
-	(else (internal-error)))
-  e
-  e1))
 
 (define (expression-parents e)
  ((cond ((constant-expression? e) constant-expression-parents)
@@ -2251,9 +2081,13 @@
 	   (alpha-convert-parameter (lambda-expression-parameter e) xs))
 	  (result2 (alpha-convert-expression (lambda-expression-body e)
 					     (second result1)
-					     (append (third result1) bs))))
-    (list (new-lambda-expression (first result1) (first result2))
-	  (second result2))))
+					     (append (third result1) bs)))
+	  (e1 (new-lambda-expression (first result1) (first result2))))
+    (when (and (lambda-expression-sensitivity-transform-inverse e)
+	       (not (lambda-expression-sensitivity-transform-inverse e1)))
+     (set-lambda-expression-sensitivity-transform-inverse!
+      e1 (lambda-expression-sensitivity-transform-inverse e)))
+    (list e1 (second result2))))
   ((application? e)
    (let* ((result1 (alpha-convert-expression (application-callee e) xs bs))
 	  (result2 (alpha-convert-expression
@@ -3008,51 +2842,9 @@
       e1)))
 
 (define (perturbation-transform-inverse e)
- (define (loop e)
-  (cond
-   ((constant-expression? e)
-    (without-abstract
-     (lambda ()
-      (new-constant-expression (unperturb (constant-expression-value e))))))
-   ((variable-access-expression? e) (unperturbationify-access e))
-   ((lambda-expression? e) (perturbation-transform-inverse e))
-   ((application? e)
-    (new-application (loop (application-callee e))
-		     (loop (application-argument e))))
-   ((letrec-expression? e)
-    (new-letrec-expression
-     (map unperturbationify (letrec-expression-procedure-variables e))
-     (map loop (letrec-expression-lambda-expressions e))
-     (loop (letrec-expression-body e))))
-   ((cons-expression? e)
-    (assert (tagged? 'perturbation (cons-expression-tags e)))
-    (new-cons-expression (remove-tag 'perturbation (cons-expression-tags e))
-			 (loop (cons-expression-car e))
-			 (loop (cons-expression-cdr e))))
-   (else (internal-error))))
- (assert (lambda-expression? e))
- ;; here I am: There are cache misses in the interpreter. This appears to
- ;;            happen only when we disable hash consing of expressions. I don't
- ;;            understand why. In other words, we take
- ;;            perturbation-transform-inverse of things that don't result from
- ;;            perturbation-transform.
- ;; debugging
- (when #t
-  (unless (lambda-expression-perturbation-transform-inverse e)
-   (pp (abstract->concrete e))
-   (newline)
-   (display "perturbation-transform-inverse cache miss")
-   (newline)
-   (exit -1)))
- (if (lambda-expression-perturbation-transform-inverse e)
-     (lambda-expression-perturbation-transform-inverse e)
-     (let ((e1 (new-lambda-expression (loop (lambda-expression-parameter e))
-				      (loop (lambda-expression-body e)))))
-      (assert (not (lambda-expression-perturbation-transform-inverse e)))
-      (assert (not (lambda-expression-perturbation-transform e1)))
-      (set-lambda-expression-perturbation-transform-inverse! e e1)
-      (set-lambda-expression-perturbation-transform! e1 e)
-      e1)))
+ (assert (and (lambda-expression? e)
+	      (lambda-expression-perturbation-transform-inverse e)))
+ (lambda-expression-perturbation-transform-inverse e))
 
 (define (forward-transform e)
  (define (loop e)
@@ -3087,51 +2879,9 @@
       e1)))
 
 (define (forward-transform-inverse e)
- (define (loop e)
-  (cond
-   ((constant-expression? e)
-    (without-abstract
-     (lambda ()
-      (new-constant-expression (primal (constant-expression-value e))))))
-   ((variable-access-expression? e) (unforwardify-access e))
-   ((lambda-expression? e) (forward-transform-inverse e))
-   ((application? e)
-    (new-application (loop (application-callee e))
-		     (loop (application-argument e))))
-   ((letrec-expression? e)
-    (new-letrec-expression
-     (map unforwardify (letrec-expression-procedure-variables e))
-     (map loop (letrec-expression-lambda-expressions e))
-     (loop (letrec-expression-body e))))
-   ((cons-expression? e)
-    (assert (tagged? 'forward (cons-expression-tags e)))
-    (new-cons-expression (remove-tag 'forward (cons-expression-tags e))
-			 (loop (cons-expression-car e))
-			 (loop (cons-expression-cdr e))))
-   (else (internal-error))))
- (assert (lambda-expression? e))
- ;; here I am: There are cache misses in the interpreter. This appears to
- ;;            happen only when we disable hash consing of expressions. I don't
- ;;            understand why. In other words, we take
- ;;            forward-transform-inverse of things that don't result from
- ;;            forward-transform.
- ;; debugging
- (when #t
-  (unless (lambda-expression-forward-transform-inverse e)
-   (pp (abstract->concrete e))
-   (newline)
-   (display "forward-transform-inverse cache miss")
-   (newline)
-   (exit -1)))
- (if (lambda-expression-forward-transform-inverse e)
-     (lambda-expression-forward-transform-inverse e)
-     (let ((e1 (new-lambda-expression (loop (lambda-expression-parameter e))
-				      (loop (lambda-expression-body e)))))
-      (assert (not (lambda-expression-forward-transform-inverse e)))
-      (assert (not (lambda-expression-forward-transform e1)))
-      (set-lambda-expression-forward-transform-inverse! e e1)
-      (set-lambda-expression-forward-transform! e1 e)
-      e1)))
+ (assert (and (lambda-expression? e)
+	      (lambda-expression-forward-transform-inverse e)))
+ (lambda-expression-forward-transform-inverse e))
 
 (define (perturb v)
  (cond
@@ -3487,108 +3237,38 @@
 (define (sensitivityify-parameter p) (sensitivity-transform p))
 
 (define (reverseify-parameter p)
- ;; We need to memoize this for all parameters.
- ;; needs work: Once we solve the backpointer problem we won't need to memoize
- ;;             this anymore since it is only called by
- ;;             reverse-transform-internal.
- (if (expression-reverse-parameter-transform p)
-     (expression-reverse-parameter-transform p)
-     (let ((p1 (cond
-		((constant-expression? p)
-		 (without-abstract
-		  (lambda ()
-		   (new-constant-expression
-		    (*j (constant-expression-value p))))))
-		((variable-access-expression? p) (reverseify-access p))
-		((lambda-expression? p) (reverse-transform p))
-		((letrec-expression? p)
-		 (assert
-		  (and (variable-access-expression? (letrec-expression-body p))
-		       (memp variable=?
-			     (variable-access-expression-variable
-			      (letrec-expression-body p))
-			     (letrec-expression-procedure-variables p))))
-		 (new-letrec-expression
-		  (map reverseify (letrec-expression-procedure-variables p))
-		  (map-indexed (lambda (e i)
-				(reverse-transform-internal
-				 e
-				 (letrec-expression-procedure-variables p)
-				 (letrec-expression-lambda-expressions p)
-				 i))
-			       (letrec-expression-lambda-expressions p))
-		  (reverseify-access (letrec-expression-body p))))
-		((cons-expression? p)
-		 (new-cons-expression
-		  (add-tag 'reverse (cons-expression-tags p))
-		  (reverseify-parameter (cons-expression-car p))
-		  (reverseify-parameter (cons-expression-cdr p))))
-		(else (internal-error)))))
-      (assert (not (expression-reverse-parameter-transform p)))
-      (assert (not (expression-reverse-parameter-transform-inverse p1)))
-      (set-expression-reverse-parameter-transform! p p1)
-      (set-expression-reverse-parameter-transform-inverse! p1 p)
-      p1)))
-
-(define (unreverseify-parameter p)
- ;; We need to memoize this for all parameters.
- ;; needs work: Once we solve the backpointer problem we won't need to memoize
- ;;             this anymore since it is only called by
- ;;             reverse-transform-inverse-internal and
- ;;             reverse-transform-inverse/
- ;; here I am: There are cache misses in the interpreter irrespective of
- ;;            whether hash consing of expressions is enabled. I don't
- ;;            understand why. In other words, we take
- ;;            unreverseify-parameter of things that don't result from
- ;;            reverseify-parameter.
- ;; debugging
- (when #t
-  (unless (expression-reverse-parameter-transform-inverse p)
-   (pp (abstract->concrete p))
-   (newline)
-   (display "reverse-parameter-transform-inverse cache miss")
-   (newline)
-   (exit -1)))
- (if (expression-reverse-parameter-transform-inverse p)
-     (expression-reverse-parameter-transform-inverse p)
-     (let ((p1 (cond
-		((constant-expression? p)
-		 (without-abstract
-		  (lambda ()
-		   (new-constant-expression
-		    (*j-inverse (constant-expression-value p))))))
-		((variable-access-expression? p) (unreverseify-access p))
-		((lambda-expression? p) (reverse-transform-inverse p))
-		((letrec-expression? p)
-		 (assert
-		  (and (variable-access-expression? (letrec-expression-body p))
-		       (memp variable=?
-			     (variable-access-expression-variable
-			      (letrec-expression-body p))
-			     (letrec-expression-procedure-variables p))))
-		 (new-letrec-expression
-		  (map unreverseify (letrec-expression-procedure-variables p))
-		  (map reverse-transform-inverse
-		       (letrec-expression-lambda-expressions p))
-		  (unreverseify-access (letrec-expression-body p))))
-		((cons-expression? p)
-		 (new-cons-expression
-		  (remove-tag 'reverse (cons-expression-tags p))
-		  (unreverseify-parameter (cons-expression-car p))
-		  (unreverseify-parameter (cons-expression-cdr p))))
-		(else (internal-error)))))
-      ;; Note that we don't set the reverse parameter transform of p1 to p
-      ;; because unreverseify-parameter is many to one and thus not invertible.
-      (assert (not (expression-reverse-parameter-transform-inverse p)))
-      (set-expression-reverse-parameter-transform-inverse! p p1)
-      p1)))
+ (cond
+  ((constant-expression? p)
+   (without-abstract
+    (lambda () (new-constant-expression (*j (constant-expression-value p))))))
+  ((variable-access-expression? p) (reverseify-access p))
+  ((lambda-expression? p) (reverse-transform p))
+  ((letrec-expression? p)
+   (assert
+    (and (variable-access-expression? (letrec-expression-body p))
+	 (memp variable=?
+	       (variable-access-expression-variable
+		(letrec-expression-body p))
+	       (letrec-expression-procedure-variables p))))
+   (new-letrec-expression
+    (map reverseify (letrec-expression-procedure-variables p))
+    (map-indexed (lambda (e i)
+		  (reverse-transform-internal
+		   e
+		   (letrec-expression-procedure-variables p)
+		   (letrec-expression-lambda-expressions p)
+		   i))
+		 (letrec-expression-lambda-expressions p))
+    (reverseify-access (letrec-expression-body p))))
+  ((cons-expression? p)
+   (new-cons-expression (add-tag 'reverse (cons-expression-tags p))
+			(reverseify-parameter (cons-expression-car p))
+			(reverseify-parameter (cons-expression-cdr p))))
+  (else (internal-error))))
 
 (define (sensitivity-transform e)
- ;; We need to memoize this for all expressions because of
- ;; sensitivityify-parameter.
- ;; needs work: We don't need to memoize applications.
- (if (expression-sensitivity-transform e)
-     (expression-sensitivity-transform e)
+ (if (and (lambda-expression? e) (lambda-expression-sensitivity-transform e))
+     (lambda-expression-sensitivity-transform e)
      (let ((e1 (cond
 		((constant-expression? e)
 		 (without-abstract
@@ -3617,10 +3297,11 @@
 		  (sensitivity-transform (cons-expression-car e))
 		  (sensitivity-transform (cons-expression-cdr e))))
 		(else (internal-error)))))
-      (assert (not (expression-sensitivity-transform e)))
-      (assert (not (expression-sensitivity-transform-inverse e1)))
-      (set-expression-sensitivity-transform! e e1)
-      (set-expression-sensitivity-transform-inverse! e1 e)
+      (when (lambda-expression? e)
+       (assert (not (lambda-expression-sensitivity-transform e)))
+       (assert (not (lambda-expression-sensitivity-transform-inverse e1)))
+       (set-lambda-expression-sensitivity-transform! e e1)
+       (set-lambda-expression-sensitivity-transform-inverse! e1 e))
       e1)))
 
 (define (sensitivity-transform-inverse? e)
@@ -3648,24 +3329,23 @@
   (else (internal-error))))
 
 (define (sensitivity-transform-inverse e)
- ;; needs work: We need to memoize sensitivity-transform for all expressions
- ;;             because of sensitivityify-parameter But we only need to memoize
- ;;             this for lambda expressions.
  ;; here I am: There are cache misses in the interpreter irrespective of
  ;;            whether hash consing of expressions is enabled. I don't
  ;;            understand why. In other words, we take
  ;;            sensitivity-transform-inverse of things that don't result from
  ;;            sensitivity-transform.
  ;; debugging
- (when #f
-  (unless (expression-sensitivity-transform-inverse e)
-   (pp (abstract->concrete e))
-   (newline)
-   (display "sensitivity-transform-inverse cache miss")
-   (newline)
-   (exit -1)))
- (if (expression-sensitivity-transform-inverse e)
-     (expression-sensitivity-transform-inverse e)
+ (when #t
+  (when (lambda-expression? e)
+   (unless (lambda-expression-sensitivity-transform-inverse e)
+    (pp (abstract->concrete e))
+    (newline)
+    (display "sensitivity-transform-inverse cache miss")
+    (newline)
+    (exit -1))))
+ (if (and (lambda-expression? e)
+	  (lambda-expression-sensitivity-transform-inverse e))
+     (lambda-expression-sensitivity-transform-inverse e)
      (let ((e1 (cond
 		((constant-expression? e)
 		 (without-abstract
@@ -3698,8 +3378,9 @@
 		(else (internal-error)))))
       ;; Note that we don't set the sensitivity transform of e1 to e because
       ;; sensitivity-transform-inverse is many to one and thus not invertible.
-      (assert (not (expression-sensitivity-transform-inverse e)))
-      (set-expression-sensitivity-transform-inverse! e e1)
+      (when (lambda-expression? e)
+       (assert (not (lambda-expression-sensitivity-transform-inverse e)))
+       (set-lambda-expression-sensitivity-transform-inverse! e e1))
       e1)))
 
 (define (reverse-transform-internal e xs0 es0 i)
@@ -3955,111 +3636,10 @@
       (set-lambda-expression-reverse-transform! e e1)
       e1)))
 
-(define (result-cons-expression? p1 p2 e1 e2 e)
- ;; p1=(lambda ...)
- ;; p2=cons pa p1
- ;; in p2 end
- ;; ----------------------------------------------------------------
- ;; in pa end
- (and
-  ;; We don't check that this lambda expression is the proper backpropagator
-  ;; for the primal.
-  (lambda-expression? e1)
-  (cons-expression? e2)
-  (empty-tags? (cons-expression-tags e2))
-  (expression=? (cons-expression-cdr e2) p1)
-  (expression=? e p2)))
-
-(define (reverse-transform-inverse-internal e)
- (assert (and (let*? e)
-	      (>= (length (let*-parameters e)) 2)
-	      (result-cons-expression? (last (but-last (let*-parameters e)))
-				       (last (let*-parameters e))
-				       (last (but-last (let*-expressions e)))
-				       (last (let*-expressions e))
-				       (let*-body e))))
- (create-let*
-  (map (lambda (p e)
-	(cond
-	 ;; /   /
-	 ;; _   _
-	 ;; p = v -~-> p = v
-	 ((constant-expression? e)
-	  (make-parameter-binding
-	   (unreverseify-parameter p)
-	   (without-abstract
-	    (lambda ()
-	     (new-constant-expression
-	      (*j-inverse (constant-expression-value e)))))))
-	 ;; /   /
-	 ;; _   _
-	 ;; p = e -~-> p = e
-	 ((variable-access-expression? e)
-	  (make-parameter-binding
-	   (unreverseify-parameter p) (unreverseify-access e)))
-	 ;; /   /
-	 ;; _   ______
-	 ;; p = \ x e -~-> p = \ x e
-	 ((lambda-expression? e)
-	  (make-parameter-binding
-	   (unreverseify-parameter p) (reverse-transform-inverse e)))
-	 ;; /     /  /
-	 ;; _ _   __ __
-	 ;; p,p = x1 x2 -~-> p = x1 x2
-	 ((application? e)
-	  (make-parameter-binding
-	   (unreverseify-parameter (cons-expression-car p))
-	   (new-application (unreverseify-access (application-callee e))
-			    (unreverseify-access (application-argument e)))))
-	 ;; /   /  / /
-	 ;; _   __ _ __
-	 ;; p = x1 , x2 -~-> p = x1,x2
-	 ((cons-expression? e)
-	  (make-parameter-binding
-	   (unreverseify-parameter p)
-	   (new-cons-expression
-	    (remove-tag 'reverse (cons-expression-tags e))
-	    (unreverseify-access (cons-expression-car e))
-	    (unreverseify-access (cons-expression-cdr e)))))
-	 (else (internal-error))))
-       (but-last (but-last (let*-parameters e)))
-       (but-last (but-last (let*-expressions e))))
-  (unreverseify-access (cons-expression-car (last (let*-expressions e))))))
-
 (define (reverse-transform-inverse e)
- (assert (lambda-expression? e))
- ;; here I am: There are cache misses in the interpreter irrespective of
- ;;            whether hash consing of expressions is enabled. I don't
- ;;            understand why. In other words, we take
- ;;            reverse-transform-inverse of things that don't result from
- ;;            reverse-transform.
- ;; debugging
- (when #t
-  (unless (lambda-expression-reverse-transform-inverse e)
-   (pp (abstract->concrete e))
-   (newline)
-   (display "reverse-transform-inverse cache miss")
-   (newline)
-   (exit -1)))
- (if (lambda-expression-reverse-transform-inverse e)
-     (lambda-expression-reverse-transform-inverse e)
-     (let ((e1 (new-lambda-expression
-		(unreverseify-parameter (lambda-expression-parameter e))
-		(let ((e (lambda-expression-body e)))
-		 (if (letrec-expression? e)
-		     (new-letrec-expression
-		      (map unreverseify
-			   (letrec-expression-procedure-variables e))
-		      (map reverse-transform-inverse
-			   (letrec-expression-lambda-expressions e))
-		      (reverse-transform-inverse-internal
-		       (letrec-expression-body e)))
-		     (reverse-transform-inverse-internal e))))))
-      ;; Note that we don't set the reverse transform of e1 to e because
-      ;; reverse-transform-inverse is many to one and thus not invertible.
-      (assert (not (lambda-expression-reverse-transform-inverse e)))
-      (set-lambda-expression-reverse-transform-inverse! e e1)
-      e1)))
+ (assert (and (lambda-expression? e)
+	      (lambda-expression-reverse-transform-inverse e)))
+ (lambda-expression-reverse-transform-inverse e))
 
 (define (sensitize v)
  (cond
