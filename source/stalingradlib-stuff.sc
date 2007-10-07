@@ -184,20 +184,6 @@
 
 (define *abstract?* #f)
 
-(define *hash-cons-expressions?* #f)
-
-(define *constant-expressions* '())
-
-(define *variable-access-expressions* '())
-
-(define *lambda-expressions* '())
-
-(define *applications* '())
-
-(define *letrec-expressions* '())
-
-(define *cons-expressions* '())
-
 (define *expressions* '())
 
 (define *queue* '())
@@ -687,198 +673,82 @@
 
 ;;; Expression constructors
 
-;;; We cannot eliminate hash consing of expressions in the current
-;;; architecture. Many procedures use *expressions* during compilation.
-
-;;; We have put back in the elimination of hash consing of expressions in the
-;;; interpreter to explore the source of inefficiency.
-
 (define (new-constant-expression value)
- (if *hash-cons-expressions?*
-     (let ((e0 (find-if
-		(lambda (e0)
-		 (abstract-value=? (constant-expression-value e0) value))
-		*constant-expressions*)))
-      (if e0
-	  e0
-	  (let ((e0 (make-constant-expression '() '() value)))
-	   (set! *constant-expressions* (cons e0 *constant-expressions*))
-	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))
-     (make-constant-expression '() '() value)))
+ (let ((e0 (make-constant-expression '() '() value)))
+  (set! *expressions* (cons e0 *expressions*))
+  e0))
 
 (define (new-variable-access-expression variable)
- (if *hash-cons-expressions?*
-     (let ((e0 (find-if (lambda (e0)
-			 (variable=? (variable-access-expression-variable e0)
-				     variable))
-			*variable-access-expressions*)))
-      (if e0
-	  e0
-	  (let ((e0 (make-variable-access-expression '() '() variable)))
-	   (set! *variable-access-expressions*
-		 (cons e0 *variable-access-expressions*))
-	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))
-     (make-variable-access-expression '() '() variable)))
+ (let ((e0 (make-variable-access-expression '() '() variable)))
+  (set! *expressions* (cons e0 *expressions*))
+  e0))
 
 (define (new-lambda-expression p e)
  (assert (not (duplicatesp? variable=? (parameter-variables p))))
- (if *hash-cons-expressions?*
-     (let ((e0 (find-if
-		(lambda (e0)
-		 (and (expression-eqv? (lambda-expression-parameter e0) p)
-		      (expression-eqv? (lambda-expression-body e0) e)))
-		*lambda-expressions*)))
-      (if e0
-	  e0
-	  (let ((e0 (make-lambda-expression
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     '()
-		     '()
-		     (sort-variables (set-differencep variable=?
-						      (free-variables e)
-						      (parameter-variables p)))
-		     p
-		     e)))
-	   (set! *lambda-expressions* (cons e0 *lambda-expressions*))
-	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))
-     (make-lambda-expression
-      #f
-      #f
-      #f
-      #f
-      #f
-      #f
-      #f
-      #f
-      '()
-      '()
-      (sort-variables (set-differencep variable=?
-				       (free-variables e)
-				       (parameter-variables p)))
-      p
-      e)))
+ (let ((e0 (make-lambda-expression
+	    #f
+	    #f
+	    #f
+	    #f
+	    #f
+	    #f
+	    #f
+	    #f
+	    '()
+	    '()
+	    (sort-variables
+	     (set-differencep
+	      variable=? (free-variables e) (parameter-variables p)))
+	    p
+	    e)))
+  (set! *expressions* (cons e0 *expressions*))
+  e0))
 
 (define (new-application e1 e2)
- (if *hash-cons-expressions?*
-     (let ((e0 (find-if (lambda (e0)
-			 (and (expression-eqv? (application-callee e0) e1)
-			      (expression-eqv? (application-argument e0) e2)))
-			*applications*)))
-      (if e0
-	  e0
-	  (let ((e0 (make-application
-		     '()
-		     '()
-		     #f
-		     (sort-variables
-		      (union-variables
-		       (free-variables e1) (free-variables e2)))
-		     e1
-		     e2)))
-	   (set! *applications* (cons e0 *applications*))
-	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))
-     (make-application
-      '()
-      '()
-      #f
-      (sort-variables
-       (union-variables (free-variables e1) (free-variables e2)))
-      e1
-      e2)))
+ (let ((e0 (make-application
+	    '()
+	    '()
+	    #f
+	    (sort-variables
+	     (union-variables (free-variables e1) (free-variables e2)))
+	    e1
+	    e2)))
+  (set! *expressions* (cons e0 *expressions*))
+  e0))
 
 (define (new-letrec-expression xs es e)
  (assert (= (length xs) (length es)))
  (if (null? xs)
      e
-     (if *hash-cons-expressions?*
-	 (let ((e0 (find-if
-		    (lambda (e0)
-		     (and
-		      (= (length xs)
-			 (length (letrec-expression-procedure-variables e0)))
-		      (every variable=?
-			     xs
-			     (letrec-expression-procedure-variables e0))
-		      (every expression-eqv?
-			     es
-			     (letrec-expression-lambda-expressions e0))
-		      (expression-eqv? e (letrec-expression-body e0))))
-		    *letrec-expressions*)))
-	  (if e0
-	      e0
-	      (let ((e0 (make-letrec-expression
-			 '()
-			 '()
-			 #f
-			 (sort-variables
-			  (set-differencep
-			   variable=?
-			   (union-variables
-			    (map-reduce union-variables '() free-variables es)
-			    (free-variables e))
-			   xs))
-			 xs
-			 es
-			 e)))
-	       (set! *letrec-expressions* (cons e0 *letrec-expressions*))
-	       (set! *expressions* (cons e0 *expressions*))
-	       e0)))
-	 (make-letrec-expression
-	  '()
-	  '()
-	  #f
-	  (sort-variables
-	   (set-differencep
-	    variable=?
-	    (union-variables (map-reduce union-variables '() free-variables es)
-			     (free-variables e))
-	    xs))
-	  xs
-	  es
-	  e))))
+     (let ((e0 (make-letrec-expression
+		'()
+		'()
+		#f
+		(sort-variables
+		 (set-differencep
+		  variable=?
+		  (union-variables
+		   (map-reduce union-variables '() free-variables es)
+		   (free-variables e))
+		  xs))
+		xs
+		es
+		e)))
+      (set! *expressions* (cons e0 *expressions*))
+      e0)))
 
 (define (new-cons-expression tags e1 e2)
- (if *hash-cons-expressions?*
-     (let ((e0 (find-if (lambda (e0)
-			 (and (equal-tags? (cons-expression-tags e0) tags)
-			      (expression-eqv? (cons-expression-car e0) e1)
-			      (expression-eqv? (cons-expression-cdr e0) e2)))
-			*cons-expressions*)))
-      (if e0
-	  e0
-	  (let ((e0 (make-cons-expression
-		     '()
-		     '()
-		     #f
-		     (sort-variables
-		      (union-variables
-		       (free-variables e1) (free-variables e2)))
-		     tags
-		     e1
-		     e2)))
-	   (set! *cons-expressions* (cons e0 *cons-expressions*))
-	   (set! *expressions* (cons e0 *expressions*))
-	   e0)))
-     (make-cons-expression
-      '()
-      '()
-      #f
-      (sort-variables
-       (union-variables (free-variables e1) (free-variables e2)))
-      tags
-      e1
-      e2)))
+ (let ((e0 (make-cons-expression
+	    '()
+	    '()
+	    #f
+	    (sort-variables
+	     (union-variables (free-variables e1) (free-variables e2)))
+	    tags
+	    e1
+	    e2)))
+  (set! *expressions* (cons e0 *expressions*))
+  e0))
 
 ;;; Generic expression accessors and mutators
 
@@ -1373,73 +1243,188 @@
 			      (cons v-perturbation vs-perturbation-above)))
 		       (union-values v-perturbation)))
 		(union-values v)))
-     (and (vlad-empty-list? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (vlad-empty-list? (perturbation-tagged-value-primal v-perturbation)))
+     (and
+      (vlad-empty-list? v)
+      (perturbation-tagged-value? v-perturbation)
+      (cond
+       ((union? (perturbation-tagged-value-primal v-perturbation))
+	(some
+	 vlad-empty-list?
+	 (union-values (perturbation-tagged-value-primal v-perturbation))))
+       ((up? (perturbation-tagged-value-primal v-perturbation))
+	(unimplemented))
+       (else
+	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation)))))
      (and (vlad-true? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (vlad-true? (perturbation-tagged-value-primal v-perturbation)))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     vlad-true?
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (vlad-true? (perturbation-tagged-value-primal v-perturbation)))))
      (and (vlad-false? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (vlad-false? (perturbation-tagged-value-primal v-perturbation)))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     vlad-false?
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (vlad-false? (perturbation-tagged-value-primal v-perturbation)))))
      (and (vlad-real? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (vlad-real? (perturbation-tagged-value-primal v-perturbation)))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     vlad-real?
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (vlad-real? (perturbation-tagged-value-primal v-perturbation)))))
      (and (primitive-procedure? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (primitive-procedure?
-	   (perturbation-tagged-value-primal v-perturbation))
-	  (eq? v (perturbation-tagged-value-primal v-perturbation)))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     (lambda (u)
+	      (and (primitive-procedure? u) (eq? v u)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (and (primitive-procedure?
+		  (perturbation-tagged-value-primal v-perturbation))
+		 (eq? v (perturbation-tagged-value-primal v-perturbation))))))
      (and (perturbation-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (perturbation-tagged-value?
-	   (perturbation-tagged-value-primal v-perturbation))
-	  (loop (perturbation-tagged-value-primal v)
-		(new-perturbation-tagged-value
-		 (perturbation-tagged-value-primal
-		  (perturbation-tagged-value-primal v-perturbation)))
-		cs
-		vs-above
-		vs-perturbation-above))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     (lambda (u)
+	      (and
+	       (perturbation-tagged-value? u)
+	       (loop (perturbation-tagged-value-primal v)
+		     (singleton
+		      (new-perturbation-tagged-value
+		       (perturbation-tagged-value-primal u)))
+		     cs
+		     vs-above
+		     vs-perturbation-above)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (and (perturbation-tagged-value?
+		  (perturbation-tagged-value-primal v-perturbation))
+		 (loop (perturbation-tagged-value-primal v)
+		       (new-perturbation-tagged-value
+			(perturbation-tagged-value-primal
+			 (perturbation-tagged-value-primal v-perturbation)))
+		       cs
+		       vs-above
+		       vs-perturbation-above)))))
      (and (bundle? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (bundle? (perturbation-tagged-value-primal v-perturbation))
-	  (loop (bundle-primal v)
-		(new-perturbation-tagged-value
-		 (bundle-primal
-		  (perturbation-tagged-value-primal v-perturbation)))
-		cs
-		vs-above
-		vs-perturbation-above)
-	  (loop (bundle-tangent v)
-		(new-perturbation-tagged-value
-		 (bundle-tangent
-		  (perturbation-tagged-value-primal v-perturbation)))
-		cs
-		vs-above
-		vs-perturbation-above))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     (lambda (u)
+	      (and (bundle? u)
+		   (loop (bundle-primal v)
+			 (singleton
+			  (new-perturbation-tagged-value (bundle-primal u)))
+			 cs
+			 vs-above
+			 vs-perturbation-above)
+		   (loop (bundle-tangent v)
+			 (singleton
+			  (new-perturbation-tagged-value (bundle-tangent u)))
+			 cs
+			 vs-above
+			 vs-perturbation-above)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (and (bundle?
+		  (perturbation-tagged-value-primal v-perturbation))
+		 (loop (bundle-primal v)
+		       (new-perturbation-tagged-value
+			(bundle-primal
+			 (perturbation-tagged-value-primal v-perturbation)))
+		       cs
+		       vs-above
+		       vs-perturbation-above)
+		 (loop (bundle-tangent v)
+		       (new-perturbation-tagged-value
+			(bundle-tangent
+			 (perturbation-tagged-value-primal v-perturbation)))
+		       cs
+		       vs-above
+		       vs-perturbation-above)))))
      (and (sensitivity-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (sensitivity-tagged-value?
-	   (perturbation-tagged-value-primal v-perturbation))
-	  (loop (sensitivity-tagged-value-primal v)
-		(new-perturbation-tagged-value
-		 (sensitivity-tagged-value-primal
-		  (perturbation-tagged-value-primal v-perturbation)))
-		cs
-		vs-above
-		vs-perturbation-above))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     (lambda (u)
+	      (and
+	       (sensitivity-tagged-value? u)
+	       (loop (sensitivity-tagged-value-primal v)
+		     (singleton
+		      (new-perturbation-tagged-value
+		       (sensitivity-tagged-value-primal u)))
+		     cs
+		     vs-above
+		     vs-perturbation-above)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (and (sensitivity-tagged-value?
+		  (perturbation-tagged-value-primal v-perturbation))
+		 (loop (sensitivity-tagged-value-primal v)
+		       (new-perturbation-tagged-value
+			(sensitivity-tagged-value-primal
+			 (perturbation-tagged-value-primal v-perturbation)))
+		       cs
+		       vs-above
+		       vs-perturbation-above)))))
      (and (reverse-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation)
-	  (reverse-tagged-value?
-	   (perturbation-tagged-value-primal v-perturbation))
-	  (loop (reverse-tagged-value-primal v)
-		(new-perturbation-tagged-value
-		 (reverse-tagged-value-primal
-		  (perturbation-tagged-value-primal v-perturbation)))
-		cs
-		vs-above
-		vs-perturbation-above)))))))
+	  (cond
+	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	    (some
+	     (lambda (u)
+	      (and
+	       (reverse-tagged-value? u)
+	       (loop (reverse-tagged-value-primal v)
+		     (singleton
+		      (new-perturbation-tagged-value
+		       (reverse-tagged-value-primal u)))
+		     cs
+		     vs-above
+		     vs-perturbation-above)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation))))
+	   ((up? (perturbation-tagged-value-primal v-perturbation))
+	    (unimplemented))
+	   (else
+	    (and (reverse-tagged-value?
+		  (perturbation-tagged-value-primal v-perturbation))
+		 (loop (reverse-tagged-value-primal v)
+		       (new-perturbation-tagged-value
+			(reverse-tagged-value-primal
+			 (perturbation-tagged-value-primal v-perturbation)))
+		       cs
+		       vs-above
+		       vs-perturbation-above))))))))))
 
 (define (new-bundle v v-perturbation)
  (assert
