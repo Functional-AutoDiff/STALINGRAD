@@ -599,13 +599,6 @@
  (new-variable-access-expression
   (reverseify (variable-access-expression-variable e))))
 
-(define (unsensitivityify-access? e)
- (unsensitivityify? (variable-access-expression-variable e)))
-
-(define (unsensitivityify-access e)
- (new-variable-access-expression
-  (unsensitivityify (variable-access-expression-variable e))))
-
 (define (variable-tags x)
  (if (pair? x)
      (case (first x)
@@ -3305,83 +3298,13 @@
       e1)))
 
 (define (sensitivity-transform-inverse? e)
- ;; needs work: Could cache this.
- (cond
-  ((constant-expression? e)
-   (without-abstract (lambda () (unsensitize? (constant-expression-value e)))))
-  ((variable-access-expression? e) (unsensitivityify-access? e))
-  ((lambda-expression? e)
-   (and (sensitivity-transform-inverse? (lambda-expression-parameter e))
-	(sensitivity-transform-inverse? (lambda-expression-body e))))
-  ((application? e)
-   (and (sensitivity-transform-inverse? (application-callee e))
-	(sensitivity-transform-inverse? (application-argument e))))
-  ((letrec-expression? e)
-   (and
-    (every unsensitivityify? (letrec-expression-procedure-variables e))
-    (every sensitivity-transform-inverse?
-	   (letrec-expression-lambda-expressions e))
-    (sensitivity-transform-inverse? (letrec-expression-body e))))
-  ((cons-expression? e)
-   (and (tagged? 'sensitivity (cons-expression-tags e))
-	(sensitivity-transform-inverse? (cons-expression-car e))
-	(sensitivity-transform-inverse? (cons-expression-cdr e))))
-  (else (internal-error))))
+ (assert (lambda-expression? e))
+ (not (not (lambda-expression-sensitivity-transform-inverse e))))
 
 (define (sensitivity-transform-inverse e)
- ;; here I am: There are cache misses in the interpreter irrespective of
- ;;            whether hash consing of expressions is enabled. I don't
- ;;            understand why. In other words, we take
- ;;            sensitivity-transform-inverse of things that don't result from
- ;;            sensitivity-transform.
- ;; debugging
- (when #t
-  (when (lambda-expression? e)
-   (unless (lambda-expression-sensitivity-transform-inverse e)
-    (pp (abstract->concrete e))
-    (newline)
-    (display "sensitivity-transform-inverse cache miss")
-    (newline)
-    (exit -1))))
- (if (and (lambda-expression? e)
-	  (lambda-expression-sensitivity-transform-inverse e))
-     (lambda-expression-sensitivity-transform-inverse e)
-     (let ((e1 (cond
-		((constant-expression? e)
-		 (without-abstract
-		  (lambda ()
-		   (new-constant-expression
-		    (unsensitize (constant-expression-value e))))))
-		((variable-access-expression? e) (unsensitivityify-access e))
-		((lambda-expression? e)
-		 (new-lambda-expression
-		  (sensitivity-transform-inverse
-		   (lambda-expression-parameter e))
-		  (sensitivity-transform-inverse (lambda-expression-body e))))
-		((application? e)
-		 (new-application
-		  (sensitivity-transform-inverse (application-callee e))
-		  (sensitivity-transform-inverse (application-argument e))))
-		((letrec-expression? e)
-		 (new-letrec-expression
-		  (map unsensitivityify
-		       (letrec-expression-procedure-variables e))
-		  (map sensitivity-transform-inverse
-		       (letrec-expression-lambda-expressions e))
-		  (sensitivity-transform-inverse (letrec-expression-body e))))
-		((cons-expression? e)
-		 (assert (tagged? 'sensitivity (cons-expression-tags e)))
-		 (new-cons-expression
-		  (remove-tag 'sensitivity (cons-expression-tags e))
-		  (sensitivity-transform-inverse (cons-expression-car e))
-		  (sensitivity-transform-inverse (cons-expression-cdr e))))
-		(else (internal-error)))))
-      ;; Note that we don't set the sensitivity transform of e1 to e because
-      ;; sensitivity-transform-inverse is many to one and thus not invertible.
-      (when (lambda-expression? e)
-       (assert (not (lambda-expression-sensitivity-transform-inverse e)))
-       (set-lambda-expression-sensitivity-transform-inverse! e e1))
-      e1)))
+ (assert (and (lambda-expression? e)
+	      (lambda-expression-sensitivity-transform-inverse e)))
+ (lambda-expression-sensitivity-transform-inverse e))
 
 (define (reverse-transform-internal e xs0 es0 i)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
@@ -3531,15 +3454,12 @@
 			   ;; p = e -~-> e += p
 			   ((variable-access-expression? e)
 			    (make-plus-binding (sensitivityify-access e)
-					       ;; here I am
 					       (sensitivityify-parameter p)))
 			   ;;                _____    _
 			   ;;                \        \
 			   ;; p = \ x e -~-> \ x e += p
 			   ((lambda-expression? e)
-			    ;; here I am
 			    (make-plus-binding (sensitivity-transform e)
-					       ;; here I am
 					       (sensitivityify-parameter p)))
 			   ;;                __ _ __    _ _
 			   ;;                \  \ \       \
@@ -3556,7 +3476,6 @@
 			      (sensitivityify-access (application-argument e)))
 			     (new-application
 			      (new-variable-access-expression x)
-			      ;; here I am
 			      (sensitivityify-parameter p))))
 			   ;;                __ _ __    _
 			   ;;                \  \ \     \
@@ -3571,7 +3490,6 @@
 			      (add-tag 'sensitivity (cons-expression-tags e))
 			      (sensitivityify-access (cons-expression-car e))
 			      (sensitivityify-access (cons-expression-cdr e)))
-			     ;; here I am
 			     (sensitivityify-parameter p)))
 			   (else (internal-error))))
 			 (reverse (anf-let*-parameters e1))
@@ -3582,7 +3500,6 @@
 			 ;; \                         \
 			 ;; letrec xs1 = es1 in x1 += x1
 			 (make-plus-binding
-			  ;; here I am
 			  (sensitivity-transform
 			   (new-letrec-expression
 			    xs1 es1 (new-variable-access-expression x1)))
@@ -3593,7 +3510,6 @@
 			 ;; \                         \
 			 ;; letrec xs0 = es0 in x0 += x0
 			 (make-plus-binding
-			  ;; here I am
 			  (sensitivity-transform
 			   (new-letrec-expression
 			    xs0 es0 (new-variable-access-expression x0)))
@@ -3604,7 +3520,6 @@
 		  (new-cons-expression
 		   (add-tag 'sensitivity (empty-tags))
 		   ;; This is the sensitivity to the target.
-		   ;; here I am
 		   (sensitivity-transform
 		    (if (= i -1)
 			;; _
@@ -3619,7 +3534,6 @@
 			 es0
 			 (new-variable-access-expression (list-ref xs0 i)))))
 		   ;; This is the sensitivity to the argument.
-		   ;; here I am
 		   (sensitivityify-parameter p)))))))))))))
   (assert (or (not (lambda-expression-reverse-transform-inverse e2))
 	      (expression-eqv?
