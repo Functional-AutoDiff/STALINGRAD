@@ -220,7 +220,7 @@
 
 (define *pp?* #f)
 
-(define *verbose?* #f)
+(define *verbose* #f)
 
 (define *imprecise-inexacts?* #f)
 
@@ -2153,7 +2153,12 @@
 				 (aggregate-value-values u)))))
 		      (union-values v))))))
 
-(define (abstract-value-union v1 v2) (unimplemented "abstract-value-union"))
+(define (abstract-value-union v1 v2)
+ (cond
+  ((abstract-value-subset? v1 v2) v2)
+  ((abstract-value-subset? v2 v1) v1)
+  (else (make-union
+	 (append (union-values (unroll v1)) (union-values (unroll v2)))))))
 
 ;;; Abstract Environment Equivalence
 
@@ -3058,8 +3063,9 @@
      (lambda-expression-perturbation-transform e)
      (let ((e1 (new-lambda-expression (loop (lambda-expression-parameter e))
 				      (loop (lambda-expression-body e)))))
-      (assert (not (lambda-expression-perturbation-transform e)))
-      (assert (not (lambda-expression-perturbation-transform-inverse e1)))
+      (assert
+       (and (not (lambda-expression-perturbation-transform e))
+	    (not (lambda-expression-perturbation-transform-inverse e1))))
       (set-lambda-expression-perturbation-transform! e e1)
       (set-lambda-expression-perturbation-transform-inverse! e1 e)
       e1)))
@@ -3095,8 +3101,8 @@
      (lambda-expression-forward-transform e)
      (let ((e1 (new-lambda-expression (loop (lambda-expression-parameter e))
 				      (loop (lambda-expression-body e)))))
-      (assert (not (lambda-expression-forward-transform e)))
-      (assert (not (lambda-expression-forward-transform-inverse e1)))
+      (assert (and (not (lambda-expression-forward-transform e))
+		   (not (lambda-expression-forward-transform-inverse e1))))
       (set-lambda-expression-forward-transform! e e1)
       (set-lambda-expression-forward-transform-inverse! e1 e)
       e1)))
@@ -3493,12 +3499,11 @@
   ((variable-access-expression? p) (reverseify-access p))
   ((lambda-expression? p) (reverse-transform p))
   ((letrec-expression? p)
-   (assert
-    (and (variable-access-expression? (letrec-expression-body p))
-	 (memp variable=?
-	       (variable-access-expression-variable
-		(letrec-expression-body p))
-	       (letrec-expression-procedure-variables p))))
+   (assert (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p))))
    (new-letrec-expression
     (map reverseify (letrec-expression-procedure-variables p))
     (map-indexed (lambda (e i)
@@ -3547,8 +3552,9 @@
 		  (sensitivity-transform (cons-expression-cdr e))))
 		(else (internal-error)))))
       (when (lambda-expression? e)
-       (assert (not (lambda-expression-sensitivity-transform e)))
-       (assert (not (lambda-expression-sensitivity-transform-inverse e1)))
+       (assert
+	(and (not (lambda-expression-sensitivity-transform e))
+	     (not (lambda-expression-sensitivity-transform-inverse e1))))
        (set-lambda-expression-sensitivity-transform! e e1)
        (set-lambda-expression-sensitivity-transform-inverse! e1 e))
       e1)))
@@ -3576,103 +3582,107 @@
  ;;     closure when e is a letrec expression lambda expression or a recursive
  ;;     closure lambda expression. Otherwise it is empty.
  (assert (lambda-expression? e))
- (let* ((p (lambda-expression-parameter e))
-	(e1 (lambda-expression-body e))
-	(xs1 (if (letrec-expression? e1)
-		 (letrec-expression-procedure-variables e1)
-		 '()))
-	(es1 (if (letrec-expression? e1)
-		 (letrec-expression-lambda-expressions e1)
-		 '()))
-	;; I am not 100% sure that this cannot cause name clash. One way to
-	;; guarantee that there is no name clash is to find the highest index
-	;; of a backpropagator variable in e1 and generate new indices larger
-	;; than that.
-	(xs (map-n backpropagatorify (length (anf-let*-parameters e1))))
-	(e2
-	 ;; The only portion of this that needs to be anf converted is the cons
-	 ;; expression in the body of the let* that returns the primal paired
-	 ;; with the backpropagator (except for the backpropagator which is
-	 ;; independently alpha/anf converted).
-	 (anf-convert-lambda-expression-shallow
-	  ;; This doesn't need to be alpha converted since it is derived
-	  ;; straightforwardly from an expression that is already alpha
-	  ;; converted.
-	  (new-lambda-expression
-	   (reverseify-parameter p)
-	   (new-letrec-expression
-	    (map reverseify xs1)
-	    (if (letrec-expression? e1)
-		(map-indexed
-		 (lambda (e i) (reverse-transform-internal e xs1 es1 i))
-		 es1)
-		'())
-	    (create-let*
-	     ;; These are the bindings for the forward phase that come from
-	     ;; the primal.
-	     (map
-	      (lambda (p e x)
-	       (cond
-		;;            /   /
-		;;            _   _
-		;; p = v -~-> p = v
-		((constant-expression? e)
-		 (make-parameter-binding
-		  (reverseify-parameter p)
-		  (without-abstract
-		   (lambda ()
-		    (new-constant-expression
-		     (*j (constant-expression-value e)))))))
-		;;            /   /
-		;;            _   _
-		;; p = e -~-> p = e
-		((variable-access-expression? e)
-		 (make-parameter-binding
-		  (reverseify-parameter p) (reverseify-access e)))
-		;;                /   /
-		;;                _   ______
-		;; p = \ x e -~-> p = \ x e
-		((lambda-expression? e)
-		 (make-parameter-binding
-		  (reverseify-parameter p) (reverse-transform e)))
-		;;                /     /  /
-		;;                _ _   __ __
-		;; p = x1 x2 -~-> p,p = x1 x2
-		((application? e)
-		 (make-parameter-binding
-		  (create-cons-expression (reverseify-parameter p)
-					  (new-variable-access-expression x))
-		  (new-application
-		   (reverseify-access (application-callee e))
-		   (reverseify-access (application-argument e)))))
-		;;                /   /  / /
-		;;                _   __ _ __
-		;; p = x1,x2 -~-> p = x1 , x2
-		((cons-expression? e)
-		 (make-parameter-binding
-		  (reverseify-parameter p)
-		  (new-cons-expression
-		   (add-tag 'reverse (cons-expression-tags e))
-		   (reverseify-access (cons-expression-car e))
-		   (reverseify-access (cons-expression-cdr e)))))
-		(else (internal-error))))
-	      (anf-let*-parameters e1)
-	      (anf-let*-expressions e1)
-	      xs)
-	     ;; This conses the result of the forward phase with the
-	     ;; backpropagator.
-	     (create-cons-expression
-	      ;; This is the result of the forward phase.
-	      (reverseify-parameter (anf-parameter e1))
-	      ;; This is the backpropagator.
-	      (anf-convert-lambda-expression-shallow
-	       (alpha-convert
-		(new-lambda-expression
-		 (sensitivityify-access (anf-parameter e1))
-		 (create-let*
-		  (append
-		   ;; These are the zeroing bindings for the reverse phase.
-		   (map (lambda (x)
+ (if (lambda-expression-reverse-transform e)
+     (lambda-expression-reverse-transform e)
+     (let* ((p (lambda-expression-parameter e))
+	    (e1 (lambda-expression-body e))
+	    (xs1 (if (letrec-expression? e1)
+		     (letrec-expression-procedure-variables e1)
+		     '()))
+	    (es1 (if (letrec-expression? e1)
+		     (letrec-expression-lambda-expressions e1)
+		     '()))
+	    ;; I am not 100% sure that this cannot cause name clash. One way to
+	    ;; guarantee that there is no name clash is to find the highest
+	    ;; index of a backpropagator variable in e1 and generate new
+	    ;; indices larger than that.
+	    (xs (map-n backpropagatorify (length (anf-let*-parameters e1))))
+	    (e2
+	     ;; The only portion of this that needs to be anf converted is the
+	     ;; cons expression in the body of the let* that returns the primal
+	     ;; paired with the backpropagator (except for the backpropagator
+	     ;; which is independently alpha/anf converted).
+	     (anf-convert-lambda-expression-shallow
+	      ;; This doesn't need to be alpha converted since it is derived
+	      ;; straightforwardly from an expression that is already alpha
+	      ;; converted.
+	      (new-lambda-expression
+	       (reverseify-parameter p)
+	       (new-letrec-expression
+		(map reverseify xs1)
+		(if (letrec-expression? e1)
+		    (map-indexed
+		     (lambda (e i) (reverse-transform-internal e xs1 es1 i))
+		     es1)
+		    '())
+		(create-let*
+		 ;; These are the bindings for the forward phase that come from
+		 ;; the primal.
+		 (map
+		  (lambda (p e x)
+		   (cond
+		    ;;            /   /
+		    ;;            _   _
+		    ;; p = v -~-> p = v
+		    ((constant-expression? e)
+		     (make-parameter-binding
+		      (reverseify-parameter p)
+		      (without-abstract
+		       (lambda ()
+			(new-constant-expression
+			 (*j (constant-expression-value e)))))))
+		    ;;            /   /
+		    ;;            _   _
+		    ;; p = e -~-> p = e
+		    ((variable-access-expression? e)
+		     (make-parameter-binding
+		      (reverseify-parameter p) (reverseify-access e)))
+		    ;;                /   /
+		    ;;                _   ______
+		    ;; p = \ x e -~-> p = \ x e
+		    ((lambda-expression? e)
+		     (make-parameter-binding
+		      (reverseify-parameter p) (reverse-transform e)))
+		    ;;                /     /  /
+		    ;;                _ _   __ __
+		    ;; p = x1 x2 -~-> p,p = x1 x2
+		    ((application? e)
+		     (make-parameter-binding
+		      (create-cons-expression
+		       (reverseify-parameter p)
+		       (new-variable-access-expression x))
+		      (new-application
+		       (reverseify-access (application-callee e))
+		       (reverseify-access (application-argument e)))))
+		    ;;                /   /  / /
+		    ;;                _   __ _ __
+		    ;; p = x1,x2 -~-> p = x1 , x2
+		    ((cons-expression? e)
+		     (make-parameter-binding
+		      (reverseify-parameter p)
+		      (new-cons-expression
+		       (add-tag 'reverse (cons-expression-tags e))
+		       (reverseify-access (cons-expression-car e))
+		       (reverseify-access (cons-expression-cdr e)))))
+		    (else (internal-error))))
+		  (anf-let*-parameters e1)
+		  (anf-let*-expressions e1)
+		  xs)
+		 ;; This conses the result of the forward phase with the
+		 ;; backpropagator.
+		 (create-cons-expression
+		  ;; This is the result of the forward phase.
+		  (reverseify-parameter (anf-parameter e1))
+		  ;; This is the backpropagator.
+		  (anf-convert-lambda-expression-shallow
+		   (alpha-convert
+		    (new-lambda-expression
+		     (sensitivityify-access (anf-parameter e1))
+		     (create-let*
+		      (append
+		       ;; These are the zeroing bindings for the reverse phase.
+		       (map
+			(lambda (x)
 			 (make-parameter-binding
 			  (sensitivity-access x)
 			  (make-sensitize
@@ -3697,11 +3707,12 @@
 			       (free-variables e)
 			       (recursive-closure-free-variables xs0 es0))))
 			 (parameter-variables (anf-parameter e1))))
-		   ;; These are the bindings for the reverse phase that come
-		   ;; from the primal.
-		   (removeq
-		    #f
-		    (map (lambda (p e x)
+		       ;; These are the bindings for the reverse phase that
+		       ;; come from the primal.
+		       (removeq
+			#f
+			(map
+			 (lambda (p e x)
 			  (cond
 			   ;; p = v is eliminated
 			   ((constant-expression? e) #f)
@@ -3751,60 +3762,54 @@
 			 (reverse (anf-let*-parameters e1))
 			 (reverse (anf-let*-expressions e1))
 			 (reverse xs)))
-		   (map (lambda (x1)
-			 ;; ______________________    __
-			 ;; \                         \
-			 ;; letrec xs1 = es1 in x1 += x1
-			 (make-plus-binding
-			  (sensitivity-transform
-			   (new-letrec-expression
-			    xs1 es1 (new-variable-access-expression x1)))
-			  (sensitivity-access x1)))
-			xs1)
-		   (map (lambda (x0)
-			 ;; ______________________    __
-			 ;; \                         \
-			 ;; letrec xs0 = es0 in x0 += x0
-			 (make-plus-binding
-			  (sensitivity-transform
-			   (new-letrec-expression
-			    xs0 es0 (new-variable-access-expression x0)))
-			  (sensitivity-access x0)))
-			xs0))
-		  ;; This conses the sensitivity to the target with the
-		  ;; sensitivity to the argument.
-		  (new-cons-expression
-		   (add-tag 'sensitivity (empty-tags))
-		   ;; This is the sensitivity to the target.
-		   (sensitivity-transform
-		    (if (= i -1)
-			;; _
-			;; \
-			;; e
-			e
-			;; ______________________
-			;; \
-			;; letrec xs0 = es0 in x0
-			(new-letrec-expression
-			 xs0
-			 es0
-			 (new-variable-access-expression (list-ref xs0 i)))))
-		   ;; This is the sensitivity to the argument.
-		   (sensitivityify-parameter p)))))))))))))
-  (assert (or (not (lambda-expression-reverse-transform-inverse e2))
-	      (expression-eqv?
-	       (lambda-expression-reverse-transform-inverse e2) e)))
-  (set-lambda-expression-reverse-transform-inverse! e2 e)
-  e2))
+		       (map (lambda (x1)
+			     ;; ______________________    __
+			     ;; \                         \
+			     ;; letrec xs1 = es1 in x1 += x1
+			     (make-plus-binding
+			      (sensitivity-transform
+			       (new-letrec-expression
+				xs1 es1 (new-variable-access-expression x1)))
+			      (sensitivity-access x1)))
+			    xs1)
+		       (map (lambda (x0)
+			     ;; ______________________    __
+			     ;; \                         \
+			     ;; letrec xs0 = es0 in x0 += x0
+			     (make-plus-binding
+			      (sensitivity-transform
+			       (new-letrec-expression
+				xs0 es0 (new-variable-access-expression x0)))
+			      (sensitivity-access x0)))
+			    xs0))
+		      ;; This conses the sensitivity to the target with the
+		      ;; sensitivity to the argument.
+		      (new-cons-expression
+		       (add-tag 'sensitivity (empty-tags))
+		       ;; This is the sensitivity to the target.
+		       (sensitivity-transform
+			(if (= i -1)
+			    ;; _
+			    ;; \
+			    ;; e
+			    e
+			    ;; ______________________
+			    ;; \
+			    ;; letrec xs0 = es0 in x0
+			    (new-letrec-expression
+			     xs0
+			     es0
+			     (new-variable-access-expression
+			      (list-ref xs0 i)))))
+		       ;; This is the sensitivity to the argument.
+		       (sensitivityify-parameter p)))))))))))))
+      (assert (and (not (lambda-expression-reverse-transform e))
+		   (not (lambda-expression-reverse-transform-inverse e2))))
+      (set-lambda-expression-reverse-transform! e e2)
+      (set-lambda-expression-reverse-transform-inverse! e2 e)
+      e2)))
 
-(define (reverse-transform e)
- (assert (lambda-expression? e))
- (if (lambda-expression-reverse-transform e)
-     (lambda-expression-reverse-transform e)
-     (let ((e1 (reverse-transform-internal e '() '() -1)))
-      (assert (not (lambda-expression-reverse-transform e)))
-      (set-lambda-expression-reverse-transform! e e1)
-      e1)))
+(define (reverse-transform e) (reverse-transform-internal e '() '() -1))
 
 (define (reverse-transform-inverse e)
  (assert (and (lambda-expression? e)
@@ -4052,14 +4057,14 @@
 	  (new-recursive-closure
 	   (map *j (recursive-closure-values v))
 	   (map-vector reverseify (recursive-closure-procedure-variables v))
-	   (map-vector
-	    (lambda (e)
+	   (map-n-vector
+	    (lambda (i)
 	     (reverse-transform-internal
-	      e
+	      (vector-ref (recursive-closure-lambda-expressions v) i)
 	      (vector->list (recursive-closure-procedure-variables v))
 	      (vector->list (recursive-closure-lambda-expressions v))
-	      (recursive-closure-index v)))
-	    (recursive-closure-lambda-expressions v))
+	      i))
+	    (vector-length (recursive-closure-lambda-expressions v)))
 	   (recursive-closure-index v)))
 	 ((perturbation-tagged-value? v)
 	  (new-reverse-tagged-value (singleton v)))
@@ -4860,8 +4865,7 @@
 	(list-ref path (- (first positions) 1)))))
 
 (define (reduce-depth path v1 v2)
- (assert (and (or (union? v1) (up? v1))
-	      (or (union? v2) (up? v2))))
+ (assert (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2))))
  ;; v1 must be closer to the root than v2
  (let ((v-additions
 	(let loop ((path path) (vs-above '()))
@@ -5185,20 +5189,17 @@
    (for-each
     (lambda (b)
      (let ((v (widen-abstract-value
-	       (abstract-apply
-		(abstract-eval1
-		 (application-callee e)
-		 (restrict-environment
-		  (environment-binding-values b) e application-callee))
-		(abstract-eval1
-		 (application-argument e)
-		 (restrict-environment
-		  (environment-binding-values b) e application-argument))))))
-      ;; needs work: To explain why can't do this.
-      (when #f
-       (assert (abstract-value-subset? (environment-binding-value b) v)))
-      (assert (or (abstract-value-subset? (environment-binding-value b) v)
-		  (abstract-value-subset? v (environment-binding-value b))))
+	       (abstract-value-union
+		(environment-binding-value b)
+		(abstract-apply
+		 (abstract-eval1
+		  (application-callee e)
+		  (restrict-environment
+		   (environment-binding-values b) e application-callee))
+		 (abstract-eval1
+		  (application-argument e)
+		  (restrict-environment
+		   (environment-binding-values b) e application-argument)))))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -5206,14 +5207,12 @@
   ((letrec-expression? e)
    (for-each
     (lambda (b)
-     (let ((v (abstract-eval1 (letrec-expression-body e)
-			      (abstract-letrec-nested-environment
-			       (environment-binding-values b) e))))
-      ;; needs work: To explain why can't do this.
-      (when #f
-       (assert (abstract-value-subset? (environment-binding-value b) v)))
-      (assert (or (abstract-value-subset? (environment-binding-value b) v)
-		  (abstract-value-subset? v (environment-binding-value b))))
+     (let ((v (widen-abstract-value
+	       (abstract-value-union
+		(environment-binding-value b)
+		(abstract-eval1 (letrec-expression-body e)
+				(abstract-letrec-nested-environment
+				 (environment-binding-values b) e))))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -5236,13 +5235,10 @@
 	 (every-value-tags
 	  (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2))
 	(let ((v (widen-abstract-value
-		  (singleton
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
-	 ;; needs work: To explain why can't do this.
-	 (when #f
-	  (assert (abstract-value-subset? (environment-binding-value b) v)))
-	 (assert (or (abstract-value-subset? (environment-binding-value b) v)
-		     (abstract-value-subset? v (environment-binding-value b))))
+		  (abstract-value-union
+		   (environment-binding-value b)
+		   (singleton
+		    (new-tagged-pair (cons-expression-tags e) v1 v2))))))
 	 (unless (abstract-value-subset? v (environment-binding-value b))
 	  (set-environment-binding-value! b v)
 	  (for-each enqueue! (expression-parents e)))))
@@ -5268,13 +5264,10 @@
 		  (cons-expression-tags e))
 	  v2))
 	(let ((v (widen-abstract-value
-		  (singleton
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
-	 ;; needs work: To explain why can't do this.
-	 (when #f
-	  (assert (abstract-value-subset? (environment-binding-value b) v)))
-	 (assert (or (abstract-value-subset? (environment-binding-value b) v)
-		     (abstract-value-subset? v (environment-binding-value b))))
+		  (abstract-value-union
+		   (environment-binding-value b)
+		   (singleton
+		    (new-tagged-pair (cons-expression-tags e) v1 v2))))))
 	 (unless (abstract-value-subset? v (environment-binding-value b))
 	  (set-environment-binding-value! b v)
 	  (for-each enqueue! (expression-parents e)))))
@@ -5627,19 +5620,18 @@
   *expressions*))
 
 (define (verbosity)
- (when *verbose?*
-  (format #t
-	  "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
-	  (count-if
-	   (lambda (e) (not (null? (expression-environment-bindings e))))
-	   *expressions*)
-	  (analysis-size)
-	  (max-flow-size)
-	  (unions-in-analysis)
-	  (bottoms-in-analysis)
-	  (analysis-max-depth)
-	  (analysis-max-width)
-	  (concrete-reals-in-analysis))))
+ (format #t
+	 "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
+	 (count-if
+	  (lambda (e) (not (null? (expression-environment-bindings e))))
+	  *expressions*)
+	 (analysis-size)
+	 (max-flow-size)
+	 (unions-in-analysis)
+	 (bottoms-in-analysis)
+	 (analysis-max-depth)
+	 (analysis-max-width)
+	 (concrete-reals-in-analysis)))
 
 (define (flow-analysis! e bs)
  (set! *abstract?* #t)
@@ -5652,7 +5644,7 @@
       (find-if (lambda (b) (variable=? x (value-binding-variable b))) bs))))
    (free-variables e)))
  (let loop ((i 0))
-  (when (zero? (remainder i 100)) (verbosity))
+  (when (and *verbose* (zero? (remainder i *verbose*))) (verbosity))
   (unless (null? *queue*)
    (let ((e (first *queue*)))
     (set! *queue* (rest *queue*))
@@ -5661,7 +5653,7 @@
     (abstract-eval! e))
    (loop (+ i 1))))
  (check-analysis!)
- (verbosity))
+ (when *verbose* (verbosity)))
 
 ;;; Code Generator
 
