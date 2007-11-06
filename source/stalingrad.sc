@@ -92,11 +92,15 @@
 		 (at-most-one
 		  ("length" length? (write-length "n" integer-argument #f)))
 		 (at-most-one ("pp" pp?))
-		 (at-most-one ("verbose" verbose?))
+		 (at-most-one ("verbose"
+			       verbose?
+			       (verbose "n" integer-argument #f)))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (at-most-one ("no-warnings" no-warnings?))
 		 (at-most-one
-		  ("no-closure-depth-limit" no-closure-depth-limit?))
+		  ("no-closure-depth-limit" no-closure-depth-limit?)
+		  ("closure-depth-limit" closure-depth-limit?
+					 (limit "n" integer-argument 1)))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -106,9 +110,6 @@
        (append '(".") include-path '("/usr/local/stalingrad/include")))
  (set! *assert?* (not no-assert?))
  (set! *wizard?* wizard?)
- (set! *hash-cons-expressions?*
-       (or #f				;debugging
-	   flow-analysis? flow-analysis-result? compile?))
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
  (set! *metered?* metered?)
@@ -122,10 +123,10 @@
        unabbreviate-nonrecursive-closures?)
  (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
  (set! *pp?* pp?)
- (set! *verbose?* verbose?)
+ (set! *verbose* (if verbose? verbose #f))
  (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *warnings?* (not no-warnings?))
- (set! *closure-depth-limit* (if no-closure-depth-limit? #f 1))
+ (set! *closure-depth-limit* (if no-closure-depth-limit? #f limit))
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
