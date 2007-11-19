@@ -341,6 +341,14 @@ error_no_error:
 #x86_64-Linux-2.6.18-4-amd64       $(INSTALLLIBA)/scxl.a\
 #x86_64-Linux-2.6.18-4-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#x86_64-Linux-2.6.18-5-amd64 CC = gcc
+#x86_64-Linux-2.6.18-5-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
+#x86_64-Linux-2.6.18-5-amd64 SCCFLAGS =
+#x86_64-Linux-2.6.18-5-amd64 SCCLDFLAGS =
+#x86_64-Linux-2.6.18-5-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#x86_64-Linux-2.6.18-5-amd64       $(INSTALLLIBA)/scxl.a\
+#x86_64-Linux-2.6.18-5-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 # missing i386-FreeBSD-2.2-STABLE
 
 #alpha-OSF1-V3.2 CC = cc
