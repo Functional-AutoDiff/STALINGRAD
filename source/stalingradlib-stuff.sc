@@ -5221,65 +5221,86 @@
    (else (internal-error)))))
 
 (define (value-contains-union? v)
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (and (not (memp v vs))
-       (or (and (union? v)
-		(or (>= (length (union-values v)) 2)
-		    (some (lambda (u) (loop u (cons v vs))) (union-values v))))
-	   (and (not (union? v))
-		(not (scalar-value? v))
-		(some (lambda (v) (loop v vs)) (aggregate-value-values v)))))))
+ (let outer ((v v) (vs '()) (k identity))
+  (cond
+   ((memp v vs) (k #f))
+   ((union? v)
+    (if (>= (length (union-values v)) 2)
+	(k #t)
+	(let inner ((us (union-values v)))
+	 (if (null? us)
+	     (k #f)
+	     (outer
+	      (first u) (cons v vs) (lambda (n) (or n (inner (rest us)))))))))
+   ((scalar-value? v) (k #f))
+   (else
+    (let inner ((vs1 (aggregate-value-values v)))
+     (if (null? vs1)
+	 (k #f)
+	 (outer (first vs1) vs (lambda (n) (or n (inner (rest vs1)))))))))))
 
 (define (unions-in-abstract-value v)
- ;; needs work: This is ill-defined because of structure sharing.
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (cond
-   ((memp v vs) 0)
-   ((union? v)
-    (+ (if (>= (length (union-values v)) 2) 1 0)
-       (map-reduce + 0 (lambda (u) (loop u (cons v vs))) (union-values v))))
-   ((scalar-value? v) 0)
-   (else
-    (map-reduce + 0 (lambda (v) (loop v vs)) (aggregate-value-values v))))))
+ (let outer ((v v) (vs '()) (n 0) (k identity))
+  (cond ((memp v vs) (k n))
+	((union? v)
+	 (let inner ((us (union-values v))
+		     (n (+ n (if (>= (length (union-values v)) 2) 1 0))))
+	  (if (null? us)
+	      (k n)
+	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
+	((scalar-value? v) (k n))
+	(else
+	 (let inner ((vs1 (aggregate-value-values v)) (n n))
+	  (if (null? vs1)
+	      (k n)
+	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
 
 (define (concrete-reals-in-abstract-value v)
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (cond
-   ((memp v vs) '())
-   ((union? v)
-    (map-reduce unionv '() (lambda (u) (loop u (cons v vs))) (union-values v)))
-   ((real? v) (list v))
-   ((scalar-value? v) '())
-   (else (map-reduce
-	  unionv '() (lambda (v) (loop v vs)) (aggregate-value-values v))))))
+ (let outer ((v v) (vs '()) (n 0) (k identity))
+  (cond ((memp v vs) (k n))
+	((union? v)
+	 (let inner ((us (union-values v)) (n n))
+	  (if (null? us)
+	      (k n)
+	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
+	((real? v) (k (if (memv v n) v (cons v n))))
+	((scalar-value? v) (k n))
+	(else
+	 (let inner ((vs1 (aggregate-value-values v)) (n n))
+	  (if (null? vs1)
+	      (k n)
+	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
 
-(define (value-max-depth v)
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (cond
-   ((memp v vs) 0)
-   ((union? v)
-    (map-reduce max 0 (lambda (u) (loop u (cons v vs))) (union-values v)))
-   ((scalar-value? v) 0)
-   (else
-    (+ (map-reduce max 0 (lambda (v) (loop v vs)) (aggregate-value-values v))
-       1)))))
+(define (value-size v)
+ (let outer ((v v) (vs '()) (n 0) (k identity))
+  (cond ((memp v vs) (k n))
+	((union? v)
+	 (let inner ((us (union-values v)) (n (+ n 1)))
+	  (if (null? us)
+	      (k n)
+	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
+	((scalar-value? v) (k (+ n 1)))
+	(else
+	 (let inner ((vs1 (aggregate-value-values v)) (n (+ n 1)))
+	  (if (null? vs1)
+	      (k n)
+	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
 
 (define (value-max-width v)
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (cond
-   ((memp v vs) 0)
-   ((union? v)
-    (max
-     (length (union-values v))
-     (map-reduce max 0 (lambda (u) (loop u (cons v vs))) (union-values v))))
-   ((scalar-value? v) 0)
-   (else
-    (map-reduce max 0 (lambda (v) (loop v vs)) (aggregate-value-values v))))))
+ (let outer ((v v) (vs '()) (n 0) (k identity))
+  (cond ((memp v vs) (k n))
+	((union? v)
+	 (let inner ((us (union-values v))
+		     (n (max n (length (union-values v)))))
+	  (if (null? us)
+	      (k n)
+	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
+	((scalar-value? v) (k n))
+	(else
+	 (let inner ((vs1 (aggregate-value-values v)) (n n))
+	  (if (null? vs1)
+	      (k n)
+	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
 
 (define (analysis-size)
  (map-reduce +
@@ -5344,7 +5365,7 @@
 	     (expression-environment-bindings e)))
   *expressions*))
 
-(define (analysis-max-depth)
+(define (analysis-max-size)
  (map-reduce
   max
   0
@@ -5353,8 +5374,8 @@
     max
     0
     (lambda (b)
-     (max (map-reduce max 0 value-max-depth (environment-binding-values b))
-	  (value-max-depth (environment-binding-value b))))
+     (max (map-reduce max 0 value-size (environment-binding-values b))
+	  (value-size (environment-binding-value b))))
     (expression-environment-bindings e)))
   *expressions*))
 
@@ -5373,21 +5394,26 @@
   *expressions*))
 
 (define (check-abstract-value! v)
- ;; breaks structure sharing
- (let loop ((v v) (vs '()))
-  (cond
-   ((memp v vs) #f)
-   ((union? v)
-    (for-each-indexed
-     (lambda (u1 i1)
-      (for-each-indexed
-       (lambda (u2 i2)
-	(assert (or (= i1 i2) (not (abstract-value-subset? u1 u2)))))
-       (union-values v)))
-     (union-values v))
-    (for-each (lambda (u) (loop u (cons v vs))) (union-values v)))
-   ((scalar-value? v) #f)
-   (else (for-each (lambda (v) (loop v vs)) (aggregate-value-values v))))))
+ (let outer ((v v) (vs '()) (k (lambda () #f)))
+  (cond ((memp v vs) (k))
+	((union? v)
+	 (for-each-indexed
+	  (lambda (u1 i1)
+	   (for-each-indexed
+	    (lambda (u2 i2)
+	     (assert (or (= i1 i2) (not (abstract-value-subset? u1 u2)))))
+	    (union-values v)))
+	  (union-values v))
+	 (let inner ((us (union-values v)))
+	  (if (null? us)
+	      (k)
+	      (outer (first u) (cons v vs) (lambda () (inner (rest us)))))))
+	((scalar-value? v) (k))
+	(else
+	 (let inner ((vs1 (aggregate-value-values v)))
+	  (if (null? vs1)
+	      (k)
+	      (outer (first vs1) vs (lambda () (inner (rest vs1))))))))))
 
 (define (check-analysis!)
  (for-each
@@ -5400,7 +5426,7 @@
 
 (define (verbosity)
  (format #t
-	 "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max depth: ~s, max width: ~s~%concrete reals: ~s~%"
+	 "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max size: ~s, max width: ~s~%concrete reals: ~s~%"
 	 (count-if
 	  (lambda (e) (not (null? (expression-environment-bindings e))))
 	  *expressions*)
@@ -5408,7 +5434,7 @@
 	 (max-flow-size)
 	 (unions-in-analysis)
 	 (bottoms-in-analysis)
-	 (analysis-max-depth)
+	 (analysis-max-size)
 	 (analysis-max-width)
 	 (concrete-reals-in-analysis)))
 
