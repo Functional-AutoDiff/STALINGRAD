@@ -188,6 +188,20 @@
 
 (define *queue* '())
 
+(define *nonrecursive-closures* '())
+
+(define *recursive-closures* '())
+
+(define *perturbation-tagged-values* '())
+
+(define *bundles* '())
+
+(define *sensitivity-tagged-values* '())
+
+(define *reverse-tagged-values* '())
+
+(define *tagged-pairs* '())
+
 ;;; Parameters
 
 (define *include-path* '())
@@ -1035,7 +1049,7 @@
 (define (vlad-empty-list) '())
 
 (define (vlad-empty-list? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (null? v))
 
 ;;; Booleans
@@ -1045,11 +1059,11 @@
 (define (vlad-false) #f)
 
 (define (vlad-true? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (eq? v #t))
 
 (define (vlad-false? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (eq? v #f))
 
 (define (vlad-boolean? v) (or (vlad-true? v) (vlad-false? v)))
@@ -1059,18 +1073,36 @@
 (define (abstract-real) 'real)
 
 (define (is-abstract-real? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (eq? v 'real))
 
 (define (vlad-real? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (real? v) (is-abstract-real? v)))
 
 ;;; Closures
 
+(define (create-nonrecursive-closure vs e)
+ (if *flow-analysis?*
+     (let ((v0
+	    (find-if
+	     (lambda (v0)
+	      (and
+	       ;; The first condition is an optimization.
+	       (= (length (nonrecursive-closure-values v0)) (length vs))
+	       (expression=? (nonrecursive-closure-lambda-expression v0) e)
+	       (every abstract-value=? (nonrecursive-closure-values v0) vs)))
+	     *nonrecursive-closures*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-nonrecursive-closure vs e)))
+	   (set! *nonrecursive-closures* (cons v0 *nonrecursive-closures*))
+	   v)))
+     (make-nonrecursive-closure vs e)))
+
 (define (new-nonrecursive-closure vs e)
  (assert
-  (and (or (not *abstract?*) (every (lambda (v) (or (union? v) (up? v))) vs))
+  (and (or (not *abstract?*) (every union? vs))
        (= (length vs) (length (free-variables e)))
        ;; We used to enforce the constraint that the tags of the parameter of e
        ;; (as an indication of the tags of the resulting closure) were a prefix
@@ -1094,13 +1126,43 @@
 	    (free-variables e)
 	    vs)))
      (empty-abstract-value)
-     (make-nonrecursive-closure vs e)))
+     (create-nonrecursive-closure vs e)))
+
+(define (create-recursive-closure vs xs es i)
+ (if *flow-analysis?*
+     (let ((v0 (find-if
+		(lambda (v0)
+		 (and
+		  (= (recursive-closure-index v0) i)
+		  (= (vector-length (recursive-closure-procedure-variables v0))
+		     (vector-length xs))
+		  (= (vector-length (recursive-closure-lambda-expressions v0))
+		     (vector-length es))
+		  ;; This is an optimization.
+		  (= (length (recursive-closure-values v0)) (length vs))
+		  (let ((xs1 (append
+			      (recursive-closure-variables v0)
+			      (vector->list
+			       (recursive-closure-procedure-variables v0))))
+			(xs2 (append (recursive-closure-free-variables
+				      (vector->list xs) (vector->list es))
+				     (vector->list xs))))
+		   (every-vector
+		    (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		    (recursive-closure-lambda-expressions v0)
+		    es))))
+		*recursive-closures*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-recursive-closure vs xs es i)))
+	   (set! *recursive-closures* (cons v0 *recursive-closures*))
+	   v0)))
+     (make-recursive-closure vs xs es i)))
 
 (define (new-recursive-closure vs xs es i)
  (assert
   (and
-   (or (not *abstract?*)
-       (every (lambda (v) (or (union? v) (up? v))) vs))
+   (or (not *abstract?*) (every union? vs))
    (= (length vs)
       (length (recursive-closure-free-variables
 	       (vector->list xs) (vector->list es))))
@@ -1122,11 +1184,10 @@
 	     (vector->list xs) (vector->list es))
 	    vs)))
      (empty-abstract-value)
-     (make-recursive-closure vs xs es i)))
+     (create-recursive-closure vs xs es i)))
 
 (define (nonrecursive-closure-match? v1 v2)
- (assert
-  (and (not (union? v1)) (not (up? v1)) (not (union? v2)) (not (up? v2))))
+ (assert (and (not (union? v1)) (not (union? v2))))
  ;; The first condition is an optimization.
  (and (= (length (nonrecursive-closure-values v1))
 	 (length (nonrecursive-closure-values v2)))
@@ -1134,8 +1195,7 @@
 		    (nonrecursive-closure-lambda-expression v2))))
 
 (define (recursive-closure-match? v1 v2)
- (assert
-  (and (not (union? v1)) (not (up? v1)) (not (union? v2)) (not (up? v2))))
+ (assert (and (not (union? v1)) (not (union? v2))))
  (and (= (recursive-closure-index v1) (recursive-closure-index v2))
       (= (vector-length (recursive-closure-procedure-variables v1))
 	 (vector-length (recursive-closure-procedure-variables v2)))
@@ -1155,15 +1215,24 @@
 		     (recursive-closure-lambda-expressions v2)))))
 
 (define (closure? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (nonrecursive-closure? v) (recursive-closure? v)))
 
+(define (closure-match? u1 u2)
+ (assert (and (closure? u1) (closure? u2)))
+ (or (and (nonrecursive-closure? u1)
+	  (nonrecursive-closure? u2)
+	  (nonrecursive-closure-match? u1 u2))
+     (and (recursive-closure? u1)
+	  (recursive-closure? u2)
+	  (recursive-closure-match? u1 u2))))
+
 (define (nonrecursive-closure-variables v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (free-variables (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-variables v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (recursive-closure-free-variables
   (vector->list (recursive-closure-procedure-variables v))
   (vector->list (recursive-closure-lambda-expressions v))))
@@ -1174,11 +1243,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-parameter v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (lambda-expression-parameter (nonrecursive-closure-lambda-expression v)))
 
 (define (recursive-closure-parameter v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (lambda-expression-parameter
   (vector-ref (recursive-closure-lambda-expressions v)
 	      (recursive-closure-index v))))
@@ -1189,11 +1258,11 @@
        (else (internal-error))))
 
 (define (nonrecursive-closure-tags v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (parameter-tags (nonrecursive-closure-parameter v)))
 
 (define (recursive-closure-tags v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (parameter-tags (recursive-closure-parameter v)))
 
 (define (closure-body v)
@@ -1205,469 +1274,376 @@
 	(else (internal-error)))))
 
 (define (vlad-procedure? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (primitive-procedure? v) (closure? v)))
 
 ;;; Perturbation Tagged Values
 
+(define (create-perturbation-tagged-value v)
+ (if *flow-analysis?*
+     (let ((v0 (find-if
+		(lambda (v0)
+		 (abstract-value=? (perturbation-tagged-value-primal v0) v))
+		*perturbation-tagged-values*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-perturbation-tagged-value v)))
+	   (set! *perturbation-tagged-values*
+		 (cons v0 *perturbation-tagged-values*))
+	   v0)))
+     (make-perturbation-tagged-value v)))
+
 (define (new-perturbation-tagged-value v)
- (assert (or (not *abstract?*) (union? v) (up? v)))
- (if (empty-abstract-value? v) v (make-perturbation-tagged-value v)))
+ (assert (or (not *abstract?*) (union? v)))
+ (if (empty-abstract-value? v) v (create-perturbation-tagged-value v)))
 
 ;;; Bundles
 
 (define (some-bundlable? v v-perturbation)
- (let loop ((v v)
-	    (v-perturbation v-perturbation)
-	    (cs '())
-	    (vs-above '())
-	    (vs-perturbation-above '()))
-  (cond
-   ((up? v)
-    (loop (list-ref vs-above (up-index v))
-	  v-perturbation
-	  cs
-	  (rest* vs-above (+ (up-index v) 1))
-	  vs-perturbation-above))
-   ((up? v-perturbation)
-    (loop v
-	  (list-ref vs-perturbation-above (up-index v-perturbation))
-	  cs
-	  vs-above
-	  (rest* vs-perturbation-above (+ (up-index v-perturbation) 1))))
-   (else
-    (or
-     (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
-     (and (union? v)
-	  (union? v-perturbation)
-	  (some (lambda (u)
-		 (some (lambda (u-perturbation)
-			(loop u
-			      u-perturbation
-			      (cons (cons v v-perturbation) cs)
-			      (cons v vs-above)
-			      (cons v-perturbation vs-perturbation-above)))
-		       (union-values v-perturbation)))
-		(union-values v)))
-     (and
-      (vlad-empty-list? v)
-      (perturbation-tagged-value? v-perturbation)
-      (cond
-       ((union? (perturbation-tagged-value-primal v-perturbation))
+ ;; breaks structure sharing
+ (let loop ((v v) (v-perturbation v-perturbation) (cs '()))
+  (or
+   (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+   (and (union? v)
+	(union? v-perturbation)
+	(some (lambda (u)
+	       (some (lambda (u-perturbation)
+		      (loop u
+			    u-perturbation
+			    (cons (cons v v-perturbation) cs)))
+		     (union-values v-perturbation)))
+	      (union-values v)))
+   (and
+    (vlad-empty-list? v)
+    (perturbation-tagged-value? v-perturbation)
+    (if (union? (perturbation-tagged-value-primal v-perturbation))
 	(some
 	 vlad-empty-list?
-	 (union-values (perturbation-tagged-value-primal v-perturbation))))
-       ((up? (perturbation-tagged-value-primal v-perturbation))
-	(unimplemented))
-       (else
-	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-true? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	 (union-values (perturbation-tagged-value-primal v-perturbation)))
+	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-true? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     vlad-true?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-true? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-false? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-false? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     vlad-false?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-false? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-real? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-real? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     vlad-real?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-real? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (primitive-procedure? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
+   (and (primitive-procedure? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
-	     (lambda (u)
-	      (and (primitive-procedure? u) (eq? v u)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+	     (lambda (u) (and (primitive-procedure? u) (eq? v u)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (primitive-procedure?
 		  (perturbation-tagged-value-primal v-perturbation))
-		 (eq? v (perturbation-tagged-value-primal v-perturbation))))))
-     (and (perturbation-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		 (eq? v (perturbation-tagged-value-primal v-perturbation)))))
+   (and (perturbation-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     (lambda (u)
 	      (and (perturbation-tagged-value? u)
 		   (loop (perturbation-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (perturbation-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (perturbation-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (perturbation-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (perturbation-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(perturbation-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (bundle? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (bundle? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     (lambda (u)
 	      (and (bundle? u)
 		   (loop (bundle-primal v)
 			 (singleton
 			  (new-perturbation-tagged-value (bundle-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)
+			 cs)
 		   (loop (bundle-tangent v)
 			 (singleton
 			  (new-perturbation-tagged-value (bundle-tangent u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (bundle? (perturbation-tagged-value-primal v-perturbation))
 		 (loop (bundle-primal v)
 		       (new-perturbation-tagged-value
 			(bundle-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)
+		       cs)
 		 (loop (bundle-tangent v)
 		       (new-perturbation-tagged-value
 			(bundle-tangent
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (sensitivity-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (sensitivity-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     (lambda (u)
 	      (and (sensitivity-tagged-value? u)
 		   (loop (sensitivity-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (sensitivity-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (sensitivity-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (sensitivity-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (sensitivity-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(sensitivity-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (reverse-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (reverse-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (some
 	     (lambda (u)
 	      (and (reverse-tagged-value? u)
 		   (loop (reverse-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (reverse-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (reverse-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (reverse-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (reverse-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(reverse-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above))))))))))
+		       cs)))))))
 
 (define (every-bundlable? v v-perturbation)
- (let loop ((v v)
-	    (v-perturbation v-perturbation)
-	    (cs '())
-	    (vs-above '())
-	    (vs-perturbation-above '()))
-  (cond
-   ((up? v)
-    (loop (list-ref vs-above (up-index v))
-	  v-perturbation
-	  cs
-	  (rest* vs-above (+ (up-index v) 1))
-	  vs-perturbation-above))
-   ((up? v-perturbation)
-    (loop v
-	  (list-ref vs-perturbation-above (up-index v-perturbation))
-	  cs
-	  vs-above
-	  (rest* vs-perturbation-above (+ (up-index v-perturbation) 1))))
-   (else
-    (or
-     (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
-     (and (union? v)
-	  (union? v-perturbation)
-	  (every (lambda (u)
-		  (every (lambda (u-perturbation)
-			  (loop u
-				u-perturbation
-				(cons (cons v v-perturbation) cs)
-				(cons v vs-above)
-				(cons v-perturbation vs-perturbation-above)))
-			 (union-values v-perturbation)))
-		 (union-values v)))
-     (and
-      (vlad-empty-list? v)
-      (perturbation-tagged-value? v-perturbation)
-      (cond
-       ((union? (perturbation-tagged-value-primal v-perturbation))
+ ;; breaks structure sharing
+ (let loop ((v v) (v-perturbation v-perturbation) (cs '()))
+  (or
+   (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+   (and (union? v)
+	(union? v-perturbation)
+	(every (lambda (u)
+		(every (lambda (u-perturbation)
+			(loop u
+			      u-perturbation
+			      (cons (cons v v-perturbation) cs)))
+		       (union-values v-perturbation)))
+	       (union-values v)))
+   (and
+    (vlad-empty-list? v)
+    (perturbation-tagged-value? v-perturbation)
+    (if (union? (perturbation-tagged-value-primal v-perturbation))
 	(every
 	 vlad-empty-list?
-	 (union-values (perturbation-tagged-value-primal v-perturbation))))
-       ((up? (perturbation-tagged-value-primal v-perturbation))
-	(unimplemented))
-       (else
-	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-true? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	 (union-values (perturbation-tagged-value-primal v-perturbation)))
+	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-true? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     vlad-true?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-true? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-false? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-false? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     vlad-false?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-false? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (vlad-real? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
+   (and (vlad-real? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     vlad-real?
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
-	    (vlad-real? (perturbation-tagged-value-primal v-perturbation)))))
-     (and (primitive-procedure? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
+	    (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
+   (and (primitive-procedure? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
-	     (lambda (u)
-	      (and (primitive-procedure? u) (eq? v u)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+	     (lambda (u) (and (primitive-procedure? u) (eq? v u)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (primitive-procedure?
 		  (perturbation-tagged-value-primal v-perturbation))
-		 (eq? v (perturbation-tagged-value-primal v-perturbation))))))
-     (and (perturbation-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		 (eq? v (perturbation-tagged-value-primal v-perturbation)))))
+   (and (perturbation-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     (lambda (u)
 	      (and (perturbation-tagged-value? u)
 		   (loop (perturbation-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (perturbation-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (perturbation-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (perturbation-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (perturbation-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(perturbation-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (bundle? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (bundle? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     (lambda (u)
 	      (and (bundle? u)
 		   (loop (bundle-primal v)
 			 (singleton
 			  (new-perturbation-tagged-value (bundle-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)
+			 cs)
 		   (loop (bundle-tangent v)
 			 (singleton
 			  (new-perturbation-tagged-value (bundle-tangent u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (bundle? (perturbation-tagged-value-primal v-perturbation))
 		 (loop (bundle-primal v)
 		       (new-perturbation-tagged-value
 			(bundle-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)
+		       cs)
 		 (loop (bundle-tangent v)
 		       (new-perturbation-tagged-value
 			(bundle-tangent
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (sensitivity-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (sensitivity-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     (lambda (u)
 	      (and (sensitivity-tagged-value? u)
 		   (loop (sensitivity-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (sensitivity-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (sensitivity-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (sensitivity-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (sensitivity-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(sensitivity-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above)))))
-     (and (reverse-tagged-value? v)
-	  (perturbation-tagged-value? v-perturbation)
-	  (cond
-	   ((union? (perturbation-tagged-value-primal v-perturbation))
+		       cs))))
+   (and (reverse-tagged-value? v)
+	(perturbation-tagged-value? v-perturbation)
+	(if (union? (perturbation-tagged-value-primal v-perturbation))
 	    (every
 	     (lambda (u)
 	      (and (reverse-tagged-value? u)
 		   (loop (reverse-tagged-value-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value
-			   (reverse-tagged-value-primal u)))
-			 cs
-			 vs-above
-			 vs-perturbation-above)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation))))
-	   ((up? (perturbation-tagged-value-primal v-perturbation))
-	    (unimplemented))
-	   (else
+			 (singleton (new-perturbation-tagged-value
+				     (reverse-tagged-value-primal u)))
+			 cs)))
+	     (union-values (perturbation-tagged-value-primal v-perturbation)))
 	    (and (reverse-tagged-value?
 		  (perturbation-tagged-value-primal v-perturbation))
 		 (loop (reverse-tagged-value-primal v)
 		       (new-perturbation-tagged-value
 			(reverse-tagged-value-primal
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs
-		       vs-above
-		       vs-perturbation-above))))))))))
+		       cs)))))))
+
+(define (create-bundle v v-perturbation)
+ (if *flow-analysis?*
+     (let ((v0 (find-if
+		(lambda (v0)
+		 (and (abstract-value=? (bundle-primal v0) v)
+		      (abstract-value=? (bundle-tangent v0) v-perturbation)))
+		*bundles*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-bundle v v-perturbation)))
+	   (set! *bundles* (cons v0 *bundles*))
+	   v0)))
+     (make-bundle v v-perturbation)))
 
 (define (new-bundle v v-perturbation)
- (assert (and (or (not *abstract?*)
-		  (and (or (union? v) (up? v))
-		       (or (union? v-perturbation) (up? v-perturbation))))
+ (assert (and (or (not *abstract?*) (and (union? v) (union? v-perturbation)))
 	      (or *abstract?* (some-bundlable? v v-perturbation))))
  (if (or (empty-abstract-value? v)
 	 (empty-abstract-value? v-perturbation)
 	 (and *abstract?* (not (some-bundlable? v v-perturbation))))
      (empty-abstract-value)
-     (make-bundle v v-perturbation)))
+     (create-bundle v v-perturbation)))
 
 ;;; Sensitivity Tagged Values
 
+(define (create-sensitivity-tagged-value v)
+ (if *flow-analysis?*
+     (let ((v0 (find-if
+		(lambda (v0)
+		 (abstract-value=? (sensitivity-tagged-value-primal v0) v))
+		*sensitivity-tagged-values*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-sensitivity-tagged-value v)))
+	   (set! *sensitivity-tagged-values*
+		 (cons v0 *sensitivity-tagged-values*))
+	   v0)))
+     (make-sensitivity-tagged-value v)))
+
 (define (new-sensitivity-tagged-value v)
- (assert (or (not *abstract?*) (union? v) (up? v)))
- (if (empty-abstract-value? v) v (make-sensitivity-tagged-value v)))
+ (assert (or (not *abstract?*) (union? v)))
+ (if (empty-abstract-value? v) v (create-sensitivity-tagged-value v)))
 
 ;;; Reverse Tagged Values
 
+(define (create-reverse-tagged-value v)
+ (if *flow-analysis?*
+     (let ((v0 (find-if (lambda (v0)
+			 (abstract-value=? (reverse-tagged-value-primal v0) v))
+			*reverse-tagged-values*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-reverse-tagged-value v)))
+	   (set! *reverse-tagged-values* (cons v0 *reverse-tagged-values*))
+	   v0)))
+     (make-reverse-tagged-value v)))
+
 (define (new-reverse-tagged-value v)
- (assert (or (not *abstract?*) (union? v) (up? v)))
- (if (empty-abstract-value? v) v (make-reverse-tagged-value v)))
+ (assert (or (not *abstract?*) (union? v)))
+ (if (empty-abstract-value? v) v (create-reverse-tagged-value v)))
 
 ;;; Pairs
 
+(define (create-tagged-pair tags v1 v2)
+ (if *flow-analysis?*
+     (let ((v0 (find-if (lambda (v0)
+			 (and (equal-tags? (tagged-pair-tags v0) tags)
+			      (abstract-value=? (tagged-pair-car v0) v1)
+			      (abstract-value=? (tagged-pair-cdr v0) v2)))
+			*tagged-pairs*)))
+      (if v0
+	  v0
+	  (let ((v0 (make-tagged-pair tags v1 v2)))
+	   (set! *tagged-pairs* (cons v0 *tagged-pairs*))
+	   v0)))
+     (make-tagged-pair tags v1 v2)))
+
 (define (new-tagged-pair tags v1 v2)
- (assert (and (or (not *abstract?*)
-		  (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2))))
+ (assert (and (or (not *abstract?*) (and (union? v1) (union? v2)))
 	      (or *abstract?*
 		  (and (prefix-tags? tags (value-tags v1))
 		       (prefix-tags? tags (value-tags v2))))))
@@ -1681,10 +1657,10 @@
 	   (every-value-tags (lambda (tags2) (not (prefix-tags? tags tags2)))
 			     v2))))
      (empty-abstract-value)
-     (make-tagged-pair tags v1 v2)))
+     (create-tagged-pair tags v1 v2)))
 
 (define (vlad-pair? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (and (tagged-pair? v) (empty-tags? (tagged-pair-tags v))))
 
 (define (vlad-car v)
@@ -1699,48 +1675,36 @@
 
 ;;; Unions
 
-(define (empty-abstract-value) (make-union '()))
+(define (empty-abstract-value) (new-union '()))
 
 (define (empty-abstract-value? v) (and (union? v) (null? (union-values v))))
 
 (define (singleton v)
  (cond
   (*abstract?*
-   (assert (and (or (not (union? v)) (empty-abstract-value? v)) (not (up? v))))
-   (if (empty-abstract-value? v) v (make-union (list v))))
-  (else (assert (and (not (union? v)) (not (up? v))))
+   (assert (or (not (union? v)) (empty-abstract-value? v)))
+   (if (empty-abstract-value? v) v (new-union (list v))))
+  (else (assert (not (union? v)))
 	v)))
 
-(define (abstract-boolean) (make-union (list (vlad-true) (vlad-false))))
-
-(define (closed? v)
- (let loop ((v v) (n 0))
-  (cond ((union? v) (every (lambda (u) (loop u (+ n 1))) (union-values v)))
-	((up? v) (< (up-index v) n))
-	((scalar-value? v) #t)
-	(else (every (lambda (v) (loop v n)) (aggregate-value-values v))))))
+(define (abstract-boolean) (new-union (list (vlad-true) (vlad-false))))
 
 (define (union-members v)
- (assert (not (up? v)))
  (if (union? v)
      (map-reduce append '() union-members (union-values v))
      (list v)))
 
 (define (new-union vs)
- (let* ((us (map-reduce append '() union-members vs))
-	(us1 (remove-if closed? us))
-	(us2 (remove-if-not closed? us)))
+ (let* ((us (map-reduce append '() union-members vs)))
   (make-union
-   (append us1
-	   ;; This does not affect the extension of the abstract value but can
-	   ;; yield a smaller representation. Thus this is just an
-	   ;; optimization. Since abstract value subset and equivalence is
-	   ;; undecidable, can only conservatively approximate this. Using a
-	   ;; conservative approximation is sound since abstract values are
-	   ;; removed only when the predicate returns #t which is a precise
-	   ;; result.
-	   (maximal-elements abstract-value-subset?
-			     (remove-duplicatesp abstract-value=? us2))))))
+   ;; This does not affect the extension of the abstract value but can yield a
+   ;; smaller representation. Thus this is just an optimization. Since abstract
+   ;; value subset and equivalence is undecidable, can only conservatively
+   ;; approximate this. Using a conservative approximation is sound since
+   ;; abstract values are removed only when the predicate returns #t which is a
+   ;; precise result.
+   (maximal-elements abstract-value-subset?
+		     (remove-duplicatesp abstract-value=? us)))))
 
 (define (map-union f v) (new-union (map f (union-values v))))
 
@@ -1750,7 +1714,7 @@
 ;;; Generic
 
 (define (perturbation-value? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (and (nonrecursive-closure? v)
 	  (perturbation-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1759,7 +1723,7 @@
      (and (tagged-pair? v) (tagged? 'perturbation (tagged-pair-tags v)))))
 
 (define (forward-value? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (and (nonrecursive-closure? v)
 	  (forward-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1772,7 +1736,7 @@
  ;; unsensitize them. You need to invoke backpropagators so we can't prohibit
  ;; invocation of sensitivity-tagged procedures. Perhaps we could/should
  ;; prohibit invocation of perturbation-tagged procedures.
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (and (nonrecursive-closure? v)
 	  (sensitivity-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1781,7 +1745,7 @@
      (and (tagged-pair? v) (tagged? 'sensitivity (tagged-pair-tags v)))))
 
 (define (reverse-value? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (and (nonrecursive-closure? v)
 	  (reverse-parameter? (nonrecursive-closure-parameter v)))
      (and (recursive-closure? v)
@@ -1790,7 +1754,7 @@
      (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
 
 (define (scalar-value? v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (or (vlad-empty-list? v)
      (vlad-true? v)
      (vlad-false? v)
@@ -1835,7 +1799,7 @@
   (else (internal-error))))
 
 (define (value-tags v)
- (assert (and (not (union? v)) (not (up? v))))
+ (assert (not (union? v)))
  (cond
   ((scalar-value? v) '())
   ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
@@ -1851,48 +1815,50 @@
   (else (internal-error))))
 
 (define (some-value-tags p v)
- (let loop ((tags '()) (v v))
-  (cond ((union? v) (some (lambda (u) (loop tags u)) (union-values v)))
-	;; needs work: I'm not sure that this is sound.
-	((up? v) #t)
-	((scalar-value? v) (p (reverse tags)))
-	((nonrecursive-closure? v)
-	 (p (append (reverse tags) (nonrecursive-closure-tags v))))
-	((recursive-closure? v)
-	 (p (append (reverse tags) (recursive-closure-tags v))))
-	((perturbation-tagged-value? v)
-	 (loop (cons 'perturbation tags) (perturbation-tagged-value-primal v)))
-	((bundle? v) (loop (cons 'forward tags) (bundle-primal v)))
-	((sensitivity-tagged-value? v)
-	 (loop (cons 'sensitivity tags) (sensitivity-tagged-value-primal v)))
-	((reverse-tagged-value? v)
-	 (loop (cons 'reverse tags) (reverse-tagged-value-primal v)))
-	((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
-	(else (internal-error)))))
+ (let loop ((tags '()) (v v) (vs '()))
+  (cond
+   ;; needs work: I'm not sure that this is sound.
+   ((memq v vs) #t)
+   ((union? v) (some (lambda (u) (loop tags u (cons v vs))) (union-values v)))
+   ((scalar-value? v) (p (reverse tags)))
+   ((nonrecursive-closure? v)
+    (p (append (reverse tags) (nonrecursive-closure-tags v))))
+   ((recursive-closure? v)
+    (p (append (reverse tags) (recursive-closure-tags v))))
+   ((perturbation-tagged-value? v)
+    (loop (cons 'perturbation tags) (perturbation-tagged-value-primal v) vs))
+   ((bundle? v) (loop (cons 'forward tags) (bundle-primal v) vs))
+   ((sensitivity-tagged-value? v)
+    (loop (cons 'sensitivity tags) (sensitivity-tagged-value-primal v) vs))
+   ((reverse-tagged-value? v)
+    (loop (cons 'reverse tags) (reverse-tagged-value-primal v) vs))
+   ((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
+   (else (internal-error)))))
 
 (define (every-value-tags p v)
- (let loop ((tags '()) (v v))
-  (cond ((union? v) (every (lambda (u) (loop tags u)) (union-values v)))
-	;; needs work: I'm not sure that this is sound.
-	((up? v) #f)
-	((scalar-value? v) (p (reverse tags)))
-	((nonrecursive-closure? v)
-	 (p (append (reverse tags) (nonrecursive-closure-tags v))))
-	((recursive-closure? v)
-	 (p (append (reverse tags) (recursive-closure-tags v))))
-	((perturbation-tagged-value? v)
-	 (loop (cons 'perturbation tags) (perturbation-tagged-value-primal v)))
-	((bundle? v) (loop (cons 'forward tags) (bundle-primal v)))
-	((sensitivity-tagged-value? v)
-	 (loop (cons 'sensitivity tags) (sensitivity-tagged-value-primal v)))
-	((reverse-tagged-value? v)
-	 (loop (cons 'reverse tags) (reverse-tagged-value-primal v)))
-	((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
-	(else (internal-error)))))
+ (let loop ((tags '()) (v v) (vs '()))
+  (cond
+   ;; needs work: I'm not sure that this is sound.
+   ((memq v vs) #f)
+   ((union? v) (every (lambda (u) (loop tags u (cons v vs))) (union-values v)))
+   ((scalar-value? v) (p (reverse tags)))
+   ((nonrecursive-closure? v)
+    (p (append (reverse tags) (nonrecursive-closure-tags v))))
+   ((recursive-closure? v)
+    (p (append (reverse tags) (recursive-closure-tags v))))
+   ((perturbation-tagged-value? v)
+    (loop (cons 'perturbation tags) (perturbation-tagged-value-primal v) vs))
+   ((bundle? v) (loop (cons 'forward tags) (bundle-primal v) vs))
+   ((sensitivity-tagged-value? v)
+    (loop (cons 'sensitivity tags) (sensitivity-tagged-value-primal v) vs))
+   ((reverse-tagged-value? v)
+    (loop (cons 'reverse tags) (reverse-tagged-value-primal v) vs))
+   ((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
+   (else (internal-error)))))
 
 ;;; Abstract Value Subset, Equivalence, and Nondisjointness
 
-(define (abstract-value-subset-internal? v1 v2 cs vs1-above vs2-above)
+(define (abstract-value-subset? v1 v2)
  ;; I used to think that abstract value subset and equality is undecidable (by
  ;; reduction from context-free-grammar equivalence and that it is
  ;; semidecidable since a lone element in the extension of the left argument
@@ -1912,119 +1878,71 @@
  ;; result. In principle, one only need multiply out v1. But if v1 has
  ;; recursion, there is no bound on the amount of multiplying out that may be
  ;; needed.
- (cond
-  ;; This is an optimization.
-  ((eq? v1 v2) #t)
-  ((up? v1)
-   (abstract-value-subset-internal? (list-ref vs1-above (up-index v1))
-				    v2
-				    cs
-				    (rest* vs1-above (+ (up-index v1) 1))
-				    vs2-above))
-  ((up? v2)
-   (abstract-value-subset-internal? v1
-				    (list-ref vs2-above (up-index v2))
-				    cs
-				    vs1-above
-				    (rest* vs2-above (+ (up-index v2) 1))))
-  ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #t)
-  ((and (union? v1) (union? v2))
-   (every (lambda (u1)
-	   (some (lambda (u2)
-		  (abstract-value-subset-internal? u1
-						   u2
-						   (cons (cons v1 v2) cs)
-						   (cons v1 vs1-above)
-						   (cons v2 vs2-above)))
-		 (union-values v2)))
-	  (union-values v1)))
-  ((or (union? v1) (union? v2)) (internal-error))
-  (else
-   (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
-       (and (vlad-true? v1) (vlad-true? v2))
-       (and (vlad-false? v1) (vlad-false? v2))
-       (and (vlad-real? v1)
-	    (vlad-real? v2)
-	    ;; This was = but then it equates exact values with inexact values
-	    ;; and this breaks -imprecise-inexacts.
-	    (or (and (real? v1) (real? v2) (equal? v1 v2))
-		(and (real? v1) (is-abstract-real? v2))
-		(and (is-abstract-real? v1) (is-abstract-real? v2))))
-       (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-       (and (nonrecursive-closure? v1)
-	    (nonrecursive-closure? v2)
-	    (nonrecursive-closure-match? v1 v2)
-	    ;; See the note in abstract-environment=?.
-	    (every
-	     (lambda (v1 v2)
-	      (abstract-value-subset-internal? v1 v2 cs vs1-above vs2-above))
-	     (nonrecursive-closure-values v1)
-	     (nonrecursive-closure-values v2)))
-       (and (recursive-closure? v1)
-	    (recursive-closure? v2)
-	    (recursive-closure-match? v1 v2)
-	    ;; See the note in abstract-environment=?.
-	    (every
-	     (lambda (v1 v2)
-	      (abstract-value-subset-internal? v1 v2 cs vs1-above vs2-above))
-	     (recursive-closure-values v1)
-	     (recursive-closure-values v2)))
-       (and (perturbation-tagged-value? v1)
-	    (perturbation-tagged-value? v2)
-	    (abstract-value-subset-internal?
-	     (perturbation-tagged-value-primal v1)
-	     (perturbation-tagged-value-primal v2)
-	     cs
-	     vs1-above
-	     vs2-above))
-       (and (bundle? v1)
-	    (bundle? v2)
-	    (abstract-value-subset-internal?
-	     (bundle-primal v1) (bundle-primal v2) cs vs1-above vs2-above)
-	    (abstract-value-subset-internal?
-	     (bundle-tangent v1) (bundle-tangent v2) cs vs1-above vs2-above))
-       (and (sensitivity-tagged-value? v1)
-	    (sensitivity-tagged-value? v2)
-	    (abstract-value-subset-internal?
-	     (sensitivity-tagged-value-primal v1)
-	     (sensitivity-tagged-value-primal v2)
-	     cs
-	     vs1-above
-	     vs2-above))
-       (and (reverse-tagged-value? v1)
-	    (reverse-tagged-value? v2)
-	    (abstract-value-subset-internal?
-	     (reverse-tagged-value-primal v1)
-	     (reverse-tagged-value-primal v2)
-	     cs
-	     vs1-above
-	     vs2-above))
-       (and (tagged-pair? v1)
-	    (tagged-pair? v2)
-	    (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
-	    (abstract-value-subset-internal? (tagged-pair-car v1)
-					     (tagged-pair-car v2)
-					     cs
-					     vs1-above
-					     vs2-above)
-	    (abstract-value-subset-internal? (tagged-pair-cdr v1)
-					     (tagged-pair-cdr v2)
-					     cs
-					     vs1-above
-					     vs2-above))))))
-
-(define (abstract-value-subset? v1 v2)
- (abstract-value-subset-internal? v1 v2 '() '() '()))
-
-(define (contextual-abstract-value-subset? v1 v2 vs-above)
- (abstract-value-subset-internal? v1 v2 '() vs-above vs-above))
+ ;; breaks structure sharing
+ (let loop ((v1 v1) (v2 v2) (cs '()))
+  (cond
+   ;; This is an optimization.
+   ((eq? v1 v2) #t)
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #t)
+   ((and (union? v1) (union? v2))
+    (every (lambda (u1)
+	    (some (lambda (u2) (loop u1 u2 (cons (cons v1 v2) cs)))
+		  (union-values v2)))
+	   (union-values v1)))
+   ((or (union? v1) (union? v2)) (internal-error))
+   (else
+    (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
+	(and (vlad-true? v1) (vlad-true? v2))
+	(and (vlad-false? v1) (vlad-false? v2))
+	(and (vlad-real? v1)
+	     (vlad-real? v2)
+	     ;; This was = but then it equates exact values with inexact values
+	     ;; and this breaks -imprecise-inexacts.
+	     (or (and (real? v1) (real? v2) (equal? v1 v2))
+		 (and (real? v1) (is-abstract-real? v2))
+		 (and (is-abstract-real? v1) (is-abstract-real? v2))))
+	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
+	(and (nonrecursive-closure? v1)
+	     (nonrecursive-closure? v2)
+	     (nonrecursive-closure-match? v1 v2)
+	     ;; See the note in abstract-environment=?.
+	     (every (lambda (v1 v2) (loop v1 v2 cs))
+		    (nonrecursive-closure-values v1)
+		    (nonrecursive-closure-values v2)))
+	(and (recursive-closure? v1)
+	     (recursive-closure? v2)
+	     (recursive-closure-match? v1 v2)
+	     ;; See the note in abstract-environment=?.
+	     (every (lambda (v1 v2) (loop v1 v2 cs))
+		    (recursive-closure-values v1)
+		    (recursive-closure-values v2)))
+	(and (perturbation-tagged-value? v1)
+	     (perturbation-tagged-value? v2)
+	     (loop (perturbation-tagged-value-primal v1)
+		   (perturbation-tagged-value-primal v2)
+		   cs))
+	(and (bundle? v1)
+	     (bundle? v2)
+	     (loop (bundle-primal v1) (bundle-primal v2) cs)
+	     (loop (bundle-tangent v1) (bundle-tangent v2) cs))
+	(and (sensitivity-tagged-value? v1)
+	     (sensitivity-tagged-value? v2)
+	     (loop (sensitivity-tagged-value-primal v1)
+		   (sensitivity-tagged-value-primal v2)
+		   cs))
+	(and (reverse-tagged-value? v1)
+	     (reverse-tagged-value? v2)
+	     (loop (reverse-tagged-value-primal v1)
+		   (reverse-tagged-value-primal v2)
+		   cs))
+	(and (tagged-pair? v1)
+	     (tagged-pair? v2)
+	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
+	     (loop (tagged-pair-car v1) (tagged-pair-car v2) cs)
+	     (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs)))))))
 
 (define (abstract-value=? v1 v2)
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
-
-(define (contextual-abstract-value=? v1 v2 vs-above)
- (and (contextual-abstract-value-subset? v1 v2 vs-above)
-      (contextual-abstract-value-subset? v2 v1 vs-above)))
 
 (define (abstract-value-nondisjoint? v1 v2)
  ;; I used to think that determining whether two abstract values are
@@ -2038,127 +1956,74 @@
  ;; nondisjoint is decidable. And I believe that this algorithm is precise.
  ;; Only used in abstract-destructure and generate-destructure for generating
  ;; error messages.
- (let loop ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
+ ;; breaks structure sharing
+ (let loop ((v1 v1) (v2 v2) (cs '()))
   (cond
-   ((up? v1)
-    (loop (list-ref vs1-above (up-index v1))
-	  v2
-	  cs
-	  (rest* vs1-above (+ (up-index v1) 1))
-	  vs2-above))
-   ((up? v2)
-    (loop v1
-	  (list-ref vs2-above (up-index v2))
-	  cs
-	  vs1-above
-	  (rest* vs2-above (+ (up-index v2) 1))))
+   ;; This is an optimization that is sound so long as both v1 and v2 are
+   ;; nonempty.
+   ((eq? v1 v2) #t)
    ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #f)
    ((and (union? v1) (union? v2))
     (some (lambda (u1)
-	   (some (lambda (u2)
-		  (loop u1
-			u2
-			(cons (cons v1 v2) cs)
-			(cons v1 vs1-above)
-			(cons v2 vs2-above)))
+	   (some (lambda (u2) (loop u1 u2 (cons (cons v1 v2) cs)))
 		 (union-values v2)))
 	  (union-values v1)))
    ((or (union? v1) (union? v2)) (internal-error))
    (else
-    (or
-     (and (vlad-empty-list? v1) (vlad-empty-list? v2))
-     (and (vlad-true? v1) (vlad-true? v2))
-     (and (vlad-false? v1) (vlad-false? v2))
-     (and (vlad-real? v1)
-	  (vlad-real? v2)
-	  (or (is-abstract-real? v1)
-	      (is-abstract-real? v2)
-	      ;; This was = but then it equates exact values with inexact
-	      ;; values and this breaks -imprecise-inexacts.
-	      (equal? v1 v2)))
-     (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-     (and (nonrecursive-closure? v1)
-	  (nonrecursive-closure? v2)
-	  (nonrecursive-closure-match? v1 v2)
-	  ;; See the note in abstract-environment=?.
-	  (every (lambda (v1 v2) (loop v1 v2 cs vs1-above vs2-above))
-		 (nonrecursive-closure-values v1)
-		 (nonrecursive-closure-values v2)))
-     (and (recursive-closure? v1)
-	  (recursive-closure? v2)
-	  (recursive-closure-match? v1 v2)
-	  ;; See the note in abstract-environment=?.
-	  (every (lambda (v1 v2) (loop v1 v2 cs vs1-above vs2-above))
-		 (recursive-closure-values v1)
-		 (recursive-closure-values v2)))
-     (and (perturbation-tagged-value? v1)
-	  (perturbation-tagged-value? v2)
-	  (loop (perturbation-tagged-value-primal v1)
-		(perturbation-tagged-value-primal v2)
-		cs
-		vs1-above
-		vs2-above))
-     (and (bundle? v1)
-	  (bundle? v2)
-	  (loop (bundle-primal v1) (bundle-primal v2) cs vs1-above vs2-above)
-	  (loop
-	   (bundle-tangent v1) (bundle-tangent v2) cs vs1-above vs2-above))
-     (and (sensitivity-tagged-value? v1)
-	  (sensitivity-tagged-value? v2)
-	  (loop (sensitivity-tagged-value-primal v1)
-		(sensitivity-tagged-value-primal v2)
-		cs
-		vs1-above
-		vs2-above))
-     (and (reverse-tagged-value? v1)
-	  (reverse-tagged-value? v2)
-	  (loop (reverse-tagged-value-primal v1)
-		(reverse-tagged-value-primal v2)
-		cs
-		vs1-above
-		vs2-above))
-     (and
-      (tagged-pair? v1)
-      (tagged-pair? v2)
-      (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
-      (loop (tagged-pair-car v1) (tagged-pair-car v2) cs vs1-above vs2-above)
-      (loop
-       (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs vs1-above vs2-above)))))))
+    (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
+	(and (vlad-true? v1) (vlad-true? v2))
+	(and (vlad-false? v1) (vlad-false? v2))
+	(and (vlad-real? v1)
+	     (vlad-real? v2)
+	     (or (is-abstract-real? v1)
+		 (is-abstract-real? v2)
+		 ;; This was = but then it equates exact values with inexact
+		 ;; values and this breaks -imprecise-inexacts.
+		 (equal? v1 v2)))
+	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
+	(and (nonrecursive-closure? v1)
+	     (nonrecursive-closure? v2)
+	     (nonrecursive-closure-match? v1 v2)
+	     ;; See the note in abstract-environment=?.
+	     (every (lambda (v1 v2) (loop v1 v2 cs))
+		    (nonrecursive-closure-values v1)
+		    (nonrecursive-closure-values v2)))
+	(and (recursive-closure? v1)
+	     (recursive-closure? v2)
+	     (recursive-closure-match? v1 v2)
+	     ;; See the note in abstract-environment=?.
+	     (every (lambda (v1 v2) (loop v1 v2 cs))
+		    (recursive-closure-values v1)
+		    (recursive-closure-values v2)))
+	(and (perturbation-tagged-value? v1)
+	     (perturbation-tagged-value? v2)
+	     (loop (perturbation-tagged-value-primal v1)
+		   (perturbation-tagged-value-primal v2)
+		   cs))
+	(and (bundle? v1)
+	     (bundle? v2)
+	     (loop (bundle-primal v1) (bundle-primal v2) cs)
+	     (loop (bundle-tangent v1) (bundle-tangent v2) cs))
+	(and (sensitivity-tagged-value? v1)
+	     (sensitivity-tagged-value? v2)
+	     (loop (sensitivity-tagged-value-primal v1)
+		   (sensitivity-tagged-value-primal v2)
+		   cs))
+	(and (reverse-tagged-value? v1)
+	     (reverse-tagged-value? v2)
+	     (loop (reverse-tagged-value-primal v1)
+		   (reverse-tagged-value-primal v2)
+		   cs))
+	(and (tagged-pair? v1)
+	     (tagged-pair? v2)
+	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
+	     (loop (tagged-pair-car v1) (tagged-pair-car v2) cs)
+	     (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs)))))))
 
 ;;; Abstract Value Union
 
-(define (unroll v)
- (let loop ((v v) (vs-above '()))
-  (if (up? v)
-      (if (= (up-index v) (- (length vs-above) 1))
-	  (new-union
-	   (map (lambda (u)
-		 (if (scalar-value? u)
-		     u
-		     (make-aggregate-value-with-new-values
-		      u
-		      (map (lambda (v)
-			    (if (memq v vs-above)
-				(make-up (+ (positionq v vs-above) 1))
-				v))
-			   (aggregate-value-values u)))))
-		(union-values (last vs-above))))
-	  v)
-      (new-union (map (lambda (u)
-		       (if (scalar-value? u)
-			   u
-			   (make-aggregate-value-with-new-values
-			    u
-			    (map (lambda (v1) (loop v1 (cons v vs-above)))
-				 (aggregate-value-values u)))))
-		      (union-values v))))))
-
 (define (abstract-value-union v1 v2)
- (cond
-  ((abstract-value-subset? v1 v2) v2)
-  ((abstract-value-subset? v2 v1) v1)
-  (else (make-union
-	 (append (union-values (unroll v1)) (union-values (unroll v2)))))))
+ (new-union (append (union-values v1) (union-values v2))))
 
 ;;; Abstract Environment Equivalence
 
@@ -3002,6 +2867,7 @@
 ;;; AD
 
 (define (zero v)
+ ;; breaks structure sharing
  (cond
   ((union? v) (map-union zero v))
   ((up? v) v)
@@ -3113,6 +2979,7 @@
  (lambda-expression-forward-transform-inverse e))
 
 (define (perturb v)
+ ;; breaks structure sharing
  (cond
   ((union? v) (map-union perturb v))
   ((up? v) v)
@@ -3146,6 +3013,7 @@
   (else (internal-error))))
 
 (define (unperturb v-perturbation)
+ ;; breaks structure sharing
  (cond
   ((union? v-perturbation) (map-union unperturb v-perturbation))
   ((up? v-perturbation) v-perturbation)
@@ -3207,6 +3075,7 @@
   (else (internal-error))))
 
 (define (primal v-forward)
+ ;; breaks structure sharing
  (cond
   ((union? v-forward) (map-union primal v-forward))
   ((up? v-forward) v-forward)
@@ -3269,6 +3138,7 @@
 	 (else (internal-error))))))))
 
 (define (tangent v-forward)
+ ;; breaks structure sharing
  (cond
   ((union? v-forward) (map-union tangent v-forward))
   ((up? v-forward) v-forward)
@@ -3335,6 +3205,7 @@
 	 (else (internal-error))))))))
 
 (define (bundle v v-perturbation)
+ ;; breaks structure sharing
  (let loop ((v v)
 	    (v-perturbation v-perturbation)
 	    (cs '())
@@ -3817,6 +3688,7 @@
  (lambda-expression-reverse-transform-inverse e))
 
 (define (sensitize v)
+ ;; breaks structure sharing
  (cond
   ((union? v) (map-union sensitize v))
   ((up? v) v)
@@ -3849,6 +3721,7 @@
   (else (internal-error))))
 
 (define (unsensitize? v-sensitivity)
+ ;; breaks structure sharing
  (cond
   ((union? v-sensitivity) (every unsensitize? (union-values v-sensitivity)))
   ((up? v-sensitivity) #t)
@@ -3882,6 +3755,7 @@
   (else (internal-error))))
 
 (define (unsensitize v-sensitivity)
+ ;; breaks structure sharing
  (cond
   ((union? v-sensitivity) (map-union unsensitize v-sensitivity))
   ((up? v-sensitivity) v-sensitivity)
@@ -3943,6 +3817,7 @@
   (else (internal-error))))
 
 (define (plus v1 v2)
+ ;; breaks structure sharing
  (let loop ((v1 v1) (v2 v2) (cs '()) (vs1-above '()) (vs2-above '()))
   (cond
    ((up? v1)
@@ -4033,6 +3908,7 @@
 	(run-time-error "Arguments to plus do not conform" v1 v2))))))
 
 (define (*j v)
+ ;; breaks structure sharing
  (cond
   ((union? v) (map-union *j v))
   ((up? v) v)
@@ -4079,6 +3955,7 @@
 	 (else (internal-error))))))))
 
 (define (*j-inverse v-reverse)
+ ;; breaks structure sharing
  (cond
   ((union? v-reverse) (map-union *j-inverse v-reverse))
   ((up? v-reverse) v-reverse)
@@ -4215,43 +4092,44 @@
        (else (internal-error))))
 
 (define (externalize v)
+ ;; breaks structure sharing
  (let ((v
-	(let loop ((v v) (quote? #f))
+	(let loop ((v v) (quote? #f) (vs '()))
 	 (cond
+	  ((memp v vs)
+	   (when *unabbreviate-executably?*
+	    (run-time-error "Cannot unabbreviate executably"v))
+	   `(up ,(positionq v vs)))
 	  ((union? v)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably"v))
 	   (cond ((empty-abstract-value? v) 'bottom)
 		 ((null? (rest (union-values v)))
-		  (loop (first (union-values v)) quote?))
-		 (else `(union ,@(map (lambda (u) (loop u quote?))
+		  (loop (first (union-values v)) quote? (cons v vs)))
+		 (else `(union ,@(map (lambda (u) (loop u quote? (cons v vs)))
 				      (union-values v))))))
-	  ((up? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably"v))
-	   `(up ,(up-index v)))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(perturbation-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  `(perturb ,(loop (unperturb v) quote?)))
-		 (else `(perturbation ,(loop (unperturb v) quote?)))))
+		  `(perturb ,(loop (unperturb v) quote? vs)))
+		 (else `(perturbation ,(loop (unperturb v) quote? vs)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(forward-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  `(bundle ,(loop (primal v) quote?)
-			   ,(loop (tangent v) quote?)))
-		 (else `(forward ,(loop (primal v) quote?)
-				 ,(loop (tangent v) quote?)))))
+		  `(bundle ,(loop (primal v) quote? vs)
+			   ,(loop (tangent v) quote? vs)))
+		 (else `(forward ,(loop (primal v) quote? vs)
+				 ,(loop (tangent v) quote? vs)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(sensitivity-value? v)
 		;; This is to prevent attempts to unsensitize backpropagators.
 		(unsensitize? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  `(sensitize ,(loop (unsensitize v) quote?)))
-		 (else `(sensitivity ,(loop (unsensitize v) quote?)))))
+		  `(sensitize ,(loop (unsensitize v) quote? vs)))
+		 (else `(sensitivity ,(loop (unsensitize v) quote? vs)))))
 	  ;; It may not be possible to apply *j-inverse to a closure whose
 	  ;; parameter is reverse tagged. Such a situation arises when you
 	  ;; externalize an analysis. It may contain closures that result from
@@ -4261,8 +4139,8 @@
 		(reverse-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  `(*j ,(loop (*j-inverse v) quote?)))
-		 (else `(reverse ,(loop (*j-inverse v) quote?)))))
+		  `(*j ,(loop (*j-inverse v) quote? vs)))
+		 (else `(reverse ,(loop (*j-inverse v) quote? vs)))))
 	  ((vlad-empty-list? v)
 	   (if (and *unabbreviate-executably?* (not quote?)) ''() '()))
 	  ((vlad-true? v) #t)
@@ -4275,9 +4153,12 @@
 	  ((vlad-pair? v)
 	   (if (and *unabbreviate-executably?* (not quote?))
 	       (if (quotable? v)
-		   `',(cons (loop (vlad-car v) #t) (loop (vlad-cdr v) #t))
-		   `(cons ,(loop (vlad-car v) #f) ,(loop (vlad-cdr v) #f)))
-	       (cons (loop (vlad-car v) quote?) (loop (vlad-cdr v) quote?))))
+		   `',(cons (loop (vlad-car v) #t vs)
+			    (loop (vlad-cdr v) #t vs))
+		   `(cons ,(loop (vlad-car v) #f vs)
+			  ,(loop (vlad-cdr v) #f vs)))
+	       (cons (loop (vlad-car v) quote? vs)
+		     (loop (vlad-cdr v) quote? vs))))
 	  ((primitive-procedure? v)
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
@@ -4292,19 +4173,19 @@
 	     (case (length (nonrecursive-closure-variables v))
 	      ((0)
 	       (abstract->concrete (nonrecursive-closure-lambda-expression v)))
-	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote? vs)))
 			       (nonrecursive-closure-variables v)
 			       (nonrecursive-closure-values v))
 		     ,(abstract->concrete
 		       (nonrecursive-closure-lambda-expression v))))
-	      (else `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+	      (else `(let ,(map (lambda (x v) `(,x ,(loop v quote? vs)))
 				(nonrecursive-closure-variables v)
 				(nonrecursive-closure-values v))
 		      ,(abstract->concrete
 			(nonrecursive-closure-lambda-expression v))))))
 	    (*unabbreviate-nonrecursive-closures?*
 	     `(nonrecursive-closure
-	       ,(map (lambda (x v) `(,x ,(loop v quote?)))
+	       ,(map (lambda (x v) `(,x ,(loop v quote? vs)))
 		     (nonrecursive-closure-variables v)
 		     (nonrecursive-closure-values v))
 	       ,(abstract->concrete
@@ -4323,7 +4204,7 @@
 			       (recursive-closure-lambda-expressions v)))
 		     ,(vector-ref (recursive-closure-procedure-variables v)
 				  (recursive-closure-index v))))
-	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote?)))
+	      ((1) `(let ,(map (lambda (x v) `(,x ,(loop v quote? vs)))
 			       (recursive-closure-variables v)
 			       (recursive-closure-values v))
 		     (letrec ,(vector->list
@@ -4333,7 +4214,7 @@
 				(recursive-closure-lambda-expressions v)))
 		      ,(vector-ref (recursive-closure-procedure-variables v)
 				   (recursive-closure-index v)))))
-	      (else `(let ,(map (lambda (x i) `(,x ,(loop v quote?)))
+	      (else `(let ,(map (lambda (x i) `(,x ,(loop v quote? vs)))
 				(recursive-closure-variables v)
 				(recursive-closure-values v))
 		      (letrec ,(vector->list
@@ -4345,7 +4226,7 @@
 				    (recursive-closure-index v)))))))
 	    (*unabbreviate-recursive-closures?*
 	     `(recursive-closure
-	       ,(map (lambda (x i) `(,x ,(loop v quote?)))
+	       ,(map (lambda (x i) `(,x ,(loop v quote? vs)))
 		     (recursive-closure-variables v)
 		     (recursive-closure-values v))
 	       ,(vector->list
@@ -4361,32 +4242,34 @@
 	   (cond
 	    (*unabbreviate-executably?*
 	     (assert (not quote?))
-	     `(perturb ,(loop (perturbation-tagged-value-primal v) quote?)))
+	     `(perturb ,(loop (perturbation-tagged-value-primal v) quote? vs)))
 	    (else `(perturbation
-		    ,(loop (perturbation-tagged-value-primal v) quote?)))))
+		    ,(loop (perturbation-tagged-value-primal v) quote? vs)))))
 	  ((bundle? v)
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  `(bundle ,(loop (bundle-primal v) quote?)
-			   ,(loop (bundle-tangent v) quote?)))
-		 (else `(forward ,(loop (bundle-primal v) quote?)
-				 ,(loop (bundle-tangent v) quote?)))))
+		  `(bundle ,(loop (bundle-primal v) quote? vs)
+			   ,(loop (bundle-tangent v) quote? vs)))
+		 (else `(forward ,(loop (bundle-primal v) quote? vs)
+				 ,(loop (bundle-tangent v) quote? vs)))))
 	  ((sensitivity-tagged-value? v)
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond
 	    (*unabbreviate-executably?*
 	     (assert (not quote?))
-	     `(sensitize ,(loop (sensitivity-tagged-value-primal v) quote?)))
+	     `(sensitize
+	       ,(loop (sensitivity-tagged-value-primal v) quote? vs)))
 	    (else `(sensitivity
-		    ,(loop (sensitivity-tagged-value-primal v) quote?)))))
+		    ,(loop (sensitivity-tagged-value-primal v) quote? vs)))))
 	  ((reverse-tagged-value? v)
 	   ;; Only needed for *unabbreviate-transformed?*.
 	   (cond
 	    (*unabbreviate-executably?*
 	     (assert (not quote?))
-	     `(*j ,(loop (reverse-tagged-value-primal v) quote?)))
-	    (else `(reverse ,(loop (reverse-tagged-value-primal v) quote?)))))
+	     `(*j ,(loop (reverse-tagged-value-primal v) quote? vs)))
+	    (else
+	     `(reverse ,(loop (reverse-tagged-value-primal v) quote? vs)))))
 	  (else (internal-error))))))
   (if *unabbreviate-executably?*
       `(let* ,(map (lambda (b)
@@ -4648,6 +4531,7 @@
 ;;; Abstract Values
 
 (define (concrete-value->abstract-value v)
+ ;; breaks structure sharing
  (singleton
   (cond
    ((scalar-value? v)
@@ -4689,70 +4573,9 @@
 (define (replaceq x x-prime l) (map (lambda (e) (if (eq? e x) x-prime e)) l))
 
 (define (backpropagator? v)
- ;; This is a kludge and might not work because some backpropagators might be
- ;; unsensitizable.
+ ;; needs work: This is a kludge and might not work because some
+ ;;             backpropagators might be unsensitizable.
  (and (closure? v) (sensitivity-value? v) (not (unsensitize? v))))
-
-(define (closure-match? u1 u2)
- (assert (and (closure? u1) (closure? u2)))
- (or (and (nonrecursive-closure? u1)
-	  (nonrecursive-closure? u2)
-	  (nonrecursive-closure-match? u1 u2))
-     (and (recursive-closure? u1)
-	  (recursive-closure? u2)
-	  (recursive-closure-match? u1 u2))))
-
-(define (some-proto-abstract-value?-internal p u vs-above)
- (assert (and (not (union? u)) (not (up? u))))
- (and (not (scalar-value? u))
-      (some (lambda (v) (some-abstract-value?-internal p v vs-above))
-	    (aggregate-value-values u))))
-
-(define (some-abstract-value?-internal p v vs-above)
- (assert (or (union? v) (up? v)))
- (or (p v vs-above)
-     (and (not (up? v))
-	  (some (lambda (u)
-		 (some-proto-abstract-value?-internal p u (cons v vs-above)))
-		(union-values v)))))
-
-(define (some-abstract-value? p v) (some-abstract-value?-internal p v '()))
-
-(define (free-up? v vs-above)
- (assert (or (union? v) (up? v)))
- (and (up? v) (>= (up-index v) (length vs-above))))
-
-(define (free-up-index up vs-above)
- (assert (free-up? up vs-above))
- (- (up-index up) (length vs-above)))
-
-(define (make-free-up index vs-above)
- (make-up (+ index (length vs-above))))
-
-(define (proto-abstract-value-process-free-ups-internal f u vs-above)
- (assert (and (not (union? u)) (not (up? u))))
- (if (scalar-value? u)
-     u
-     (make-aggregate-value-with-new-values
-      u
-      (map (lambda (v) (abstract-value-process-free-ups-internal f v vs-above))
-	   (aggregate-value-values u)))))
-
-(define (abstract-value-process-free-ups-internal f v vs-above)
- (assert (or (union? v) (up? v)))
- (cond ((free-up? v vs-above) (f v vs-above))
-       ((up? v) v)
-       (else (map-union (lambda (u)
-			 (proto-abstract-value-process-free-ups-internal
-			  f u (cons v vs-above)))
-			v))))
-
-(define (abstract-value-process-free-ups f v)
- (abstract-value-process-free-ups-internal f v '()))
-
-(define (decrement-free-ups v)
- (abstract-value-process-free-ups
-  (lambda (up vs-above) (make-up (- (up-index up) 1))) v))
 
 ;;; Many procedures below return (list v additions), a list of an abstract
 ;;; value v and a list of additions. An addition is a set of abstract values.
@@ -4764,25 +4587,16 @@
 ;;; refer to the current abstract value's parent, and so on.
 
 (define (create-v-additions up v)
- (assert (or (union? v) (up? v)))
+ (assert (union? v))
  ;; returns: (list v additions)
  (list up (append (make-list (up-index up) '()) (list (list v)))))
 
-(define (abstract-value-union-without-unroll v1 v2)
- (cond ((and (up? v1) (up? v2) (= (up-index v1) (up-index v2))) v1)
-       ((or (up? v1) (up? v2))
-	(internal-error "Can't union a union type with a backlink"))
-       ;; needs work: removed remove-redundant-proto-abstract-values
-       (else (make-union (append (union-values v1) (union-values v2))))))
-
 (define (move-values-up-value v additions)
  ;; returns: (list v additions)
- (assert (and (or (union? v) (up? v))
-	      (not (null? additions))
-	      (every (lambda (v) (not (up? v))) (first additions))))
- (let ((v-new (abstract-value-union-without-unroll
+ (assert (and (union? v) (not (null? additions))))
+ (let ((v-new (abstract-value-union
 	       v
-	       (map-reduce abstract-value-union-without-unroll
+	       (map-reduce abstract-value-union
 			   (empty-abstract-value)
 			   decrement-free-ups
 			   (first additions)))))
@@ -4829,9 +4643,10 @@
 	      match? (remove-if-not type? (every-other (rest path))))))
 
 (define (path-of-depth-greater-than-k k match? type? v)
- (assert (or (union? v) (up? v)))
+ ;; breaks structure sharing
+ (assert (union? v))
  (let outer ((v v) (path '()))
-  (if (or (up? v) (empty-abstract-value? v))
+  (if (or (memp v path) (empty-abstract-value? v))
       (if (> (depth match? type? (reverse (cons v path))) k)
 	  (reverse (cons v path))
 	  #f)
@@ -4865,17 +4680,17 @@
 	(list-ref path (- (first positions) 1)))))
 
 (define (reduce-depth path v1 v2)
- (assert (and (or (union? v1) (up? v1)) (or (union? v2) (up? v2))))
+ ;; breaks structure sharing
+ (assert (and (union? v1) (union? v2)))
  ;; v1 must be closer to the root than v2
  (let ((v-additions
 	(let loop ((path path) (vs-above '()))
 	 (assert (not (null? path)))
 	 (if (eq? (first path) v2)
-	     (create-v-additions
-	      (make-up (positionq v1 vs-above)) (first path))
+	     (create-v-additions v1 (first path))
 	     (let* ((v-additions
 		     (loop (rest (rest path)) (cons (first path) vs-above)))
-		    (v (make-union
+		    (v (new-union
 			(replaceq
 			 (second path)
 			 (make-aggregate-value-with-new-values
@@ -4891,7 +4706,7 @@
   (first v-additions)))
 
 (define (limit-closure-depth v)
- (assert (and (union? v) (closed? v)))
+ (assert (union? v))
  (if (eq? *closure-depth-limit* #f)
      v
      (let loop ((v v))
@@ -4903,48 +4718,16 @@
 			 closure-match? backpropagator? path)))
 	    (loop (reduce-depth path (first v1-v2) (second v1-v2)))))))))
 
-(define (remove-redundant-proto-abstract-values* v)
- (assert (and (union? v) (closed? v)))
- (let loop ((v v) (vs-above '()))
-  (cond
-   ((union? v)
-    (make-union
-     (maximal-elements
-      (lambda (u1 u2)
-       (contextual-abstract-value-subset? u1 u2 (cons v vs-above)))
-      (remove-duplicatesp
-       (lambda (u1 u2)
-	(contextual-abstract-value=? u1 u2 (cons v vs-above)))
-       (map (lambda (v1) (loop v1 (cons v vs-above))) (union-values v))))))
-   ((up? v) v)
-   ((scalar-value? v) v)
-   (else
-    (make-aggregate-value-with-new-values
-     v
-     (map (lambda (v1) (loop v1 vs-above)) (aggregate-value-values v)))))))
-
 ;;; Syntactic Constraints
 
-(define (closure-depth-limit-met? v)
- (assert (and (union? v) (closed? v)))
- (or (not *closure-depth-limit*)
-     (eq? (path-of-depth-greater-than-k
-	   *closure-depth-limit* closure-match? backpropagator? v)
-	  #f)))
-
 (define (widen-abstract-value v)
- (assert (and (union? v) (closed? v)))
- (let loop ((v (remove-redundant-proto-abstract-values* v)))
-  (if (closure-depth-limit-met? v)
-      v
-      (loop
-       (remove-redundant-proto-abstract-values* (limit-closure-depth v))))))
+ (assert (union? v))
+ (limit-closure-depth v))
 
 ;;; Abstract Evaluator
 
 (define (abstract-eval1 e vs)
  (assert (and (every union? vs)
-	      (every closed? vs)
 	      (< (count-if
 		  (lambda (b)
 		   (abstract-environment=? vs (environment-binding-values b)))
@@ -4956,7 +4739,7 @@
   (if b (environment-binding-value b) (empty-abstract-value))))
 
 (define (abstract-letrec-nested-environment vs e)
- (assert (and (every union? vs) (every closed? vs)))
+ (assert (every union? vs))
  (map
   (lambda (x)
    (if (memp variable=? x (letrec-expression-procedure-variables e))
@@ -5049,8 +4832,8 @@
 	(cross-product append
 		       (abstract-destructure (cons-expression-car p) u1)
 		       (abstract-destructure (cons-expression-cdr p) u2)))
-       (union-values (unroll (tagged-pair-car v)))
-       (union-values (unroll (tagged-pair-cdr v))))
+       (union-values (tagged-pair-car v))
+       (union-values (tagged-pair-cdr v)))
       '()))
     (else
      (compile-time-warning
@@ -5061,12 +4844,7 @@
   (else (internal-error))))
 
 (define (construct-abstract-nonrecursive-environments v1 v2)
- (assert (and (not (union? v1))
-	      (not (up? v1))
-	      (closed? v1)
-	      (not (union? v2))
-	      (not (up? v2))
-	      (closed? v2)))
+ (assert (and (not (union? v1)) (not (union? v2))))
  (map
   (lambda (alist)
    (map (lambda (x)
@@ -5081,12 +4859,7 @@
   (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
 
 (define (construct-abstract-recursive-environments v1 v2)
- (assert (and (not (union? v1))
-	      (not (up? v1))
-	      (closed? v1)
-	      (not (union? v2))
-	      (not (up? v2))
-	      (closed? v2)))
+ (assert (and (not (union? v1)) (not (union? v2))))
  (map (lambda (alist)
        (map (lambda (x)
 	     (let ((result (assp variable=? x alist)))
@@ -5112,12 +4885,7 @@
       (abstract-destructure (recursive-closure-parameter v1) v2)))
 
 (define (abstract-apply-closure p v1 v2)
- (assert (and (not (union? v1))
-	      (not (up? v1))
-	      (closed? v1)
-	      (not (union? v2))
-	      (not (up? v2))
-	      (closed? v2)))
+ (assert (and (not (union? v1)) (not (union? v2))))
  (cond ((nonrecursive-closure? v1)
 	(map (lambda (vs)
 	      (p (lambda-expression-body
@@ -5134,9 +4902,9 @@
        (else (internal-error))))
 
 (define (abstract-apply v1 v2)
- (assert (and (union? v1) (closed? v1) (union? v2) (closed? v2)))
+ (assert (and (union? v1) (union? v2)))
  ;; We don't do a cross-union of v1 and v2 since when u1 is a primitive
- ;; procedure we want to apply it to all of v2 so we don't have to unroll it.
+ ;; procedure we want to apply it to all of v2.
  (if (empty-abstract-value? v2)
      v2
      (map-union
@@ -5151,7 +4919,7 @@
 	    (lambda (u2)
 	     (new-union (abstract-apply-closure
 			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
-	    (unroll v2)))
+	    v2))
 	  ((some-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	   (compile-time-warning
@@ -5160,11 +4928,11 @@
 	    (lambda (u2)
 	     (new-union (abstract-apply-closure
 			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
-	    (unroll v2)))
+	    v2))
 	  (else (compile-time-warning
 		 "Argument might have wrong type for target" u1 v2))))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
-      (unroll v1))))
+      v1)))
 
 (define (enqueue! e)
  (unless (expression-enqueue? e)
@@ -5292,12 +5060,7 @@
   (else (internal-error))))
 
 (define (abstract-apply-closure! e p v1 v2)
- (assert (and (not (union? v1))
-	      (not (up? v1))
-	      (closed? v1)
-	      (not (union? v2))
-	      (not (up? v2))
-	      (closed? v2)))
+ (assert (and (not (union? v1)) (not (union? v2))))
  (cond
   ((nonrecursive-closure? v1)
    (for-each (lambda (vs)
@@ -5323,7 +5086,7 @@
   (else (internal-error))))
 
 (define (abstract-apply-prime! e v1 v2)
- (assert (and (union? v1) (closed? v1) (union? v2) (closed? v2)))
+ (assert (and (union? v1) (union? v2)))
  (unless (empty-abstract-value? v2)
   (for-each
    (lambda (u1)
@@ -5353,7 +5116,7 @@
 	     (for-each (lambda (u2)
 			(abstract-apply-closure!
 			 e (lambda (e vs) (abstract-eval-prime! e vs)) u1 u2))
-		       (union-values (unroll v2))))
+		       (union-values v2)))
 	    ((some-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	     (compile-time-warning
@@ -5361,16 +5124,16 @@
 	     (for-each (lambda (u2)
 			(abstract-apply-closure!
 			 e (lambda (e vs) (abstract-eval-prime! e vs)) u1 u2))
-		       (union-values (unroll v2))))
+		       (union-values v2)))
 	    (else (compile-time-warning
 		   "Argument might have wrong type for target" u1 v2))))
 	  (else (compile-time-warning "Target might not be a procedure" u1))))
-   (union-values (unroll v1)))))
+   (union-values v1))))
 
 (define (abstract-eval-prime! e vs)
- (assert (and (every union? vs) (every closed? vs)))
+ (assert (every union? vs))
  ;; Can't give an error if entry already exists since we call this
- ;; indiscriminantly in abstract-apply-prime! and abstract-apply-closure!.
+ ;; indiscriminantly in abstract-apply-prime!.
  (unless (some (lambda (b)
 		(abstract-environment=? vs (environment-binding-values b)))
 	       (expression-environment-bindings e))
@@ -5458,46 +5221,65 @@
    (else (internal-error)))))
 
 (define (value-contains-union? v)
- (or (and (union? v) (>= (length (union-values v)) 2))
-     (and (not (union? v))
-	  (not (up? v))
-	  (not (scalar-value? v))
-	  (some value-contains-union? (aggregate-value-values v)))))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (and (not (memp v vs))
+       (or (and (union? v)
+		(or (>= (length (union-values v)) 2)
+		    (some (lambda (u) (loop u (cons v vs))) (union-values v))))
+	   (and (not (union? v))
+		(not (scalar-value? v))
+		(some (lambda (v) (loop v vs)) (aggregate-value-values v)))))))
 
 (define (unions-in-abstract-value v)
- (cond
-  ((union? v)
-   (+ (if (>= (length (union-values v)) 2) 1 0)
-      (map-reduce + 0 unions-in-abstract-value (union-values v))))
-  ((up? v) 0)
-  ((scalar-value? v) 0)
-  (else (map-reduce + 0 unions-in-abstract-value (aggregate-value-values v)))))
+ ;; needs work: This is ill-defined because of structure sharing.
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (cond
+   ((memp v vs) 0)
+   ((union? v)
+    (+ (if (>= (length (union-values v)) 2) 1 0)
+       (map-reduce + 0 (lambda (u) (loop u (cons v vs))) (union-values v))))
+   ((scalar-value? v) 0)
+   (else
+    (map-reduce + 0 (lambda (v) (loop v vs)) (aggregate-value-values v))))))
 
 (define (concrete-reals-in-abstract-value v)
- (cond
-  ((union? v)
-   (map-reduce unionv '() concrete-reals-in-abstract-value (union-values v)))
-  ((up? v) '())
-  ((real? v) (list v))
-  ((scalar-value? v) '())
-  (else
-   (map-reduce
-    unionv '() concrete-reals-in-abstract-value (aggregate-value-values v)))))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (cond
+   ((memp v vs) '())
+   ((union? v)
+    (map-reduce unionv '() (lambda (u) (loop u (cons v vs))) (union-values v)))
+   ((real? v) (list v))
+   ((scalar-value? v) '())
+   (else (map-reduce
+	  unionv '() (lambda (v) (loop v vs)) (aggregate-value-values v))))))
 
 (define (value-max-depth v)
- (cond
-  ((union? v) (map-reduce max 0 value-max-depth (union-values v)))
-  ((up? v) 0)
-  ((scalar-value? v) 0)
-  (else (+ (map-reduce max 0 value-max-depth (aggregate-value-values v)) 1))))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (cond
+   ((memp v vs) 0)
+   ((union? v)
+    (map-reduce max 0 (lambda (u) (loop u (cons v vs))) (union-values v)))
+   ((scalar-value? v) 0)
+   (else
+    (+ (map-reduce max 0 (lambda (v) (loop v vs)) (aggregate-value-values v))
+       1)))))
 
 (define (value-max-width v)
- (cond ((union? v)
-	(max (length (union-values v))
-	     (map-reduce max 0 value-max-width (union-values v))))
-       ((up? v) 0)
-       ((scalar-value? v) 0)
-       (else (map-reduce max 0 value-max-width (aggregate-value-values v)))))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (cond
+   ((memp v vs) 0)
+   ((union? v)
+    (max
+     (length (union-values v))
+     (map-reduce max 0 (lambda (u) (loop u (cons v vs))) (union-values v))))
+   ((scalar-value? v) 0)
+   (else
+    (map-reduce max 0 (lambda (v) (loop v vs)) (aggregate-value-values v))))))
 
 (define (analysis-size)
  (map-reduce +
@@ -5591,24 +5373,21 @@
   *expressions*))
 
 (define (check-abstract-value! v)
- (let loop ((v v) (vs-above '()))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
   (cond
+   ((memp v vs) #f)
    ((union? v)
-    (for-each
-     (lambda (u1)
-      (for-each
-       (lambda (u2)
-	(assert
-	 (or (eq? u1 u2)
-	     (not
-	      (contextual-abstract-value-subset? u1 u2 (cons v vs-above))))))
+    (for-each-indexed
+     (lambda (u1 i1)
+      (for-each-indexed
+       (lambda (u2 i2)
+	(assert (or (= i1 i2) (not (abstract-value-subset? u1 u2)))))
        (union-values v)))
      (union-values v))
-    (for-each (lambda (u) (loop u (cons v vs-above))) (union-values v)))
-   ((up? v) #f)
+    (for-each (lambda (u) (loop u (cons v vs))) (union-values v)))
    ((scalar-value? v) #f)
-   (else
-    (for-each (lambda (v1) (loop v1 vs-above)) (aggregate-value-values v))))))
+   (else (for-each (lambda (v) (loop v vs)) (aggregate-value-values v))))))
 
 (define (check-analysis!)
  (for-each
@@ -5717,6 +5496,7 @@
       (some is-abstract-real? (union-values v))))
 
 (define (void? v)
+ ;; breaks structure sharing
  (assert (union? v))
  (and (not (abstract-boolean? v))
       (not (abstract-real? v))
@@ -5724,31 +5504,32 @@
 	  (every void? (aggregate-value-values (value v))))))
 
 (define (all-variables-in-abstract-value v)
- (cond
-  ((union? v) (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-			  '()
-			  all-variables-in-abstract-value
-			  (union-values v)))
-  ((up? v) '())
-  ((scalar-value? v) '())
-  (else (unionp
-	 variable=?
-	 (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-		     '()
-		     all-variables-in-abstract-value
-		     (aggregate-value-values v))
-	 (cond ((nonrecursive-closure? v)
-		(all-variables-in-expression
-		 (nonrecursive-closure-lambda-expression v)))
-	       ((recursive-closure? v)
-		(unionp
-		 variable=?
-		 (recursive-closure-procedure-variables v)
-		 (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
-			     '()
-			     all-variables-in-expression
-			     (recursive-closure-lambda-expressions v))))
-	       (else '()))))))
+ ;; breaks structure sharing
+ (let loop ((v v) (vs '()))
+  (cond
+   ((union? v) (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+			   '()
+			   (lambda (u) (loop u (cons v vs)))
+			   (union-values v)))
+   ((scalar-value? v) '())
+   (else (unionp
+	  variable=?
+	  (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+		      '()
+		      (lambda (v) (loop v vs))
+		      (aggregate-value-values v))
+	  (cond ((nonrecursive-closure? v)
+		 (all-variables-in-expression
+		  (nonrecursive-closure-lambda-expression v)))
+		((recursive-closure? v)
+		 (unionp
+		  variable=?
+		  (recursive-closure-procedure-variables v)
+		  (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
+			      '()
+			      all-variables-in-expression
+			      (recursive-closure-lambda-expressions v))))
+		(else '())))))))
 
 (define (all-variables-in-expression e)
  (cond ((constant-expression? e)
@@ -5841,6 +5622,7 @@
   *expressions*))
 
 (define (all-unary-abstract-subvalues p? v)
+ ;; breaks structure sharing
  (let loop ((v v))
   (cons v
 	;; needs work: what if v is an abstract boolean
@@ -5852,6 +5634,7 @@
 			(aggregate-value-values (value v)))))))
 
 (define (all-binary-abstract-subvalues p? f f-inverse v)
+ ;; breaks structure sharing
  (let loop ((v1 (vlad-car (value v))) (v2 (f-inverse (vlad-cdr (value v)))))
   (cons (vlad-cons v1 (f v2))
 	;; needs work: what if v1 is an abstract boolean
@@ -5864,6 +5647,7 @@
 			(aggregate-value-values (value v2)))))))
 
 (define (component*? v1 v2)
+ ;; breaks structure sharing
  (or (abstract-value=? v1 v2)
      ;; needs work: what if v2 is an abstract boolean
      (and (not (scalar-value? (value v2)))
@@ -5960,6 +5744,7 @@
       (abstract-value=? (second v1v2a) (second v1v2b))))
 
 (define (all-subwidenings v1 v2)
+ ;; breaks structure sharing
  (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
        ;; needs work: what if v2 is an abstract boolean
        ((scalar-value? (value v2)) (list (list v1 v2)))
@@ -7704,15 +7489,14 @@
 	       "Argument is not an equivalent value" (vlad-empty-list) v))
 	     (unimplemented "read-real"))))
 
-(define (unary f s)
- (lambda (v) (if *abstract?* (map-union f (unroll v)) (f v))))
+(define (unary f s) (lambda (v) (if *abstract?* (map-union f v) (f v))))
 
 (define (unary-ad f s) f)
 
 (define (unary-predicate f s)
  (lambda (v)
   (if *abstract?*
-      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) (unroll v))
+      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)
       (if (f v) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
@@ -7723,7 +7507,7 @@
 			 (if (real? u) (f u) (abstract-real))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    (unroll v)))
+		    v))
 	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f v)))))
@@ -7738,7 +7522,7 @@
 			     (abstract-boolean))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    (unroll v)))
+		    v))
 	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (if (f v) (vlad-true) (vlad-false))))))
@@ -7752,7 +7536,7 @@
 	       (f (vlad-car u) (vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  (unroll v)))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f (vlad-car v) (vlad-cdr v))))))
@@ -7770,11 +7554,11 @@
 		     (if (and (real? u1) (real? u2)) (f u1 u2) (abstract-real))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		(unroll (vlad-car u))
-		(unroll (vlad-cdr u)))
+		(vlad-car u)
+		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  (unroll v)))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -7796,11 +7580,11 @@
 			 (abstract-boolean))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		(unroll (vlad-car u))
-		(unroll (vlad-cdr u)))
+		(vlad-car u)
+		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  (unroll v)))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -7818,15 +7602,15 @@
 		(lambda (u1 u2)
 		 (if (vlad-pair? u2)
 		     (cross-union (lambda (u21 u22) (f u1 u21 u22))
-				  (unroll (vlad-car u2))
-				  (unroll (vlad-cdr u2)))
+				  (vlad-car u2)
+				  (vlad-cdr u2))
 		     (compile-time-warning
 		      (format #f "Argument to ~a might be invalid" s) u)))
-		(unroll (vlad-car u))
-		(unroll (vlad-cdr u)))
+		(vlad-car u)
+		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  (unroll v)))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v23 (vlad-cdr v)))
@@ -7848,15 +7632,15 @@
 	  (cond ((vlad-pair? u2)
 		 (for-each (lambda (u21)
 			    (for-each (lambda (u22) (f u1 u21 u22))
-				      (union-values (unroll (vlad-cdr u2)))))
-			   (union-values (unroll (vlad-car u2)))))
+				      (union-values (vlad-cdr u2))))
+			   (union-values (vlad-car u2))))
 		(else (compile-time-warning
 		       (format #f "Argument to ~a might be invalid" s) u))))
-	 (union-values (unroll (vlad-cdr u)))))
-       (union-values (unroll (vlad-car u)))))
+	 (union-values (vlad-cdr u))))
+       (union-values (vlad-car u))))
      (else (compile-time-warning
 	    (format #f "Argument to ~a might be invalid" s) u))))
-   (union-values (unroll v)))))
+   (union-values v))))
 
 (define (define-primitive-procedure x procedure generator forward reverse)
  (set! *value-bindings*
