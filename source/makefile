@@ -309,6 +309,14 @@ error_no_error:
 #i686-Linux-2.6.8-1-686       $(INSTALLLIBA)/scxl.a\
 #i686-Linux-2.6.8-1-686       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#i686-Linux-2.6.11.11-laptop CC = gcc
+#i686-Linux-2.6.11.11-laptop CFLAGS = -O2 -DLINUX
+#i686-Linux-2.6.11.11-laptop SCCFLAGS =
+#i686-Linux-2.6.11.11-laptop SCCLDFLAGS =
+#i686-Linux-2.6.11.11-laptop LRL = $(INSTALLLIBA)/QobiScheme.a\
+#i686-Linux-2.6.11.11-laptop       $(INSTALLLIBA)/scxl.a\
+#i686-Linux-2.6.11.11-laptop       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 #i686-Linux-2.6.16-2-686 CC = gcc
 #i686-Linux-2.6.16-2-686 CFLAGS = -O2 -DLINUX
 #i686-Linux-2.6.16-2-686 SCCFLAGS =
