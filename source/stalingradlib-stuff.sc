@@ -285,6 +285,29 @@
    (set! *abstract?* abstract?)
    result)))
 
+(define (some-cps p l cs k)
+ (if (null? l)
+     (k #f cs)
+     (p (first l)
+	cs
+	(lambda (r? cs) (if r? (k #t cs) (some-cps p (rest l) cs k))))))
+
+(define (every-cps p l cs k)
+ (if (null? l)
+     (k #t cs)
+     (p (first l)
+	cs
+	(lambda (r? cs) (if r? (every-cps p (rest l) cs k) (k #f cs))))))
+
+(define (every2-cps p l1 l2 cs k)
+ (if (null? l1)
+     (k #t cs)
+     (p (first l1)
+	(first l2)
+	cs
+	(lambda (r? cs)
+	 (if r? (every2-cps p (rest l1) (rest l2) cs k) (k #f cs))))))
+
 ;;; Error Handing
 
 (define (internal-error . arguments)
@@ -1097,7 +1120,7 @@
 	  v0
 	  (let ((v0 (make-nonrecursive-closure vs e)))
 	   (set! *nonrecursive-closures* (cons v0 *nonrecursive-closures*))
-	   v)))
+	   v0)))
      (make-nonrecursive-closure vs e)))
 
 (define (new-nonrecursive-closure vs e)
@@ -1300,270 +1323,358 @@
 ;;; Bundles
 
 (define (some-bundlable? v v-perturbation)
- ;; breaks structure sharing
- (let loop ((v v) (v-perturbation v-perturbation) (cs '()))
-  (or
-   (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
-   (and (union? v)
-	(union? v-perturbation)
-	(some (lambda (u)
-	       (some (lambda (u-perturbation)
-		      (loop u
-			    u-perturbation
-			    (cons (cons v v-perturbation) cs)))
-		     (union-values v-perturbation)))
-	      (union-values v)))
-   (and
-    (vlad-empty-list? v)
-    (perturbation-tagged-value? v-perturbation)
-    (if (union? (perturbation-tagged-value-primal v-perturbation))
-	(some
-	 vlad-empty-list?
-	 (union-values (perturbation-tagged-value-primal v-perturbation)))
-	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-true? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     vlad-true?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-false? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     vlad-false?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-real? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     vlad-real?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
-   (and (primitive-procedure? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     (lambda (u) (and (primitive-procedure? u) (eq? v u)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (primitive-procedure?
-		  (perturbation-tagged-value-primal v-perturbation))
-		 (eq? v (perturbation-tagged-value-primal v-perturbation)))))
-   (and (perturbation-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     (lambda (u)
-	      (and (perturbation-tagged-value? u)
-		   (loop (perturbation-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (perturbation-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (perturbation-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
+ ;; This is written in cps so as not to break structure sharing.
+ ;; needs work: To cache proto abstract values in cs.
+ (let loop ((v v)
+	    (v-perturbation v-perturbation)
+	    (cs '())
+	    (k (lambda (r? cs) r?)))
+  (cond
+   ((some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+    (k #t cs))
+   ((and (union? v) (union? v-perturbation))
+    (some-cps (lambda (u cs k)
+	       (some-cps (lambda (u-perturbation cs k)
+			  (loop u
+				u-perturbation
+				(cons (cons v v-perturbation) cs)
+				k))
+			 (union-values v-perturbation)
+			 cs
+			 k))
+	      (union-values v)
+	      cs
+	      k))
+   ((or (and
+	 (vlad-empty-list? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (some
+	      vlad-empty-list?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-empty-list?
+	      (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-true? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (some
+	      vlad-true?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-false? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (some
+	      vlad-false?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-real? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (some
+	      vlad-real?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (primitive-procedure? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (some
+	      (lambda (u) (and (primitive-procedure? u) (eq? v u)))
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (and (primitive-procedure?
+		   (perturbation-tagged-value-primal v-perturbation))
+		  (eq? v (perturbation-tagged-value-primal v-perturbation))))))
+    (k #t cs))
+   ((and (perturbation-tagged-value? v)
+	 (perturbation-tagged-value? v-perturbation))
+    (cond ((union? (perturbation-tagged-value-primal v-perturbation))
+	   (some-cps
+	    (lambda (u cs k)
+	     (if (perturbation-tagged-value? u)
 		 (loop (perturbation-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(perturbation-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (bundle? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     (lambda (u)
-	      (and (bundle? u)
-		   (loop (bundle-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value (bundle-primal u)))
-			 cs)
-		   (loop (bundle-tangent v)
-			 (singleton
-			  (new-perturbation-tagged-value (bundle-tangent u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (bundle? (perturbation-tagged-value-primal v-perturbation))
-		 (loop (bundle-primal v)
-		       (new-perturbation-tagged-value
-			(bundle-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs)
+		       (singleton (new-perturbation-tagged-value
+				   (perturbation-tagged-value-primal u)))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-values (perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((perturbation-tagged-value?
+	    (perturbation-tagged-value-primal v-perturbation))
+	   (loop (perturbation-tagged-value-primal v)
+		 (new-perturbation-tagged-value
+		  (perturbation-tagged-value-primal
+		   (perturbation-tagged-value-primal v-perturbation)))
+		 cs
+		 k))
+	  (else (k #f cs))))
+   ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
+    (cond
+     ((union? (perturbation-tagged-value-primal v-perturbation))
+      (some-cps
+       (lambda (u cs k)
+	(if (bundle? u)
+	    (loop
+	     (bundle-primal v)
+	     (singleton (new-perturbation-tagged-value (bundle-primal u)))
+	     cs
+	     (lambda (r? cs)
+	      (if r?
+		  (loop (bundle-tangent v)
+			(singleton
+			 (new-perturbation-tagged-value (bundle-tangent u)))
+			cs
+			k)
+		  (k #f cs))))
+	    (k #f cs)))
+       (union-values (perturbation-tagged-value-primal v-perturbation))
+       cs
+       k))
+     ((bundle? (perturbation-tagged-value-primal v-perturbation))
+      (loop (bundle-primal v)
+	    (new-perturbation-tagged-value
+	     (bundle-primal (perturbation-tagged-value-primal v-perturbation)))
+	    cs
+	    (lambda (r? cs)
+	     (if r?
 		 (loop (bundle-tangent v)
 		       (new-perturbation-tagged-value
 			(bundle-tangent
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (sensitivity-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     (lambda (u)
-	      (and (sensitivity-tagged-value? u)
-		   (loop (sensitivity-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (sensitivity-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (sensitivity-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
+		       cs
+		       k)
+		 (k #f cs)))))
+     (else (k #f cs))))
+   ((and (sensitivity-tagged-value? v)
+	 (perturbation-tagged-value? v-perturbation))
+    (cond ((union? (perturbation-tagged-value-primal v-perturbation))
+	   (some-cps
+	    (lambda (u cs k)
+	     (if (sensitivity-tagged-value? u)
 		 (loop (sensitivity-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(sensitivity-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (reverse-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (some
-	     (lambda (u)
-	      (and (reverse-tagged-value? u)
-		   (loop (reverse-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (reverse-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (reverse-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
-		 (loop (reverse-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(reverse-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs)))))))
+		       (singleton (new-perturbation-tagged-value
+				   (sensitivity-tagged-value-primal u)))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-values (perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((sensitivity-tagged-value?
+	    (perturbation-tagged-value-primal v-perturbation))
+	   (loop (sensitivity-tagged-value-primal v)
+		 (new-perturbation-tagged-value
+		  (sensitivity-tagged-value-primal
+		   (perturbation-tagged-value-primal v-perturbation)))
+		 cs
+		 k))
+	  (else (k #f cs))))
+   ((and (reverse-tagged-value? v) (perturbation-tagged-value? v-perturbation))
+    (cond
+     ((union? (perturbation-tagged-value-primal v-perturbation))
+      (some-cps
+       (lambda (u cs k)
+	(if (reverse-tagged-value? u)
+	    (loop (reverse-tagged-value-primal v)
+		  (singleton (new-perturbation-tagged-value
+			      (reverse-tagged-value-primal u)))
+		  cs
+		  k)
+	    (k #f cs)))
+       (union-values (perturbation-tagged-value-primal v-perturbation))
+       cs
+       k))
+     ((reverse-tagged-value? (perturbation-tagged-value-primal v-perturbation))
+      (loop (reverse-tagged-value-primal v)
+	    (new-perturbation-tagged-value
+	     (reverse-tagged-value-primal
+	      (perturbation-tagged-value-primal v-perturbation)))
+	    cs
+	    k))
+     (else (k #f cs))))
+   (else (k #f cs)))))
 
 (define (every-bundlable? v v-perturbation)
- ;; breaks structure sharing
- (let loop ((v v) (v-perturbation v-perturbation) (cs '()))
-  (or
-   (some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
-   (and (union? v)
-	(union? v-perturbation)
-	(every (lambda (u)
-		(every (lambda (u-perturbation)
-			(loop u
-			      u-perturbation
-			      (cons (cons v v-perturbation) cs)))
-		       (union-values v-perturbation)))
-	       (union-values v)))
-   (and
-    (vlad-empty-list? v)
-    (perturbation-tagged-value? v-perturbation)
-    (if (union? (perturbation-tagged-value-primal v-perturbation))
-	(every
-	 vlad-empty-list?
-	 (union-values (perturbation-tagged-value-primal v-perturbation)))
-	(vlad-empty-list? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-true? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     vlad-true?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-false? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     vlad-false?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
-   (and (vlad-real? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     vlad-real?
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
-   (and (primitive-procedure? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     (lambda (u) (and (primitive-procedure? u) (eq? v u)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (primitive-procedure?
-		  (perturbation-tagged-value-primal v-perturbation))
-		 (eq? v (perturbation-tagged-value-primal v-perturbation)))))
-   (and (perturbation-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     (lambda (u)
-	      (and (perturbation-tagged-value? u)
-		   (loop (perturbation-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (perturbation-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (perturbation-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
+ ;; This is written in cps so as not to break structure sharing.
+ ;; needs work: To cache proto abstract values in cs.
+ (let loop ((v v)
+	    (v-perturbation v-perturbation)
+	    (cs '())
+	    (k (lambda (r? cs) r?)))
+  (cond
+   ((some (lambda (c) (and (eq? (car c) v) (eq? (cdr c) v-perturbation))) cs)
+    (k #t cs))
+   ((and (union? v) (union? v-perturbation))
+    (every-cps (lambda (u cs k)
+		(every-cps (lambda (u-perturbation cs k)
+			    (loop u
+				  u-perturbation
+				  (cons (cons v v-perturbation) cs)
+				  k))
+			   (union-values v-perturbation)
+			   cs
+			   k))
+	       (union-values v)
+	       cs
+	       k))
+   ((or (and
+	 (vlad-empty-list? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (every
+	      vlad-empty-list?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-empty-list?
+	      (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-true? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (every
+	      vlad-true?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-true? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-false? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (every
+	      vlad-false?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-false? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (vlad-real? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (every
+	      vlad-real?
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (vlad-real? (perturbation-tagged-value-primal v-perturbation))))
+	(and
+	 (primitive-procedure? v)
+	 (perturbation-tagged-value? v-perturbation)
+	 (if (union? (perturbation-tagged-value-primal v-perturbation))
+	     (every
+	      (lambda (u) (and (primitive-procedure? u) (eq? v u)))
+	      (union-values (perturbation-tagged-value-primal v-perturbation)))
+	     (and (primitive-procedure?
+		   (perturbation-tagged-value-primal v-perturbation))
+		  (eq? v (perturbation-tagged-value-primal v-perturbation))))))
+    (k #t cs))
+   ((and (perturbation-tagged-value? v)
+	 (perturbation-tagged-value? v-perturbation))
+    (cond ((union? (perturbation-tagged-value-primal v-perturbation))
+	   (every-cps
+	    (lambda (u cs k)
+	     (if (perturbation-tagged-value? u)
 		 (loop (perturbation-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(perturbation-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (bundle? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     (lambda (u)
-	      (and (bundle? u)
-		   (loop (bundle-primal v)
-			 (singleton
-			  (new-perturbation-tagged-value (bundle-primal u)))
-			 cs)
-		   (loop (bundle-tangent v)
-			 (singleton
-			  (new-perturbation-tagged-value (bundle-tangent u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (bundle? (perturbation-tagged-value-primal v-perturbation))
-		 (loop (bundle-primal v)
-		       (new-perturbation-tagged-value
-			(bundle-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs)
+		       (singleton (new-perturbation-tagged-value
+				   (perturbation-tagged-value-primal u)))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-values (perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((perturbation-tagged-value?
+	    (perturbation-tagged-value-primal v-perturbation))
+	   (loop (perturbation-tagged-value-primal v)
+		 (new-perturbation-tagged-value
+		  (perturbation-tagged-value-primal
+		   (perturbation-tagged-value-primal v-perturbation)))
+		 cs
+		 k))
+	  (else (k #f cs))))
+   ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
+    (cond
+     ((union? (perturbation-tagged-value-primal v-perturbation))
+      (every-cps
+       (lambda (u cs k)
+	(if (bundle? u)
+	    (loop
+	     (bundle-primal v)
+	     (singleton (new-perturbation-tagged-value (bundle-primal u)))
+	     cs
+	     (lambda (r? cs)
+	      (if r?
+		  (loop (bundle-tangent v)
+			(singleton
+			 (new-perturbation-tagged-value (bundle-tangent u)))
+			cs
+			k)
+		  (k #f cs))))
+	    (k #f cs)))
+       (union-values (perturbation-tagged-value-primal v-perturbation))
+       cs
+       k))
+     ((bundle? (perturbation-tagged-value-primal v-perturbation))
+      (loop (bundle-primal v)
+	    (new-perturbation-tagged-value
+	     (bundle-primal (perturbation-tagged-value-primal v-perturbation)))
+	    cs
+	    (lambda (r? cs)
+	     (if r?
 		 (loop (bundle-tangent v)
 		       (new-perturbation-tagged-value
 			(bundle-tangent
 			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (sensitivity-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     (lambda (u)
-	      (and (sensitivity-tagged-value? u)
-		   (loop (sensitivity-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (sensitivity-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (sensitivity-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
+		       cs
+		       k)
+		 (k #f cs)))))
+     (else (k #f cs))))
+   ((and (sensitivity-tagged-value? v)
+	 (perturbation-tagged-value? v-perturbation))
+    (cond ((union? (perturbation-tagged-value-primal v-perturbation))
+	   (every-cps
+	    (lambda (u cs k)
+	     (if (sensitivity-tagged-value? u)
 		 (loop (sensitivity-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(sensitivity-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs))))
-   (and (reverse-tagged-value? v)
-	(perturbation-tagged-value? v-perturbation)
-	(if (union? (perturbation-tagged-value-primal v-perturbation))
-	    (every
-	     (lambda (u)
-	      (and (reverse-tagged-value? u)
-		   (loop (reverse-tagged-value-primal v)
-			 (singleton (new-perturbation-tagged-value
-				     (reverse-tagged-value-primal u)))
-			 cs)))
-	     (union-values (perturbation-tagged-value-primal v-perturbation)))
-	    (and (reverse-tagged-value?
-		  (perturbation-tagged-value-primal v-perturbation))
-		 (loop (reverse-tagged-value-primal v)
-		       (new-perturbation-tagged-value
-			(reverse-tagged-value-primal
-			 (perturbation-tagged-value-primal v-perturbation)))
-		       cs)))))))
+		       (singleton (new-perturbation-tagged-value
+				   (sensitivity-tagged-value-primal u)))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-values (perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((sensitivity-tagged-value?
+	    (perturbation-tagged-value-primal v-perturbation))
+	   (loop (sensitivity-tagged-value-primal v)
+		 (new-perturbation-tagged-value
+		  (sensitivity-tagged-value-primal
+		   (perturbation-tagged-value-primal v-perturbation)))
+		 cs
+		 k))
+	  (else (k #f cs))))
+   ((and (reverse-tagged-value? v) (perturbation-tagged-value? v-perturbation))
+    (cond
+     ((union? (perturbation-tagged-value-primal v-perturbation))
+      (every-cps
+       (lambda (u cs k)
+	(if (reverse-tagged-value? u)
+	    (loop (reverse-tagged-value-primal v)
+		  (singleton (new-perturbation-tagged-value
+			      (reverse-tagged-value-primal u)))
+		  cs
+		  k)
+	    (k #f cs)))
+       (union-values (perturbation-tagged-value-primal v-perturbation))
+       cs
+       k))
+     ((reverse-tagged-value? (perturbation-tagged-value-primal v-perturbation))
+      (loop (reverse-tagged-value-primal v)
+	    (new-perturbation-tagged-value
+	     (reverse-tagged-value-primal
+	      (perturbation-tagged-value-primal v-perturbation)))
+	    cs
+	    k))
+     (else (k #f cs))))
+   (else (k #f cs)))))
 
 (define (create-bundle v v-perturbation)
  (if *flow-analysis?*
@@ -1878,20 +1989,25 @@
  ;; result. In principle, one only need multiply out v1. But if v1 has
  ;; recursion, there is no bound on the amount of multiplying out that may be
  ;; needed.
- ;; breaks structure sharing
- (let loop ((v1 v1) (v2 v2) (cs '()))
+ ;; This is written in cps so as not to break structure sharing.
+ ;; needs work: To cache proto abstract values in cs.
+ (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
   (cond
    ;; This is an optimization.
-   ((eq? v1 v2) #t)
-   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #t)
+   ((eq? v1 v2) (k #t cs))
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) (k #t cs))
    ((and (union? v1) (union? v2))
-    (every (lambda (u1)
-	    (some (lambda (u2) (loop u1 u2 (cons (cons v1 v2) cs)))
-		  (union-values v2)))
-	   (union-values v1)))
+    (every-cps
+     (lambda (u1 cs k)
+      (some-cps (lambda (u2 cs k) (loop u1 u2 (cons (cons v1 v2) cs) k))
+		(union-values v2)
+		cs
+		k))
+     (union-values v1)
+     cs
+     k))
    ((or (union? v1) (union? v2)) (internal-error))
-   (else
-    (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
+   ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	(and (vlad-true? v1) (vlad-true? v2))
 	(and (vlad-false? v1) (vlad-false? v2))
 	(and (vlad-real? v1)
@@ -1901,45 +2017,60 @@
 	     (or (and (real? v1) (real? v2) (equal? v1 v2))
 		 (and (real? v1) (is-abstract-real? v2))
 		 (and (is-abstract-real? v1) (is-abstract-real? v2))))
-	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-	(and (nonrecursive-closure? v1)
-	     (nonrecursive-closure? v2)
-	     (nonrecursive-closure-match? v1 v2)
-	     ;; See the note in abstract-environment=?.
-	     (every (lambda (v1 v2) (loop v1 v2 cs))
-		    (nonrecursive-closure-values v1)
-		    (nonrecursive-closure-values v2)))
-	(and (recursive-closure? v1)
-	     (recursive-closure? v2)
-	     (recursive-closure-match? v1 v2)
-	     ;; See the note in abstract-environment=?.
-	     (every (lambda (v1 v2) (loop v1 v2 cs))
-		    (recursive-closure-values v1)
-		    (recursive-closure-values v2)))
-	(and (perturbation-tagged-value? v1)
-	     (perturbation-tagged-value? v2)
-	     (loop (perturbation-tagged-value-primal v1)
-		   (perturbation-tagged-value-primal v2)
-		   cs))
-	(and (bundle? v1)
-	     (bundle? v2)
-	     (loop (bundle-primal v1) (bundle-primal v2) cs)
-	     (loop (bundle-tangent v1) (bundle-tangent v2) cs))
-	(and (sensitivity-tagged-value? v1)
-	     (sensitivity-tagged-value? v2)
-	     (loop (sensitivity-tagged-value-primal v1)
-		   (sensitivity-tagged-value-primal v2)
-		   cs))
-	(and (reverse-tagged-value? v1)
-	     (reverse-tagged-value? v2)
-	     (loop (reverse-tagged-value-primal v1)
-		   (reverse-tagged-value-primal v2)
-		   cs))
-	(and (tagged-pair? v1)
-	     (tagged-pair? v2)
-	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
-	     (loop (tagged-pair-car v1) (tagged-pair-car v2) cs)
-	     (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs)))))))
+	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2)))
+    (k #t cs))
+   ((and (nonrecursive-closure? v1)
+	 (nonrecursive-closure? v2)
+	 (nonrecursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (every2-cps (lambda (v1 v2 cs k) (loop v1 v2 cs k))
+		(nonrecursive-closure-values v1)
+		(nonrecursive-closure-values v2)
+		cs
+		k))
+   ((and (recursive-closure? v1)
+	 (recursive-closure? v2)
+	 (recursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (every2-cps (lambda (v1 v2 cs k) (loop v1 v2 cs k))
+		(recursive-closure-values v1)
+		(recursive-closure-values v2)
+		cs
+		k))
+   ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+    (loop (perturbation-tagged-value-primal v1)
+	  (perturbation-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (bundle? v1) (bundle? v2))
+    (loop (bundle-primal v1)
+	  (bundle-primal v2)
+	  cs
+	  (lambda (r? cs)
+	   (if r?
+	       (loop (bundle-tangent v1) (bundle-tangent v2) cs k)
+	       (k #f cs)))))
+   ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+    (loop (sensitivity-tagged-value-primal v1)
+	  (sensitivity-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+    (loop (reverse-tagged-value-primal v1)
+	  (reverse-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (tagged-pair? v1)
+	 (tagged-pair? v2)
+	 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+    (loop (tagged-pair-car v1)
+	  (tagged-pair-car v2)
+	  cs
+	  (lambda (r? cs)
+	   (if r?
+	       (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs k)
+	       (k #f cs)))))
+   (else (k #f cs)))))
 
 (define (abstract-value=? v1 v2)
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
@@ -1956,21 +2087,26 @@
  ;; nondisjoint is decidable. And I believe that this algorithm is precise.
  ;; Only used in abstract-destructure and generate-destructure for generating
  ;; error messages.
- ;; breaks structure sharing
- (let loop ((v1 v1) (v2 v2) (cs '()))
+ ;; This is written in cps so as not to break structure sharing.
+ ;; needs work: To cache proto abstract values in cs.
+ (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
   (cond
    ;; This is an optimization that is sound so long as both v1 and v2 are
    ;; nonempty.
-   ((eq? v1 v2) #t)
-   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) #f)
+   ((eq? v1 v2) (k #t cs))
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) (k #f cs))
    ((and (union? v1) (union? v2))
-    (some (lambda (u1)
-	   (some (lambda (u2) (loop u1 u2 (cons (cons v1 v2) cs)))
-		 (union-values v2)))
-	  (union-values v1)))
+    (some-cps
+     (lambda (u1 cs k)
+      (some-cps (lambda (u2 cs k) (loop u1 u2 (cons (cons v1 v2) cs) k))
+		(union-values v2)
+		cs
+		k))
+     (union-values v1)
+     cs
+     k))
    ((or (union? v1) (union? v2)) (internal-error))
-   (else
-    (or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
+   ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	(and (vlad-true? v1) (vlad-true? v2))
 	(and (vlad-false? v1) (vlad-false? v2))
 	(and (vlad-real? v1)
@@ -1980,45 +2116,60 @@
 		 ;; This was = but then it equates exact values with inexact
 		 ;; values and this breaks -imprecise-inexacts.
 		 (equal? v1 v2)))
-	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-	(and (nonrecursive-closure? v1)
-	     (nonrecursive-closure? v2)
-	     (nonrecursive-closure-match? v1 v2)
-	     ;; See the note in abstract-environment=?.
-	     (every (lambda (v1 v2) (loop v1 v2 cs))
-		    (nonrecursive-closure-values v1)
-		    (nonrecursive-closure-values v2)))
-	(and (recursive-closure? v1)
-	     (recursive-closure? v2)
-	     (recursive-closure-match? v1 v2)
-	     ;; See the note in abstract-environment=?.
-	     (every (lambda (v1 v2) (loop v1 v2 cs))
-		    (recursive-closure-values v1)
-		    (recursive-closure-values v2)))
-	(and (perturbation-tagged-value? v1)
-	     (perturbation-tagged-value? v2)
-	     (loop (perturbation-tagged-value-primal v1)
-		   (perturbation-tagged-value-primal v2)
-		   cs))
-	(and (bundle? v1)
-	     (bundle? v2)
-	     (loop (bundle-primal v1) (bundle-primal v2) cs)
-	     (loop (bundle-tangent v1) (bundle-tangent v2) cs))
-	(and (sensitivity-tagged-value? v1)
-	     (sensitivity-tagged-value? v2)
-	     (loop (sensitivity-tagged-value-primal v1)
-		   (sensitivity-tagged-value-primal v2)
-		   cs))
-	(and (reverse-tagged-value? v1)
-	     (reverse-tagged-value? v2)
-	     (loop (reverse-tagged-value-primal v1)
-		   (reverse-tagged-value-primal v2)
-		   cs))
-	(and (tagged-pair? v1)
-	     (tagged-pair? v2)
-	     (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))
-	     (loop (tagged-pair-car v1) (tagged-pair-car v2) cs)
-	     (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs)))))))
+	(and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2)))
+    (k #t cs))
+   ((and (nonrecursive-closure? v1)
+	 (nonrecursive-closure? v2)
+	 (nonrecursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (every2-cps (lambda (v1 v2 cs k) (loop v1 v2 cs k))
+		(nonrecursive-closure-values v1)
+		(nonrecursive-closure-values v2)
+		cs
+		k))
+   ((and (recursive-closure? v1)
+	 (recursive-closure? v2)
+	 (recursive-closure-match? v1 v2))
+    ;; See the note in abstract-environment=?.
+    (every2-cps (lambda (v1 v2 cs k) (loop v1 v2 cs k))
+		(recursive-closure-values v1)
+		(recursive-closure-values v2)
+		cs
+		k))
+   ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+    (loop (perturbation-tagged-value-primal v1)
+	  (perturbation-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (bundle? v1) (bundle? v2))
+    (loop (bundle-primal v1)
+	  (bundle-primal v2)
+	  cs
+	  (lambda (r? cs)
+	   (if r?
+	       (loop (bundle-tangent v1) (bundle-tangent v2) cs k)
+	       (k #f cs)))))
+   ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+    (loop (sensitivity-tagged-value-primal v1)
+	  (sensitivity-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+    (loop (reverse-tagged-value-primal v1)
+	  (reverse-tagged-value-primal v2)
+	  cs
+	  k))
+   ((and (tagged-pair? v1)
+	 (tagged-pair? v2)
+	 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+    (loop (tagged-pair-car v1)
+	  (tagged-pair-car v2)
+	  cs
+	  (lambda (r? cs)
+	   (if r?
+	       (loop (tagged-pair-cdr v1) (tagged-pair-cdr v2) cs k)
+	       (k #f cs)))))
+   (else (k #f cs)))))
 
 ;;; Abstract Value Union
 
@@ -4096,7 +4247,7 @@
  (let ((v
 	(let loop ((v v) (quote? #f) (vs '()))
 	 (cond
-	  ((memp v vs)
+	  ((memq v vs)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably"v))
 	   `(up ,(positionq v vs)))
@@ -4646,7 +4797,7 @@
  ;; breaks structure sharing
  (assert (union? v))
  (let outer ((v v) (path '()))
-  (if (or (memp v path) (empty-abstract-value? v))
+  (if (or (memq v path) (empty-abstract-value? v))
       (if (> (depth match? type? (reverse (cons v path))) k)
 	  (reverse (cons v path))
 	  #f)
@@ -5221,86 +5372,122 @@
    (else (internal-error)))))
 
 (define (value-contains-union? v)
- (let outer ((v v) (vs '()) (k identity))
-  (cond
-   ((memp v vs) (k #f))
-   ((union? v)
-    (if (>= (length (union-values v)) 2)
-	(k #t)
-	(let inner ((us (union-values v)))
-	 (if (null? us)
-	     (k #f)
-	     (outer
-	      (first u) (cons v vs) (lambda (n) (or n (inner (rest us)))))))))
-   ((scalar-value? v) (k #f))
-   (else
-    (let inner ((vs1 (aggregate-value-values v)))
-     (if (null? vs1)
-	 (k #f)
-	 (outer (first vs1) vs (lambda (n) (or n (inner (rest vs1)))))))))))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (k (lambda (r? vs) r?)))
+  (cond ((real? v) (k #f vs))
+	((memq v vs) (k #f vs))
+	((union? v)
+	 (if (>= (length (union-values v)) 2)
+	     (k #t vs)
+	     (let inner ((us (union-values v)) (vs (cons v vs)))
+	      (if (null? us)
+		  (k #f vs)
+		  (outer (first us)
+			 vs
+			 (lambda (r? vs)
+			  (if r? (k #t vs) (inner (rest us) vs))))))))
+	((scalar-value? v) (k #f vs))
+	(else (let inner ((vs1 (aggregate-value-values v)) (vs (cons v vs)))
+	       (if (null? vs1)
+		   (k #f vs)
+		   (outer (first vs1)
+			  vs
+			  (lambda (r? vs)
+			   (if r? (k #t vs) (inner (rest vs1) vs))))))))))
 
 (define (unions-in-abstract-value v)
- (let outer ((v v) (vs '()) (n 0) (k identity))
-  (cond ((memp v vs) (k n))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n 0) (k (lambda (n vs) n)))
+  (cond ((real? v) (k n vs))
+	((memq v vs) (k n vs))
 	((union? v)
 	 (let inner ((us (union-values v))
+		     (vs (cons v vs))
 		     (n (+ n (if (>= (length (union-values v)) 2) 1 0))))
 	  (if (null? us)
-	      (k n)
-	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
-	((scalar-value? v) (k n))
-	(else
-	 (let inner ((vs1 (aggregate-value-values v)) (n n))
-	  (if (null? vs1)
-	      (k n)
-	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
+	      (k n vs)
+	      (outer (first us)
+		     vs
+		     n
+		     (lambda (n vs) (inner (rest us) vs n))))))
+	((scalar-value? v) (k n vs))
+	(else (let inner ((vs1 (aggregate-value-values v))
+			  (vs (cons v vs))
+			  (n n))
+	       (if (null? vs1)
+		   (k n vs)
+		   (outer (first vs1)
+			  vs
+			  n
+			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (concrete-reals-in-abstract-value v)
- (let outer ((v v) (vs '()) (n 0) (k identity))
-  (cond ((memp v vs) (k n))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n 0) (k (lambda (n vs) n)))
+  (cond ((real? v) (k (if (memv v n) v (cons v n)) vs))
+	((memq v vs) (k n vs))
 	((union? v)
-	 (let inner ((us (union-values v)) (n n))
+	 (let inner ((us (union-values v)) (vs (cons v vs)) (n n))
 	  (if (null? us)
-	      (k n)
-	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
-	((real? v) (k (if (memv v n) v (cons v n))))
-	((scalar-value? v) (k n))
-	(else
-	 (let inner ((vs1 (aggregate-value-values v)) (n n))
-	  (if (null? vs1)
-	      (k n)
-	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
+	      (k n vs)
+	      (outer (first us)
+		     vs
+		     n
+		     (lambda (n vs) (inner (rest us) vs n))))))
+	((scalar-value? v) (k n vs))
+	(else (let inner ((vs1 (aggregate-value-values v))
+			  (vs (cons v vs))
+			  (n n))
+	       (if (null? vs1)
+		   (k n vs)
+		   (outer (first vs1)
+			  vs
+			  n
+			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (value-size v)
- (let outer ((v v) (vs '()) (n 0) (k identity))
-  (cond ((memp v vs) (k n))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n 0) (k (lambda (n vs) n)))
+  (cond ((real? v) (k (+ n 1) vs))
+	((memq v vs) (k n vs))
 	((union? v)
-	 (let inner ((us (union-values v)) (n (+ n 1)))
+	 (let inner ((us (union-values v)) (vs (cons v vs)) (n (+ n 1)))
 	  (if (null? us)
-	      (k n)
-	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
-	((scalar-value? v) (k (+ n 1)))
-	(else
-	 (let inner ((vs1 (aggregate-value-values v)) (n (+ n 1)))
-	  (if (null? vs1)
-	      (k n)
-	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
+	      (k n vs)
+	      (outer (first us) vs n (lambda (n vs) (inner (rest us) vs n))))))
+	((scalar-value? v) (k (+ n 1) vs))
+	(else (let inner ((vs1 (aggregate-value-values v))
+			  (vs (cons v vs))
+			  (n (+ n 1)))
+	       (if (null? vs1)
+		   (k n vs)
+		   (outer (first vs1)
+			  vs
+			  n
+			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (value-max-width v)
- (let outer ((v v) (vs '()) (n 0) (k identity))
-  (cond ((memp v vs) (k n))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n 0) (k (lambda (n vs) n)))
+  (cond ((real? v) (k n vs))
+	((memq v vs) (k n vs))
 	((union? v)
 	 (let inner ((us (union-values v))
+		     (vs (cons v vs))
 		     (n (max n (length (union-values v)))))
 	  (if (null? us)
-	      (k n)
-	      (outer (first u) (cons v vs) (lambda (n) (inner (rest us) n))))))
+	      (k n vs)
+	      (outer (first us) vs n (lambda (n vs) (inner (rest us) vs n))))))
 	((scalar-value? v) (k n))
-	(else
-	 (let inner ((vs1 (aggregate-value-values v)) (n n))
-	  (if (null? vs1)
-	      (k n)
-	      (outer (first vs1) vs (lambda (n) (inner (rest vs1) n)))))))))
+	(else (let inner ((vs1 (aggregate-value-values v))
+			  (vs (cons v vs))
+			  (n n))
+	       (if (null? vs1)
+		   (k n vs)
+		   (outer (first vs1)
+			  vs
+			  n
+			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (analysis-size)
  (map-reduce +
@@ -5394,8 +5581,10 @@
   *expressions*))
 
 (define (check-abstract-value! v)
- (let outer ((v v) (vs '()) (k (lambda () #f)))
-  (cond ((memp v vs) (k))
+ ;; This is written in cps so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (k (lambda (vs) #f)))
+  (cond ((real? v) (k vs))
+	((memq v vs) (k vs))
 	((union? v)
 	 (for-each-indexed
 	  (lambda (u1 i1)
@@ -5404,16 +5593,17 @@
 	     (assert (or (= i1 i2) (not (abstract-value-subset? u1 u2)))))
 	    (union-values v)))
 	  (union-values v))
-	 (let inner ((us (union-values v)))
+	 (let inner ((us (union-values v)) (vs (cons v vs)))
 	  (if (null? us)
-	      (k)
-	      (outer (first u) (cons v vs) (lambda () (inner (rest us)))))))
-	((scalar-value? v) (k))
-	(else
-	 (let inner ((vs1 (aggregate-value-values v)))
-	  (if (null? vs1)
-	      (k)
-	      (outer (first vs1) vs (lambda () (inner (rest vs1))))))))))
+	      (k vs)
+	      (outer (first us) vs (lambda (vs) (inner (rest us) vs))))))
+	((scalar-value? v) (k vs))
+	(else (let inner ((vs1 (aggregate-value-values v)) (vs (cons v vs)))
+	       (if (null? vs1)
+		   (k vs)
+		   (outer (first vs1)
+			  vs
+			  (lambda (vs) (inner (rest vs1) vs)))))))))
 
 (define (check-analysis!)
  (for-each
