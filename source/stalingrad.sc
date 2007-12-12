@@ -127,6 +127,7 @@
  (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *warnings?* (not no-warnings?))
  (set! *closure-depth-limit* (if no-closure-depth-limit? #f limit))
+ (set! *closure-depth-limit* #f)	;debugging
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
