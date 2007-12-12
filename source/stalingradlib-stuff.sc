@@ -321,6 +321,18 @@
 	 cs
 	 (lambda (r cs) (loop (rest l1) (rest l2) cs (cons r n)))))))
 
+(define (cross-product-cps f l1 l2 cs k)
+ (let outer ((l1 l1) (cs cs) (n '()))
+  (if (null? l1)
+      (k n cs)
+      (let inner ((l2 l2) (cs cs) (n n))
+       (if (null? l2)
+	   (outer (rest l1) cs n)
+	   (f (first l1)
+	      (first l2)
+	      cs
+	      (lambda (r cs) (inner (rest l2) cs (cons r n)))))))))
+
 ;;; Error Handing
 
 (define (internal-error . arguments)
@@ -3747,14 +3759,15 @@
    (cond
     (found? (k (cdr found?) cs))
     ((and (union? v) (union? v-perturbation))
-     ;; here I am
-     (cross-union (lambda (u u-perturbation)
-		   (loop u
-			 u-perturbation
-			 (cons (cons v v-perturbation) cs)
-			 k))
-		  v
-		  v-perturbation))
+     (let ((v-forward (make-union 'unfilled)))
+      (cross-product-cps
+       loop
+       (union-values v)
+       (union-values v-perturbation)
+       (cons (cons (cons v v-perturbation) v-forward) cs)
+       (lambda (us cs)
+	(fill-union-values! v-forward us)
+	(k v-forward cs)))))
     ((or (union? v) (union? v-perturbation)) (internal-error))
     (else
      (let ((b (find-if
@@ -4503,8 +4516,14 @@
    (cond
     (found? (k (cdr found?) cs))
     ((and (union? v1) (union? v2))
-     ;; here I am
-     (cross-union (lambda (u1 u2) (loop u1 u2 (cons (cons v1 v2) cs))) v1 v2))
+     (let ((v (make-union 'unfilled)))
+      (cross-product-cps loop
+			 (union-values v1)
+			 (union-values v2)
+			 (cons (cons (cons v1 v2) v) cs)
+			 (lambda (us cs)
+			  (fill-union-values! v us)
+			  (k v cs)))))
     ((or (union? v1) (union? v2)) (internal-error))
     ((and (vlad-empty-list? v1) (vlad-empty-list? v2))
      (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
