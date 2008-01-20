@@ -3108,26 +3108,48 @@
   (anf-result (anf-convert-expression
 	       (anf-max e) (lambda-expression-body e) '() '() #t #t))))
 
+(define (unsafe-let*? e)
+ (and (application? e) (lambda-expression? (application-callee e))))
+
+(define (unsafe-let*-parameters e)
+ (if (unsafe-let*? e)
+     (cons (lambda-expression-parameter (application-callee e))
+	   (unsafe-let*-parameters
+	    (lambda-expression-body (application-callee e))))
+     '()))
+
+(define (unsafe-let*-expressions e)
+ (if (unsafe-let*? e)
+     (cons (application-argument e)
+	   (unsafe-let*-expressions
+	    (lambda-expression-body (application-callee e))))
+     '()))
+
+(define (unsafe-let*-body e)
+ (if (unsafe-let*? e)
+     (unsafe-let*-body (lambda-expression-body (application-callee e)))
+     e))
+
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
-     (if (let*? (letrec-expression-body e))
-	 (let*-parameters (letrec-expression-body e))
+     (if (unsafe-let*? (letrec-expression-body e))
+	 (unsafe-let*-parameters (letrec-expression-body e))
 	 '())
-     (if (let*? e) (let*-parameters e) '())))
+     (if (unsafe-let*? e) (unsafe-let*-parameters e) '())))
 
 (define (anf-let*-expressions e)
  (if (letrec-expression? e)
-     (if (let*? (letrec-expression-body e))
-	 (let*-expressions (letrec-expression-body e))
+     (if (unsafe-let*? (letrec-expression-body e))
+	 (unsafe-let*-expressions (letrec-expression-body e))
 	 '())
-     (if (let*? e) (let*-expressions e) '())))
+     (if (unsafe-let*? e) (unsafe-let*-expressions e) '())))
 
 (define (anf-parameter e)
  (if (letrec-expression? e)
-     (if (let*? (letrec-expression-body e))
-	 (let*-body (letrec-expression-body e))
+     (if (unsafe-let*? (letrec-expression-body e))
+	 (unsafe-let*-body (letrec-expression-body e))
 	 (letrec-expression-body e))
-     (if (let*? e) (let*-body e) e)))
+     (if (unsafe-let*? e) (unsafe-let*-body e) e)))
 
 ;;; Concrete->Abstract
 
