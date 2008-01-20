@@ -1425,36 +1425,32 @@
 
 (define (some-bundlable? v v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
- ;; here I am: To cache proto abstract values in cs.
  (let loop ((v v)
 	    (v-perturbation v-perturbation)
 	    (cs '())
 	    (k (lambda (r? cs) r?)))
-  (let ((found?
-	 (find-if
-	  (lambda (c)
-	   (and (eq? (car (car c)) v) (eq? (cdr (car c)) v-perturbation)))
-	  cs)))
+  (let* ((found?
+	  (find-if
+	   (lambda (c)
+	    (and (eq? (car (car c)) v) (eq? (cdr (car c)) v-perturbation)))
+	   cs))
+	 (c (cons (cons v v-perturbation) #f)))
    (cond
     (found? (k (cdr found?) cs))
     ((union? v)
-     ;; here I am: check base case
-     (let ((c (cons (cons v v-perturbation) #t)))
-      (some-cps (lambda (u cs k) (loop u v-perturbation cs k))
-		(union-values v)
-		(cons c cs)
-		(lambda (r? cs)
-		 (set-cdr! c r?)
-		 (k r? cs)))))
+     (some-cps (lambda (u cs k) (loop u v-perturbation cs k))
+	       (union-values v)
+	       (cons c cs)
+	       (lambda (r? cs)
+		(set-cdr! c r?)
+		(k r? cs))))
     ((union? v-perturbation)
-     ;; here I am: check base case
-     (let ((c (cons (cons v v-perturbation) #t)))
-      (some-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
-		(union-values v-perturbation)
-		(cons c cs)
-		(lambda (r? cs)
-		 (set-cdr! c r?)
-		 (k r? cs)))))
+     (some-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+	       (union-values v-perturbation)
+	       (cons c cs)
+	       (lambda (r? cs)
+		(set-cdr! c r?)
+		(k r? cs))))
     ((or
       (and
        (vlad-empty-list? v)
@@ -1494,27 +1490,30 @@
 			  k)
 		    (k #f cs)))
 	       (union-values (perturbation-tagged-value-primal v-perturbation))
-	       cs
-	       k))
+	       (cons c cs)
+	       (lambda (r? cs)
+		(set-cdr! c r?)
+		(k r? cs))))
     ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
      (some-cps
       (lambda (u cs k)
        (if (bundle? u)
-	   (loop
-	    (bundle-primal v)
-	    (new-perturbation-tagged-value (bundle-primal u))
-	    cs
-	    (lambda (r? cs)
-	     (if r?
-		 (loop (bundle-tangent v)
-		       (new-perturbation-tagged-value (bundle-tangent u))
-		       cs
-		       k)
-		 (k #f cs))))
+	   (loop (bundle-primal v)
+		 (new-perturbation-tagged-value (bundle-primal u))
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (bundle-tangent v)
+			    (new-perturbation-tagged-value (bundle-tangent u))
+			    cs
+			    k)
+		      (k #f cs))))
 	   (k #f cs)))
       (union-values (perturbation-tagged-value-primal v-perturbation))
-      cs
-      k))
+      (cons c cs)
+      (lambda (r? cs)
+       (set-cdr! c r?)
+       (k r? cs))))
     ((and (sensitivity-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation))
      (some-cps (lambda (u cs k)
@@ -1526,8 +1525,10 @@
 			  k)
 		    (k #f cs)))
 	       (union-values (perturbation-tagged-value-primal v-perturbation))
-	       cs
-	       k))
+	       (cons c cs)
+	       (lambda (r? cs)
+		(set-cdr! c r?)
+		(k r? cs))))
     ((and (reverse-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation))
      (some-cps (lambda (u cs k)
@@ -1539,42 +1540,40 @@
 			  k)
 		    (k #f cs)))
 	       (union-values (perturbation-tagged-value-primal v-perturbation))
-	       cs
-	       k))
+	       (cons c cs)
+	       (lambda (r? cs)
+		(set-cdr! c r?)
+		(k r? cs))))
     (else (k #f cs))))))
 
 (define (every-bundlable? v v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
- ;; here I am: To cache proto abstract values in cs.
  (let loop ((v v)
 	    (v-perturbation v-perturbation)
 	    (cs '())
 	    (k (lambda (r? cs) r?)))
-  (let ((found?
-	 (find-if
-	  (lambda (c)
-	   (and (eq? (car (car c)) v) (eq? (cdr (car c)) v-perturbation)))
-	  cs)))
+  (let* ((found?
+	  (find-if
+	   (lambda (c)
+	    (and (eq? (car (car c)) v) (eq? (cdr (car c)) v-perturbation)))
+	   cs))
+	 (c (cons (cons v v-perturbation) #t)))
    (cond
     (found? (k (cdr found?) cs))
     ((union? v)
-     ;; here I am: check base case
-     (let ((c (cons (cons v v-perturbation) #t)))
-      (every-cps (lambda (u cs k) (loop u v-perturbation cs k))
-		 (union-values v)
-		 (cons c cs)
-		 (lambda (r? cs)
-		  (set-cdr! c r?)
-		  (k r? cs)))))
+     (every-cps (lambda (u cs k) (loop u v-perturbation cs k))
+		(union-values v)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs))))
     ((union? v-perturbation)
-     ;; here I am: check base case
-     (let ((c (cons (cons v v-perturbation) #t)))
-      (every-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
-		 (union-values v-perturbation)
-		 (cons c cs)
-		 (lambda (r? cs)
-		  (set-cdr! c r?)
-		  (k r? cs)))))
+     (every-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+		(union-values v-perturbation)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs))))
     ((or (and
 	  (vlad-empty-list? v)
 	  (perturbation-tagged-value? v-perturbation)
@@ -1618,27 +1617,30 @@
 		 k)
 	   (k #f cs)))
       (union-values (perturbation-tagged-value-primal v-perturbation))
-      cs
-      k))
+      (cons c cs)
+      (lambda (r? cs)
+       (set-cdr! c r?)
+       (k r? cs))))
     ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
      (every-cps
       (lambda (u cs k)
        (if (bundle? u)
-	   (loop
-	    (bundle-primal v)
-	    (new-perturbation-tagged-value (bundle-primal u))
-	    cs
-	    (lambda (r? cs)
-	     (if r?
-		 (loop (bundle-tangent v)
-		       (new-perturbation-tagged-value (bundle-tangent u))
-		       cs
-		       k)
-		 (k #f cs))))
+	   (loop (bundle-primal v)
+		 (new-perturbation-tagged-value (bundle-primal u))
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (bundle-tangent v)
+			    (new-perturbation-tagged-value (bundle-tangent u))
+			    cs
+			    k)
+		      (k #f cs))))
 	   (k #f cs)))
       (union-values (perturbation-tagged-value-primal v-perturbation))
-      cs
-      k))
+      (cons c cs)
+      (lambda (r? cs)
+       (set-cdr! c r?)
+       (k r? cs))))
     ((and (sensitivity-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation))
      (every-cps
@@ -1651,8 +1653,10 @@
 		 k)
 	   (k #f cs)))
       (union-values (perturbation-tagged-value-primal v-perturbation))
-      cs
-      k))
+      (cons c cs)
+      (lambda (r? cs)
+       (set-cdr! c r?)
+       (k r? cs))))
     ((and (reverse-tagged-value? v)
 	  (perturbation-tagged-value? v-perturbation))
      (every-cps
@@ -1665,8 +1669,10 @@
 		 k)
 	   (k #f cs)))
       (union-values (perturbation-tagged-value-primal v-perturbation))
-      cs
-      k))
+      (cons c cs)
+      (lambda (r? cs)
+       (set-cdr! c r?)
+       (k r? cs))))
     (else (k #f cs))))))
 
 (define (create-bundle v v-perturbation)
@@ -2025,19 +2031,22 @@
     (found? (k (cdr found?) cs))
     ;; This is an optimization.
     ((eq? v1 v2) (k #t cs))
-    ;; here I am
-    ((and (union? v1) (union? v2))
+    ((union? v1)
      (let ((c (cons (cons v1 v2) #t)))
-      (every-cps
-       (lambda (u1 cs k)
-	(some-cps (lambda (u2 cs k) (loop u1 u2 cs k)) (union-values v2) cs k))
-       (union-values v1)
-       (cons c cs)
-       (lambda (r? cs)
-	(set-cdr! c r?)
-	(k r? cs)))))
-    ;; here I am
-    ((or (union? v1) (union? v2)) (internal-error))
+      (every-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		 (union-values v1)
+		 (cons c cs)
+		 (lambda (r? cs)
+		  (set-cdr! c r?)
+		  (k r? cs)))))
+    ((union? v2)
+     (let ((c (cons (cons v1 v2) #f)))
+      (some-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		(union-values v2)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs)))))
     ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	 (and (vlad-true? v1) (vlad-true? v2))
 	 (and (vlad-false? v1) (vlad-false? v2))
