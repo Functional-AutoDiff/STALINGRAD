@@ -347,18 +347,6 @@
 	 cs
 	 (lambda (r cs) (loop (rest l1) (rest l2) cs (cons r n)))))))
 
-(define (cross-product-cps f l1 l2 cs k)
- (let outer ((l1 l1) (cs cs) (n '()))
-  (if (null? l1)
-      (k n cs)
-      (let inner ((l2 l2) (cs cs) (n n))
-       (if (null? l2)
-	   (outer (rest l1) cs n)
-	   (f (first l1)
-	      (first l2)
-	      cs
-	      (lambda (r cs) (inner (rest l2) cs (cons r n)))))))))
-
 ;;; Error Handing
 
 (define (internal-error . arguments)
@@ -1814,26 +1802,25 @@
 
 (define (abstract-boolean) (new-union (list (vlad-true) (vlad-false))))
 
-(define (union-members v)
- (if (union? v)
-     (map-reduce append '() union-members (union-values v))
-     (list v)))
+(define (union-members v) (if (union? v) (union-values v) (list v)))
 
 (define (new-union vs)
- (let* ((us (map-reduce append '() union-members vs)))
-  (make-union
-   ;; This does not affect the extension of the abstract value but can yield a
-   ;; smaller representation. Thus this is just an optimization. Since abstract
-   ;; value subset and equivalence is undecidable, can only conservatively
-   ;; approximate this. Using a conservative approximation is sound since
-   ;; abstract values are removed only when the predicate returns #t which is a
-   ;; precise result.
-   (maximal-elements abstract-value-subset?
-		     (remove-duplicatesp abstract-value=? us)))))
+ ;; This does not affect the extension of the abstract value but can yield a
+ ;; smaller representation. Thus this is just an optimization. Since abstract
+ ;; value subset and equivalence is undecidable, can only conservatively
+ ;; approximate this. Using a conservative approximation is sound since
+ ;; abstract values are removed only when the predicate returns #t which is a
+ ;; precise result.
+ (let ((us (maximal-elements
+	    abstract-value-subset?
+	    (remove-duplicatesp
+	     abstract-value=? (map-reduce append '() union-members vs)))))
+  (if (and (not (null? us)) (null? (rest us))) (first us) (make-union us))))
 
-(define (fill-union-values! v us)
- (let ((us (map-reduce append '() union-members us)))
-  (assert (not (null? us)))
+(define (fill-union-values! v vs)
+ ;; Can't do same optimization as new-union because of unfilleds.
+ (let ((us (map-reduce append '() union-members vs)))
+  (assert (and (not (null? us)) (not (null? (rest us)))))
   (set-union-values! v us)))
 
 (define (map-union f v) (new-union (map f (union-values v))))
@@ -2214,15 +2201,9 @@
 (define (copy-abstract-value v)
  ;; This is written in CPS so as not to break structure sharing.
  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
-  (let ((found?
-	 (assp (lambda (v1 v2)
-		;; here I am
-		(and (eq? (union? v1) (union? v2)) (abstract-value=? v1 v2)))
-	       v
-	       cs)))
+  (let ((found? (assp abstract-value=? v cs)))
    (cond
     (found? (k (cdr found?) cs))
-    ;; here I am
     ((union? v)
      (if (empty-abstract-value? v)
 	 (k (empty-abstract-value) cs)
@@ -3793,20 +3774,26 @@
 			 cs)))
    (cond
     (found? (k (cdr found?) cs))
-    ;; here I am
-    ((and (union? v) (union? v-perturbation))
-     (if (or (empty-abstract-value? v) (empty-abstract-value? v-perturbation))
+    ((union? v)
+     (if (empty-abstract-value? v)
 	 (k (empty-abstract-value) cs)
 	 (let ((v-forward (make-union 'unfilled)))
-	  (cross-product-cps loop
-			     (union-values v)
-			     (union-values v-perturbation)
-			     (cons (cons (cons v v-perturbation) v-forward) cs)
-			     (lambda (us cs)
-			      (fill-union-values! v-forward us)
-			      (k v-forward cs))))))
-    ;; here I am
-    ((or (union? v) (union? v-perturbation)) (internal-error))
+	  (map-cps (lambda (u cs k) (loop u v-perturbation cs k))
+		   (union-values v)
+		   (cons (cons (cons v v-perturbation) v-forward) cs)
+		   (lambda (us-forward cs)
+		    (fill-union-values! v-forward us-forward)
+		    (k v-forward cs))))))
+    ((union? v-perturbation)
+     (if (empty-abstract-value? v-perturbation)
+	 (k (empty-abstract-value) cs)
+	 (let ((v-forward (make-union 'unfilled)))
+	  (map-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+		   (union-values v-perturbation)
+		   (cons (cons (cons v v-perturbation) v-forward) cs)
+		   (lambda (us-forward cs)
+		    (fill-union-values! v-forward us-forward)
+		    (k v-forward cs))))))
     (else
      (let ((b (find-if
 	       (lambda (b) (abstract-value=? v (value-binding-value b)))
@@ -4549,20 +4536,26 @@
 			 cs)))
    (cond
     (found? (k (cdr found?) cs))
-    ;; here I am
-    ((and (union? v1) (union? v2))
-     (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
+    ((union? v1)
+     (if (empty-abstract-value? v1)
 	 (k (empty-abstract-value) cs)
 	 (let ((v (make-union 'unfilled)))
-	  (cross-product-cps loop
-			     (union-values v1)
-			     (union-values v2)
-			     (cons (cons (cons v1 v2) v) cs)
-			     (lambda (us cs)
-			      (fill-union-values! v us)
-			      (k v cs))))))
-    ;; here I am
-    ((or (union? v1) (union? v2)) (internal-error))
+	  (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		   (union-values v1)
+		   (cons (cons (cons v1 v2) v) cs)
+		   (lambda (us cs)
+		    (fill-union-values! v us)
+		    (k v cs))))))
+    ((union? v2)
+     (if (empty-abstract-value? v2)
+	 (k (empty-abstract-value) cs)
+	 (let ((v (make-union 'unfilled)))
+	  (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		   (union-values v2)
+		   (cons (cons (cons v1 v2) v) cs)
+		   (lambda (us cs)
+		    (fill-union-values! v us)
+		    (k v cs))))))
     ((and (vlad-empty-list? v1) (vlad-empty-list? v2))
      (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
     ((and (vlad-true? v1) (vlad-true? v2))
