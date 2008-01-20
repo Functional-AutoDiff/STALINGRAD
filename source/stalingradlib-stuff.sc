@@ -1406,7 +1406,8 @@
  (if (empty-abstract-value? v) v (create-perturbation-tagged-value v)))
 
 (define (fill-perturbation-tagged-value-primal! u v)
- (assert (and (not (empty-abstract-value? v))
+ (assert (and ;; debugging
+	      ;;(not (empty-abstract-value? v))
 	      (eq? (perturbation-tagged-value-primal u) 'unfilled)))
  (set-perturbation-tagged-value-primal! u v))
 
@@ -1677,8 +1678,10 @@
 
 (define (fill-bundle! u v v-perturbation)
  (assert (and (some-bundlable? v v-perturbation)
-	      (not (empty-abstract-value? v))
-	      (not (empty-abstract-value? v-perturbation))
+	      ;; debugging
+	      ;;(not (empty-abstract-value? v))
+	      ;; debugging
+	      ;;(not (empty-abstract-value? v-perturbation))
 	      (eq? (bundle-primal u) 'unfilled)
 	      (eq? (bundle-tangent u) 'unfilled)))
  (set-bundle-primal! u v)
@@ -1811,6 +1814,39 @@
      (map-reduce append '() union-members (union-values v))
      (list v)))
 
+(define (factorable? u1 u2)
+ (or (and (nonrecursive-closure? u1)
+	  (nonrecursive-closure? u2)
+	  (nonrecursive-closure-match? u1 u2)
+	  (= (countq #t
+		     (map abstract-value=?
+			  (nonrecursive-closure-values u1)
+			  (nonrecursive-closure-values u2)))
+	     (- (length (nonrecursive-closure-values u1)) 1)))
+     (and (recursive-closure? u1)
+	  (recursive-closure? u2)
+	  (recursive-closure-match? u1 u2)
+	  (= (countq #t
+		     (map abstract-value=?
+			  (recursive-closure-values u1)
+			  (recursive-closure-values u2)))
+	     (- (length (recursive-closure-values u1)) 1)))
+     (and (perturbation-tagged-value? u1)
+	  (perturbation-tagged-value? u2))
+     (and (bundle? u1)
+	  (bundle? u2)
+	  (or (abstract-value=? (bundle-primal u1) (bundle-primal u2))
+	      (abstract-value=? (bundle-tangent u1) (bundle-tangent u2))))
+     (and (sensitivity-tagged-value? u1)
+	  (sensitivity-tagged-value? u2))
+     (and (reverse-tagged-value? u1)
+	  (reverse-tagged-value? u2))
+     (and (tagged-pair? u1)
+	  (tagged-pair? u2)
+	  (equal-tags? (tagged-pair-tags u1) (tagged-pair-tags u2))
+	  (or (abstract-value=? (tagged-pair-car u1) (tagged-pair-car u2))
+	      (abstract-value=? (tagged-pair-cdr u1) (tagged-pair-cdr u2))))))
+
 (define (new-union vs)
  ;; This does not affect the extension of the abstract value but can yield a
  ;; smaller representation. Thus this is just an optimization. Since abstract
@@ -1822,6 +1858,13 @@
 	    abstract-value-subset?
 	    (remove-duplicatesp
 	     abstract-value=? (map-reduce append '() union-members vs)))))
+  ;; debugging
+  (when #f
+   (when (some (lambda (u1)
+		(some (lambda (u2) (and (not (eq? u1 u2)) (factorable? u1 u2)))
+		      us))
+	       us)
+    (format #t "factorable~%")))
   (if (and (not (null? us)) (null? (rest us))) (first us) (make-union us))))
 
 (define (fill-union-values! v vs)
@@ -2229,6 +2272,15 @@
 	       (cons (cons v v-prime) cs)
 	       (lambda (us-prime cs)
 		(assert (or (null? us-prime) (not (null? (rest us-prime)))))
+		;; debugging
+		(when #f
+		 (when (some (lambda (u1)
+			      (some (lambda (u2)
+				     (and (not (eq? u1 u2))
+					  (factorable? u1 u2)))
+				    us-prime))
+			     us-prime)
+		  (format #t "factorable~%")))
 		(fill-union-values! v-prime us-prime)
 		(k v-prime cs))))))))
     ((vlad-empty-list? v)
@@ -5694,12 +5746,11 @@
 ;;; Each abstract value is a slot or a member of the preceeding abstract value.
 
 (define (depth match? type? path)
- (map-reduce
-  max
-  0
-  length
-  (transitive-equivalence-classesp
-   match? (remove-if-not type? (remove-if union? path)))))
+ (map-reduce max
+	     0
+	     length
+	     (transitive-equivalence-classesp
+	      match? (remove-if-not type? (remove-if union? path)))))
 
 (define (path-of-depth-greater-than-limit limit match? type? v)
  ;; needs work: This breaks structure sharing, but I don't know how to do it
@@ -5723,7 +5774,7 @@
 		   (let ((path (outer (first vs) (cons v path))))
 		    (if (eq? path #f) (inner (rest vs)) path))))))))
 
-(define (pick-values-to-coalesce-for-depth-limit match? type? path)
+(define (debugging-pick-values-to-coalesce-for-depth-limit match? type? path)
  (let* ((classes (transitive-equivalence-classesp
 		  match? (remove-if-not type? (remove-if union? path))))
 	(k (map-reduce max 0 length classes))
@@ -5741,7 +5792,19 @@
 	    (list-ref path (- (first positions) 1))
 	    (list-ref path (first positions))))))
 
-(define (reduce-depth v v1 v2)
+(define (pick-values-to-coalesce-for-depth-limit match? type? path)
+ (let* ((classes (transitive-equivalence-classesp
+		  match? (remove-if-not type? (remove-if union? path))))
+	(k (map-reduce max 0 length classes))
+	(positions
+	 (sort (map (lambda (u) (positionq u path))
+		    (find-if (lambda (us) (= (length us) k)) classes))
+	       >
+	       identity)))
+  (list (list-ref path (second positions))
+	(list-ref path (first positions)))))
+
+(define (debugging-reduce-depth v v1 v2)
  ;; This is written in CPS so as not to break structure sharing.
  (copy-abstract-value
   ;; This does a shallow copy when v1 and/or v2 are not unions so that the
@@ -5843,7 +5906,104 @@
 		      (k u-prime cs)))))))
       (else (internal-error))))))))
 
-(define (limit-depth limit match? type? v)
+(define (reduce-depth v u1 u2)
+ ;; This is written in CPS so as not to break structure sharing.
+ (copy-abstract-value
+  (let ((u12 (make-aggregate-value-with-new-values
+	      u1 (map abstract-value-union
+		      (aggregate-value-values u1)
+		      (aggregate-value-values u2)))))
+   (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
+    (let ((found? (assq v cs)))
+     (cond
+      (found? (k (cdr found?) cs))
+      ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
+      ((union? v)
+       (let ((v-prime (make-union 'unfilled)))
+	(map-cps loop
+		 (union-members v)
+		 (cons (cons v v-prime) cs)
+		 (lambda (us-prime cs)
+		  (fill-union-values! v-prime us-prime)
+		  (k v-prime cs)))))
+      ((vlad-empty-list? v)
+       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+      ((vlad-true? v)
+       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+      ((vlad-false? v)
+       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+      ((vlad-real? v)
+       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+      ((primitive-procedure? v)
+       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+      ((nonrecursive-closure? v)
+       ;; See the note in abstract-environment=?.
+       (let ((u-prime (make-nonrecursive-closure
+		       'unfilled (nonrecursive-closure-lambda-expression v))))
+	(map-cps loop
+		 (nonrecursive-closure-values v)
+		 (cons (cons v u-prime) cs)
+		 (lambda (vs-prime cs)
+		  (fill-nonrecursive-closure-values! u-prime vs-prime)
+		  (k u-prime cs)))))
+      ((recursive-closure? v)
+       ;; See the note in abstract-environment=?.
+       (let ((u-prime
+	      (make-recursive-closure 'unfilled
+				      (recursive-closure-procedure-variables v)
+				      (recursive-closure-lambda-expressions v)
+				      (recursive-closure-index v))))
+	(map-cps loop
+		 (recursive-closure-values v)
+		 (cons (cons v u-prime) cs)
+		 (lambda (vs-prime cs)
+		  (fill-recursive-closure-values! u-prime vs-prime)
+		  (k u-prime cs)))))
+      ((perturbation-tagged-value? v)
+       (let ((u-prime (make-perturbation-tagged-value 'unfilled)))
+	(loop (perturbation-tagged-value-primal v)
+	      (cons (cons v u-prime) cs)
+	      (lambda (v-prime cs)
+	       (fill-perturbation-tagged-value-primal! u-prime v-prime)
+	       (k u-prime cs)))))
+      ((bundle? v)
+       (let ((u-prime (make-bundle  'unfilled 'unfilled)))
+	(loop (bundle-primal v)
+	      (cons (cons v u-prime) cs)
+	      (lambda (v-primal-prime cs)
+	       (loop (bundle-tangent v)
+		     cs
+		     (lambda (v-tangent-prime cs)
+		      (fill-bundle! u-prime v-primal-prime v-tangent-prime)
+		      (k u-prime cs)))))))
+      ((sensitivity-tagged-value? v)
+       (let ((u-prime (make-sensitivity-tagged-value 'unfilled)))
+	(loop (sensitivity-tagged-value-primal v)
+	      (cons (cons v u-prime) cs)
+	      (lambda (v-prime cs)
+	       (fill-sensitivity-tagged-value-primal! u-prime v-prime)
+	       (k u-prime cs)))))
+      ((reverse-tagged-value? v)
+       (let ((u-prime (make-reverse-tagged-value 'unfilled)))
+	(loop (reverse-tagged-value-primal v)
+	      (cons (cons v u-prime) cs)
+	      (lambda (v-prime cs)
+	       (fill-reverse-tagged-value-primal! u-prime v-prime)
+	       (k u-prime cs)))))
+      ((tagged-pair? v)
+       (let ((u-prime
+	      (make-tagged-pair (tagged-pair-tags v) 'unfilled 'unfilled)))
+	(loop (tagged-pair-car v)
+	      (cons (cons v u-prime) cs)
+	      (lambda (v-car-prime cs)
+	       (loop (tagged-pair-cdr v)
+		     cs
+		     (lambda (v-cdr-prime cs)
+		      (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+		      (k u-prime cs)))))))
+      (else (internal-error))))))))
+
+(define (debugging-limit-depth limit match? type? v)
  (if (eq? limit #f)
      v
      (let loop ((v v))
@@ -5853,6 +6013,19 @@
 	   (let* ((v1-v2
 		   (pick-values-to-coalesce-for-depth-limit match? type? path))
 		  (v-prime (reduce-depth v (first v1-v2) (second v1-v2))))
+	    (assert (abstract-value-subset? v v-prime))
+	    (loop v-prime)))))))
+
+(define (limit-depth limit match? type? v)
+ (if (eq? limit #f)
+     v
+     (let loop ((v v))
+      (let ((path (path-of-depth-greater-than-limit limit match? type? v)))
+       (if (eq? path #f)
+	   v
+	   (let* ((u1-u2
+		   (pick-values-to-coalesce-for-depth-limit match? type? path))
+		  (v-prime (reduce-depth v (first u1-u2) (second u1-u2))))
 	    (assert (abstract-value-subset? v v-prime))
 	    (loop v-prime)))))))
 
@@ -5892,10 +6065,30 @@
 (define (backpropagator? u)
  ;; needs work: This is a kludge and might not work because some
  ;;             backpropagators might be unsensitizable.
- (and (closure? u) (sensitivity-value? u) (not (unsensitize? u))))
+ (and (nonrecursive-closure? u) (sensitivity-value? u) (not (unsensitize? u))))
 
+(define (backpropagator-match? u1 u2)
+ (when (nonrecursive-closure-match? u1 u2)
+  (let ((n (countq #t
+		   (map abstract-value=?
+			(nonrecursive-closure-values u1)
+			(nonrecursive-closure-values u2)))))
+   (when (= n (length (nonrecursive-closure-values u1)))
+    (panic "debugging2"))))
+ (and (nonrecursive-closure-match? u1 u2)
+      (let ((p?s (map abstract-value=?
+		      (nonrecursive-closure-values u1)
+		      (nonrecursive-closure-values u2))))
+       (= (countq #t p?s) (- (length (nonrecursive-closure-values u1)) 1))
+       (every backpropagator?
+	      (union-members (list-ref (nonrecursive-closure-values u1)
+				       (positionq #f p?s))))
+       (every backpropagator?
+	      (union-members (list-ref (nonrecursive-closure-values u2)
+				       (positionq #f p?s)))))))
 (define (limit-backpropagator-depth v)
- (limit-depth *backpropagator-depth-limit* closure-match? backpropagator? v))
+ (limit-depth
+  *backpropagator-depth-limit* backpropagator-match? backpropagator? v))
 
 (define (limit-closure-depth v)
  (limit-depth *closure-depth-limit* closure-match? closure? v))
@@ -6537,7 +6730,7 @@
 (define (value-max-width v)
  ;; This is written in CPS so as not to break structure sharing.
  (let outer ((v v) (vs '()) (n 0) (k (lambda (n vs) n)))
-  (cond ((real? v) (k n vs))
+  (cond ((real? v) (k (max n 1) vs))
 	((memq v vs) (k n vs))
 	((union? v)
 	 (let inner ((us (union-members v))
@@ -6546,10 +6739,10 @@
 	  (if (null? us)
 	      (k n vs)
 	      (outer (first us) vs n (lambda (n vs) (inner (rest us) vs n))))))
-	((scalar-value? v) (k n vs))
+	((scalar-value? v) (k (max n 1) vs))
 	(else (let inner ((vs1 (aggregate-value-values v))
 			  (vs (cons v vs))
-			  (n n))
+			  (n (max n 1)))
 	       (if (null? vs1)
 		   (k n vs)
 		   (outer (first vs1)
