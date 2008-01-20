@@ -1007,8 +1007,6 @@
 	  (or (contains-letrec? (cons-expression-car e))
 	      (contains-letrec? (cons-expression-cdr e))))))
 
-(define *unsafe?* #f)
-
 (define (let*? e)
  ;; This is a stronger check than:
  ;;  2. No letrec nested in a let* expression or body can reference a variable
@@ -1016,11 +1014,8 @@
  (and
   (application? e)
   (lambda-expression? (application-callee e))
-  (or
-   *unsafe?*
-   (and
-    (not (contains-letrec? (lambda-expression-body (application-callee e))))
-    (not (contains-letrec? (application-argument e)))))))
+  (and (not (contains-letrec? (lambda-expression-body (application-callee e))))
+       (not (contains-letrec? (application-argument e))))))
 
 (define (let*-parameters e)
  (if (let*? e)
@@ -2249,11 +2244,7 @@
    (cond
     (found? (k (cdr found?) cs))
     ((union? v1)
-     (unless (or (empty-abstract-value? v1)
-		 (and (every vlad-boolean? (union-members v1))
-		      (every vlad-boolean? (union-members v2)))
-		 (and (every backpropagator? (union-members v1))
-		      (every backpropagator? (union-members v2))))
+     (unless (abstract-value-unionable? v1 v2)
       (compile-time-error "Program is not union-free: ~s ~s"
 			  (externalize v1)
 			  (externalize v2)))
@@ -2267,12 +2258,7 @@
 		   (make-union us))))
       (k u (cons (cons (cons v1 v2) u) cs))))
     ((union? v2)
-     (unless (or #t			;debugging
-		 (empty-abstract-value? v2)
-		 (and (vlad-boolean? v1)
-		      (every vlad-boolean? (union-members v2)))
-		 (and (backpropagator? v1)
-		      (every backpropagator? (union-members v2))))
+     (unless (abstract-value-unionable? v1 v2)
       (compile-time-error "Program is not union-free: ~s ~s"
 			  (externalize v1)
 			  (externalize v2)))
@@ -3140,18 +3126,11 @@
   (anf-result (anf-convert-expression
 	       (anf-max e) (lambda-expression-body e) '() '() #t #t))))
 
-(define (debugging-anf-convert-lambda-expression-shallow e)
- (let ((unsafe? *unsafe?*))
-  (set! *unsafe?* #f)
-  (let ((result
-	 (new-lambda-expression
-	  (lambda-expression-parameter e)
-	  (anf-result
-	   (anf-convert-expression
-	    (anf-max e) (lambda-expression-body e) '() '() #t #f)))))
-   ;;(pp (externalize-expression e)) (newline) (pp (externalize-expression result)) (newline)
-   (set! *unsafe?* unsafe?)
-   result)))
+(define (anf-convert-lambda-expression-for-reverse e)
+ (new-lambda-expression
+  (lambda-expression-parameter e)
+  (anf-result (anf-convert-expression
+	       (anf-max e) (lambda-expression-body e) '() '() #t #f))))
 
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
@@ -4233,7 +4212,7 @@
 ;;; We no longer check for unsupported letrec-expression parameter.
 (define (sensitivityify-parameter p) (sensitivity-transform p))
 
-(define (reverseify-parameter p debugging)
+(define (reverseify-parameter p)
  (cond
   ((constant-expression? p)
    (without-abstract
@@ -4258,12 +4237,9 @@
     (reverseify-access (letrec-expression-body p))))
   ((cons-expression? p)
    (new-cons-expression (add-tag 'reverse (cons-expression-tags p))
-			(reverseify-parameter (cons-expression-car p) debugging)
-			(reverseify-parameter (cons-expression-cdr p) debugging)))
-  (else
-   (write debugging) (newline)
-   (write (externalize-expression p)) (newline)
-   (internal-error))))
+			(reverseify-parameter (cons-expression-car p))
+			(reverseify-parameter (cons-expression-cdr p))))
+  (else (internal-error))))
 
 (define (sensitivity-transform e)
  (if (and (lambda-expression? e) (lambda-expression-sensitivity-transform e))
@@ -4352,7 +4328,7 @@
 	      ;; straightforwardly from an expression that is already alpha
 	      ;; converted.
 	      (new-lambda-expression
-	       (reverseify-parameter p 'debugging1)
+	       (reverseify-parameter p)
 	       (new-letrec-expression
 		(map reverseify xs1)
 		(if (letrec-expression? e1)
@@ -4371,7 +4347,7 @@
 		    ;; p = v -~-> p = v
 		    ((constant-expression? e)
 		     (make-parameter-binding
-		      (reverseify-parameter p 'debugging2)
+		      (reverseify-parameter p)
 		      (without-abstract
 		       (lambda ()
 			(new-constant-expression
@@ -4381,20 +4357,20 @@
 		    ;; p = e -~-> p = e
 		    ((variable-access-expression? e)
 		     (make-parameter-binding
-		      (reverseify-parameter p 'debugging3) (reverseify-access e)))
+		      (reverseify-parameter p) (reverseify-access e)))
 		    ;;                /   /
 		    ;;                _   ______
 		    ;; p = \ x e -~-> p = \ x e
 		    ((lambda-expression? e)
 		     (make-parameter-binding
-		      (reverseify-parameter p 'debugging4) (reverse-transform e)))
+		      (reverseify-parameter p) (reverse-transform e)))
 		    ;;                /     /  /
 		    ;;                _ _   __ __
 		    ;; p = x1 x2 -~-> p,p = x1 x2
 		    ((application? e)
 		     (make-parameter-binding
 		      (create-cons-expression
-		       (reverseify-parameter p 'debugging5)
+		       (reverseify-parameter p)
 		       (new-variable-access-expression x))
 		      (new-application
 		       (reverseify-access (application-callee e))
@@ -4404,7 +4380,7 @@
 		    ;; p = x1,x2 -~-> p = x1 , x2
 		    ((cons-expression? e)
 		     (make-parameter-binding
-		      (reverseify-parameter p 'debugging6)
+		      (reverseify-parameter p)
 		      (new-cons-expression
 		       (add-tag 'reverse (cons-expression-tags e))
 		       (reverseify-access (cons-expression-car e))
@@ -4417,9 +4393,9 @@
 		 ;; backpropagator.
 		 (create-cons-expression
 		  ;; This is the result of the forward phase.
-		  (reverseify-parameter (anf-parameter e1) 'debugging7)
+		  (reverseify-parameter (anf-parameter e1))
 		  ;; This is the backpropagator.
-		  (debugging-anf-convert-lambda-expression-shallow
+		  (anf-convert-lambda-expression-for-reverse
 		   (alpha-convert
 		    (new-lambda-expression
 		     (sensitivityify-access (anf-parameter e1))
@@ -6158,22 +6134,48 @@
 (define (backpropagator? u)
  ;; needs work: This is a kludge and might not work because some
  ;;             backpropagators might be unsensitizable.
- (and (nonrecursive-closure? u) (sensitivity-value? u) (not (unsensitize? u))))
+ (and (nonrecursive-closure? u)
+      (not (null? (value-tags u)))
+      ;; An optimization
+      (memq 'sensitivity (value-tags u))
+      (case (first (value-tags u))
+       ((perturbation) (backpropagator? (unperturb u)))
+       ((forward) (backpropagator? (primal u)))
+       ((sensitivity)
+	(or (not (unsensitize? u)) (backpropagator? (unsensitize u))))
+       ((reverse) (backpropagator? (*j-inverse u)))
+       (else (internal-error)))))
 
 (define (backpropagator-variable? x)
  (or (and (list? x)
+	  (= (length x) 3)
+	  (eq? (first x) 'alpha)
+	  (backpropagator-variable? (second x))
+	  (integer? (third x))
+	  (exact? (third x))
+	  (not (negative? (third x))))
+     (and (list? x)
 	  (= (length x) 2)
 	  (eq? (first x) 'backpropagator)
 	  (integer? (second x))
 	  (exact? (second x))
 	  (not (negative? (second x))))
      (and (list? x)
-	  (= (length x) 3)
-	  (eq? (first x) 'alpha)
-	  (backpropagator-variable? (second x))
-	  (integer? (third x))
-	  (exact? (third x))
-	  (not (negative? (third x))))))
+	  (= (length x) 2)
+	  (eq? (first x) 'perturbation)
+	  (backpropagator-variable? (second x)))
+     (and (list? x)
+	  (= (length x) 2)
+	  (eq? (first x) 'forward)
+	  (backpropagator-variable? (second x)))
+     (and (list? x)
+	  (= (length x) 2)
+	  (eq? (first x) 'sensitivity)
+	  (backpropagator-variable? (second x)))
+     (and (list? x)
+	  (= (length x) 2)
+	  (eq? (first x) 'reverse)
+	  (backpropagator-variable? (second x)))))
 
 (define (backpropagator-match? u1 u2)
  (and
@@ -7007,7 +7009,7 @@
 
 (define (verbosity)
  (format #t
-	 "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max size: ~s, max width: ~s~%concrete reals: ~s~%"
+	 "expressions: ~s, |analysis|=~s, max flow size: ~s~%unions: ~s, bottoms: ~s, max size: ~s, max width: ~s, max depth: ~s~%concrete reals: ~s~%"
 	 (count-if
 	  (lambda (e) (not (null? (expression-environment-bindings e))))
 	  *expressions*)
@@ -7017,7 +7019,32 @@
 	 (bottoms-in-analysis)
 	 (analysis-max-size)
 	 (analysis-max-width)
+	 (debugging4)
 	 (concrete-reals-in-analysis)))
+
+(define (debugging4)
+ (map-reduce
+  max
+  0
+  (lambda (e)
+   (map-reduce
+    max
+    0
+    (lambda (b)
+     (max (map-reduce max 0 debugging3 (environment-binding-values b))
+	  (debugging3 (environment-binding-value b))))
+    (expression-environment-bindings e)))
+  *expressions*))
+
+(define (debugging3 v)
+ (let loop ((v v) (vs '()))
+  (cond ((memq v vs) 0)
+	((union? v)
+	 (map-reduce max 0 (lambda (u) (loop u (cons v vs))) (union-values v)))
+	((scalar-value? v) 0)
+	(else (+ (map-reduce
+		  max 0 (lambda (u) (loop u vs)) (aggregate-value-values v))
+		 1)))))
 
 (define (flow-analysis! e bs)
  (set! *abstract?* #t)
