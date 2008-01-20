@@ -5941,24 +5941,6 @@
 		   (let ((path (outer (first vs) (cons v path))))
 		    (if (eq? path #f) (inner (rest vs)) path))))))))
 
-(define (debugging-pick-values-to-coalesce-for-depth-limit match? type? path)
- (let* ((classes (transitive-equivalence-classesp
-		  match? (remove-if-not type? (remove-if union? path))))
-	(k (map-reduce max 0 length classes))
-	(positions
-	 (sort (map (lambda (u) (positionq u path))
-		    (find-if (lambda (us) (= (length us) k)) classes))
-	       >
-	       identity)))
-  (list (if (and (not (zero? (second positions)))
-		 (union? (list-ref path (- (second positions) 1))))
-	    (list-ref path (- (second positions) 1))
-	    (list-ref path (second positions)))
-	(if (and (not (zero? (first positions)))
-		 (union? (list-ref path (- (first positions) 1))))
-	    (list-ref path (- (first positions) 1))
-	    (list-ref path (first positions))))))
-
 (define (pick-values-to-coalesce-for-depth-limit match? type? path)
  (let* ((classes (transitive-equivalence-classesp
 		  match? (remove-if-not type? (remove-if union? path))))
@@ -5971,23 +5953,18 @@
   (list (list-ref path (second positions))
 	(list-ref path (first positions)))))
 
-(define (debugging-reduce-depth v v1 v2)
+(define (reduce-depth v u1 u2)
  ;; This is written in CPS so as not to break structure sharing.
  (copy-abstract-value
-  ;; This does a shallow copy when v1 and/or v2 are not unions so that the
-  ;; (or (eq? v v1) (eq? v v2)) below isn't triggered. This assumes that v1
-  ;; and v2 aren't scalars.
-  (let ((v12 (map-union (lambda (u)
-			 (if (or (eq? u v1) (eq? u v2))
-			     (make-aggregate-value-with-new-values
-			      u (aggregate-value-values u))
-			     u))
-			(abstract-value-union v1 v2))))
+  (let ((u12 (make-aggregate-value-with-new-values
+	      u1 (map abstract-value-union
+		      (aggregate-value-values u1)
+		      (aggregate-value-values u2)))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
-      ((or (eq? v v1) (eq? v v2)) (loop v12 cs k))
+      ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
       ((union? v)
        (let ((v-prime (make-union 'unfilled)))
 	(map-cps loop
@@ -6073,125 +6050,6 @@
 		      (k u-prime cs)))))))
       (else (internal-error))))))))
 
-(define (reduce-depth v u1 u2)
- ;; This is written in CPS so as not to break structure sharing.
- (begin (format #t "Bingo~%")
-	(pp (debugging-externalize u1))
-	(newline)
-	(pp (debugging-externalize u2))
-	(newline))
- (let ((debugging
-	(copy-abstract-value
-	 (let ((u12 (make-aggregate-value-with-new-values
-		     u1 (map abstract-value-union
-			     (aggregate-value-values u1)
-			     (aggregate-value-values u2)))))
-	  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
-	   (let ((found? (assq v cs)))
-	    (cond
-	     (found? (k (cdr found?) cs))
-	     ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
-	     ((union? v)
-	      (let ((v-prime (make-union 'unfilled)))
-	       (map-cps loop
-			(union-members v)
-			(cons (cons v v-prime) cs)
-			(lambda (us-prime cs)
-			 (fill-union-values! v-prime us-prime)
-			 (k v-prime cs)))))
-	     ((vlad-empty-list? v)
-	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-	     ((vlad-true? v)
-	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-	     ((vlad-false? v)
-	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-	     ((vlad-real? v)
-	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-	     ((primitive-procedure? v)
-	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-	     ((nonrecursive-closure? v)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-prime (make-nonrecursive-closure
-			      'unfilled (nonrecursive-closure-lambda-expression v))))
-	       (map-cps loop
-			(nonrecursive-closure-values v)
-			(cons (cons v u-prime) cs)
-			(lambda (vs-prime cs)
-			 (fill-nonrecursive-closure-values! u-prime vs-prime)
-			 (k u-prime cs)))))
-	     ((recursive-closure? v)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-prime
-		     (make-recursive-closure 'unfilled
-					     (recursive-closure-procedure-variables v)
-					     (recursive-closure-lambda-expressions v)
-					     (recursive-closure-index v))))
-	       (map-cps loop
-			(recursive-closure-values v)
-			(cons (cons v u-prime) cs)
-			(lambda (vs-prime cs)
-			 (fill-recursive-closure-values! u-prime vs-prime)
-			 (k u-prime cs)))))
-	     ((perturbation-tagged-value? v)
-	      (let ((u-prime (make-perturbation-tagged-value 'unfilled)))
-	       (loop (perturbation-tagged-value-primal v)
-		     (cons (cons v u-prime) cs)
-		     (lambda (v-prime cs)
-		      (fill-perturbation-tagged-value-primal! u-prime v-prime)
-		      (k u-prime cs)))))
-	     ((bundle? v)
-	      (let ((u-prime (make-bundle  'unfilled 'unfilled)))
-	       (loop (bundle-primal v)
-		     (cons (cons v u-prime) cs)
-		     (lambda (v-primal-prime cs)
-		      (loop (bundle-tangent v)
-			    cs
-			    (lambda (v-tangent-prime cs)
-			     (fill-bundle! u-prime v-primal-prime v-tangent-prime)
-			     (k u-prime cs)))))))
-	     ((sensitivity-tagged-value? v)
-	      (let ((u-prime (make-sensitivity-tagged-value 'unfilled)))
-	       (loop (sensitivity-tagged-value-primal v)
-		     (cons (cons v u-prime) cs)
-		     (lambda (v-prime cs)
-		      (fill-sensitivity-tagged-value-primal! u-prime v-prime)
-		      (k u-prime cs)))))
-	     ((reverse-tagged-value? v)
-	      (let ((u-prime (make-reverse-tagged-value 'unfilled)))
-	       (loop (reverse-tagged-value-primal v)
-		     (cons (cons v u-prime) cs)
-		     (lambda (v-prime cs)
-		      (fill-reverse-tagged-value-primal! u-prime v-prime)
-		      (k u-prime cs)))))
-	     ((tagged-pair? v)
-	      (let ((u-prime
-		     (make-tagged-pair (tagged-pair-tags v) 'unfilled 'unfilled)))
-	       (loop (tagged-pair-car v)
-		     (cons (cons v u-prime) cs)
-		     (lambda (v-car-prime cs)
-		      (loop (tagged-pair-cdr v)
-			    cs
-			    (lambda (v-cdr-prime cs)
-			     (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
-			     (k u-prime cs)))))))
-	     (else (internal-error)))))))))
-  (pp (debugging-externalize debugging))
-  (newline)
-  debugging))
-
-(define (debugging-limit-depth limit match? type? v)
- (if (eq? limit #f)
-     v
-     (let loop ((v v))
-      (let ((path (path-of-depth-greater-than-limit limit match? type? v)))
-       (if (eq? path #f)
-	   v
-	   (let* ((v1-v2
-		   (pick-values-to-coalesce-for-depth-limit match? type? path))
-		  (v-prime (reduce-depth v (first v1-v2) (second v1-v2))))
-	    (assert (abstract-value-subset? v v-prime))
-	    (loop v-prime)))))))
-
 (define (limit-depth limit match? type? v)
  (if (eq? limit #f)
      v
@@ -6243,21 +6101,38 @@
  ;;             backpropagators might be unsensitizable.
  (and (nonrecursive-closure? u) (sensitivity-value? u) (not (unsensitize? u))))
 
+(define (backpropagator-variable? x)
+ (or (and (list? x)
+	  (= (length x) 2)
+	  (eq? (first x) 'backpropagator)
+	  (integer? (second x))
+	  (exact? (second x))
+	  (not (negative? (second x))))
+     (and (list? x)
+	  (= (length x) 3)
+	  (eq? (first x) 'alpha)
+	  (backpropagator-variable? (second x))
+	  (integer? (third x))
+	  (exact? (third x))
+	  (not (negative? (third x))))))
+
 (define (backpropagator-match? u1 u2)
- (and (nonrecursive-closure-match? u1 u2)
-      (every abstract-value-unionable?
-	     (nonrecursive-closure-values u1)
-	     (nonrecursive-closure-values u2))
-      (let ((p?s (map abstract-value=?
-		      (nonrecursive-closure-values u1)
-		      (nonrecursive-closure-values u2))))
-       (and (= (countq #t p?s) (- (length (nonrecursive-closure-values u1)) 1))
-	    (every backpropagator?
-		   (union-members (list-ref (nonrecursive-closure-values u1)
-					    (positionq #f p?s))))
-	    (every backpropagator?
-		   (union-members (list-ref (nonrecursive-closure-values u2)
-					    (positionq #f p?s))))))))
+ (and
+  (nonrecursive-closure-match? u1 u2)
+  (every abstract-value-unionable?
+	 (nonrecursive-closure-values u1)
+	 (nonrecursive-closure-values u2))
+  (let ((p?s (map abstract-value=?
+		  (nonrecursive-closure-values u1)
+		  (nonrecursive-closure-values u2))))
+   (and (= (countq #t p?s) (- (length (nonrecursive-closure-values u1)) 1))
+	(backpropagator-variable?
+	 (list-ref (free-variables (nonrecursive-closure-lambda-expression u1))
+		   (positionq #f p?s)))
+	(backpropagator-variable?
+	 (list-ref (free-variables (nonrecursive-closure-lambda-expression u2))
+		   (positionq #f p?s)))))))
+
 (define (limit-backpropagator-depth v)
  (limit-depth
   *backpropagator-depth-limit* backpropagator-match? backpropagator? v))
