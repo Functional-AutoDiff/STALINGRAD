@@ -5732,18 +5732,27 @@
 		    (find-if (lambda (us) (= (length us) k)) classes))
 	       >
 	       identity)))
-  (list (list-ref path (second positions))
-	(list-ref path (first positions)))))
+  (list (if (and (not (zero? (second positions)))
+		 (union? (list-ref path (- (second positions) 1))))
+	    (list-ref path (- (second positions) 1))
+	    (list-ref path (second positions)))
+	(if (and (not (zero? (first positions)))
+		 (union? (list-ref path (- (first positions) 1))))
+	    (list-ref path (- (first positions) 1))
+	    (list-ref path (first positions))))))
 
 (define (reduce-depth v v1 v2)
  ;; This is written in CPS so as not to break structure sharing.
  (copy-abstract-value
-  ;; This does a shallow copy so that the eq? v1 or eq?v2 below isn't
-  ;; triggered. This assumes that v1 and v2 aren't unions or scalars.
-  (let ((v12 (abstract-value-union (make-aggregate-value-with-new-values
-				    v1 (aggregate-value-values v1))
-				   (make-aggregate-value-with-new-values
-				    v2 (aggregate-value-values v2)))))
+  ;; This does a shallow copy when v1 and/or v2 are not unions so that the
+  ;; (or (eq? v v1) (eq? v v2)) below isn't triggered. This assumes that v1
+  ;; and v2 aren't scalars.
+  (let ((v12 (map-union (lambda (u)
+			 (if (or (eq? u v1) (eq? u v2))
+			     (make-aggregate-value-with-new-values
+			      u (aggregate-value-values u))
+			     u))
+			(abstract-value-union v1 v2))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
@@ -5845,22 +5854,6 @@
 		   (pick-values-to-coalesce-for-depth-limit match? type? path))
 		  (v-prime (reduce-depth v (first v1-v2) (second v1-v2))))
 	    (assert (abstract-value-subset? v v-prime))
-	    ;; debugging
-	    (begin
-	     (format #t "Bingo~%")
-	     (write (depth match? type? path))
-	     (newline)
-	     (pp (debugging-externalize v))
-	     (newline)
-	     (pp (debugging-externalize v-prime))
-	     (newline)
-	     (pp (map debugging-externalize path))
-	     (newline)
-	     (pp (debugging-externalize (first v1-v2)))
-	     (newline)
-	     (pp (debugging-externalize (second v1-v2)))
-	     (newline)
-	     (when (abstract-value=? v v-prime) (exit -1)))
 	    (loop v-prime)))))))
 
 ;;; Syntactic Constraints
