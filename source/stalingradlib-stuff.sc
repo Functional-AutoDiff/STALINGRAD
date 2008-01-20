@@ -1122,9 +1122,9 @@
 
 (define (vlad-empty-list) '())
 
-(define (vlad-empty-list? v)
- (assert (not (union? v)))
- (null? v))
+(define (vlad-empty-list? u)
+ (assert (not (union? u)))
+ (null? u))
 
 ;;; Booleans
 
@@ -1132,46 +1132,45 @@
 
 (define (vlad-false) #f)
 
-(define (vlad-true? v)
- (assert (not (union? v)))
- (eq? v #t))
+(define (vlad-true? u)
+ (assert (not (union? u)))
+ (eq? u #t))
 
-(define (vlad-false? v)
- (assert (not (union? v)))
- (eq? v #f))
+(define (vlad-false? u)
+ (assert (not (union? u)))
+ (eq? u #f))
 
-(define (vlad-boolean? v) (or (vlad-true? v) (vlad-false? v)))
+(define (vlad-boolean? u) (or (vlad-true? u) (vlad-false? u)))
 
 ;;; Reals
 
 (define (abstract-real) 'real)
 
-(define (is-abstract-real? v)
- (assert (not (union? v)))
- (eq? v 'real))
+(define (is-abstract-real? u)
+ (assert (not (union? u)))
+ (eq? u 'real))
 
-(define (vlad-real? v)
- (assert (not (union? v)))
- (or (real? v) (is-abstract-real? v)))
+(define (vlad-real? u)
+ (assert (not (union? u)))
+ (or (real? u) (is-abstract-real? u)))
 
 ;;; Closures
 
 (define (create-nonrecursive-closure vs e)
  (if #f
-     (let ((v0
-	    (find-if
-	     (lambda (v0)
-	      (and
-	       ;; The first condition is an optimization.
-	       (= (length (nonrecursive-closure-values v0)) (length vs))
-	       (expression=? (nonrecursive-closure-lambda-expression v0) e)
-	       (every abstract-value=? (nonrecursive-closure-values v0) vs)))
-	     *nonrecursive-closures*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-nonrecursive-closure vs e)))
-	   (set! *nonrecursive-closures* (cons v0 *nonrecursive-closures*))
-	   v0)))
+     (let ((u (find-if
+	       (lambda (u)
+		(and
+		 ;; The first condition is an optimization.
+		 (= (length (nonrecursive-closure-values u)) (length vs))
+		 (expression=? (nonrecursive-closure-lambda-expression u) e)
+		 (every abstract-value=? (nonrecursive-closure-values u) vs)))
+	       *nonrecursive-closures*)))
+      (if u
+	  u
+	  (let ((u (make-nonrecursive-closure vs e)))
+	   (set! *nonrecursive-closures* (cons u *nonrecursive-closures*))
+	   u)))
      (make-nonrecursive-closure vs e)))
 
 (define (new-nonrecursive-closure vs e)
@@ -1231,33 +1230,33 @@
 
 (define (create-recursive-closure vs xs es i)
  (if #f
-     (let ((v0 (find-if
-		(lambda (v0)
-		 (and
-		  (= (recursive-closure-index v0) i)
-		  (= (vector-length (recursive-closure-procedure-variables v0))
-		     (vector-length xs))
-		  (= (vector-length (recursive-closure-lambda-expressions v0))
-		     (vector-length es))
-		  ;; This is an optimization.
-		  (= (length (recursive-closure-values v0)) (length vs))
-		  (let ((xs1 (append
-			      (recursive-closure-variables v0)
-			      (vector->list
-			       (recursive-closure-procedure-variables v0))))
-			(xs2 (append (recursive-closure-free-variables
-				      (vector->list xs) (vector->list es))
-				     (vector->list xs))))
-		   (every-vector
-		    (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		    (recursive-closure-lambda-expressions v0)
-		    es))))
-		*recursive-closures*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-recursive-closure vs xs es i)))
-	   (set! *recursive-closures* (cons v0 *recursive-closures*))
-	   v0)))
+     (let ((u (find-if
+	       (lambda (u)
+		(and
+		 (= (recursive-closure-index u) i)
+		 (= (vector-length (recursive-closure-procedure-variables u))
+		    (vector-length xs))
+		 (= (vector-length (recursive-closure-lambda-expressions u))
+		    (vector-length es))
+		 ;; This is an optimization.
+		 (= (length (recursive-closure-values u)) (length vs))
+		 (let ((xs1 (append
+			     (recursive-closure-variables u)
+			     (vector->list
+			      (recursive-closure-procedure-variables u))))
+		       (xs2 (append (recursive-closure-free-variables
+				     (vector->list xs) (vector->list es))
+				    (vector->list xs))))
+		  (every-vector
+		   (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
+		   (recursive-closure-lambda-expressions u)
+		   es))))
+	       *recursive-closures*)))
+      (if u
+	  u
+	  (let ((u (make-recursive-closure vs xs es i)))
+	   (set! *recursive-closures* (cons u *recursive-closures*))
+	   u)))
      (make-recursive-closure vs xs es i)))
 
 (define (new-recursive-closure vs xs es i)
@@ -1307,37 +1306,37 @@
    (eq? (recursive-closure-values u) 'unfilled)))
  (set-recursive-closure-values! u vs))
 
-(define (nonrecursive-closure-match? v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
+(define (nonrecursive-closure-match? u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
  ;; The first condition is an optimization.
- (and (= (length (nonrecursive-closure-values v1))
-	 (length (nonrecursive-closure-values v2)))
-      (expression=? (nonrecursive-closure-lambda-expression v1)
-		    (nonrecursive-closure-lambda-expression v2))))
+ (and (= (length (nonrecursive-closure-values u1))
+	 (length (nonrecursive-closure-values u2)))
+      (expression=? (nonrecursive-closure-lambda-expression u1)
+		    (nonrecursive-closure-lambda-expression u2))))
 
-(define (recursive-closure-match? v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
- (and (= (recursive-closure-index v1) (recursive-closure-index v2))
-      (= (vector-length (recursive-closure-procedure-variables v1))
-	 (vector-length (recursive-closure-procedure-variables v2)))
-      (= (vector-length (recursive-closure-lambda-expressions v1))
-	 (vector-length (recursive-closure-lambda-expressions v2)))
+(define (recursive-closure-match? u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
+ (and (= (recursive-closure-index u1) (recursive-closure-index u2))
+      (= (vector-length (recursive-closure-procedure-variables u1))
+	 (vector-length (recursive-closure-procedure-variables u2)))
+      (= (vector-length (recursive-closure-lambda-expressions u1))
+	 (vector-length (recursive-closure-lambda-expressions u2)))
       ;; This is an optimization.
-      (= (length (recursive-closure-values v1))
-	 (length (recursive-closure-values v2)))
+      (= (length (recursive-closure-values u1))
+	 (length (recursive-closure-values u2)))
       (let ((xs1 (append
-		  (recursive-closure-variables v1)
-		  (vector->list (recursive-closure-procedure-variables v1))))
+		  (recursive-closure-variables u1)
+		  (vector->list (recursive-closure-procedure-variables u1))))
 	    (xs2 (append
-		  (recursive-closure-variables v2)
-		  (vector->list (recursive-closure-procedure-variables v2)))))
+		  (recursive-closure-variables u2)
+		  (vector->list (recursive-closure-procedure-variables u2)))))
        (every-vector (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		     (recursive-closure-lambda-expressions v1)
-		     (recursive-closure-lambda-expressions v2)))))
+		     (recursive-closure-lambda-expressions u1)
+		     (recursive-closure-lambda-expressions u2)))))
 
-(define (closure? v)
- (assert (not (union? v)))
- (or (nonrecursive-closure? v) (recursive-closure? v)))
+(define (closure? u)
+ (assert (not (union? u)))
+ (or (nonrecursive-closure? u) (recursive-closure? u)))
 
 (define (closure-match? u1 u2)
  (assert (and (closure? u1) (closure? u2)))
@@ -1348,70 +1347,70 @@
 	  (recursive-closure? u2)
 	  (recursive-closure-match? u1 u2))))
 
-(define (nonrecursive-closure-variables v)
- (assert (not (union? v)))
- (free-variables (nonrecursive-closure-lambda-expression v)))
+(define (nonrecursive-closure-variables u)
+ (assert (not (union? u)))
+ (free-variables (nonrecursive-closure-lambda-expression u)))
 
-(define (recursive-closure-variables v)
- (assert (not (union? v)))
+(define (recursive-closure-variables u)
+ (assert (not (union? u)))
  (recursive-closure-free-variables
-  (vector->list (recursive-closure-procedure-variables v))
-  (vector->list (recursive-closure-lambda-expressions v))))
+  (vector->list (recursive-closure-procedure-variables u))
+  (vector->list (recursive-closure-lambda-expressions u))))
 
-(define (closure-variables v)
- (cond ((nonrecursive-closure? v) (nonrecursive-closure-variables v))
-       ((recursive-closure? v) (recursive-closure-variables v))
+(define (closure-variables u)
+ (cond ((nonrecursive-closure? u) (nonrecursive-closure-variables u))
+       ((recursive-closure? u) (recursive-closure-variables u))
        (else (internal-error))))
 
-(define (nonrecursive-closure-parameter v)
- (assert (not (union? v)))
- (lambda-expression-parameter (nonrecursive-closure-lambda-expression v)))
+(define (nonrecursive-closure-parameter u)
+ (assert (not (union? u)))
+ (lambda-expression-parameter (nonrecursive-closure-lambda-expression u)))
 
-(define (recursive-closure-parameter v)
- (assert (not (union? v)))
+(define (recursive-closure-parameter u)
+ (assert (not (union? u)))
  (lambda-expression-parameter
-  (vector-ref (recursive-closure-lambda-expressions v)
-	      (recursive-closure-index v))))
+  (vector-ref (recursive-closure-lambda-expressions u)
+	      (recursive-closure-index u))))
 
-(define (closure-parameter v)
- (cond ((nonrecursive-closure? v) (nonrecursive-closure-parameter v))
-       ((recursive-closure? v) (recursive-closure-parameter v))
+(define (closure-parameter u)
+ (cond ((nonrecursive-closure? u) (nonrecursive-closure-parameter u))
+       ((recursive-closure? u) (recursive-closure-parameter u))
        (else (internal-error))))
 
-(define (nonrecursive-closure-tags v)
- (assert (not (union? v)))
- (parameter-tags (nonrecursive-closure-parameter v)))
+(define (nonrecursive-closure-tags u)
+ (assert (not (union? u)))
+ (parameter-tags (nonrecursive-closure-parameter u)))
 
-(define (recursive-closure-tags v)
- (assert (not (union? v)))
- (parameter-tags (recursive-closure-parameter v)))
+(define (recursive-closure-tags u)
+ (assert (not (union? u)))
+ (parameter-tags (recursive-closure-parameter u)))
 
-(define (closure-body v)
+(define (closure-body u)
  (lambda-expression-body
-  (cond ((nonrecursive-closure? v) (nonrecursive-closure-lambda-expression v))
-	((recursive-closure? v)
-	 (vector-ref (recursive-closure-lambda-expressions v)
-		     (recursive-closure-index v)))
+  (cond ((nonrecursive-closure? u) (nonrecursive-closure-lambda-expression u))
+	((recursive-closure? u)
+	 (vector-ref (recursive-closure-lambda-expressions u)
+		     (recursive-closure-index u)))
 	(else (internal-error)))))
 
-(define (vlad-procedure? v)
- (assert (not (union? v)))
- (or (primitive-procedure? v) (closure? v)))
+(define (vlad-procedure? u)
+ (assert (not (union? u)))
+ (or (primitive-procedure? u) (closure? u)))
 
 ;;; Perturbation Tagged Values
 
 (define (create-perturbation-tagged-value v)
  (if #f
-     (let ((v0 (find-if
-		(lambda (v0)
-		 (abstract-value=? (perturbation-tagged-value-primal v0) v))
-		*perturbation-tagged-values*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-perturbation-tagged-value v)))
+     (let ((u (find-if
+	       (lambda (u)
+		(abstract-value=? (perturbation-tagged-value-primal u) v))
+	       *perturbation-tagged-values*)))
+      (if u
+	  u
+	  (let ((u (make-perturbation-tagged-value v)))
 	   (set! *perturbation-tagged-values*
-		 (cons v0 *perturbation-tagged-values*))
-	   v0)))
+		 (cons u *perturbation-tagged-values*))
+	   u)))
      (make-perturbation-tagged-value v)))
 
 (define (new-perturbation-tagged-value v)
@@ -1426,7 +1425,7 @@
 
 (define (some-bundlable? v v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
- ;; needs work: To cache proto abstract values in cs.
+ ;; here I am: To cache proto abstract values in cs.
  (let loop ((v v)
 	    (v-perturbation v-perturbation)
 	    (cs '())
@@ -1438,16 +1437,20 @@
 	  cs)))
    (cond
     (found? (k (cdr found?) cs))
-    ;; here I am
-    ((and (union? v) (union? v-perturbation))
+    ((union? v)
+     ;; here I am: check base case
      (let ((c (cons (cons v v-perturbation) #t)))
-      (some-cps (lambda (u cs k)
-		 (some-cps (lambda (u-perturbation cs k)
-			    (loop u u-perturbation cs k))
-			   (union-values v-perturbation)
-			   cs
-			   k))
+      (some-cps (lambda (u cs k) (loop u v-perturbation cs k))
 		(union-values v)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs)))))
+    ((union? v-perturbation)
+     ;; here I am: check base case
+     (let ((c (cons (cons v v-perturbation) #t)))
+      (some-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+		(union-values v-perturbation)
 		(cons c cs)
 		(lambda (r? cs)
 		 (set-cdr! c r?)
@@ -1542,7 +1545,7 @@
 
 (define (every-bundlable? v v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
- ;; needs work: To cache proto abstract values in cs.
+ ;; here I am: To cache proto abstract values in cs.
  (let loop ((v v)
 	    (v-perturbation v-perturbation)
 	    (cs '())
@@ -1554,16 +1557,20 @@
 	  cs)))
    (cond
     (found? (k (cdr found?) cs))
-    ;; here I am
-    ((and (union? v) (union? v-perturbation))
+    ((union? v)
+     ;; here I am: check base case
      (let ((c (cons (cons v v-perturbation) #t)))
-      (every-cps (lambda (u cs k)
-		  (every-cps (lambda (u-perturbation cs k)
-			      (loop u u-perturbation cs k))
-			     (union-values v-perturbation)
-			     cs
-			     k))
+      (every-cps (lambda (u cs k) (loop u v-perturbation cs k))
 		 (union-values v)
+		 (cons c cs)
+		 (lambda (r? cs)
+		  (set-cdr! c r?)
+		  (k r? cs)))))
+    ((union? v-perturbation)
+     ;; here I am: check base case
+     (let ((c (cons (cons v v-perturbation) #t)))
+      (every-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+		 (union-values v-perturbation)
 		 (cons c cs)
 		 (lambda (r? cs)
 		  (set-cdr! c r?)
@@ -1664,16 +1671,16 @@
 
 (define (create-bundle v v-perturbation)
  (if #f
-     (let ((v0 (find-if
-		(lambda (v0)
-		 (and (abstract-value=? (bundle-primal v0) v)
-		      (abstract-value=? (bundle-tangent v0) v-perturbation)))
-		*bundles*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-bundle v v-perturbation)))
-	   (set! *bundles* (cons v0 *bundles*))
-	   v0)))
+     (let ((u (find-if
+	       (lambda (u)
+		(and (abstract-value=? (bundle-primal u) v)
+		     (abstract-value=? (bundle-tangent u) v-perturbation)))
+	       *bundles*)))
+      (if u
+	  u
+	  (let ((u (make-bundle v v-perturbation)))
+	   (set! *bundles* (cons u *bundles*))
+	   u)))
      (make-bundle v v-perturbation)))
 
 (define (new-bundle v v-perturbation)
@@ -1697,16 +1704,16 @@
 
 (define (create-sensitivity-tagged-value v)
  (if #f
-     (let ((v0 (find-if
-		(lambda (v0)
-		 (abstract-value=? (sensitivity-tagged-value-primal v0) v))
-		*sensitivity-tagged-values*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-sensitivity-tagged-value v)))
+     (let ((u (find-if
+	       (lambda (u)
+		(abstract-value=? (sensitivity-tagged-value-primal u) v))
+	       *sensitivity-tagged-values*)))
+      (if u
+	  u
+	  (let ((u (make-sensitivity-tagged-value v)))
 	   (set! *sensitivity-tagged-values*
-		 (cons v0 *sensitivity-tagged-values*))
-	   v0)))
+		 (cons u *sensitivity-tagged-values*))
+	   u)))
      (make-sensitivity-tagged-value v)))
 
 (define (new-sensitivity-tagged-value v)
@@ -1721,14 +1728,14 @@
 
 (define (create-reverse-tagged-value v)
  (if #f
-     (let ((v0 (find-if (lambda (v0)
-			 (abstract-value=? (reverse-tagged-value-primal v0) v))
-			*reverse-tagged-values*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-reverse-tagged-value v)))
-	   (set! *reverse-tagged-values* (cons v0 *reverse-tagged-values*))
-	   v0)))
+     (let ((u (find-if (lambda (u)
+			(abstract-value=? (reverse-tagged-value-primal u) v))
+		       *reverse-tagged-values*)))
+      (if u
+	  u
+	  (let ((u (make-reverse-tagged-value v)))
+	   (set! *reverse-tagged-values* (cons u *reverse-tagged-values*))
+	   u)))
      (make-reverse-tagged-value v)))
 
 (define (new-reverse-tagged-value v)
@@ -1743,16 +1750,16 @@
 
 (define (create-tagged-pair tags v1 v2)
  (if #f
-     (let ((v0 (find-if (lambda (v0)
-			 (and (equal-tags? (tagged-pair-tags v0) tags)
-			      (abstract-value=? (tagged-pair-car v0) v1)
-			      (abstract-value=? (tagged-pair-cdr v0) v2)))
-			*tagged-pairs*)))
-      (if v0
-	  v0
-	  (let ((v0 (make-tagged-pair tags v1 v2)))
-	   (set! *tagged-pairs* (cons v0 *tagged-pairs*))
-	   v0)))
+     (let ((u (find-if (lambda (u)
+			(and (equal-tags? (tagged-pair-tags u) tags)
+			     (abstract-value=? (tagged-pair-car u) v1)
+			     (abstract-value=? (tagged-pair-cdr u) v2)))
+		       *tagged-pairs*)))
+      (if u
+	  u
+	  (let ((u (make-tagged-pair tags v1 v2)))
+	   (set! *tagged-pairs* (cons u *tagged-pairs*))
+	   u)))
      (make-tagged-pair tags v1 v2)))
 
 (define (new-tagged-pair tags v1 v2)
@@ -1791,17 +1798,17 @@
  (set-tagged-pair-car! u v1)
  (set-tagged-pair-cdr! u v2))
 
-(define (vlad-pair? v)
- (assert (not (union? v)))
- (and (tagged-pair? v) (empty-tags? (tagged-pair-tags v))))
+(define (vlad-pair? u)
+ (assert (not (union? u)))
+ (and (tagged-pair? u) (empty-tags? (tagged-pair-tags u))))
 
-(define (vlad-car v)
- (assert (vlad-pair? v))
- (tagged-pair-car v))
+(define (vlad-car u)
+ (assert (vlad-pair? u))
+ (tagged-pair-car u))
 
-(define (vlad-cdr v)
- (assert (vlad-pair? v))
- (tagged-pair-cdr v))
+(define (vlad-cdr u)
+ (assert (vlad-pair? u))
+ (tagged-pair-cdr u))
 
 (define (vlad-cons v1 v2) (new-tagged-pair (empty-tags) v1 v2))
 
@@ -1842,105 +1849,105 @@
 
 ;;; Generic
 
-(define (perturbation-value? v)
- (assert (not (union? v)))
- (or (and (nonrecursive-closure? v)
-	  (perturbation-parameter? (nonrecursive-closure-parameter v)))
-     (and (recursive-closure? v)
-	  (perturbation-parameter? (recursive-closure-parameter v)))
-     (perturbation-tagged-value? v)
-     (and (tagged-pair? v) (tagged? 'perturbation (tagged-pair-tags v)))))
+(define (perturbation-value? u)
+ (assert (not (union? u)))
+ (or (and (nonrecursive-closure? u)
+	  (perturbation-parameter? (nonrecursive-closure-parameter u)))
+     (and (recursive-closure? u)
+	  (perturbation-parameter? (recursive-closure-parameter u)))
+     (perturbation-tagged-value? u)
+     (and (tagged-pair? u) (tagged? 'perturbation (tagged-pair-tags u)))))
 
-(define (forward-value? v)
- (assert (not (union? v)))
- (or (and (nonrecursive-closure? v)
-	  (forward-parameter? (nonrecursive-closure-parameter v)))
-     (and (recursive-closure? v)
-	  (forward-parameter? (recursive-closure-parameter v)))
-     (bundle? v)
-     (and (tagged-pair? v) (tagged? 'forward (tagged-pair-tags v)))))
+(define (forward-value? u)
+ (assert (not (union? u)))
+ (or (and (nonrecursive-closure? u)
+	  (forward-parameter? (nonrecursive-closure-parameter u)))
+     (and (recursive-closure? u)
+	  (forward-parameter? (recursive-closure-parameter u)))
+     (bundle? u)
+     (and (tagged-pair? u) (tagged? 'forward (tagged-pair-tags u)))))
 
-(define (sensitivity-value? v)
+(define (sensitivity-value? u)
  ;; Backpropagators will be considered as sensitivity values. But you can't
  ;; unsensitize them. You need to invoke backpropagators so we can't prohibit
  ;; invocation of sensitivity-tagged procedures. Perhaps we could/should
  ;; prohibit invocation of perturbation-tagged procedures.
- (assert (not (union? v)))
- (or (and (nonrecursive-closure? v)
-	  (sensitivity-parameter? (nonrecursive-closure-parameter v)))
-     (and (recursive-closure? v)
-	  (sensitivity-parameter? (recursive-closure-parameter v)))
-     (sensitivity-tagged-value? v)
-     (and (tagged-pair? v) (tagged? 'sensitivity (tagged-pair-tags v)))))
+ (assert (not (union? u)))
+ (or (and (nonrecursive-closure? u)
+	  (sensitivity-parameter? (nonrecursive-closure-parameter u)))
+     (and (recursive-closure? u)
+	  (sensitivity-parameter? (recursive-closure-parameter u)))
+     (sensitivity-tagged-value? u)
+     (and (tagged-pair? u) (tagged? 'sensitivity (tagged-pair-tags u)))))
 
-(define (reverse-value? v)
- (assert (not (union? v)))
- (or (and (nonrecursive-closure? v)
-	  (reverse-parameter? (nonrecursive-closure-parameter v)))
-     (and (recursive-closure? v)
-	  (reverse-parameter? (recursive-closure-parameter v)))
-     (reverse-tagged-value? v)
-     (and (tagged-pair? v) (tagged? 'reverse (tagged-pair-tags v)))))
+(define (reverse-value? u)
+ (assert (not (union? u)))
+ (or (and (nonrecursive-closure? u)
+	  (reverse-parameter? (nonrecursive-closure-parameter u)))
+     (and (recursive-closure? u)
+	  (reverse-parameter? (recursive-closure-parameter u)))
+     (reverse-tagged-value? u)
+     (and (tagged-pair? u) (tagged? 'reverse (tagged-pair-tags u)))))
 
-(define (scalar-value? v)
- (assert (not (union? v)))
- (or (vlad-empty-list? v)
-     (vlad-true? v)
-     (vlad-false? v)
-     (vlad-real? v)
-     (primitive-procedure? v)))
+(define (scalar-value? u)
+ (assert (not (union? u)))
+ (or (vlad-empty-list? u)
+     (vlad-true? u)
+     (vlad-false? u)
+     (vlad-real? u)
+     (primitive-procedure? u)))
 
-(define (aggregate-value-values v)
+(define (aggregate-value-values u)
  (cond
-  ((nonrecursive-closure? v) (nonrecursive-closure-values v))
-  ((recursive-closure? v) (recursive-closure-values v))
-  ((perturbation-tagged-value? v) (list (perturbation-tagged-value-primal v)))
-  ((bundle? v) (list (bundle-primal v) (bundle-tangent v)))
-  ((sensitivity-tagged-value? v) (list (sensitivity-tagged-value-primal v)))
-  ((reverse-tagged-value? v) (list (reverse-tagged-value-primal v)))
-  ((tagged-pair? v) (list (tagged-pair-car v) (tagged-pair-cdr v)))
+  ((nonrecursive-closure? u) (nonrecursive-closure-values u))
+  ((recursive-closure? u) (recursive-closure-values u))
+  ((perturbation-tagged-value? u) (list (perturbation-tagged-value-primal u)))
+  ((bundle? u) (list (bundle-primal u) (bundle-tangent u)))
+  ((sensitivity-tagged-value? u) (list (sensitivity-tagged-value-primal u)))
+  ((reverse-tagged-value? u) (list (reverse-tagged-value-primal u)))
+  ((tagged-pair? u) (list (tagged-pair-car u) (tagged-pair-cdr u)))
   (else (internal-error))))
 
-(define (make-aggregate-value-with-new-values v vs)
+(define (make-aggregate-value-with-new-values u vs)
  (cond
-  ((nonrecursive-closure? v)
-   (new-nonrecursive-closure vs (nonrecursive-closure-lambda-expression v)))
-  ((recursive-closure? v)
+  ((nonrecursive-closure? u)
+   (new-nonrecursive-closure vs (nonrecursive-closure-lambda-expression u)))
+  ((recursive-closure? u)
    (new-recursive-closure vs
-			  (recursive-closure-procedure-variables v)
-			  (recursive-closure-lambda-expressions v)
-			  (recursive-closure-index v)))
-  ((perturbation-tagged-value? v)
+			  (recursive-closure-procedure-variables u)
+			  (recursive-closure-lambda-expressions u)
+			  (recursive-closure-index u)))
+  ((perturbation-tagged-value? u)
    (assert (= (length vs) 1))
    (new-perturbation-tagged-value (first vs)))
-  ((bundle? v)
+  ((bundle? u)
    (assert (= (length vs) 2))
    (new-bundle (first vs) (second vs)))
-  ((sensitivity-tagged-value? v)
+  ((sensitivity-tagged-value? u)
    (assert (= (length vs) 1))
    (new-sensitivity-tagged-value (first vs)))
-  ((reverse-tagged-value? v)
+  ((reverse-tagged-value? u)
    (assert (= (length vs) 1))
    (new-reverse-tagged-value (first vs)))
-  ((tagged-pair? v)
+  ((tagged-pair? u)
    (assert (= (length vs) 2))
-   (new-tagged-pair (tagged-pair-tags v) (first vs) (second vs)))
+   (new-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
   (else (internal-error))))
 
-(define (value-tags v)
- (assert (not (union? v)))
+(define (value-tags u)
+ (assert (not (union? u)))
  (cond
-  ((scalar-value? v) '())
-  ((nonrecursive-closure? v) (nonrecursive-closure-tags v))
-  ((recursive-closure? v) (recursive-closure-tags v))
-  ((perturbation-tagged-value? v)
-   (add-tag 'perturbation (value-tags (perturbation-tagged-value-primal v))))
-  ((bundle? v) (add-tag 'forward (value-tags (bundle-primal v))))
-  ((sensitivity-tagged-value? v)
-   (add-tag 'sensitivity (value-tags (sensitivity-tagged-value-primal v))))
-  ((reverse-tagged-value? v)
-   (add-tag 'reverse (value-tags (reverse-tagged-value-primal v))))
-  ((tagged-pair? v) (tagged-pair-tags v))
+  ((scalar-value? u) '())
+  ((nonrecursive-closure? u) (nonrecursive-closure-tags u))
+  ((recursive-closure? u) (recursive-closure-tags u))
+  ((perturbation-tagged-value? u)
+   (add-tag 'perturbation (value-tags (perturbation-tagged-value-primal u))))
+  ((bundle? u) (add-tag 'forward (value-tags (bundle-primal u))))
+  ((sensitivity-tagged-value? u)
+   (add-tag 'sensitivity (value-tags (sensitivity-tagged-value-primal u))))
+  ((reverse-tagged-value? u)
+   (add-tag 'reverse (value-tags (reverse-tagged-value-primal u))))
+  ((tagged-pair? u) (tagged-pair-tags u))
   (else (internal-error))))
 
 (define (some-value-tags p v)
@@ -2008,7 +2015,7 @@
  ;; recursion, there is no bound on the amount of multiplying out that may be
  ;; needed.
  ;; This is written in CPS so as not to break structure sharing.
- ;; needs work: To cache proto abstract values in cs.
+ ;; here I am: To cache proto abstract values in cs.
  (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
   (let ((found?
 	 (find-if
@@ -2112,7 +2119,7 @@
  ;; Only used in abstract-destructure and generate-destructure for generating
  ;; error messages.
  ;; This is written in CPS so as not to break structure sharing.
- ;; needs work: To cache proto abstract values in cs.
+ ;; here I am: To cache proto abstract values in cs.
  (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
   (let ((found?
 	 (find-if
@@ -2122,19 +2129,22 @@
     (found? (k (cdr found?) cs))
     ;; This is an optimization.
     ((and (eq? v1 v2) (not (empty-abstract-value? v1))) (k #t cs))
-    ;; here I am
-    ((and (union? v1) (union? v2))
+    ((union? v1)
      (let ((c (cons (cons v1 v2) #f)))
-      (some-cps
-       (lambda (u1 cs k)
-	(some-cps (lambda (u2 cs k) (loop u1 u2 cs k)) (union-values v2) cs k))
-       (union-values v1)
-       (cons c cs)
-       (lambda (r? cs)
-	(set-cdr! c r?)
-	(k r? cs)))))
-    ;; here I am
-    ((or (union? v1) (union? v2)) (internal-error))
+      (some-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		(union-values v1)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs)))))
+    ((union? v2)
+     (let ((c (cons (cons v1 v2) #f)))
+      (some-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		(union-values v2)
+		(cons c cs)
+		(lambda (r? cs)
+		 (set-cdr! c r?)
+		 (k r? cs)))))
     ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	 (and (vlad-true? v1) (vlad-true? v2))
 	 (and (vlad-false? v1) (vlad-false? v2))
@@ -6082,8 +6092,8 @@
      '())))
   (else (internal-error))))
 
-(define (construct-abstract-nonrecursive-environments v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
+(define (construct-abstract-nonrecursive-environments u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
  (map
   (lambda (alist)
    (map (lambda (x)
@@ -6091,52 +6101,52 @@
 	  (if result
 	      (cdr result)
 	      (list-ref
-	       (nonrecursive-closure-values v1)
-	       (positionp variable=? x (nonrecursive-closure-variables v1))))))
+	       (nonrecursive-closure-values u1)
+	       (positionp variable=? x (nonrecursive-closure-variables u1))))))
 	(free-variables (lambda-expression-body
-			 (nonrecursive-closure-lambda-expression v1)))))
-  (abstract-destructure (nonrecursive-closure-parameter v1) v2)))
+			 (nonrecursive-closure-lambda-expression u1)))))
+  (abstract-destructure (nonrecursive-closure-parameter u1) u2)))
 
-(define (construct-abstract-recursive-environments v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
+(define (construct-abstract-recursive-environments u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
  (map (lambda (alist)
        (map (lambda (x)
 	     (let ((result (assp variable=? x alist)))
 	      (cond
 	       (result (cdr result))
 	       ((some-vector (lambda (x1) (variable=? x x1))
-			     (recursive-closure-procedure-variables v1))
+			     (recursive-closure-procedure-variables u1))
 		(new-recursive-closure
-		 (recursive-closure-values v1)
-		 (recursive-closure-procedure-variables v1)
-		 (recursive-closure-lambda-expressions v1)
+		 (recursive-closure-values u1)
+		 (recursive-closure-procedure-variables u1)
+		 (recursive-closure-lambda-expressions u1)
 		 (positionp-vector
-		  variable=? x (recursive-closure-procedure-variables v1))))
+		  variable=? x (recursive-closure-procedure-variables u1))))
 	       (else
 		(list-ref
-		 (recursive-closure-values v1)
-		 (positionp variable=? x (recursive-closure-variables v1)))))))
+		 (recursive-closure-values u1)
+		 (positionp variable=? x (recursive-closure-variables u1)))))))
 	    (free-variables
 	     (lambda-expression-body
-	      (vector-ref (recursive-closure-lambda-expressions v1)
-			  (recursive-closure-index v1))))))
-      (abstract-destructure (recursive-closure-parameter v1) v2)))
+	      (vector-ref (recursive-closure-lambda-expressions u1)
+			  (recursive-closure-index u1))))))
+      (abstract-destructure (recursive-closure-parameter u1) u2)))
 
-(define (abstract-apply-closure p v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
- (cond ((nonrecursive-closure? v1)
+(define (abstract-apply-closure p u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
+ (cond ((nonrecursive-closure? u1)
 	(map (lambda (vs)
 	      (p (lambda-expression-body
-		  (nonrecursive-closure-lambda-expression v1))
+		  (nonrecursive-closure-lambda-expression u1))
 		 vs))
-	     (construct-abstract-nonrecursive-environments v1 v2)))
-       ((recursive-closure? v1)
+	     (construct-abstract-nonrecursive-environments u1 u2)))
+       ((recursive-closure? u1)
 	(map (lambda (vs)
 	      (p (lambda-expression-body
-		  (vector-ref (recursive-closure-lambda-expressions v1)
-			      (recursive-closure-index v1)))
+		  (vector-ref (recursive-closure-lambda-expressions u1)
+			      (recursive-closure-index u1)))
 		 vs))
-	     (construct-abstract-recursive-environments v1 v2)))
+	     (construct-abstract-recursive-environments u1 u2)))
        (else (internal-error))))
 
 (define (abstract-apply v1 v2)
@@ -6294,30 +6304,30 @@
     (expression-environment-bindings e)))
   (else (internal-error))))
 
-(define (abstract-apply-closure! e p v1 v2)
- (assert (and (not (union? v1)) (not (union? v2))))
+(define (abstract-apply-closure! e p u1 u2)
+ (assert (and (not (union? u1)) (not (union? u2))))
  (cond
-  ((nonrecursive-closure? v1)
+  ((nonrecursive-closure? u1)
    (for-each (lambda (vs)
 	      (let ((e1 (lambda-expression-body
-			 (nonrecursive-closure-lambda-expression v1))))
+			 (nonrecursive-closure-lambda-expression u1))))
 	       ;; See the note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
 		(enqueue! e))
 	       (p e1 vs)))
-	     (construct-abstract-nonrecursive-environments v1 v2)))
-  ((recursive-closure? v1)
+	     (construct-abstract-nonrecursive-environments u1 u2)))
+  ((recursive-closure? u1)
    (for-each (lambda (vs)
 	      (let ((e1 (lambda-expression-body
-			 (vector-ref (recursive-closure-lambda-expressions v1)
-				     (recursive-closure-index v1)))))
+			 (vector-ref (recursive-closure-lambda-expressions u1)
+				     (recursive-closure-index u1)))))
 	       ;; See the note in abstract-eval-prime!
 	       (unless (memp expression-eqv? e (expression-parents e1))
 		(set-expression-parents! e1 (cons e (expression-parents e1)))
 		(enqueue! e))
 	       (p e1 vs)))
-	     (construct-abstract-recursive-environments v1 v2)))
+	     (construct-abstract-recursive-environments u1 u2)))
   (else (internal-error))))
 
 (define (abstract-apply-prime! e v1 v2)
