@@ -1817,17 +1817,16 @@
      (map-reduce append '() union-members (union-values v))
      (list v)))
 
-(define (new-union vs debugging)
- (reduce (lambda (v1 v2) (abstract-value-union v1 v2 'a)) vs (empty-abstract-value)))
+(define (new-union vs) (reduce abstract-value-union vs (empty-abstract-value)))
 
 (define (fill-union-values! v vs)
  (assert (not (memq v vs)))
  (set-union-values! v vs))
 
-(define (map-union f v debugging) (new-union (map f (union-members v)) 'a1))
+(define (map-union f v) (new-union (map f (union-members v))))
 
 (define (cross-union f v1 v2)
- (new-union (cross-product f (union-members v1) (union-members v2)) 'b1))
+ (new-union (cross-product f (union-members v1) (union-members v2))))
 
 ;;; Generic
 
@@ -2278,7 +2277,7 @@
 		     (k #f cs)))))
 	 (else (k #f cs))))))))
 
-(define (abstract-value-union v1 v2 debugging)
+(define (abstract-value-union v1 v2)
  ;; This is written in CPS so as not to break structure sharing.
  (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (v cs) v)))
   (let ((found? (find-if (lambda (c)
@@ -2434,7 +2433,7 @@
      ;; This is the whole reason we require that abstract values be copied.
      ;; This performs the optimization that new-union performs but
      ;; fill-union-values! is unable to because of unfilled slots.
-     (let ((us (union-members (new-union (union-members v) 'c1))))
+     (let ((us (union-members (new-union (union-members v)))))
       ;; This is just to trigger errors on aggregate abstract values that have
       ;; empty slots. We could do this everywhere wich would trigger the error
       ;; earlier, at the time of creation, but this just triggers the same
@@ -5801,7 +5800,7 @@
  (copy-abstract-value
   (let ((u12 (make-aggregate-value-with-new-values
 	      u1
-	      (map (lambda (v1 v2) (abstract-value-union v1 v2 'b))
+	      (map abstract-value-union
 		   (aggregate-value-values u1)
 		   (aggregate-value-values u2)))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
@@ -5983,8 +5982,7 @@
 			     (make-aggregate-value-with-new-values
 			      u (aggregate-value-values u))
 			     u))
-			(abstract-value-union v1 v2 'c)
-			'a2)))
+			(abstract-value-union v1 v2))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
@@ -6077,106 +6075,109 @@
 
 (define (reduce-depth v u1 u2)
  ;; This is written in CPS so as not to break structure sharing.
- ;; debugging
- (when #f
-  (pp (debugging-externalize u1))
+ (begin (format #t "Bingo~%")
+	(pp (debugging-externalize u1))
+	(newline)
+	(pp (debugging-externalize u2))
+	(newline))
+ (let ((debugging
+	(copy-abstract-value
+	 (let ((u12 (make-aggregate-value-with-new-values
+		     u1 (map abstract-value-union
+			     (aggregate-value-values u1)
+			     (aggregate-value-values u2)))))
+	  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
+	   (let ((found? (assq v cs)))
+	    (cond
+	     (found? (k (cdr found?) cs))
+	     ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
+	     ((union? v)
+	      (let ((v-prime (make-union 'unfilled)))
+	       (map-cps loop
+			(union-members v)
+			(cons (cons v v-prime) cs)
+			(lambda (us-prime cs)
+			 (fill-union-values! v-prime us-prime)
+			 (k v-prime cs)))))
+	     ((vlad-empty-list? v)
+	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+	     ((vlad-true? v)
+	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+	     ((vlad-false? v)
+	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+	     ((vlad-real? v)
+	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+	     ((primitive-procedure? v)
+	      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+	     ((nonrecursive-closure? v)
+	      ;; See the note in abstract-environment=?.
+	      (let ((u-prime (make-nonrecursive-closure
+			      'unfilled (nonrecursive-closure-lambda-expression v))))
+	       (map-cps loop
+			(nonrecursive-closure-values v)
+			(cons (cons v u-prime) cs)
+			(lambda (vs-prime cs)
+			 (fill-nonrecursive-closure-values! u-prime vs-prime)
+			 (k u-prime cs)))))
+	     ((recursive-closure? v)
+	      ;; See the note in abstract-environment=?.
+	      (let ((u-prime
+		     (make-recursive-closure 'unfilled
+					     (recursive-closure-procedure-variables v)
+					     (recursive-closure-lambda-expressions v)
+					     (recursive-closure-index v))))
+	       (map-cps loop
+			(recursive-closure-values v)
+			(cons (cons v u-prime) cs)
+			(lambda (vs-prime cs)
+			 (fill-recursive-closure-values! u-prime vs-prime)
+			 (k u-prime cs)))))
+	     ((perturbation-tagged-value? v)
+	      (let ((u-prime (make-perturbation-tagged-value 'unfilled)))
+	       (loop (perturbation-tagged-value-primal v)
+		     (cons (cons v u-prime) cs)
+		     (lambda (v-prime cs)
+		      (fill-perturbation-tagged-value-primal! u-prime v-prime)
+		      (k u-prime cs)))))
+	     ((bundle? v)
+	      (let ((u-prime (make-bundle  'unfilled 'unfilled)))
+	       (loop (bundle-primal v)
+		     (cons (cons v u-prime) cs)
+		     (lambda (v-primal-prime cs)
+		      (loop (bundle-tangent v)
+			    cs
+			    (lambda (v-tangent-prime cs)
+			     (fill-bundle! u-prime v-primal-prime v-tangent-prime)
+			     (k u-prime cs)))))))
+	     ((sensitivity-tagged-value? v)
+	      (let ((u-prime (make-sensitivity-tagged-value 'unfilled)))
+	       (loop (sensitivity-tagged-value-primal v)
+		     (cons (cons v u-prime) cs)
+		     (lambda (v-prime cs)
+		      (fill-sensitivity-tagged-value-primal! u-prime v-prime)
+		      (k u-prime cs)))))
+	     ((reverse-tagged-value? v)
+	      (let ((u-prime (make-reverse-tagged-value 'unfilled)))
+	       (loop (reverse-tagged-value-primal v)
+		     (cons (cons v u-prime) cs)
+		     (lambda (v-prime cs)
+		      (fill-reverse-tagged-value-primal! u-prime v-prime)
+		      (k u-prime cs)))))
+	     ((tagged-pair? v)
+	      (let ((u-prime
+		     (make-tagged-pair (tagged-pair-tags v) 'unfilled 'unfilled)))
+	       (loop (tagged-pair-car v)
+		     (cons (cons v u-prime) cs)
+		     (lambda (v-car-prime cs)
+		      (loop (tagged-pair-cdr v)
+			    cs
+			    (lambda (v-cdr-prime cs)
+			     (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+			     (k u-prime cs)))))))
+	     (else (internal-error)))))))))
+  (pp (debugging-externalize debugging))
   (newline)
-  (pp (debugging-externalize u2))
-  (newline))
- (copy-abstract-value
-  (let ((u12 (make-aggregate-value-with-new-values
-	      u1 (map (lambda (v1 v2) (abstract-value-union v1 v2 'd))
-		      (aggregate-value-values u1)
-		      (aggregate-value-values u2)))))
-   (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
-    (let ((found? (assq v cs)))
-     (cond
-      (found? (k (cdr found?) cs))
-      ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
-      ((union? v)
-       (let ((v-prime (make-union 'unfilled)))
-	(map-cps loop
-		 (union-members v)
-		 (cons (cons v v-prime) cs)
-		 (lambda (us-prime cs)
-		  (fill-union-values! v-prime us-prime)
-		  (k v-prime cs)))))
-      ((vlad-empty-list? v)
-       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-      ((vlad-true? v)
-       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-      ((vlad-false? v)
-       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-      ((vlad-real? v)
-       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-      ((primitive-procedure? v)
-       (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-      ((nonrecursive-closure? v)
-       ;; See the note in abstract-environment=?.
-       (let ((u-prime (make-nonrecursive-closure
-		       'unfilled (nonrecursive-closure-lambda-expression v))))
-	(map-cps loop
-		 (nonrecursive-closure-values v)
-		 (cons (cons v u-prime) cs)
-		 (lambda (vs-prime cs)
-		  (fill-nonrecursive-closure-values! u-prime vs-prime)
-		  (k u-prime cs)))))
-      ((recursive-closure? v)
-       ;; See the note in abstract-environment=?.
-       (let ((u-prime
-	      (make-recursive-closure 'unfilled
-				      (recursive-closure-procedure-variables v)
-				      (recursive-closure-lambda-expressions v)
-				      (recursive-closure-index v))))
-	(map-cps loop
-		 (recursive-closure-values v)
-		 (cons (cons v u-prime) cs)
-		 (lambda (vs-prime cs)
-		  (fill-recursive-closure-values! u-prime vs-prime)
-		  (k u-prime cs)))))
-      ((perturbation-tagged-value? v)
-       (let ((u-prime (make-perturbation-tagged-value 'unfilled)))
-	(loop (perturbation-tagged-value-primal v)
-	      (cons (cons v u-prime) cs)
-	      (lambda (v-prime cs)
-	       (fill-perturbation-tagged-value-primal! u-prime v-prime)
-	       (k u-prime cs)))))
-      ((bundle? v)
-       (let ((u-prime (make-bundle  'unfilled 'unfilled)))
-	(loop (bundle-primal v)
-	      (cons (cons v u-prime) cs)
-	      (lambda (v-primal-prime cs)
-	       (loop (bundle-tangent v)
-		     cs
-		     (lambda (v-tangent-prime cs)
-		      (fill-bundle! u-prime v-primal-prime v-tangent-prime)
-		      (k u-prime cs)))))))
-      ((sensitivity-tagged-value? v)
-       (let ((u-prime (make-sensitivity-tagged-value 'unfilled)))
-	(loop (sensitivity-tagged-value-primal v)
-	      (cons (cons v u-prime) cs)
-	      (lambda (v-prime cs)
-	       (fill-sensitivity-tagged-value-primal! u-prime v-prime)
-	       (k u-prime cs)))))
-      ((reverse-tagged-value? v)
-       (let ((u-prime (make-reverse-tagged-value 'unfilled)))
-	(loop (reverse-tagged-value-primal v)
-	      (cons (cons v u-prime) cs)
-	      (lambda (v-prime cs)
-	       (fill-reverse-tagged-value-primal! u-prime v-prime)
-	       (k u-prime cs)))))
-      ((tagged-pair? v)
-       (let ((u-prime
-	      (make-tagged-pair (tagged-pair-tags v) 'unfilled 'unfilled)))
-	(loop (tagged-pair-car v)
-	      (cons (cons v u-prime) cs)
-	      (lambda (v-car-prime cs)
-	       (loop (tagged-pair-cdr v)
-		     cs
-		     (lambda (v-cdr-prime cs)
-		      (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
-		      (k u-prime cs)))))))
-      (else (internal-error))))))))
+  debugging))
 
 (define (debugging-limit-depth limit match? type? v)
  (if (eq? limit #f)
@@ -6243,13 +6244,6 @@
  (and (nonrecursive-closure? u) (sensitivity-value? u) (not (unsensitize? u))))
 
 (define (backpropagator-match? u1 u2)
- (when (nonrecursive-closure-match? u1 u2)
-  (let ((n (countq #t
-		   (map abstract-value=?
-			(nonrecursive-closure-values u1)
-			(nonrecursive-closure-values u2)))))
-   (when (= n (length (nonrecursive-closure-values u1)))
-    (panic "debugging"))))
  (and (nonrecursive-closure-match? u1 u2)
       (every abstract-value-unionable?
 	     (nonrecursive-closure-values u1)
@@ -6503,31 +6497,24 @@
 	 (cond
 	  ((every-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	   ;; debugging
-	   (when #f
-	    (write (externalize v2))
-	    (newline))
-	   (map-union (lambda (u2)
-		       (new-union (abstract-apply-closure
-				   (lambda (e vs) (abstract-eval1 e vs)) u1 u2)
-				  'd1))
-		      v2
-		      'c2))
+	   (map-union
+	    (lambda (u2)
+	     (new-union (abstract-apply-closure
+			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
+	    v2))
 	  ((some-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	   (compile-time-warning
 	    "Argument might have wrong type for target" u1 v2)
-	   (map-union (lambda (u2)
-		       (new-union (abstract-apply-closure
-				   (lambda (e vs) (abstract-eval1 e vs)) u1 u2)
-				  'e1))
-		      v2
-		      'd2))
+	   (map-union
+	    (lambda (u2)
+	     (new-union (abstract-apply-closure
+			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
+	    v2))
 	  (else (compile-time-warning
 		 "Argument might have wrong type for target" u1 v2))))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
-      v1
-      'b2)))
+      v1)))
 
 (define (enqueue! e)
  (unless (expression-enqueue? e)
@@ -6562,8 +6549,7 @@
 		 (abstract-eval1
 		  (application-argument e)
 		  (restrict-environment
-		   (environment-binding-values b) e application-argument)))
-		'e))))
+		   (environment-binding-values b) e application-argument)))))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -6576,8 +6562,7 @@
 		(environment-binding-value b)
 		(abstract-eval1 (letrec-expression-body e)
 				(abstract-letrec-nested-environment
-				 (environment-binding-values b) e))
-		'f))))
+				 (environment-binding-values b) e))))))
       (unless (abstract-value-subset? v (environment-binding-value b))
        (set-environment-binding-value! b v)
        (for-each enqueue! (expression-parents e)))))
@@ -6602,8 +6587,7 @@
 	(let ((v (widen-abstract-value
 		  (abstract-value-union
 		   (environment-binding-value b)
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)
-		   'g))))
+		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
 	 (unless (abstract-value-subset? v (environment-binding-value b))
 	  (set-environment-binding-value! b v)
 	  (for-each enqueue! (expression-parents e)))))
@@ -6631,8 +6615,7 @@
 	(let ((v (widen-abstract-value
 		  (abstract-value-union
 		   (environment-binding-value b)
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)
-		   'h))))
+		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
 	 (unless (abstract-value-subset? v (environment-binding-value b))
 	  (set-environment-binding-value! b v)
 	  (for-each enqueue! (expression-parents e)))))
@@ -7462,8 +7445,7 @@
 			  ((eq? v1 'boolean)
 			   (abstract-value-union
 			    (abstract-apply v3 (vlad-empty-list))
-			    (abstract-apply v4 (vlad-empty-list))
-			    'i))
+			    (abstract-apply v4 (vlad-empty-list))))
 			  ((vlad-false? v1)
 			   (abstract-apply v4 (vlad-empty-list)))
 			  (else (abstract-apply v3 (vlad-empty-list))))))
@@ -7518,8 +7500,7 @@
 		     (cond ((eq? v1 'boolean)
 			    (abstract-value-union
 			     (abstract-apply v3 (vlad-empty-list))
-			     (abstract-apply v4 (vlad-empty-list))
-			     'j))
+			     (abstract-apply v4 (vlad-empty-list))))
 			   ((vlad-false? v1)
 			    (abstract-apply v4 (vlad-empty-list)))
 			   (else (abstract-apply v3 (vlad-empty-list))))))
@@ -7867,8 +7848,7 @@
 	     (cond ((eq? v1 'boolean)
 		    (abstract-value-union
 		     (abstract-apply v3 (vlad-empty-list))
-		     (abstract-apply v4 (vlad-empty-list))
-		     'k))
+		     (abstract-apply v4 (vlad-empty-list))))
 		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
 		   (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
@@ -8040,8 +8020,7 @@
 	     (cond ((eq? v1 'boolean)
 		    (abstract-value-union
 		     (abstract-apply v3 (vlad-empty-list))
-		     (abstract-apply v4 (vlad-empty-list))
-		     'l))
+		     (abstract-apply v4 (vlad-empty-list))))
 		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
 		   (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
@@ -9154,14 +9133,14 @@
 	       "Argument is not an equivalent value" (vlad-empty-list) v))
 	     (unimplemented "read-real"))))
 
-(define (unary f s) (lambda (v) (if *abstract?* (map-union f v 'e2) (f v))))
+(define (unary f s) (lambda (v) (if *abstract?* (map-union f v) (f v))))
 
 (define (unary-ad f s) f)
 
 (define (unary-predicate f s)
  (lambda (v)
   (if *abstract?*
-      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v 'f2)
+      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)
       (if (f v) (vlad-true) (vlad-false)))))
 
 (define (unary-real f s)
@@ -9172,8 +9151,7 @@
 			 (if (real? u) (f u) (abstract-real))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v
-		    'g2))
+		    v))
 	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f v)))))
@@ -9188,8 +9166,7 @@
 			     (abstract-boolean))
 			 (compile-time-warning
 			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v
-		    'h2))
+		    v))
 	(else (unless (vlad-real? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (if (f v) (vlad-true) (vlad-false))))))
@@ -9203,8 +9180,7 @@
 	       (f (vlad-car u) (vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v
-	  'i2))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (f (vlad-car v) (vlad-cdr v))))))
@@ -9226,8 +9202,7 @@
 		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v
-	  'j2))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -9253,8 +9228,7 @@
 		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v
-	  'k2))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
@@ -9280,8 +9254,7 @@
 		(vlad-cdr u))
 	       (compile-time-warning
 		(format #f "Argument to ~a might be invalid" s) u)))
-	  v
-	  'l2))
+	  v))
 	(else (unless (vlad-pair? v)
 	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
 	      (let ((v23 (vlad-cdr v)))
@@ -9788,8 +9761,7 @@
 					 (vlad-empty-list))
 		 (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs))
 					 v2
-					 (vlad-empty-list)))
-	     'f1)
+					 (vlad-empty-list))))
 	    (compile-time-warning
 	     "Consequent and/or alternate might not be a nonrecursive closure"
 	     (vlad-cons v1 (vlad-cons v2 v3))))
