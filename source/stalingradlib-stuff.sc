@@ -1814,39 +1814,6 @@
      (map-reduce append '() union-members (union-values v))
      (list v)))
 
-(define (factorable? u1 u2)
- (or (and (nonrecursive-closure? u1)
-	  (nonrecursive-closure? u2)
-	  (nonrecursive-closure-match? u1 u2)
-	  (= (countq #t
-		     (map abstract-value=?
-			  (nonrecursive-closure-values u1)
-			  (nonrecursive-closure-values u2)))
-	     (- (length (nonrecursive-closure-values u1)) 1)))
-     (and (recursive-closure? u1)
-	  (recursive-closure? u2)
-	  (recursive-closure-match? u1 u2)
-	  (= (countq #t
-		     (map abstract-value=?
-			  (recursive-closure-values u1)
-			  (recursive-closure-values u2)))
-	     (- (length (recursive-closure-values u1)) 1)))
-     (and (perturbation-tagged-value? u1)
-	  (perturbation-tagged-value? u2))
-     (and (bundle? u1)
-	  (bundle? u2)
-	  (or (abstract-value=? (bundle-primal u1) (bundle-primal u2))
-	      (abstract-value=? (bundle-tangent u1) (bundle-tangent u2))))
-     (and (sensitivity-tagged-value? u1)
-	  (sensitivity-tagged-value? u2))
-     (and (reverse-tagged-value? u1)
-	  (reverse-tagged-value? u2))
-     (and (tagged-pair? u1)
-	  (tagged-pair? u2)
-	  (equal-tags? (tagged-pair-tags u1) (tagged-pair-tags u2))
-	  (or (abstract-value=? (tagged-pair-car u1) (tagged-pair-car u2))
-	      (abstract-value=? (tagged-pair-cdr u1) (tagged-pair-cdr u2))))))
-
 (define (new-union vs)
  ;; This does not affect the extension of the abstract value but can yield a
  ;; smaller representation. Thus this is just an optimization. Since abstract
@@ -1858,13 +1825,6 @@
 	    abstract-value-subset?
 	    (remove-duplicatesp
 	     abstract-value=? (map-reduce append '() union-members vs)))))
-  ;; debugging
-  (when #f
-   (when (some (lambda (u1)
-		(some (lambda (u2) (and (not (eq? u1 u2)) (factorable? u1 u2)))
-		      us))
-	       us)
-    (format #t "factorable~%")))
   (if (and (not (null? us)) (null? (rest us))) (first us) (make-union us))))
 
 (define (fill-union-values! v vs)
@@ -2272,15 +2232,6 @@
 	       (cons (cons v v-prime) cs)
 	       (lambda (us-prime cs)
 		(assert (or (null? us-prime) (not (null? (rest us-prime)))))
-		;; debugging
-		(when #f
-		 (when (some (lambda (u1)
-			      (some (lambda (u2)
-				     (and (not (eq? u1 u2))
-					  (factorable? u1 u2)))
-				    us-prime))
-			     us-prime)
-		  (format #t "factorable~%")))
 		(fill-union-values! v-prime us-prime)
 		(k v-prime cs))))))))
     ((vlad-empty-list? v)
