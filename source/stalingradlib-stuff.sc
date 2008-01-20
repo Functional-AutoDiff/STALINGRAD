@@ -2675,6 +2675,14 @@
 	  (append (third result1) (third result2)))))
   (else (internal-error))))
 
+(define (link-inverses e1 e)
+ ;; needs work: Should we copy the other inverses?
+ (when (and (lambda-expression-sensitivity-transform-inverse e)
+	    (not (lambda-expression-sensitivity-transform-inverse e1)))
+  (set-lambda-expression-sensitivity-transform-inverse!
+   e1 (lambda-expression-sensitivity-transform-inverse e)))
+ e1)
+
 (define (alpha-convert-expression e xs bs)
  ;; needs work: Should have structure instead of list.
  ;; xs is a list of variables to convert
@@ -2697,11 +2705,7 @@
 					     (second result1)
 					     (append (third result1) bs)))
 	  (e1 (new-lambda-expression (first result1) (first result2))))
-    (when (and (lambda-expression-sensitivity-transform-inverse e)
-	       (not (lambda-expression-sensitivity-transform-inverse e1)))
-     (set-lambda-expression-sensitivity-transform-inverse!
-      e1 (lambda-expression-sensitivity-transform-inverse e)))
-    (list e1 (second result2))))
+    (list (link-inverses e1 e) (second result2))))
   ((application? e)
    (let* ((result1 (alpha-convert-expression (application-callee e) xs bs))
 	  (result2 (alpha-convert-expression
@@ -2804,7 +2808,8 @@
 	    (first result1) (lambda-expression-body p) '() '() p? #f)))
     ;; result
     (list (first result2)
-	  (new-lambda-expression (second result1) (anf-result result2)))))
+	  (link-inverses
+	   (new-lambda-expression (second result1) (anf-result result2)) p))))
   ((letrec-expression? p)
    (assert (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
@@ -2831,7 +2836,9 @@
 	 (loop
 	  (first result2)
 	  (rest es)
-	  (cons (new-lambda-expression (second result1) (anf-result result2))
+	  (cons (link-inverses
+		 (new-lambda-expression (second result1) (anf-result result2))
+		 (first es))
 		es1))))))
   ((cons-expression? p)
    (let* ((result1 (anf-convert-parameter i (cons-expression-car p) p?))
@@ -2887,7 +2894,9 @@
 	 p
 	 (cons (make-parameter-binding
 		p
-		(new-lambda-expression (second result1) (anf-result result2)))
+		(link-inverses
+		 (new-lambda-expression (second result1) (anf-result result2))
+		 e))
 	       bs1)
 	 bs2))))
   ((let*? e)
@@ -2960,7 +2969,9 @@
 	      (cons
 	       (make-variable-binding
 		(first xs)
-		(new-lambda-expression (second result1) (anf-result result2)))
+		(link-inverses
+		 (new-lambda-expression (second result1) (anf-result result2))
+		 (first es)))
 	       bs2)))))))
   ((cons-expression? e)
    (let* ((result1
@@ -3013,7 +3024,9 @@
 	 p
 	 (cons (make-parameter-binding
 		p
-		(new-lambda-expression (second result1) (anf-result result2)))
+		(link-inverses
+		 (new-lambda-expression (second result1) (anf-result result2))
+		 e))
 	       bs1)
 	 bs2))))
   ((let*? e)
@@ -3088,7 +3101,9 @@
 	      (cons
 	       (make-variable-binding
 		(first xs)
-		(new-lambda-expression (second result1) (anf-result result2)))
+		(link-inverses
+		 (new-lambda-expression (second result1) (anf-result result2))
+		 (first es)))
 	       bs2)))))))
   ((cons-expression? e)
    (let* ((result1
@@ -3118,19 +3133,24 @@
 		  (anf-max e) (lambda-expression-parameter e) #f))
 	(result2 (anf-convert-expression
 		  (first result1) (lambda-expression-body e) '() '() #f #f)))
-  (new-lambda-expression (second result1) (anf-result result2))))
+  (link-inverses
+   (new-lambda-expression (second result1) (anf-result result2)) e)))
 
 (define (anf-convert-lambda-expression-shallow e)
- (new-lambda-expression
-  (lambda-expression-parameter e)
-  (anf-result (anf-convert-expression
-	       (anf-max e) (lambda-expression-body e) '() '() #t #t))))
+ (link-inverses
+  (new-lambda-expression
+   (lambda-expression-parameter e)
+   (anf-result (anf-convert-expression
+		(anf-max e) (lambda-expression-body e) '() '() #t #t)))
+  e))
 
 (define (anf-convert-lambda-expression-for-reverse e)
- (new-lambda-expression
-  (lambda-expression-parameter e)
-  (anf-result (anf-convert-expression
-	       (anf-max e) (lambda-expression-body e) '() '() #t #f))))
+ (link-inverses
+  (new-lambda-expression
+   (lambda-expression-parameter e)
+   (anf-result (anf-convert-expression
+		(anf-max e) (lambda-expression-body e) '() '() #t #f)))
+  e))
 
 (define (anf-let*-parameters e)
  (if (letrec-expression? e)
@@ -4289,6 +4309,12 @@
 	      (lambda-expression-sensitivity-transform-inverse e)))
  (lambda-expression-sensitivity-transform-inverse e))
 
+(define (foo e)
+ (pp (sensitivity-transform-inverse? (last (but-last (let*-expressions (lambda-expression-body e))))))
+ ;;(pp (externalize-expression (sensitivity-transform-inverse (cons-expression-car (let*-body (lambda-expression-body e))))))
+ (newline)
+ e)
+
 (define (reverse-transform-internal e xs0 es0 i)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
  ;;    expression, unless it has been optimized away.
@@ -4395,6 +4421,10 @@
 		  ;; This is the result of the forward phase.
 		  (reverseify-parameter (anf-parameter e1))
 		  ;; This is the backpropagator.
+		  ;; here I am: alpha-convert is preserving the
+		  ;;            sensitivity-transform-inverse link but
+		  ;;            anf-convert-lambda-expression-for-reverse is
+		  ;;            not
 		  (anf-convert-lambda-expression-for-reverse
 		   (alpha-convert
 		    (new-lambda-expression
