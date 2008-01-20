@@ -1016,10 +1016,11 @@
  (and
   (application? e)
   (lambda-expression? (application-callee e))
-  (or *unsafe?*
-      (and
-       (not (contains-letrec? (lambda-expression-body (application-callee e))))
-       (not (contains-letrec? (application-argument e)))))))
+  (or
+   *unsafe?*
+   (and
+    (not (contains-letrec? (lambda-expression-body (application-callee e))))
+    (not (contains-letrec? (application-argument e)))))))
 
 (define (let*-parameters e)
  (if (let*? e)
@@ -2266,7 +2267,8 @@
 		   (make-union us))))
       (k u (cons (cons (cons v1 v2) u) cs))))
     ((union? v2)
-     (unless (or (empty-abstract-value? v2)
+     (unless (or #t			;debugging
+		 (empty-abstract-value? v2)
 		 (and (vlad-boolean? v1)
 		      (every vlad-boolean? (union-members v2)))
 		 (and (backpropagator? v1)
@@ -3133,6 +3135,12 @@
   (new-lambda-expression (second result1) (anf-result result2))))
 
 (define (anf-convert-lambda-expression-shallow e)
+ (new-lambda-expression
+  (lambda-expression-parameter e)
+  (anf-result (anf-convert-expression
+	       (anf-max e) (lambda-expression-body e) '() '() #t #t))))
+
+(define (debugging-anf-convert-lambda-expression-shallow e)
  (let ((unsafe? *unsafe?*))
   (set! *unsafe?* #f)
   (let ((result
@@ -3140,42 +3148,31 @@
 	  (lambda-expression-parameter e)
 	  (anf-result
 	   (anf-convert-expression
-	    (anf-max e) (lambda-expression-body e) '() '() #t #t)))))
+	    (anf-max e) (lambda-expression-body e) '() '() #t #f)))))
+   ;;(pp (externalize-expression e)) (newline) (pp (externalize-expression result)) (newline)
    (set! *unsafe?* unsafe?)
    result)))
 
 (define (anf-let*-parameters e)
- (let ((unsafe? *unsafe?*))
-  (set! *unsafe?* #t)
-  (let ((result (if (letrec-expression? e)
-		    (if (let*? (letrec-expression-body e))
-			(let*-parameters (letrec-expression-body e))
-			'())
-		    (if (let*? e) (let*-parameters e) '()))))
-   (set! *unsafe?* unsafe?)
-   result)))
+ (if (letrec-expression? e)
+     (if (let*? (letrec-expression-body e))
+	 (let*-parameters (letrec-expression-body e))
+	 '())
+     (if (let*? e) (let*-parameters e) '())))
 
 (define (anf-let*-expressions e)
- (let ((unsafe? *unsafe?*))
-  (set! *unsafe?* #t)
-  (let ((result (if (letrec-expression? e)
-		    (if (let*? (letrec-expression-body e))
-			(let*-expressions (letrec-expression-body e))
-			'())
-		    (if (let*? e) (let*-expressions e) '()))))
-   (set! *unsafe?* unsafe?)
-   result)))
+ (if (letrec-expression? e)
+     (if (let*? (letrec-expression-body e))
+	 (let*-expressions (letrec-expression-body e))
+	 '())
+     (if (let*? e) (let*-expressions e) '())))
 
 (define (anf-parameter e)
- (let ((unsafe? *unsafe?*))
-  (set! *unsafe?* #t)
-  (let ((result (if (letrec-expression? e)
-		    (if (let*? (letrec-expression-body e))
-			(let*-body (letrec-expression-body e))
-			(letrec-expression-body e))
-		    (if (let*? e) (let*-body e) e))))
-   (set! *unsafe?* unsafe?)
-   result)))
+ (if (letrec-expression? e)
+     (if (let*? (letrec-expression-body e))
+	 (let*-body (letrec-expression-body e))
+	 (letrec-expression-body e))
+     (if (let*? e) (let*-body e) e)))
 
 ;;; Concrete->Abstract
 
@@ -4422,7 +4419,7 @@
 		  ;; This is the result of the forward phase.
 		  (reverseify-parameter (anf-parameter e1) 'debugging7)
 		  ;; This is the backpropagator.
-		  (anf-convert-lambda-expression-shallow
+		  (debugging-anf-convert-lambda-expression-shallow
 		   (alpha-convert
 		    (new-lambda-expression
 		     (sensitivityify-access (anf-parameter e1))
@@ -5397,7 +5394,7 @@
 			       (recursive-closure-index v)))))))
 	    (*unabbreviate-recursive-closures?*
 	     `(recursive-closure
-	       ,(map (lambda (x i) `(,x ,(loop v quote? vs)))
+	       ,(map (lambda (x v) `(,x ,(loop v quote? vs)))
 		     (recursive-closure-variables v)
 		     (recursive-closure-values v))
 	       ,(vector->list
