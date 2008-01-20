@@ -1204,7 +1204,8 @@
 	    (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
 	    (free-variables (nonrecursive-closure-lambda-expression u))
 	    vs))
-       (not (some empty-abstract-value? vs))
+       ;; debugging
+       ;;(not (some empty-abstract-value? vs))
        (or (not *abstract?*)
 	   #t				;debugging
 	   (every
@@ -1766,8 +1767,10 @@
 	  (or *abstract?*
 	      (and (prefix-tags? (tagged-pair-tags u) (value-tags v1))
 		   (prefix-tags? (tagged-pair-tags u) (value-tags v2))))
-	  (not (empty-abstract-value? v1))
-	  (not (empty-abstract-value? v2))
+	  ;; debugging
+	  ;;(not (empty-abstract-value? v1))
+	  ;; debugging
+	  ;;(not (empty-abstract-value? v2))
 	  (or (not *abstract?*)
 	      #t			;debugging
 	      (and (some-value-tags
@@ -1803,7 +1806,10 @@
 
 (define (abstract-boolean) (new-union (list (vlad-true) (vlad-false))))
 
-(define (union-members v) (if (union? v) (union-values v) (list v)))
+(define (union-members v)
+ (if (union? v)
+     (map-reduce append '() union-members (union-values v))
+     (list v)))
 
 (define (new-union vs)
  ;; This does not affect the extension of the abstract value but can yield a
@@ -1819,10 +1825,12 @@
   (if (and (not (null? us)) (null? (rest us))) (first us) (make-union us))))
 
 (define (fill-union-values! v vs)
- ;; Can't do same optimization as new-union because of unfilled slots.
+ ;; Can't do same optimization as new-union because of unfilled slots. Can't
+ ;; even do (map-reduce append '() union-members vs) because of unfilled slots.
  ;; Can't check that not singleton because can't do optimization. This is left
  ;; for copy-abstract-value.
- (set-union-values! v (map-reduce append '() union-members vs)))
+ (assert (not (memq v vs)))
+ (set-union-values! v vs))
 
 (define (map-union f v) (new-union (map f (union-members v))))
 
@@ -2206,7 +2214,7 @@
      ;; This is the whole reason we require that abstract values be copied.
      ;; This performs the optimization that new-union performs but
      ;; fill-union-values! is unable to because of unfilled slots.
-     (let ((us (union-values (new-union (union-values v)))))
+     (let ((us (union-members (new-union (union-members v)))))
       ;; This is just to trigger errors on aggregate abstract values that have
       ;; empty slots. We could do this everywhere wich would trigger the error
       ;; earlier, at the time of creation, but this just triggers the same
@@ -5579,8 +5587,8 @@
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
-      ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
       (found? (k (cdr found?) cs))
+      ((or (eq? v u1) (eq? v u2)) (loop u12 cs k))
       ((union? v)
        (let ((v-prime (make-union 'unfilled)))
 	(map-cps loop
@@ -5680,62 +5688,47 @@
 
 ;;; Depth
 
-;;; A path is an alternating list of abstract values and proto abstract values.
-;;; The first element of the list is the root and the last element is a leaf.
-;;; The first element is an abstract value and the last element is either a
-;;; scalar proto abstract value, an aggregate proto abstract value that has no
-;;; children, an empty abstract value, or an up. Each proto abstract value is
-;;; a member of the preceeding abstract value and each abstract value is a
-;;; member of the aggregate values of the preceeding proto abstract value.
+;;; A path is a list of abstract values. The first element of the list is the
+;;; root and the last element is a leaf. The last element is either a scalar
+;;; abstract value, an aggregate abstract value that has no children, or an up.
+;;; Each abstract value is a slot or a member of the preceeding abstract value.
 
 (define (depth match? type? path)
- ;; here I am: The notion of a path as an alternating list of abstract values
- ;;            and proto abstract values is broken.
- (map-reduce max
-	     0
-	     length
-	     (transitive-equivalence-classesp
-	      match? (remove-if-not type? (every-other (rest path))))))
+ (map-reduce
+  max
+  0
+  length
+  (transitive-equivalence-classesp
+   match? (remove-if-not type? (remove-if union? path)))))
 
 (define (path-of-depth-greater-than-limit limit match? type? v)
- ;; breaks structure sharing; but I don't know how to do it without doing so.
- ;; here I am: The notion of a path as an alternating list of abstract values
- ;;            and proto abstract values is broken.
+ ;; needs work: This breaks structure sharing, but I don't know how to do it
+ ;;             without doing so.
  (let outer ((v v) (path '()))
-  (if (memq v path)
-      (if (> (depth match? type? (reverse (cons v path))) limit)
-	  (reverse (cons v path))
-	  #f)
-      (let middle ((us (union-members v)))
-       (if (null? us)
-	   #f
-	   (if (scalar-value? (first us))
-	       (if (> (depth
-		       match? type? (reverse (cons (first us) (cons v path))))
-		      limit)
-		   (reverse (cons (first us) (cons v path)))
-		   (middle (rest us)))
-	       (let inner ((vs (aggregate-value-values (first us))))
-		(if (null? vs)
-		    (middle (rest us))
-		    (let ((path
-			   (outer (first vs) (cons (first us) (cons v path)))))
-		     (if (eq? path #f) (inner (rest vs)) path))))))))))
+  (cond ((memq v path)
+	 (if (> (depth match? type? (reverse path)) limit) (reverse path) #f))
+	((union? v)
+	 (let inner ((us (union-members v)))
+	  (if (null? us)
+	      #f
+	      (let ((path (outer (first us) (cons v path))))
+	       (if (eq? path #f) (inner (rest us)) path)))))
+	((scalar-value? v)
+	 (if (> (depth match? type? (reverse (cons v path))) limit)
+	     (reverse (cons v path))
+	     #f))
+	(else (let inner ((vs (aggregate-value-values v)))
+	       (if (null? vs)
+		   #f
+		   (let ((path (outer (first vs) (cons v path))))
+		    (if (eq? path #f) (inner (rest vs)) path))))))))
 
 (define (pick-values-to-coalesce-for-depth-limit match? type? path)
- ;; here I am: The notion of a path as an alternating list of abstract values
- ;;            and proto abstract values is broken.
  (let* ((classes (transitive-equivalence-classesp
-		  (lambda (u-v1 u-v2) (match? (car u-v1) (car u-v2)))
-		  (remove-if-not
-		   (lambda (u-v) (type? (car u-v)))
-		   (map cons
-			(every-other (rest path))
-			(every-other
-			 (if (odd? (length path)) (but-last path) path))))))
+		  match? (remove-if-not type? (remove-if union? path))))
 	(k (map-reduce max 0 length classes))
 	(positions
-	 (sort (map (lambda (u-v) (positionq (cdr u-v) path))
+	 (sort (map (lambda (u) (positionq u path))
 		    (find-if (lambda (us) (= (length us) k)) classes))
 	       >
 	       identity)))
@@ -5745,12 +5738,17 @@
 (define (reduce-depth v v1 v2)
  ;; This is written in CPS so as not to break structure sharing.
  (copy-abstract-value
-  (let ((v12 (abstract-value-union v1 v2)))
+  ;; This does a shallow copy so that the eq? v1 or eq?v2 below isn't
+  ;; triggered. This assumes that v1 and v2 aren't unions or scalars.
+  (let ((v12 (abstract-value-union (make-aggregate-value-with-new-values
+				    v1 (aggregate-value-values v1))
+				   (make-aggregate-value-with-new-values
+				    v2 (aggregate-value-values v2)))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
-      ((or (eq? v v1) (eq? v v2)) (loop v12 cs k))
       (found? (k (cdr found?) cs))
+      ((or (eq? v v1) (eq? v v2)) (loop v12 cs k))
       ((union? v)
        (let ((v-prime (make-union 'unfilled)))
 	(map-cps loop
@@ -5837,8 +5835,6 @@
       (else (internal-error))))))))
 
 (define (limit-depth limit match? type? v)
- ;; here I am: The notion of a path as an alternating list of abstract values
- ;;            and proto abstract values is broken.
  (if (eq? limit #f)
      v
      (let loop ((v v))
@@ -5849,6 +5845,22 @@
 		   (pick-values-to-coalesce-for-depth-limit match? type? path))
 		  (v-prime (reduce-depth v (first v1-v2) (second v1-v2))))
 	    (assert (abstract-value-subset? v v-prime))
+	    ;; debugging
+	    (begin
+	     (format #t "Bingo~%")
+	     (write (depth match? type? path))
+	     (newline)
+	     (pp (debugging-externalize v))
+	     (newline)
+	     (pp (debugging-externalize v-prime))
+	     (newline)
+	     (pp (map debugging-externalize path))
+	     (newline)
+	     (pp (debugging-externalize (first v1-v2)))
+	     (newline)
+	     (pp (debugging-externalize (second v1-v2)))
+	     (newline)
+	     (when (abstract-value=? v v-prime) (exit -1)))
 	    (loop v-prime)))))))
 
 ;;; Syntactic Constraints
