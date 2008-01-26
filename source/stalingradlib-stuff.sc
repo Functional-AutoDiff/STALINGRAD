@@ -7984,21 +7984,6 @@
      (cons-expression-cdr p) e (tagged-pair-cdr v) (list c ".d") xs vs)))
   (else (internal-error))))
 
-(define (frob codes)
- ;; debugging
- (case (length codes)
-  ((1) (first codes))
-  ((2)
-   ;; debugging
-   (unless (equal? (first codes) (second codes))
-    (write (first codes))
-    (newline)
-    (write (second codes))
-    (newline))
-   (assert (equal? (first codes) (second codes)))
-   (first codes))
-  (else (internal-error))))
-
 (define (generate-if-and-function-definitions
 	 bs xs vs v1v2s v1v2s1 things1-things2)
  (map
@@ -8103,25 +8088,61 @@
 	    (union-members v2))
 	   "return "
 	   ;; needs work: I don't know how to handle this yet.
-	   (frob
-	    (map
-	     (lambda (u2)
-	      (generate-expression
-	       (closure-body v1)
-	       (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 u2)))
-		(assert (= (length vss) 1))
-		(first vss))
-	       (closure-variables v1)
-	       (cond ((nonrecursive-closure? v1) '())
-		     ((recursive-closure? v1)
-		      (vector->list (recursive-closure-procedure-variables v1)))
-		     (else (internal-error)))
-	       bs
-	       xs
-	       vs
-	       v1v2s
-	       v1v2s1))
-	     (union-members v2)))
+	   (if (abstract-boolean? v2)
+	       (list
+		"x?("
+		(generate-expression
+		 (closure-body v1)
+		 (let ((vss (abstract-apply-closure
+			     (lambda (e vs) vs) v1 (vlad-true))))
+		  (assert (= (length vss) 1))
+		  (first vss))
+		 (closure-variables v1)
+		 (cond
+		  ((nonrecursive-closure? v1) '())
+		  ((recursive-closure? v1)
+		   (vector->list (recursive-closure-procedure-variables v1)))
+		  (else (internal-error)))
+		 bs
+		 xs
+		 vs
+		 v1v2s
+		 v1v2s1)
+		"):("
+		(generate-expression
+		 (closure-body v1)
+		 (let ((vss (abstract-apply-closure
+			     (lambda (e vs) vs) v1 (vlad-false))))
+		  (assert (= (length vss) 1))
+		  (first vss))
+		 (closure-variables v1)
+		 (cond
+		  ((nonrecursive-closure? v1) '())
+		  ((recursive-closure? v1)
+		   (vector->list (recursive-closure-procedure-variables v1)))
+		  (else (internal-error)))
+		 bs
+		 xs
+		 vs
+		 v1v2s
+		 v1v2s1)
+		")")
+	       (generate-expression
+		(closure-body v1)
+		(let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+		 (assert (= (length vss) 1))
+		 (first vss))
+		(closure-variables v1)
+		(cond
+		 ((nonrecursive-closure? v1) '())
+		 ((recursive-closure? v1)
+		  (vector->list (recursive-closure-procedure-variables v1)))
+		 (else (internal-error)))
+		bs
+		xs
+		vs
+		v1v2s
+		v1v2s1))
 	   ";}"
 	   #\newline))))
     (else (internal-error))))
