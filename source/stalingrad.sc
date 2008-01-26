@@ -3,7 +3,7 @@
 ;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004, 2005, 2006, and 2007 Purdue University. All rights
+;;; Copyright 2004, 2005, 2006, 2007, and 2008 Purdue University. All rights
 ;;; reserved.
 
 ;;; This program is free software; you can redistribute it and/or
@@ -97,10 +97,82 @@
 			       (verbose "n" integer-argument #f)))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (at-most-one ("no-warnings" no-warnings?))
+		 (at-most-one ("no-real-width-limit" no-real-width-limit?)
+			      ("real-width-limit"
+			       real-width-limit?
+			       (real-width-limit "n" integer-argument 1)))
+		 (at-most-one
+		  ("no-closure-width-limit" no-closure-width-limit?)
+		  ("closure-width-limit"
+		   closure-width-limit?
+		   (closure-width-limit "n" integer-argument 1)))
+		 (at-most-one ("no-perturbation-tagged-value-width-limit"
+			       no-perturbation-tagged-value-width-limit?)
+			      ("perturbation-tagged-value-width-limit"
+			       perturbation-tagged-value-width-limit?
+			       (perturbation-tagged-value-width-limit
+				"n" integer-argument 1)))
+		 (at-most-one ("no-bundle-width-limit"
+			       no-bundle-width-limit?)
+			      ("bundle-width-limit"
+			       bundle-width-limit?
+			       (bundle-width-limit "n" integer-argument 1)))
+		 (at-most-one ("no-sensitivity-tagged-value-width-limit"
+			       no-sensitivity-tagged-value-width-limit?)
+			      ("sensitivity-tagged-value-width-limit"
+			       sensitivity-tagged-value-width-limit?
+			       (sensitivity-tagged-value-width-limit
+				"n" integer-argument 1)))
+		 (at-most-one ("no-reverse-tagged-value-width-limit"
+			       no-reverse-tagged-value-width-limit?)
+			      ("reverse-tagged-value-width-limit"
+			       reverse-tagged-value-width-limit?
+			       (reverse-tagged-value-width-limit
+				"n" integer-argument 1)))
+		 (at-most-one
+		  ("no-tagged-pair-width-limit" no-tagged-pair-width-limit?)
+		  ("tagged-pair-width-limit"
+		   tagged-pair-width-limit?
+		   (tagged-pair-width-limit "n" integer-argument 1)))
 		 (at-most-one
 		  ("no-closure-depth-limit" no-closure-depth-limit?)
-		  ("closure-depth-limit" closure-depth-limit?
-					 (limit "n" integer-argument 1)))
+		  ("closure-depth-limit"
+		   closure-depth-limit?
+		   (closure-depth-limit "n" integer-argument 1)))
+		 (at-most-one
+		  ("no-backpropagator-depth-limit"
+		   no-backpropagator-depth-limit?)
+		  ("backpropagator-depth-limit"
+		   backpropagator-depth-limit?
+		   (backpropagator-depth-limit "n" integer-argument 1)))
+		 (at-most-one ("no-perturbation-tagged-value-depth-limit"
+			       no-perturbation-tagged-value-depth-limit?)
+			      ("perturbation-tagged-value-depth-limit"
+			       perturbation-tagged-value-depth-limit?
+			       (perturbation-tagged-value-depth-limit
+				"n" integer-argument 1)))
+		 (at-most-one ("no-bundle-depth-limit"
+			       no-bundle-depth-limit?)
+			      ("bundle-depth-limit"
+			       bundle-depth-limit?
+			       (bundle-depth-limit "n" integer-argument 1)))
+		 (at-most-one ("no-sensitivity-tagged-value-depth-limit"
+			       no-sensitivity-tagged-value-depth-limit?)
+			      ("sensitivity-tagged-value-depth-limit"
+			       sensitivity-tagged-value-depth-limit?
+			       (sensitivity-tagged-value-depth-limit
+				"n" integer-argument 1)))
+		 (at-most-one ("no-reverse-tagged-value-depth-limit"
+			       no-reverse-tagged-value-depth-limit?)
+			      ("reverse-tagged-value-depth-limit"
+			       reverse-tagged-value-depth-limit?
+			       (reverse-tagged-value-depth-limit
+				"n" integer-argument 1)))
+		 (at-most-one
+		  ("no-tagged-pair-depth-limit" no-tagged-pair-depth-limit?)
+		  ("tagged-pair-depth-limit"
+		   tagged-pair-depth-limit?
+		   (tagged-pair-depth-limit "n" integer-argument 1)))
 		 (required (pathname "pathname" string-argument)))
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
@@ -126,8 +198,41 @@
  (set! *verbose* (if verbose? verbose #f))
  (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *warnings?* (not no-warnings?))
- (set! *closure-depth-limit* (if no-closure-depth-limit? #f limit))
- (set! *closure-depth-limit* #f)	;debugging
+ (set! *real-width-limit* (if real-width-limit? real-width-limit #f))
+ (set! *closure-width-limit* (if closure-width-limit? closure-width-limit #f))
+ (set! *perturbation-tagged-value-width-limit*
+       (if perturbation-tagged-value-width-limit?
+	   perturbation-tagged-value-width-limit
+	   #f))
+ (set! *bundle-width-limit* (if bundle-width-limit? bundle-width-limit #f))
+ (set! *sensitivity-tagged-value-width-limit*
+       (if sensitivity-tagged-value-width-limit?
+	   sensitivity-tagged-value-width-limit
+	   #f))
+ (set! *reverse-tagged-value-width-limit*
+       (if reverse-tagged-value-width-limit?
+	   reverse-tagged-value-width-limit
+	   #f))
+ (set! *tagged-pair-width-limit*
+       (if tagged-pair-width-limit? tagged-pair-width-limit #f))
+ (set! *closure-depth-limit* (if closure-depth-limit? closure-depth-limit #f))
+ (set! *backpropagator-depth-limit*
+       (if backpropagator-depth-limit? backpropagator-depth-limit #f))
+ (set! *perturbation-tagged-value-depth-limit*
+       (if perturbation-tagged-value-depth-limit?
+	   perturbation-tagged-value-depth-limit
+	   #f))
+ (set! *bundle-depth-limit* (if bundle-depth-limit? bundle-depth-limit #f))
+ (set! *sensitivity-tagged-value-depth-limit*
+       (if sensitivity-tagged-value-depth-limit?
+	   sensitivity-tagged-value-depth-limit
+	   #f))
+ (set! *reverse-tagged-value-depth-limit*
+       (if reverse-tagged-value-depth-limit?
+	   reverse-tagged-value-depth-limit
+	   #f))
+ (set! *tagged-pair-depth-limit*
+       (if tagged-pair-depth-limit? tagged-pair-depth-limit #f))
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
