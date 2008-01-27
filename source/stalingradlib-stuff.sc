@@ -1263,6 +1263,7 @@
  ;; The first condition is an optimization.
  (and (= (length (nonrecursive-closure-values u1))
 	 (length (nonrecursive-closure-values u2)))
+      ;; needs work: maybe change to expression-eqv?
       (expression=? (nonrecursive-closure-lambda-expression u1)
 		    (nonrecursive-closure-lambda-expression u2))))
 
@@ -1282,6 +1283,7 @@
 	    (xs2 (append
 		  (recursive-closure-variables u2)
 		  (vector->list (recursive-closure-procedure-variables u2)))))
+       ;; needs work: maybe change to expression-eqv?
        (every-vector (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
 		     (recursive-closure-lambda-expressions u1)
 		     (recursive-closure-lambda-expressions u2)))))
@@ -8067,8 +8069,7 @@
 	    (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
 	   ;; needs work: I don't know if this generates duplicates.
 	   (map-reduce
-	    ;; needs work: To eliminate the space if code1 or code2 are empty.
-	    (lambda (code1 code2) (list code1 " " code2))
+	    (lambda (code1 code2) (list code1 code2))
 	    ""
 	    (lambda (u2)
 	     (generate-letrec-bindings
@@ -8087,7 +8088,6 @@
 	      v1v2s))
 	    (union-members v2))
 	   "return "
-	   ;; needs work: I don't know how to handle this yet.
 	   (if (abstract-boolean? v2)
 	       (list
 		"x?("
@@ -8150,10 +8150,17 @@
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
-       ((memp variable=? x xs) (list "c." (generate-variable-name x xs1)))
+       ((memp variable=? x xs)
+	;; debugging
+	(write (list x (list "c." (generate-variable-name x xs1)))) (newline)
+	(list "c." (generate-variable-name x xs1)))
        (else (generate-variable-name x xs1))))
 
 (define (generate-expression e vs xs xs2 bs xs1 vs1 v1v2s v1v2s1)
+ ;; xs is the list of free variables of the environent in which e is evaluated.
+ ;; xs2 is the list of procedure variables of the environent in which e is
+ ;;     evaluated.
+ ;; xs1 is the list of all variables for the entire program.
  (let ((v (abstract-eval1 e vs)))
   (cond
    ((constant-expression? e)
