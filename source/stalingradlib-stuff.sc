@@ -87,7 +87,7 @@
  variable)
 
 (define-structure lambda-expression
- alpha-conversion
+ alpha-conversion-alist
  perturbation-transform
  perturbation-transform-inverse
  forward-transform
@@ -1260,7 +1260,7 @@
  (and (= (length (nonrecursive-closure-values u1))
 	 (length (nonrecursive-closure-values u2)))
       ;; debugging
-      (if #f
+      (if #t
 	  (expression-eqv? (nonrecursive-closure-lambda-expression u1)
 			   (nonrecursive-closure-lambda-expression u2))
 	  (expression=? (nonrecursive-closure-lambda-expression u1)
@@ -1277,7 +1277,7 @@
       (= (length (recursive-closure-values u1))
 	 (length (recursive-closure-values u2)))
       ;; debugging
-      (if #f
+      (if #t
 	  (every-vector expression-eqv?
 			(recursive-closure-lambda-expressions u1)
 			(recursive-closure-lambda-expressions u2))
@@ -2621,62 +2621,39 @@
 
 ;;; Alpha conversion
 
-(define (alphaify x xs)
- ;; debugging
- (if #f
-     (if (memp variable=? x xs)
-	 `(alpha ,x
-		 ,(+ (map-reduce max
-				 0
-				 (lambda (x1)
-				  (if (and (list? x1)
-					   (eq? (first x1) 'alpha)
-					   (variable=? (second x1) x))
-				      (third x1)
-				      0))
-				 xs)
-		     1))
-	 x)
-     (begin (set! *alpha* (+ *alpha* 1)) `(alpha ,x ,*alpha*))))
+(define (alphaify x)
+ (set! *alpha* (+ *alpha* 1))
+ `(alpha ,x ,*alpha*))
 
-(define (alpha-convert-parameter p xs)
+(define (alpha-convert-parameter p)
  ;; needs work: Should have structure instead of list.
- ;; The output is (p xs bs) where p is the alpha converted parameter, xs is
- ;; the list of variables that have been renamed, and bs is the renamings.
+ ;; The output is (p bs) where p is the alpha converted parameter and bs is the
+ ;; renamings.
  (cond
-  ((constant-expression? p) (list p xs '()))
+  ((constant-expression? p) (list p '()))
   ((variable-access-expression? p)
-   (let ((x (alphaify (variable-access-expression-variable p) xs)))
+   (let ((x (alphaify (variable-access-expression-variable p))))
     (list
      (new-variable-access-expression x)
-     (cons x xs)
      (list (make-alpha-binding (variable-access-expression-variable p) x)))))
   ((lambda-expression? p)
-   (let loop ((bs '()) (xs xs) (xs0 (parameter-variables p)))
-    (if (null? xs0)
-	(let ((result (alpha-convert-expression p xs bs)))
-	 (list (first result) (second result) bs))
-	(let ((x (alphaify (first xs0) xs)))
-	 (loop (cons (make-alpha-binding (first xs0) x) bs)
-	       (cons x xs)
-	       (rest xs0))))))
+   (let loop ((bs '()) (xs (parameter-variables p)))
+    (if (null? xs)
+	(list (alpha-convert-expression p bs) bs)
+	(let ((x (alphaify (first xs))))
+	 (loop (cons (make-alpha-binding (first xs) x) bs) (rest xs))))))
   ((letrec-expression? p)
-   (let loop ((bs '()) (xs xs) (xs0 (parameter-variables p)))
-    (if (null? xs0)
-	(let ((result (alpha-convert-expression p xs bs)))
-	 (list (first result) (second result) bs))
-	(let ((x (alphaify (first xs0) xs)))
-	 (loop (cons (make-alpha-binding (first xs0) x) bs)
-	       (cons x xs)
-	       (rest xs0))))))
+   (let loop ((bs '()) (xs (parameter-variables p)))
+    (if (null? xs)
+	(list (alpha-convert-expression p bs) bs)
+	(let ((x (alphaify (first xs))))
+	 (loop (cons (make-alpha-binding (first xs) x) bs) (rest xs))))))
   ((cons-expression? p)
-   (let* ((result1 (alpha-convert-parameter (cons-expression-car p) xs))
-	  (result2 (alpha-convert-parameter (cons-expression-cdr p)
-					    (second result1))))
+   (let* ((result1 (alpha-convert-parameter (cons-expression-car p)))
+	  (result2 (alpha-convert-parameter (cons-expression-cdr p))))
     (list (new-cons-expression
 	   (cons-expression-tags p) (first result1) (first result2))
-	  (second result2)
-	  (append (third result1) (third result2)))))
+	  (append (second result1) (second result2)))))
   (else (internal-error))))
 
 (define (link-inverses e1 e)
@@ -2695,78 +2672,62 @@
    e1 (lambda-expression-sensitivity-transform-inverse e)))
  e1)
 
-(define (alpha-convert-expression e xs bs)
+(define (alpha-convert-expression e bs)
  ;; needs work: Should have structure instead of list.
- ;; xs is a list of variables to convert
  ;; bs is the renamings currently in scope
- ;; The output is (e xs).
+ ;; The output is e.
  (cond
-  ((constant-expression? e) (list e xs))
+  ((constant-expression? e) e)
   ((variable-access-expression? e)
-   (list (new-variable-access-expression
-	  (alpha-binding-variable2
-	   (find-if (lambda (b)
-		     (variable=? (alpha-binding-variable1 b)
-				 (variable-access-expression-variable e)))
-		    bs)))
-	 xs))
+   (new-variable-access-expression
+    (alpha-binding-variable2
+     (find-if (lambda (b)
+	       (variable=? (alpha-binding-variable1 b)
+			   (variable-access-expression-variable e)))
+	      bs))))
   ((lambda-expression? e)
-   (let* ((result1
-	   (alpha-convert-parameter (lambda-expression-parameter e) xs))
-	  (result2 (alpha-convert-expression (lambda-expression-body e)
-					     (second result1)
-					     (append (third result1) bs)))
-	  (e1 (if (and
-		   ;; debugging
-		   #f
-		   (lambda-expression-alpha-conversion e))
-		  (lambda-expression-alpha-conversion e)
-		  (let ((e1 (new-lambda-expression
-			     (first result1) (first result2))))
-		   (set-lambda-expression-alpha-conversion! e e1)
-		   e1))))
-    (list (link-inverses e1 e) (second result2))))
+   (let ((found? (assoc bs (lambda-expression-alpha-conversion-alist e))))
+    (if found?
+	(cdr found?)
+	(let* ((result
+		(alpha-convert-parameter (lambda-expression-parameter e)))
+	       (e1 (link-inverses
+		    (new-lambda-expression
+		     (first result)
+		     (alpha-convert-expression (lambda-expression-body e)
+					       (append (second result) bs)))
+		    e)))
+	 (set-lambda-expression-alpha-conversion-alist!
+	  e (cons (cons bs e1) (lambda-expression-alpha-conversion-alist e)))
+	 e1))))
   ((application? e)
-   (let* ((result1 (alpha-convert-expression (application-callee e) xs bs))
-	  (result2 (alpha-convert-expression
-		    (application-argument e) (second result1) bs)))
-    (list (new-application (first result1) (first result2)) (second result2))))
+   (new-application (alpha-convert-expression (application-callee e) bs)
+		    (alpha-convert-expression (application-argument e) bs)))
   ((letrec-expression? e)
-   (let outer ((xs1 (letrec-expression-procedure-variables e))
-	       (xs2 '())
-	       (xs xs))
+   (let outer ((xs1 (letrec-expression-procedure-variables e)) (xs2 '()))
     (if (null? xs1)
 	(let ((bs (append (map make-alpha-binding
 			       (letrec-expression-procedure-variables e)
 			       (reverse xs2))
 			  bs)))
-	 (let inner ((es (letrec-expression-lambda-expressions e))
-		     (es1 '())
-		     (xs xs))
+	 (let inner ((es (letrec-expression-lambda-expressions e)) (es1 '()))
 	  (if (null? es)
-	      (let ((result (alpha-convert-expression
-			     (letrec-expression-body e) xs bs)))
-	       (list (new-letrec-expression
-		      (reverse xs2) (reverse es1) (first result))
-		     (second result)))
-	      (let ((result (alpha-convert-expression (first es) xs bs)))
-	       (inner (rest es) (cons (first result) es1) (second result))))))
-	(let ((x (alphaify (first xs1) xs)))
-	 (outer (rest xs1) (cons x xs2) (cons x xs))))))
+	      (new-letrec-expression
+	       (reverse xs2)
+	       (reverse es1)
+	       (alpha-convert-expression (letrec-expression-body e) bs))
+	      (inner (rest es)
+		     (cons (alpha-convert-expression (first es) bs) es1)))))
+	(outer (rest xs1) (cons (alphaify (first xs1)) xs2)))))
   ((cons-expression? e)
-   (let* ((result1 (alpha-convert-expression (cons-expression-car e) xs bs))
-	  (result2 (alpha-convert-expression
-		    (cons-expression-cdr e) (second result1) bs)))
-    (list (new-cons-expression
-	   (cons-expression-tags e) (first result1) (first result2))
-	  (second result2))))
+   (new-cons-expression (cons-expression-tags e)
+			(alpha-convert-expression (cons-expression-car e) bs)
+			(alpha-convert-expression (cons-expression-cdr e) bs)))
   (else (internal-error))))
 
 (define (alpha-convert e)
- (first (alpha-convert-expression
-	 e
-	 (free-variables e)
-	 (map make-alpha-binding (free-variables e) (free-variables e)))))
+ (alpha-convert-expression
+  e (map make-alpha-binding (free-variables e) (free-variables e))))
 
 ;;; ANF conversion
 
@@ -4372,7 +4333,7 @@
  e)
 
 (define (noz e)
- (when #f
+ (when #t
   (when (= *debugging1?* 1)
    (set! *debugging2*
 	 (cons-expression-car (let*-body (lambda-expression-body e))))
