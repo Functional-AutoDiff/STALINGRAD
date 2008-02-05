@@ -87,7 +87,7 @@
  variable)
 
 (define-structure lambda-expression
- alpha-conversion-alist
+ alpha-conversion-inverse
  perturbation-transform
  perturbation-transform-inverse
  forward-transform
@@ -1032,76 +1032,15 @@
 
 ;;; Expression Equivalence
 
-(define (expression-eqv? e1 e2) (eq? e1 e2))
-
-(define (alpha-equivalent? e1 e2 xs1 xs2)
- ;; This is what Stump calls hypothetical (or contextual) alpha equivalence,
- ;; i.e. whether e1 is alpha-equivalent to e2 in the context where each xs1_i
- ;; is assumed to be equivalent to the corresponding xs2_i.
- (or
-  ;; This is a sound optimization because of how we call alpha-equivalent?.
-  (eq? e1 e2)
-  (and (constant-expression? e1)
-       (constant-expression? e2)
-       (abstract-value=? (constant-expression-value e1)
-			 (constant-expression-value e2)))
-  (and (variable-access-expression? e1)
-       (variable-access-expression? e2)
-       (= (positionp variable=? (variable-access-expression-variable e1) xs1)
-	  (positionp variable=? (variable-access-expression-variable e2) xs2)))
-  (and (lambda-expression? e1)
-       (lambda-expression? e2)
-       (= (length (parameter-variables (lambda-expression-parameter e1)))
-	  (length (parameter-variables (lambda-expression-parameter e2))))
-       (alpha-equivalent?
-	(lambda-expression-parameter e1)
-	(lambda-expression-parameter e2)
-	(parameter-variables (lambda-expression-parameter e1))
-	(parameter-variables (lambda-expression-parameter e2)))
-       (alpha-equivalent?
-	(lambda-expression-body e1)
-	(lambda-expression-body e2)
-	(append (parameter-variables (lambda-expression-parameter e1)) xs1)
-	(append (parameter-variables (lambda-expression-parameter e2)) xs2)))
-  (and (application? e1)
-       (application? e2)
-       (alpha-equivalent?
-	(application-callee e1) (application-callee e2) xs1 xs2)
-       (alpha-equivalent?
-	(application-argument e1) (application-argument e2) xs1 xs2))
-  (and (letrec-expression? e1)
-       (letrec-expression? e2)
-       (= (length (letrec-expression-procedure-variables e1))
-	  (length (letrec-expression-procedure-variables e2)))
-       (every (lambda (e3 e4)
-	       (alpha-equivalent?
-		e3
-		e4
-		(append (letrec-expression-procedure-variables e1) xs1)
-		(append (letrec-expression-procedure-variables e2) xs2)))
-	      (letrec-expression-lambda-expressions e1)
-	      (letrec-expression-lambda-expressions e2))
-       (alpha-equivalent?
-	(letrec-expression-body e1)
-	(letrec-expression-body e2)
-	(append (letrec-expression-procedure-variables e1) xs1)
-	(append (letrec-expression-procedure-variables e2) xs2)))
-  (and (cons-expression? e1)
-       (cons-expression? e2)
-       (equal-tags? (cons-expression-tags e1) (cons-expression-tags e2))
-       (alpha-equivalent?
-	(cons-expression-car e1) (cons-expression-car e2) xs1 xs2)
-       (alpha-equivalent?
-	(cons-expression-cdr e1) (cons-expression-cdr e2) xs1 xs2))))
-
-(define (expression=? e1 e2)
- ;; Two expressions are equal if they yield equal values in all possible
- ;; environments. (The notion of expression equality depends on the notion of
- ;; value equality.) Expression equality is undecidable. (It is semidecidable
- ;; since a lone environment can witness disequality and environments are
- ;; recursively enumerable. This is a conservative approximation. A #t result
- ;; is precise.
- (alpha-equivalent? e1 e2 (free-variables e1) (free-variables e2)))
+(define (expression-eqv? e1 e2)
+ ;; needs work: We need to look for all implicit eq? comparisons.
+ (cond ((and (lambda-expression? e1)
+	     (lambda-expression-alpha-conversion-inverse e1))
+	(expression-eqv? (lambda-expression-alpha-conversion-inverse e1) e2))
+       ((and (lambda-expression? e2)
+	     (lambda-expression-alpha-conversion-inverse e2))
+	(expression-eqv? e1 (lambda-expression-alpha-conversion-inverse e2)))
+       (else (eq? e1 e2))))
 
 ;;; Values
 
@@ -1259,12 +1198,8 @@
  ;; The first condition is an optimization.
  (and (= (length (nonrecursive-closure-values u1))
 	 (length (nonrecursive-closure-values u2)))
-      ;; debugging
-      (if #t
-	  (expression-eqv? (nonrecursive-closure-lambda-expression u1)
-			   (nonrecursive-closure-lambda-expression u2))
-	  (expression=? (nonrecursive-closure-lambda-expression u1)
-			(nonrecursive-closure-lambda-expression u2)))))
+      (expression-eqv? (nonrecursive-closure-lambda-expression u1)
+		       (nonrecursive-closure-lambda-expression u2))))
 
 (define (recursive-closure-match? u1 u2)
  (assert (and (not (union? u1)) (not (union? u2))))
@@ -1276,22 +1211,9 @@
       ;; This is an optimization.
       (= (length (recursive-closure-values u1))
 	 (length (recursive-closure-values u2)))
-      ;; debugging
-      (if #t
-	  (every-vector expression-eqv?
-			(recursive-closure-lambda-expressions u1)
-			(recursive-closure-lambda-expressions u2))
-	  (let ((xs1
-		 (append
-		  (recursive-closure-variables u1)
-		  (vector->list (recursive-closure-procedure-variables u1))))
-		(xs2
-		 (append
-		  (recursive-closure-variables u2)
-		  (vector->list (recursive-closure-procedure-variables u2)))))
-	   (every-vector (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-			 (recursive-closure-lambda-expressions u1)
-			 (recursive-closure-lambda-expressions u2))))))
+      (every-vector expression-eqv?
+		    (recursive-closure-lambda-expressions u1)
+		    (recursive-closure-lambda-expressions u2))))
 
 (define (closure? u)
  (assert (not (union? u)))
@@ -2666,14 +2588,24 @@
 	       (expression-eqv?
 		(lambda-expression-sensitivity-transform-inverse e)
 		(lambda-expression-sensitivity-transform-inverse e1))))))
+ (assert (or (and (not (lambda-expression-alpha-conversion-inverse e))
+		  (not (lambda-expression-alpha-conversion-inverse e1)))
+	     (and (lambda-expression-alpha-conversion-inverse e)
+		  (or (not (lambda-expression-alpha-conversion-inverse e1))
+		      (expression-eqv?
+		       (lambda-expression-alpha-conversion-inverse e)
+		       (lambda-expression-alpha-conversion-inverse e1))))))
  (when (and (lambda-expression-sensitivity-transform-inverse e)
 	    (not (lambda-expression-sensitivity-transform-inverse e1)))
   (set-lambda-expression-sensitivity-transform-inverse!
    e1 (lambda-expression-sensitivity-transform-inverse e)))
+ (when (and (lambda-expression-alpha-conversion-inverse e)
+	    (not (lambda-expression-alpha-conversion-inverse e1)))
+  (set-lambda-expression-alpha-conversion-inverse!
+   e1 (lambda-expression-alpha-conversion-inverse e)))
  e1)
 
 (define (alpha-convert-expression e bs)
- ;; needs work: Should have structure instead of list.
  ;; bs is the renamings currently in scope
  ;; The output is e.
  (cond
@@ -2686,20 +2618,16 @@
 			   (variable-access-expression-variable e)))
 	      bs))))
   ((lambda-expression? e)
-   (let ((found? (assoc bs (lambda-expression-alpha-conversion-alist e))))
-    (if found?
-	(cdr found?)
-	(let* ((result
-		(alpha-convert-parameter (lambda-expression-parameter e)))
-	       (e1 (link-inverses
-		    (new-lambda-expression
-		     (first result)
-		     (alpha-convert-expression (lambda-expression-body e)
-					       (append (second result) bs)))
-		    e)))
-	 (set-lambda-expression-alpha-conversion-alist!
-	  e (cons (cons bs e1) (lambda-expression-alpha-conversion-alist e)))
-	 e1))))
+   (let* ((result (alpha-convert-parameter (lambda-expression-parameter e)))
+	  (e1 (link-inverses
+	       (new-lambda-expression
+		(first result)
+		(alpha-convert-expression (lambda-expression-body e)
+					  (append (second result) bs)))
+	       e)))
+    (assert (not (lambda-expression-alpha-conversion-inverse e1)))
+    (set-lambda-expression-alpha-conversion-inverse! e1 e)
+    e1))
   ((application? e)
    (new-application (alpha-convert-expression (application-callee e) bs)
 		    (alpha-convert-expression (application-argument e) bs)))
@@ -4290,83 +4218,6 @@
 	      (lambda-expression-sensitivity-transform-inverse e)))
  (lambda-expression-sensitivity-transform-inverse e))
 
-(define *debugging1?* 0)
-
-(define *debugging2* #f)
-(define *debugging3* #f)
-(define *debugging4* #f)
-(define *debugging5* #f)
-
-(define (frob e)
- (when #f
-  (when (= *debugging1?* 1)
-   (set! *debugging2*
-	 (cons-expression-car (let*-body (lambda-expression-body e))))
-   (pp (externalize-expression *debugging2*))
-   (newline))
-  (when (= *debugging1?* 2)
-   (set! *debugging3*
-	 (second (let*-parameters (lambda-expression-body e))))
-   (pp (externalize-expression *debugging3*))
-   (newline)
-   (set! *debugging4*
-	 (cons-expression-car
-	  (application-argument
-	   (second (let*-expressions (lambda-expression-body e))))))
-   (pp (externalize-expression *debugging4*))
-   (newline)
-   (set! *debugging5*
-	 (first
-	  (let*-expressions
-	   (lambda-expression-body
-	    (cons-expression-car (let*-body (lambda-expression-body e)))))))
-   (pp (externalize-expression *debugging5*))
-   (newline)
-   (write (list (eq? *debugging2* *debugging3*)
-		(eq? *debugging2* *debugging4*)
-		(eq? *debugging2* *debugging5*)
-		(eq? *debugging3* *debugging4*)
-		(eq? *debugging3* *debugging5*)
-		(eq? *debugging4* *debugging5*)))
-   (newline))
-  (set! *debugging1?* (+ *debugging1?* 1)))
- e)
-
-(define (noz e)
- (when #t
-  (when (= *debugging1?* 1)
-   (set! *debugging2*
-	 (cons-expression-car (let*-body (lambda-expression-body e))))
-   (pp (externalize-expression *debugging2*))
-   (newline))
-  (when (= *debugging1?* 2)
-   (set! *debugging3*
-	 (second (let*-parameters (lambda-expression-body e))))
-   (pp (externalize-expression *debugging3*))
-   (newline)
-   (set! *debugging4*
-	 (cons-expression-car
-	  (application-argument
-	   (second (let*-expressions (lambda-expression-body e))))))
-   (pp (externalize-expression *debugging4*))
-   (newline)
-   (set! *debugging5*
-	 (first
-	  (let*-expressions
-	   (lambda-expression-body
-	    (cons-expression-car (let*-body (lambda-expression-body e)))))))
-   (pp (externalize-expression *debugging5*))
-   (newline)
-   (write (list (eq? *debugging2* *debugging3*)
-		(eq? *debugging2* *debugging4*)
-		(eq? *debugging2* *debugging5*)
-		(eq? *debugging3* *debugging4*)
-		(eq? *debugging3* *debugging5*)
-		(eq? *debugging4* *debugging5*)))
-   (newline))
-  (set! *debugging1?* (+ *debugging1?* 1)))
- e)
-
 (define (reverse-transform-internal e xs0 es0 i)
  ;; e  is a lambda expression. Its body is in anf. Its body is a letrec
  ;;    expression, unless it has been optimized away.
@@ -4474,136 +4325,134 @@
 		  (reverseify-parameter (anf-parameter e1))
 		  ;; This is the backpropagator.
 		  (anf-convert-lambda-expression-for-reverse
-		   (noz
-		    (alpha-convert
-		     (frob
-		      (new-lambda-expression
-		       (sensitivityify-access (anf-parameter e1))
-		       (create-let*
-			(append
-			 ;; These are the zeroing bindings for the reverse phase.
-			 (map
-			  (lambda (x)
-			   (make-parameter-binding
-			    (sensitivity-access x)
-			    (make-sensitize
-			     (make-zero (make-*j-inverse (reverse-access x))))))
-			  (set-differencep
-			   variable=?
-			   (remove-duplicatesp
-			    variable=?
-			    (append
-			     (parameter-variables p)
-			     (map-reduce append
-					 '()
-					 parameter-variables
-					 (anf-let*-parameters e1))
-			     xs1
-			     ;; needs work: why is
-			     ;;             (recursive-closure-free-variables
-			     ;;              xs1 es1)
-			     ;;             not here?
+		   (alpha-convert
+		    (new-lambda-expression
+		     (sensitivityify-access (anf-parameter e1))
+		     (create-let*
+		      (append
+		       ;; These are the zeroing bindings for the reverse phase.
+		       (map
+			(lambda (x)
+			 (make-parameter-binding
+			  (sensitivity-access x)
+			  (make-sensitize
+			   (make-zero (make-*j-inverse (reverse-access x))))))
+			(set-differencep
+			 variable=?
+			 (remove-duplicatesp
+			  variable=?
+			  (append
+			   (parameter-variables p)
+			   (map-reduce append
+				       '()
+				       parameter-variables
+				       (anf-let*-parameters e1))
+			   xs1
+			   ;; needs work: why is
+			   ;;             (recursive-closure-free-variables
+			   ;;              xs1 es1)
+			   ;;             not here?
+			   xs0
+			   (if (= i -1)
+			       (free-variables e)
+			       (recursive-closure-free-variables xs0 es0))))
+			 (parameter-variables (anf-parameter e1))))
+		       ;; These are the bindings for the reverse phase that
+		       ;; come from the primal.
+		       (removeq
+			#f
+			(map
+			 (lambda (p e x)
+			  (cond
+			   ;; p = v is eliminated
+			   ((constant-expression? e) #f)
+			   ;;            _    _
+			   ;;            \    \
+			   ;; p = e -~-> e += p
+			   ((variable-access-expression? e)
+			    (make-plus-binding (sensitivityify-access e)
+					       (sensitivityify-parameter p)))
+			   ;;                _____    _
+			   ;;                \        \
+			   ;; p = \ x e -~-> \ x e += p
+			   ((lambda-expression? e)
+			    (make-plus-binding (sensitivity-transform e)
+					       (sensitivityify-parameter p)))
+			   ;;                __ _ __    _ _
+			   ;;                \  \ \       \
+			   ;; p = x1 x2 -~-> x1 , x2 += p p
+			   ;; We want the x1,x2 inside the sensitivity so that
+			   ;; the aggregate is a sensitivity that can be added
+			   ;; by plus, since for type correctness, plus adds
+			   ;; only sensitivities.
+			   ((application? e)
+			    (make-plus-binding
+			     (new-cons-expression
+			      (add-tag 'sensitivity (empty-tags))
+			      (sensitivityify-access (application-callee e))
+			      (sensitivityify-access (application-argument e)))
+			     (new-application
+			      (new-variable-access-expression x)
+			      (sensitivityify-parameter p))))
+			   ;;                __ _ __    _
+			   ;;                \  \ \     \
+			   ;; p = x1,x2 -~-> x1 , x2 += p
+			   ;; We want the x1,x2 inside the sensitivity so that
+			   ;; the aggregate is a sensitivity that can be added
+			   ;; by plus, since for type correctness, plus adds
+			   ;; only sensitivities.
+			   ((cons-expression? e)
+			    (make-plus-binding
+			     (new-cons-expression
+			      (add-tag 'sensitivity (cons-expression-tags e))
+			      (sensitivityify-access (cons-expression-car e))
+			      (sensitivityify-access (cons-expression-cdr e)))
+			     (sensitivityify-parameter p)))
+			   (else (internal-error))))
+			 (reverse (anf-let*-parameters e1))
+			 (reverse (anf-let*-expressions e1))
+			 (reverse xs)))
+		       (map (lambda (x1)
+			     ;; ______________________    __
+			     ;; \                         \
+			     ;; letrec xs1 = es1 in x1 += x1
+			     (make-plus-binding
+			      (sensitivity-transform
+			       (new-letrec-expression
+				xs1 es1 (new-variable-access-expression x1)))
+			      (sensitivity-access x1)))
+			    xs1)
+		       (map (lambda (x0)
+			     ;; ______________________    __
+			     ;; \                         \
+			     ;; letrec xs0 = es0 in x0 += x0
+			     (make-plus-binding
+			      (sensitivity-transform
+			       (new-letrec-expression
+				xs0 es0 (new-variable-access-expression x0)))
+			      (sensitivity-access x0)))
+			    xs0))
+		      ;; This conses the sensitivity to the target with the
+		      ;; sensitivity to the argument.
+		      (new-cons-expression
+		       (add-tag 'sensitivity (empty-tags))
+		       ;; This is the sensitivity to the target.
+		       (sensitivity-transform
+			(if (= i -1)
+			    ;; _
+			    ;; \
+			    ;; e
+			    e
+			    ;; ______________________
+			    ;; \
+			    ;; letrec xs0 = es0 in x0
+			    (new-letrec-expression
 			     xs0
-			     (if (= i -1)
-				 (free-variables e)
-				 (recursive-closure-free-variables xs0 es0))))
-			   (parameter-variables (anf-parameter e1))))
-			 ;; These are the bindings for the reverse phase that
-			 ;; come from the primal.
-			 (removeq
-			  #f
-			  (map
-			   (lambda (p e x)
-			    (cond
-			     ;; p = v is eliminated
-			     ((constant-expression? e) #f)
-			     ;;            _    _
-			     ;;            \    \
-			     ;; p = e -~-> e += p
-			     ((variable-access-expression? e)
-			      (make-plus-binding (sensitivityify-access e)
-						 (sensitivityify-parameter p)))
-			     ;;                _____    _
-			     ;;                \        \
-			     ;; p = \ x e -~-> \ x e += p
-			     ((lambda-expression? e)
-			      (make-plus-binding (sensitivity-transform e)
-						 (sensitivityify-parameter p)))
-			     ;;                __ _ __    _ _
-			     ;;                \  \ \       \
-			     ;; p = x1 x2 -~-> x1 , x2 += p p
-			     ;; We want the x1,x2 inside the sensitivity so that
-			     ;; the aggregate is a sensitivity that can be added
-			     ;; by plus, since for type correctness, plus adds
-			     ;; only sensitivities.
-			     ((application? e)
-			      (make-plus-binding
-			       (new-cons-expression
-				(add-tag 'sensitivity (empty-tags))
-				(sensitivityify-access (application-callee e))
-				(sensitivityify-access (application-argument e)))
-			       (new-application
-				(new-variable-access-expression x)
-				(sensitivityify-parameter p))))
-			     ;;                __ _ __    _
-			     ;;                \  \ \     \
-			     ;; p = x1,x2 -~-> x1 , x2 += p
-			     ;; We want the x1,x2 inside the sensitivity so that
-			     ;; the aggregate is a sensitivity that can be added
-			     ;; by plus, since for type correctness, plus adds
-			     ;; only sensitivities.
-			     ((cons-expression? e)
-			      (make-plus-binding
-			       (new-cons-expression
-				(add-tag 'sensitivity (cons-expression-tags e))
-				(sensitivityify-access (cons-expression-car e))
-				(sensitivityify-access (cons-expression-cdr e)))
-			       (sensitivityify-parameter p)))
-			     (else (internal-error))))
-			   (reverse (anf-let*-parameters e1))
-			   (reverse (anf-let*-expressions e1))
-			   (reverse xs)))
-			 (map (lambda (x1)
-			       ;; ______________________    __
-			       ;; \                         \
-			       ;; letrec xs1 = es1 in x1 += x1
-			       (make-plus-binding
-				(sensitivity-transform
-				 (new-letrec-expression
-				  xs1 es1 (new-variable-access-expression x1)))
-				(sensitivity-access x1)))
-			      xs1)
-			 (map (lambda (x0)
-			       ;; ______________________    __
-			       ;; \                         \
-			       ;; letrec xs0 = es0 in x0 += x0
-			       (make-plus-binding
-				(sensitivity-transform
-				 (new-letrec-expression
-				  xs0 es0 (new-variable-access-expression x0)))
-				(sensitivity-access x0)))
-			      xs0))
-			;; This conses the sensitivity to the target with the
-			;; sensitivity to the argument.
-			(new-cons-expression
-			 (add-tag 'sensitivity (empty-tags))
-			 ;; This is the sensitivity to the target.
-			 (sensitivity-transform
-			  (if (= i -1)
-			      ;; _
-			      ;; \
-			      ;; e
-			      e
-			      ;; ______________________
-			      ;; \
-			      ;; letrec xs0 = es0 in x0
-			      (new-letrec-expression
-			       xs0
-			       es0
-			       (new-variable-access-expression
-				(list-ref xs0 i)))))
-			 ;; This is the sensitivity to the argument.
-			 (sensitivityify-parameter p)))))))))))))))
+			     es0
+			     (new-variable-access-expression
+			      (list-ref xs0 i)))))
+		       ;; This is the sensitivity to the argument.
+		       (sensitivityify-parameter p)))))))))))))
       (assert (and (not (lambda-expression-reverse-transform e))
 		   (not (lambda-expression-reverse-transform-inverse e2))))
       (set-lambda-expression-reverse-transform! e e2)
@@ -4978,6 +4827,17 @@
 		    (fill-tagged-pair! u v-car v-cdr)
 		    (k u cs)))))))
     (else
+     ;; debugging
+     (begin
+      (pp (externalize-expression
+	   (nonrecursive-closure-lambda-expression v1)))
+      (newline)
+      (pp (externalize-expression
+	   (nonrecursive-closure-lambda-expression v2)))
+      (newline)
+      (write (expression-eqv? (nonrecursive-closure-lambda-expression v1)
+			      (nonrecursive-closure-lambda-expression v2)))
+      (newline))
      (if *abstract?*
 	 (let ((u (compile-time-warning
 		   "Arguments to plus might not conform" v1 v2)))
@@ -5578,8 +5438,8 @@
 	(list (cons (variable-access-expression-variable p) v)))
        ((lambda-expression? p)
 	(unless (and (nonrecursive-closure? v)
-		     (expression=? p
-				   (nonrecursive-closure-lambda-expression v)))
+		     (expression-eqv?
+		      p (nonrecursive-closure-lambda-expression v)))
 	 (run-time-error
 	  (format #f "Argument is not a matching nonrecursive closure for ~s"
 		  (externalize-expression p))
@@ -5603,17 +5463,10 @@
 		     (= (vector-length
 			 (recursive-closure-lambda-expressions v))
 			(length (letrec-expression-lambda-expressions p)))
-		     (let ((xs1 (append
-				 (recursive-closure-variables v)
-				 (vector->list
-				  (recursive-closure-procedure-variables v))))
-			   (xs2 (append
-				 (letrec-expression-variables p)
-				 (letrec-expression-procedure-variables p))))
-		      (every
-		       (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		       (vector->list (recursive-closure-lambda-expressions v))
-		       (letrec-expression-lambda-expressions p))))
+		     (every
+		      expression-eqv?
+		      (vector->list (recursive-closure-lambda-expressions v))
+		      (letrec-expression-lambda-expressions p)))
 	 (run-time-error
 	  (format #f "Argument is not a matching recursive closure for ~s"
 		  (externalize-expression p))
@@ -6378,8 +6231,8 @@
   ((lambda-expression? p)
    (cond
     ((and (nonrecursive-closure? v)
-	  (expression=? p
-			(nonrecursive-closure-lambda-expression v)))
+	  (expression-eqv?
+	   p (nonrecursive-closure-lambda-expression v)))
      (list (map cons (parameter-variables p) (nonrecursive-closure-values v))))
     (else
      (compile-time-warning
@@ -6406,14 +6259,9 @@
 	  (= (vector-length
 	      (recursive-closure-lambda-expressions v))
 	     (length (letrec-expression-lambda-expressions p)))
-	  (let ((xs1 (append (recursive-closure-variables v)
-			     (vector->list
-			      (recursive-closure-procedure-variables v))))
-		(xs2 (append (letrec-expression-variables p)
-			     (letrec-expression-procedure-variables p))))
-	   (every (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		  (vector->list (recursive-closure-lambda-expressions v))
-		  (letrec-expression-lambda-expressions p))))
+	  (every expression-eqv?
+		 (vector->list (recursive-closure-lambda-expressions v))
+		 (letrec-expression-lambda-expressions p)))
      (list (map cons (parameter-variables p) (recursive-closure-values v))))
     (else
      (compile-time-warning
@@ -6515,8 +6363,7 @@
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	   (map-union
 	    (lambda (u2)
-	     (new-union (abstract-apply-closure
-			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
+	     (new-union (abstract-apply-closure abstract-eval1 u1 u2)))
 	    v2))
 	  ((some-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
@@ -6524,8 +6371,7 @@
 	    "Argument might have wrong type for target" u1 v2)
 	   (map-union
 	    (lambda (u2)
-	     (new-union (abstract-apply-closure
-			 (lambda (e vs) (abstract-eval1 e vs)) u1 u2)))
+	     (new-union (abstract-apply-closure abstract-eval1 u1 u2)))
 	    v2))
 	  (else (compile-time-warning
 		 "Argument might have wrong type for target" u1 v2))))
@@ -6694,15 +6540,9 @@
 	       (if (and (nonrecursive-closure? v2) (nonrecursive-closure? v3))
 		   (if (vlad-false? v1)
 		       (abstract-apply-closure!
-			e
-			(lambda (e vs) (abstract-eval-prime! e vs))
-			v3
-			(vlad-empty-list))
+			e abstract-eval-prime! v3 (vlad-empty-list))
 		       (abstract-apply-closure!
-			e
-			(lambda (e vs) (abstract-eval-prime! e vs))
-			v2
-			(vlad-empty-list)))
+			e abstract-eval-prime! v2 (vlad-empty-list)))
 		   (compile-time-warning
 		    "Consequent and/or alternate might not be a nonrecursive closure"
 		    (vlad-cons v1 (vlad-cons v2 v3)))))
@@ -6713,16 +6553,14 @@
 	    ((every-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	     (for-each (lambda (u2)
-			(abstract-apply-closure!
-			 e (lambda (e vs) (abstract-eval-prime! e vs)) u1 u2))
+			(abstract-apply-closure! e abstract-eval-prime! u1 u2))
 		       (union-members v2)))
 	    ((some-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	     (compile-time-warning
 	      "Argument might have wrong type for target" u1 v2)
 	     (for-each (lambda (u2)
-			(abstract-apply-closure!
-			 e (lambda (e vs) (abstract-eval-prime! e vs)) u1 u2))
+			(abstract-apply-closure! e abstract-eval-prime! u1 u2))
 		       (union-members v2)))
 	    (else (compile-time-warning
 		   "Argument might have wrong type for target" u1 v2))))
@@ -7435,6 +7273,24 @@
 			       (aggregate-value-values v1)
 			       (aggregate-value-values v2))))))
 
+(define (transpose-lists m)
+ (if (null? (rest m))
+     (map list (first m))
+     (map cons (first m) (transpose-lists (rest m)))))
+
+(define (single-member vss)
+ (assert (and (not (null? vss))
+	      (every (lambda (vs) (= (length vs) (length (first vss)))) vss)))
+ (map new-union (transpose-lists vss)))
+
+(define (single-member-vss vss)
+ (assert (= (length vss) 1))
+ (first vss))
+
+(define (single-member-vs vs)
+ (assert (= (length vs) 1))
+ (first vs))
+
 (define (all-widenings)
  (cached-topological-sort
   (lambda (v1v2a v1v2b)
@@ -7462,35 +7318,51 @@
 				  (restrict-environment
 				   (environment-binding-values b)
 				   e
-				   application-callee))))
-	 (if (and (not (union? v1))
-		  (primitive-procedure? v1)
-		  (eq? (primitive-procedure-name v1) 'if-procedure))
-	     (let* ((v (abstract-eval1 (application-argument e)
-				       (restrict-environment
-					(environment-binding-values b)
-					e
-					application-argument))))
-	      (let* ((v1 (vlad-car v))
-		     (v2 (vlad-cdr v))
-		     (v3 (vlad-car v2))
-		     (v4 (vlad-cdr v2))
-		     (v5 (cond
-			  ((abstract-boolean? v1)
-			   (abstract-value-union
-			    (abstract-apply v3 (vlad-empty-list))
-			    (abstract-apply v4 (vlad-empty-list))))
-			  ((vlad-false? v1)
-			   (abstract-apply v4 (vlad-empty-list)))
-			  (else (abstract-apply v3 (vlad-empty-list))))))
-	       (if (and (not (void? v5)) (abstract-boolean? v1))
-		   (let ((v6 (abstract-apply v3 (vlad-empty-list)))
-			 (v7 (abstract-apply v4 (vlad-empty-list))))
-		    (unionp abstract-value-pair=?
-			    (all-subwidenings v6 v5)
-			    (all-subwidenings v7 v5)))
-		   '())))
-	     '())))
+				   application-callee)))
+	      (v2 (abstract-eval1 (application-argument e)
+				  (restrict-environment
+				   (environment-binding-values b)
+				   e
+				   application-argument))))
+	 (cond ((and (not (union? v1))
+		     (primitive-procedure? v1)
+		     (eq? (primitive-procedure-name v1) 'if-procedure))
+		(let* ((v (abstract-eval1 (application-argument e)
+					  (restrict-environment
+					   (environment-binding-values b)
+					   e
+					   application-argument))))
+		 (let* ((v1 (vlad-car v))
+			(v2 (vlad-cdr v))
+			(v3 (vlad-car v2))
+			(v4 (vlad-cdr v2))
+			(v5 (cond
+			     ((abstract-boolean? v1)
+			      (abstract-value-union
+			       (abstract-apply v3 (vlad-empty-list))
+			       (abstract-apply v4 (vlad-empty-list))))
+			     ((vlad-false? v1)
+			      (abstract-apply v4 (vlad-empty-list)))
+			     (else (abstract-apply v3 (vlad-empty-list))))))
+		  (if (and (not (void? v5)) (abstract-boolean? v1))
+		      (let ((v6 (abstract-apply v3 (vlad-empty-list)))
+			    (v7 (abstract-apply v4 (vlad-empty-list))))
+		       (unionp abstract-value-pair=?
+			       (all-subwidenings v6 v5)
+			       (all-subwidenings v7 v5)))
+		      '()))))
+	       ((abstract-boolean? v2)
+		(let ((v4 (single-member-vs (abstract-apply-closure
+					     abstract-eval1 v1 (vlad-true))))
+		      (v5 (single-member-vs (abstract-apply-closure
+					     abstract-eval1 v1 (vlad-false))))
+		      (v3 (abstract-apply v1 v2)))
+		 (if (void? v3)
+		     '()
+		     (unionp abstract-value-pair=?
+			     (all-subwidenings v4 v3)
+			     (all-subwidenings v5 v3)))))
+	       (else '()))))
        (expression-environment-bindings e)))
      (else '())))
    *expressions*)))
@@ -7848,27 +7720,32 @@
        (and (eq? (first thing1) 'if)
 	    (eq? (first thing2) 'function)
 	    (some (lambda (u)
-		   (calls-if-procedure?
-		    (closure-body (first (second thing2)))
-		    (second thing1)
-		    (let ((vss (abstract-apply-closure
-				(lambda (e vs) vs) (first (second thing2)) u)))
-		     (assert (= (length vss) 1))
-		     (first vss))
-		    bs))
+		   ;; needs work: I'm not sure that this quantification over
+		   ;;             the output of abstract-apply-closure is
+		   ;;             correct.
+		   (some (lambda (vs)
+			  (calls-if-procedure?
+			   (closure-body (first (second thing2)))
+			   (second thing1)
+			   vs
+			   bs))
+			 (abstract-apply-closure
+			  (lambda (e vs) vs) (first (second thing2)) u)))
 		  (union-members (second (second thing2)))))
        (and (eq? (first thing1) 'function)
 	    (eq? (first thing2) 'function)
 	    (some (lambda (u)
-		   (calls?
-		    (closure-body (first (second thing2)))
-		    (first (second thing1))
-		    (second (second thing1))
-		    (let ((vss (abstract-apply-closure
-				(lambda (e vs) vs) (first (second thing2)) u)))
-		     (assert (= (length vss) 1))
-		     (first vss))
-		    bs))
+		   ;; needs work: I'm not sure that this quantification over
+		   ;;             the output of abstract-apply-closure is
+		   ;;             correct.
+		   (some (lambda (vs)
+			  (calls? (closure-body (first (second thing2)))
+				  (first (second thing1))
+				  (second (second thing1))
+				  vs
+				  bs))
+			 (abstract-apply-closure
+			  (lambda (e vs) vs) (first (second thing2)) u)))
 		  (union-members (second (second thing2)))))))
   (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure))
 	  (map (lambda (v1v2) (list 'function v1v2)) v1v2s))))
@@ -7965,7 +7842,7 @@
 	";")))
   ((lambda-expression? p)
    (unless (and (nonrecursive-closure? v)
-		(expression=? p (nonrecursive-closure-lambda-expression v)))
+		(expression-eqv? p (nonrecursive-closure-lambda-expression v)))
     (run-time-error
      (format #f "Argument is not a matching nonrecursive closure for ~s"
 	     (externalize-expression p))
@@ -8001,17 +7878,9 @@
 		(= (vector-length
 		    (recursive-closure-lambda-expressions v))
 		   (length (letrec-expression-lambda-expressions p)))
-		(let ((xs1 (append
-			    (recursive-closure-variables v)
-			    (vector->list
-			     (recursive-closure-procedure-variables v))))
-		      (xs2 (append
-			    (letrec-expression-variables p)
-			    (letrec-expression-procedure-variables p))))
-		 (every
-		  (lambda (e1 e2) (alpha-equivalent? e1 e2 xs1 xs2))
-		  (vector->list (recursive-closure-lambda-expressions v))
-		  (letrec-expression-lambda-expressions p))))
+		(every expression-eqv?
+		       (vector->list (recursive-closure-lambda-expressions v))
+		       (letrec-expression-lambda-expressions p)))
     (run-time-error
      (format #f "Argument is not a matching recursive closure for ~s"
 	     (externalize-expression p))
@@ -8132,9 +8001,8 @@
 	    (lambda (u2)
 	     (generate-letrec-bindings
 	      (closure-body v1)
-	      (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 u2)))
-	       (assert (= (length vss) 1))
-	       (first vss))
+	      (single-member-vss
+	       (abstract-apply-closure (lambda (e vs) vs) v1 u2))
 	      (closure-variables v1)
 	      (cond ((nonrecursive-closure? v1) '())
 		    ((recursive-closure? v1)
@@ -8149,47 +8017,52 @@
 	   (if (abstract-boolean? v2)
 	       (list
 		"x?("
-		(generate-expression
-		 (closure-body v1)
-		 (let ((vss (abstract-apply-closure
-			     (lambda (e vs) vs) v1 (vlad-true))))
-		  (assert (= (length vss) 1))
-		  (first vss))
-		 (closure-variables v1)
-		 (cond
-		  ((nonrecursive-closure? v1) '())
-		  ((recursive-closure? v1)
-		   (vector->list (recursive-closure-procedure-variables v1)))
-		  (else (internal-error)))
-		 bs
-		 xs
-		 vs
-		 v1v2s
+		(generate-widen
+		 (single-member-vs
+		  (abstract-apply-closure abstract-eval1 v1 (vlad-true)))
+		 v3
+		 (generate-expression
+		  (closure-body v1)
+		  (single-member-vss
+		   (abstract-apply-closure (lambda (e vs) vs) v1 (vlad-true)))
+		  (closure-variables v1)
+		  (cond
+		   ((nonrecursive-closure? v1) '())
+		   ((recursive-closure? v1)
+		    (vector->list (recursive-closure-procedure-variables v1)))
+		   (else (internal-error)))
+		  bs
+		  xs
+		  vs
+		  v1v2s
+		  v1v2s1)
 		 v1v2s1)
 		"):("
-		(generate-expression
-		 (closure-body v1)
-		 (let ((vss (abstract-apply-closure
-			     (lambda (e vs) vs) v1 (vlad-false))))
-		  (assert (= (length vss) 1))
-		  (first vss))
-		 (closure-variables v1)
-		 (cond
-		  ((nonrecursive-closure? v1) '())
-		  ((recursive-closure? v1)
-		   (vector->list (recursive-closure-procedure-variables v1)))
-		  (else (internal-error)))
-		 bs
-		 xs
-		 vs
-		 v1v2s
+		(generate-widen
+		 (single-member-vs
+		  (abstract-apply-closure abstract-eval1 v1 (vlad-false)))
+		 v3
+		 (generate-expression
+		  (closure-body v1)
+		  (single-member-vss
+		   (abstract-apply-closure (lambda (e vs) vs) v1 (vlad-false)))
+		  (closure-variables v1)
+		  (cond
+		   ((nonrecursive-closure? v1) '())
+		   ((recursive-closure? v1)
+		    (vector->list (recursive-closure-procedure-variables v1)))
+		   (else (internal-error)))
+		  bs
+		  xs
+		  vs
+		  v1v2s
+		  v1v2s1)
 		 v1v2s1)
 		")")
 	       (generate-expression
 		(closure-body v1)
-		(let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
-		 (assert (= (length vss) 1))
-		 (first vss))
+		(single-member-vss
+		 (abstract-apply-closure (lambda (e vs) vs) v1 v2))
 		(closure-variables v1)
 		(cond
 		 ((nonrecursive-closure? v1) '())
@@ -8208,12 +8081,7 @@
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
-       ((memp variable=? x xs)
-	;; debugging
-	(when #f
-	 (write (list x (list "c." (generate-variable-name x xs1))))
-	 (newline))
-	(list "c." (generate-variable-name x xs1)))
+       ((memp variable=? x xs) (list "c." (generate-variable-name x xs1)))
        (else (generate-variable-name x xs1))))
 
 (define (generate-expression e vs xs xs2 bs xs1 vs1 v1v2s v1v2s1)
@@ -8234,9 +8102,10 @@
      "("
      (commas-between
       (map (lambda (x v) (if (void? v) #f (generate-reference x xs2 xs xs1)))
-	   ;; This cannot be (nonrecursive-closure-variables v) because of
-	   ;; using alpha equivalence for expression=?.
-	   (free-variables e)
+	   ;; This used to have to be (free-variables e) instead of
+	   ;; (closure-variables v) when we used alpha equivalence for
+	   ;; expression=?.
+	   (closure-variables v)
 	   (aggregate-value-values v)))
      ")"))
    ((application? e)
@@ -8418,9 +8287,11 @@
 		  (commas-between
 		   (map (lambda (x v)
 			 (if (void? v) #f (generate-reference x xs2 xs xs1)))
-			;; This cannot be (recursive-closure-variables v)
-			;; because of using alpha equivalence for expression=?.
-			(letrec-expression-variables e)
+			;; This used to have to be
+			;; (letrec-expression-variables e) instead of
+			;; (closure-variables v) when we used alpha
+			;; equivalence for expression=?.
+			(closure-variables v)
 			(aggregate-value-values v)))
 		  ");"))))
       (letrec-expression-procedure-variables e))
@@ -9854,12 +9725,8 @@
 	(if (and (nonrecursive-closure? v2) (nonrecursive-closure? v3))
 	    (new-union
 	     (if (vlad-false? v1)
-		 (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs))
-					 v3
-					 (vlad-empty-list))
-		 (abstract-apply-closure (lambda (e vs) (abstract-eval1 e vs))
-					 v2
-					 (vlad-empty-list))))
+		 (abstract-apply-closure abstract-eval1 v3 (vlad-empty-list))
+		 (abstract-apply-closure abstract-eval1 v2 (vlad-empty-list))))
 	    (compile-time-warning
 	     "Consequent and/or alternate might not be a nonrecursive closure"
 	     (vlad-cons v1 (vlad-cons v2 v3))))
