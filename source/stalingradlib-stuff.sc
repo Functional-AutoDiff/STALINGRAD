@@ -161,6 +161,10 @@
 
 (define-structure environment-binding values value)
 
+(define-structure if-instance v)
+
+(define-structure function-instance v1 v2)
+
 ;;; Variables
 
 (define *gensym* 0)
@@ -7342,10 +7346,10 @@
 			       (all-subwidenings v7 v5)))
 		      '()))))
 	       ((abstract-boolean? v2)
-		(let ((v4 (single-member-vs (abstract-apply-closure
-					     abstract-eval1 v1 (vlad-true))))
-		      (v5 (single-member-vs (abstract-apply-closure
-					     abstract-eval1 v1 (vlad-false))))
+		(let ((v4 (new-union (abstract-apply-closure
+				      abstract-eval1 v1 (vlad-true))))
+		      (v5 (new-union (abstract-apply-closure
+				      abstract-eval1 v1 (vlad-false))))
 		      (v3 (abstract-apply v1 v2)))
 		 (if (void? v3)
 		     '()
@@ -7391,14 +7395,13 @@
 		    (v2 (vlad-cdr v))
 		    (v3 (vlad-car v2))
 		    (v4 (vlad-cdr v2))
-		    (v5
-		     (cond ((abstract-boolean? v1)
-			    (abstract-value-union
-			     (abstract-apply v3 (vlad-empty-list))
-			     (abstract-apply v4 (vlad-empty-list))))
-			   ((vlad-false? v1)
-			    (abstract-apply v4 (vlad-empty-list)))
-			   (else (abstract-apply v3 (vlad-empty-list))))))
+		    (v5 (cond ((abstract-boolean? v1)
+			       (abstract-value-union
+				(abstract-apply v3 (vlad-empty-list))
+				(abstract-apply v4 (vlad-empty-list))))
+			      ((vlad-false? v1)
+			       (abstract-apply v4 (vlad-empty-list)))
+			      (else (abstract-apply v3 (vlad-empty-list))))))
 	      (if (void? v5)
 		  '()
 		  (cond ((abstract-boolean? v1)
@@ -7696,67 +7699,73 @@
 		      (restrict-environment vs e cons-expression-cdr)
 		      bs)))))
 
-(define (generate-things1-things2 bs xs vs v1v2s)
+(define (generate-instances1-instances2 bs xs vs v1v2s)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort
-  (lambda (thing1 thing2)
-   (or (and (eq? (first thing1) 'function)
-	    (eq? (first thing2) 'if)
-	    (or (abstract-value=? (first (second thing1))
-				  (vlad-car (vlad-cdr (second thing2))))
-		(abstract-value=? (first (second thing1))
-				  (vlad-cdr (vlad-cdr (second thing2))))))
-       (and (eq? (first thing1) 'if)
-	    (eq? (first thing2) 'function)
-	    (some (lambda (u)
-		   ;; needs work: I'm not sure that this quantification over
-		   ;;             the output of abstract-apply-closure is
-		   ;;             correct.
-		   (some (lambda (vs)
-			  (calls-if-procedure?
-			   (closure-body (first (second thing2)))
-			   (second thing1)
-			   vs
-			   bs))
-			 (abstract-apply-closure
-			  (lambda (e vs) vs) (first (second thing2)) u)))
-		  (union-members (second (second thing2)))))
-       (and (eq? (first thing1) 'function)
-	    (eq? (first thing2) 'function)
-	    (some (lambda (u)
-		   ;; needs work: I'm not sure that this quantification over
-		   ;;             the output of abstract-apply-closure is
-		   ;;             correct.
-		   (some (lambda (vs)
-			  (calls? (closure-body (first (second thing2)))
-				  (first (second thing1))
-				  (second (second thing1))
-				  vs
-				  bs))
-			 (abstract-apply-closure
-			  (lambda (e vs) vs) (first (second thing2)) u)))
-		  (union-members (second (second thing2)))))))
-  (append (map (lambda (v) (list 'if v)) (all-primitives 'if-procedure))
-	  (map (lambda (v1v2) (list 'function v1v2)) v1v2s))))
+  (lambda (instance1 instance2)
+   (or (and (function-instance? instance1)
+	    (if-instance? instance2)
+	    (or (abstract-value=?
+		 (function-instance-v1 instance1)
+		 (vlad-car (vlad-cdr (if-instance-v instance2))))
+		(abstract-value=?
+		 (function-instance-v1 instance1)
+		 (vlad-cdr (vlad-cdr (if-instance-v instance2))))))
+       (and (if-instance? instance1)
+	    (function-instance? instance2)
+	    (some
+	     (lambda (u2)
+	      ;; here I am: I'm not sure that this quantification over
+	      ;;            the output of abstract-apply-closure is
+	      ;;            correct.
+	      (some (lambda (vs)
+		     (calls-if-procedure?
+		      (closure-body (function-instance-v1 instance2))
+		      (if-instance-v instance1)
+		      vs
+		      bs))
+		    (abstract-apply-closure
+		     (lambda (e vs) vs) (function-instance-v1 instance2) u2)))
+	     (union-members (function-instance-v2 instance2))))
+       (and (function-instance? instance1)
+	    (function-instance? instance2)
+	    (some
+	     (lambda (u2)
+	      ;; here I am: I'm not sure that this quantification over
+	      ;;            the output of abstract-apply-closure is
+	      ;;            correct.
+	      (some (lambda (vs)
+		     (calls? (closure-body (function-instance-v1 instance2))
+			     (function-instance-v1 instance1)
+			     (function-instance-v2 instance1)
+			     vs
+			     bs))
+		    (abstract-apply-closure
+		     (lambda (e vs) vs) (function-instance-v1 instance2) u2)))
+	     (union-members (function-instance-v2 instance2))))))
+  (append
+   (map make-if-instance (all-primitives 'if-procedure))
+   (map (lambda (v1v2) (make-function-instance (first v1v2) (second v1v2)))
+	v1v2s))))
 
-(define (generate-if-and-function-declarations bs vs v1v2s things1-things2)
+(define (generate-if-and-function-declarations
+	 bs vs v1v2s instances1-instances2)
  (map
-  (lambda (thing)
-   (case (first thing)
-    ((if)
-     (let* ((v (second thing))
+  (lambda (instance)
+   (cond
+    ((if-instance? instance)
+     (let* ((v (if-instance-v instance))
 	    (v1 (vlad-car v))
 	    (v2 (vlad-cdr v))
 	    (v3 (vlad-car v2))
 	    (v4 (vlad-cdr v2))
-	    (v5
-	     (cond ((abstract-boolean? v1)
-		    (abstract-value-union
-		     (abstract-apply v3 (vlad-empty-list))
-		     (abstract-apply v4 (vlad-empty-list))))
-		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
-		   (else (abstract-apply v3 (vlad-empty-list))))))
+	    (v5 (cond ((abstract-boolean? v1)
+		       (abstract-value-union
+			(abstract-apply v3 (vlad-empty-list))
+			(abstract-apply v4 (vlad-empty-list))))
+		      ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
+		      (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
 	  '()
 	  (list "static INLINE "
@@ -7767,28 +7776,26 @@
 		(if (void? v) "void" (list (generate-specifier v vs) " x"))
 		");"
 		#\newline))))
-    ((function)
-     (let* ((v1v2 (second thing))
-	    (v1 (first v1v2))
-	    (v2 (second v1v2))
+    ((function-instance? instance)
+     (let* ((v1 (function-instance-v1 instance))
+	    (v2 (function-instance-v2 instance))
 	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
 	   "static "
-	   (if (memq thing (second things1-things2)) '() "INLINE ")
+	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
 	   (generate-function-name v1 v2 v1v2s)
 	   "("
 	   (commas-between-void
-	    (list
-	     (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-	     (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
+	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
 	   ");"
 	   #\newline))))
     (else (internal-error))))
-  (append (first things1-things2) (second things1-things2))))
+  (append (first instances1-instances2) (second instances1-instances2))))
 
 (define (generate-widen v1 v2 code v1v2s)
  (if (abstract-value=? v1 v2)
@@ -7890,8 +7897,7 @@
 	(recursive-closure-values v)))
   ((cons-expression? p)
    (unless (and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p)
-			     (tagged-pair-tags v)))
+		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
     (run-time-error
      (format #f "Argument is not a matching tagged pair with tags ~s"
 	     (cons-expression-tags p))
@@ -7904,23 +7910,22 @@
   (else (internal-error))))
 
 (define (generate-if-and-function-definitions
-	 bs xs vs v1v2s v1v2s1 things1-things2)
+	 bs xs vs v1v2s v1v2s1 instances1-instances2)
  (map
-  (lambda (thing)
-   (case (first thing)
-    ((if)
-     (let* ((v (second thing))
+  (lambda (instance)
+   (cond
+    ((if-instance? instance)
+     (let* ((v (if-instance-v instance))
 	    (v1 (vlad-car v))
 	    (v2 (vlad-cdr v))
 	    (v3 (vlad-car v2))
 	    (v4 (vlad-cdr v2))
-	    (v5
-	     (cond ((abstract-boolean? v1)
-		    (abstract-value-union
-		     (abstract-apply v3 (vlad-empty-list))
-		     (abstract-apply v4 (vlad-empty-list))))
-		   ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
-		   (else (abstract-apply v3 (vlad-empty-list))))))
+	    (v5 (cond ((abstract-boolean? v1)
+		       (abstract-value-union
+			(abstract-apply v3 (vlad-empty-list))
+			(abstract-apply v4 (vlad-empty-list))))
+		      ((vlad-false? v1) (abstract-apply v4 (vlad-empty-list)))
+		      (else (abstract-apply v3 (vlad-empty-list))))))
       (if (void? v5)
 	  '()
 	  (list
@@ -7964,16 +7969,15 @@
 			")")))
 	   ";}"
 	   #\newline))))
-    ((function)
-     (let* ((v1v2 (second thing))
-	    (v1 (first v1v2))
-	    (v2 (second v1v2))
+    ((function-instance? instance)
+     (let* ((v1 (function-instance-v1 instance))
+	    (v2 (function-instance-v2 instance))
 	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
 	   "static "
-	   (if (memq thing (second things1-things2)) '() "INLINE ")
+	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
 	   (generate-function-name v1 v2 v1v2s)
@@ -7989,19 +7993,22 @@
 	    (lambda (code1 code2) (list code1 code2))
 	    ""
 	    (lambda (u2)
-	     (generate-letrec-bindings
-	      (closure-body v1)
-	      (single-member-vss
-	       (abstract-apply-closure (lambda (e vs) vs) v1 u2))
-	      (closure-variables v1)
-	      (cond ((nonrecursive-closure? v1) '())
-		    ((recursive-closure? v1)
-		     (vector->list (recursive-closure-procedure-variables v1)))
-		    (else (internal-error)))
-	      bs
-	      xs
-	      vs
-	      v1v2s))
+	     (map-reduce
+	      (lambda (code1 code2) (list code1 code2))
+	      ""
+	      (lambda (vs1)
+	       (generate-letrec-bindings
+		(closure-body v1)
+		vs1
+		(closure-variables v1)
+		(cond
+		 ((nonrecursive-closure? v1) '())
+		 ((recursive-closure? v1)
+		  (vector->list (recursive-closure-procedure-variables v1)))
+		 (else (internal-error)))
+		xs
+		vs))
+	      (abstract-apply-closure (lambda (e vs) vs) v1 u2)))
 	    (union-members v2))
 	   "return "
 	   (if (abstract-boolean? v2)
@@ -8067,7 +8074,7 @@
 	   ";}"
 	   #\newline))))
     (else (internal-error))))
-  (append (first things1-things2) (second things1-things2))))
+  (append (first instances1-instances2) (second instances1-instances2))))
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
@@ -8203,7 +8210,7 @@
 	   ")")))
    (else (internal-error)))))
 
-(define (generate-letrec-bindings  e vs xs xs2 bs xs1 vs1 v1v2s)
+(define (generate-letrec-bindings e vs xs xs2 xs1 vs1)
  (let ((v (abstract-eval1 e vs)))
   (cond
    ((void? v) '())
@@ -8228,10 +8235,8 @@
 	      (restrict-environment vs e application-argument)
 	      xs
 	      xs2
-	      bs
 	      xs1
-	      vs1
-	      v1v2s))
+	      vs1))
 	 ;; needs work: This unsoundly removes code that might do I/O, signal
 	 ;;             an error, or not terminate.
 	 (list (if (void? v1)
@@ -8241,10 +8246,8 @@
 		    (restrict-environment vs e application-callee)
 		    xs
 		    xs2
-		    bs
 		    xs1
-		    vs1
-		    v1v2s))
+		    vs1))
 	       (if (void? v2)
 		   '()
 		   (generate-letrec-bindings
@@ -8252,10 +8255,8 @@
 		    (restrict-environment vs e application-argument)
 		    xs
 		    xs2
-		    bs
 		    xs1
-		    vs1
-		    v1v2s))))))
+		    vs1))))))
    ((letrec-expression? e)
     (list
      (map
@@ -8289,10 +8290,8 @@
 			       (letrec-nested-environment vs e)
 			       xs
 			       xs2
-			       bs
 			       xs1
-			       vs1
-			       v1v2s)))
+			       vs1)))
    ((cons-expression? e)
     (let ((v1 (abstract-eval1 (cons-expression-car e)
 			      (restrict-environment vs e cons-expression-car)))
@@ -8308,10 +8307,8 @@
 		(restrict-environment vs e cons-expression-car)
 		xs
 		xs2
-		bs
 		xs1
-		vs1
-		v1v2s))
+		vs1))
 	   (if (void? v2)
 	       '()
 	       (generate-letrec-bindings
@@ -8319,10 +8316,8 @@
 		(restrict-environment vs e cons-expression-cdr)
 		xs
 		xs2
-		bs
 		xs1
-		vs1
-		v1v2s)))))
+		vs1)))))
    (else (internal-error)))))
 
 (define (all-unary-ad p? s)
@@ -8813,7 +8808,8 @@
 	(vs (all-nested-abstract-values))
 	(v1v2s (all-functions))
 	(v1v2s1 (all-widenings))
-	(things1-things2 (generate-things1-things2 bs xs vs v1v2s)))
+	(instances1-instances2
+	 (generate-instances1-instances2 bs xs vs v1v2s)))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
@@ -8890,7 +8886,7 @@
    (generate-unary-ad-declarations
     (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
     *j-inverse '*j-inverse "starj_inverse" bs vs)
-   (generate-if-and-function-declarations bs vs v1v2s things1-things2)
+   (generate-if-and-function-declarations bs vs v1v2s instances1-instances2)
    "int main(void);" #\newline
    (generate-constructor-definitions xs vs)
    (generate-widener-definitions xs vs v1v2s1)
@@ -8927,7 +8923,8 @@
    (generate-plus-definitions bs xs vs)
    (generate-*j-definitions bs xs vs)
    (generate-*j-inverse-definitions bs xs vs)
-   (generate-if-and-function-definitions bs xs vs v1v2s v1v2s1 things1-things2)
+   (generate-if-and-function-definitions
+    bs xs vs v1v2s v1v2s1 instances1-instances2)
    (list
     "int main(void){"
     (generate-letrec-bindings
@@ -8935,10 +8932,8 @@
      (environment-binding-values (first (expression-environment-bindings e)))
      (free-variables e)
      '()
-     bs
      xs
-     vs
-     v1v2s)
+     vs)
     ;; needs work: This unsoundly removes code that might do I/O, signal
     ;;             an error, or not terminate.
     (if (void? (abstract-eval1
