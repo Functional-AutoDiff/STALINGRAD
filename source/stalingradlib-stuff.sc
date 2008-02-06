@@ -7273,16 +7273,6 @@
 			       (aggregate-value-values v1)
 			       (aggregate-value-values v2))))))
 
-(define (transpose-lists m)
- (if (null? (rest m))
-     (map list (first m))
-     (map cons (first m) (transpose-lists (rest m)))))
-
-(define (single-member vss)
- (assert (and (not (null? vss))
-	      (every (lambda (vs) (= (length vs) (length (first vss)))) vss)))
- (map new-union (transpose-lists vss)))
-
 (define (single-member-vss vss)
  (assert (= (length vss) 1))
  (first vss))
