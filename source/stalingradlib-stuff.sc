@@ -165,6 +165,8 @@
 
 (define-structure function-instance v1 v2)
 
+(define-structure widener-instance v1 v2)
+
 ;;; Variables
 
 (define *gensym* 0)
@@ -6982,7 +6984,8 @@
 ;;; t  tangent slot of bundle struct
 ;;; a  car slot of pair struct
 ;;; d  cdr slot of pair struct
-;;; f# function name; # is index in v1v2s of function and argument value
+;;; f# function name; # is index in function-instances of function and argument
+;;;     value
 ;;; m# constructor name; # is index in vs of value being constructed
 ;;; r  result value in constructor definition
 ;;; c  environment argument for f#
@@ -7226,8 +7229,8 @@
 	(if (null? xs)
 	    (let ((x (find-if
 		      (lambda (x)
-		       (and (eq? (first x) 'function)
-			    (recursive-closure? (first (second x)))))
+		       (and (function-instance? x)
+			    (recursive-closure? (function-instance-v1 x))))
 		      l)))
 	     (assert x)
 	     (loop (removeq x l)
@@ -7261,21 +7264,33 @@
 	       (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
 	       (all-abstract-values)))))
 
-(define (abstract-value-pair=? v1v2a v1v2b)
- (and (abstract-value=? (first v1v2a) (first v1v2b))
-      (abstract-value=? (second v1v2a) (second v1v2b))))
+(define (function-instance=? function-instance1 function-instance2)
+ (and (abstract-value=? (function-instance-v1 function-instance1)
+			(function-instance-v1 function-instance2))
+      (abstract-value=? (function-instance-v2 function-instance1)
+			(function-instance-v2 function-instance2))))
+
+(define (widener-instance=? widener-instance1 widener-instance2)
+ (and (abstract-value=? (widener-instance-v1 widener-instance1)
+			(widener-instance-v1 widener-instance2))
+      (abstract-value=? (widener-instance-v2 widener-instance1)
+			(widener-instance-v2 widener-instance2))))
 
 (define (all-subwidenings v1 v2)
  ;; breaks structure sharing
  (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
-       ((or (abstract-boolean? v2) (scalar-value? v2)) (list (list v1 v2)))
-       (else (cons (list v1 v2)
-		   (map-reduce (lambda (v1v2sa v2v2sb)
-				(unionp abstract-value-pair=? v1v2sa v2v2sb))
-			       '()
-			       all-subwidenings
-			       (aggregate-value-values v1)
-			       (aggregate-value-values v2))))))
+       ((or (abstract-boolean? v2) (scalar-value? v2))
+	(list (make-widener-instance v1 v2)))
+       (else
+	(cons
+	 (make-widener-instance v1 v2)
+	 (map-reduce
+	  (lambda (widener-instances1 widener-instances2)
+	   (unionp widener-instance=? widener-instances1 widener-instances2))
+	  '()
+	  all-subwidenings
+	  (aggregate-value-values v1)
+	  (aggregate-value-values v2))))))
 
 (define (single-member-vss vss)
  (assert (= (length vss) 1))
@@ -7287,17 +7302,21 @@
 
 (define (all-widenings)
  (cached-topological-sort
-  (lambda (v1v2a v1v2b)
-   (or (component? (first v1v2a) (first v1v2b))
-       (component? (second v1v2a) (second v1v2b))))
+  (lambda (widener-instance1 widener-instance2)
+   (or (component? (widener-instance-v1 widener-instance1)
+		   (widener-instance-v1 widener-instance2))
+       (component? (widener-instance-v2 widener-instance1)
+		   (widener-instance-v2 widener-instance2))))
   (map-reduce
-   (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+   (lambda (widener-instances1 widener-instances2)
+    (unionp widener-instance=? widener-instances1 widener-instances2))
    '()
    (lambda (e)
     (cond
      ((constant-expression? e)
       (map-reduce
-       (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+       (lambda (widener-instances1 widener-instances2)
+	(unionp widener-instance=? widener-instances1 widener-instances2))
        '()
        (lambda (b)
 	(all-subwidenings (constant-expression-value e)
@@ -7305,7 +7324,8 @@
        (expression-environment-bindings e)))
      ((application? e)
       (map-reduce
-       (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+       (lambda (widener-instances1 widener-instances2)
+	(unionp widener-instance=? widener-instances1 widener-instances2))
        '()
        (lambda (b)
 	(let ((v1 (abstract-eval1 (application-callee e)
@@ -7341,7 +7361,7 @@
 		  (if (and (not (void? v5)) (abstract-boolean? v1))
 		      (let ((v6 (abstract-apply v3 (vlad-empty-list)))
 			    (v7 (abstract-apply v4 (vlad-empty-list))))
-		       (unionp abstract-value-pair=?
+		       (unionp widener-instance=?
 			       (all-subwidenings v6 v5)
 			       (all-subwidenings v7 v5)))
 		      '()))))
@@ -7353,7 +7373,7 @@
 		      (v3 (abstract-apply v1 v2)))
 		 (if (void? v3)
 		     '()
-		     (unionp abstract-value-pair=?
+		     (unionp widener-instance=?
 			     (all-subwidenings v4 v3)
 			     (all-subwidenings v5 v3)))))
 	       (else '()))))
@@ -7363,12 +7383,14 @@
 
 (define (all-functions)
  (map-reduce
-  (lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+  (lambda (function-instances1 function-instances2)
+   (unionp function-instance=? function-instances1 function-instances2))
   '()
   (lambda (e)
    (if (application? e)
        (map-reduce
-	(lambda (v1v2sa v2v2sb) (unionp abstract-value-pair=? v1v2sa v2v2sb))
+	(lambda (function-instances1 function-instances2)
+	 (unionp function-instance=? function-instances1 function-instances2))
 	'()
 	(lambda (b)
 	 (let ((v1 (abstract-eval1 (application-callee e)
@@ -7378,12 +7400,13 @@
 				    application-callee))))
 	  (cond
 	   ((closure? v1)
-	    (list (list v1
-			(abstract-eval1 (application-argument e)
-					(restrict-environment
-					 (environment-binding-values b)
-					 e
-					 application-argument)))))
+	    (list (make-function-instance
+		   v1
+		   (abstract-eval1 (application-argument e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    e
+				    application-argument)))))
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
 	    (let* ((v (abstract-eval1 (application-argument e)
@@ -7404,14 +7427,17 @@
 			      (else (abstract-apply v3 (vlad-empty-list))))))
 	      (if (void? v5)
 		  '()
-		  (cond ((abstract-boolean? v1)
-			 ;; We make the assumption that v3 and v4 will not
-			 ;; be abstract-value=?. If this assumption is false
-			 ;; then there may be duplicates.
-			 (list (list v3 (vlad-empty-list))
-			       (list v4 (vlad-empty-list))))
-			((vlad-false? v1) (list (list v4 (vlad-empty-list))))
-			(else (list (list v3 (vlad-empty-list)))))))))
+		  (cond
+		   ((abstract-boolean? v1)
+		    ;; We make the assumption that v3 and v4 will not
+		    ;; be abstract-value=?. If this assumption is false
+		    ;; then there may be duplicates.
+		    (list (make-function-instance v3 (vlad-empty-list))
+			  (make-function-instance v4 (vlad-empty-list))))
+		   ((vlad-false? v1)
+		    (list (make-function-instance v4 (vlad-empty-list))))
+		   (else
+		    (list (make-function-instance v3 (vlad-empty-list)))))))))
 	   (else '()))))
 	(expression-environment-bindings e))
        '()))
@@ -7450,13 +7476,21 @@
  (assert (memp abstract-value=? v vs))
  (list s (positionp abstract-value=? v vs)))
 
-(define (generate-function-name v1 v2 v1v2s)
- (assert (memp abstract-value-pair=? (list v1 v2) v1v2s))
- (list "f" (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
+(define (generate-function-name v1 v2 function-instances)
+ (assert (memp function-instance=?
+	       (make-function-instance v1 v2)
+	       function-instances))
+ (list "f" (positionp function-instance=?
+		      (make-function-instance v1 v2)
+		      function-instances)))
 
-(define (generate-widener-name v1 v2 v1v2s)
- (assert (memp abstract-value-pair=? (list v1 v2) v1v2s))
- (list "widen" (positionp abstract-value-pair=? (list v1 v2) v1v2s)))
+(define (generate-widener-name v1 v2 widener-instances)
+ (assert (memp widener-instance=?
+	       (make-widener-instance v1 v2)
+	       widener-instances))
+ (list "widen" (positionp widener-instance=?
+			  (make-widener-instance v1 v2)
+			  widener-instances)))
 
 (define (commas-between-void codes)
  (let ((codes (removeq #f codes)))
@@ -7516,27 +7550,29 @@
 	     #\newline)))
   vs))
 
-(define (generate-widener-declarations vs v1v2s)
- (map (lambda (v1v2)
-       (let ((v1 (first v1v2)) (v2 (second v1v2)))
+(define (generate-widener-declarations vs widener-instances)
+ (map (lambda (widener-instance)
+       (let ((v1 (widener-instance-v1 widener-instance))
+	     (v2 (widener-instance-v2 widener-instance)))
 	(list "static INLINE "
 	      (generate-specifier v2 vs)
 	      " "
-	      (generate-widener-name v1 v2 v1v2s)
+	      (generate-widener-name v1 v2 widener-instances)
 	      "("
 	      (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
 	      ");"
 	      #\newline)))
-      v1v2s))
+      widener-instances))
 
-(define (generate-widener-definitions xs vs v1v2s)
+(define (generate-widener-definitions xs vs widener-instances)
  (map
-  (lambda (v1v2)
-   (let ((v1 (first v1v2)) (v2 (second v1v2)))
+  (lambda (widener-instance)
+   (let ((v1 (widener-instance-v1 widener-instance))
+	 (v2 (widener-instance-v2 widener-instance)))
     (list "static INLINE "
 	  (generate-specifier v2 vs)
 	  " "
-	  (generate-widener-name v1 v2 v1v2s)
+	  (generate-widener-name v1 v2 widener-instances)
 	  "("
 	  (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
 	  "){return "
@@ -7548,21 +7584,24 @@
 		       (generate-builtin-name "m" v2 vs)
 		       "("
 		       (commas-between
-			(map (lambda (s v1 v2)
-			      (cond ((void? v2) #f)
-				    ((abstract-value=? v1 v2) (list "x." s))
-				    (else
-				     (list (generate-widener-name v1 v2 v1v2s)
-					   "("
-					   (if (void? v1) '() (list "x." s))
-					   ")"))))
-			     (generate-slot-names v2 xs)
-			     (aggregate-value-values v1)
-			     (aggregate-value-values v2)))
+			(map
+			 (lambda (s v1 v2)
+			  (cond
+			   ((void? v2) #f)
+			   ((abstract-value=? v1 v2) (list "x." s))
+			   (else
+			    (list
+			     (generate-widener-name v1 v2 widener-instances)
+			     "("
+			     (if (void? v1) '() (list "x." s))
+			     ")"))))
+			 (generate-slot-names v2 xs)
+			 (aggregate-value-values v1)
+			 (aggregate-value-values v2)))
 		       ")")))
 	  ";}"
 	  #\newline)))
-  v1v2s))
+  widener-instances))
 
 (define (generate-real-primitive-declarations s s1 s2 bs vs)
  (map (lambda (v)
@@ -7699,7 +7738,7 @@
 		      (restrict-environment vs e cons-expression-cdr)
 		      bs)))))
 
-(define (generate-instances1-instances2 bs xs vs v1v2s)
+(define (generate-instances1-instances2 bs xs vs function-instances)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort
@@ -7744,13 +7783,11 @@
 		    (abstract-apply-closure
 		     (lambda (e vs) vs) (function-instance-v1 instance2) u2)))
 	     (union-members (function-instance-v2 instance2))))))
-  (append
-   (map make-if-instance (all-primitives 'if-procedure))
-   (map (lambda (v1v2) (make-function-instance (first v1v2) (second v1v2)))
-	v1v2s))))
+  (append (map make-if-instance (all-primitives 'if-procedure))
+	  function-instances)))
 
 (define (generate-if-and-function-declarations
-	 bs vs v1v2s instances1-instances2)
+	 bs vs function-instances instances1-instances2)
  (map
   (lambda (instance)
    (cond
@@ -7787,7 +7824,7 @@
 	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
-	   (generate-function-name v1 v2 v1v2s)
+	   (generate-function-name v1 v2 function-instances)
 	   "("
 	   (commas-between-void
 	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
@@ -7797,11 +7834,13 @@
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
-(define (generate-widen v1 v2 code v1v2s)
+(define (generate-widen v1 v2 code widener-instances)
  (if (abstract-value=? v1 v2)
      code
-     (list
-      (generate-widener-name v1 v2 v1v2s) "(" (if (void? v1) '() code) ")")))
+     (list (generate-widener-name v1 v2 widener-instances)
+	   "("
+	   (if (void? v1) '() code)
+	   ")")))
 
 (define (generate-destructure p e v c xs vs)
  (cond
@@ -7910,7 +7949,7 @@
   (else (internal-error))))
 
 (define (generate-if-and-function-definitions
-	 bs xs vs v1v2s v1v2s1 instances1-instances2)
+	 bs xs vs function-instances widener-instances instances1-instances2)
  (map
   (lambda (instance)
    (cond
@@ -7944,26 +7983,30 @@
 		    (generate-widen
 		     v6
 		     v5
-		     (list (generate-function-name v3 (vlad-empty-list) v1v2s)
+		     (list (generate-function-name
+			    v3 (vlad-empty-list) function-instances)
 			   "("
 			   (if (void? v3) '() "x.d.a")
 			   ")")
-		     v1v2s1)
+		     widener-instances)
 		    ":"
 		    (generate-widen
 		     v7
 		     v5
-		     (list (generate-function-name v4 (vlad-empty-list) v1v2s)
+		     (list (generate-function-name
+			    v4 (vlad-empty-list) function-instances)
 			   "("
 			   (if (void? v4) '() "x.d.d")
 			   ")")
-		     v1v2s1))))
+		     widener-instances))))
 	    ((vlad-false? v1)
-	     (list (generate-function-name v4 (vlad-empty-list) v1v2s)
+	     (list (generate-function-name
+		    v4 (vlad-empty-list) function-instances)
 		   "("
 		   (if (void? v4) '() "x.d.d")
 		   ")"))
-	    (else (list (generate-function-name v3 (vlad-empty-list) v1v2s)
+	    (else (list (generate-function-name
+			 v3 (vlad-empty-list) function-instances)
 			"("
 			(if (void? v3) '() "x.d.a")
 			")")))
@@ -7980,7 +8023,7 @@
 	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
-	   (generate-function-name v1 v2 v1v2s)
+	   (generate-function-name v1 v2 function-instances)
 	   "("
 	   (commas-between-void
 	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
@@ -8031,9 +8074,9 @@
 		  bs
 		  xs
 		  vs
-		  v1v2s
-		  v1v2s1)
-		 v1v2s1)
+		  function-instances
+		  widener-instances)
+		 widener-instances)
 		"):("
 		(generate-widen
 		 (single-member-vs
@@ -8052,9 +8095,9 @@
 		  bs
 		  xs
 		  vs
-		  v1v2s
-		  v1v2s1)
-		 v1v2s1)
+		  function-instances
+		  widener-instances)
+		 widener-instances)
 		")")
 	       (generate-expression
 		(closure-body v1)
@@ -8069,8 +8112,8 @@
 		bs
 		xs
 		vs
-		v1v2s
-		v1v2s1))
+		function-instances
+		widener-instances))
 	   ";}"
 	   #\newline))))
     (else (internal-error))))
@@ -8081,7 +8124,8 @@
        ((memp variable=? x xs) (list "c." (generate-variable-name x xs1)))
        (else (generate-variable-name x xs1))))
 
-(define (generate-expression e vs xs xs2 bs xs1 vs1 v1v2s v1v2s1)
+(define (generate-expression
+	 e vs xs xs2 bs xs1 vs1 function-instances widener-instances)
  ;; xs is the list of free variables of the environent in which e is evaluated.
  ;; xs2 is the list of procedure variables of the environent in which e is
  ;;     evaluated.
@@ -8090,7 +8134,7 @@
   (cond
    ((constant-expression? e)
     (assert (void? (constant-expression-value e)))
-    (generate-widen (constant-expression-value e) v '() v1v2s1))
+    (generate-widen (constant-expression-value e) v '() widener-instances))
    ((variable-access-expression? e)
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
@@ -8129,10 +8173,10 @@
 	       bs
 	       xs1
 	       vs1
-	       v1v2s
-	       v1v2s1))
+	       function-instances
+	       widener-instances))
 	  ")")
-	 (list (generate-function-name v1 v2 v1v2s)
+	 (list (generate-function-name v1 v2 function-instances)
 	       "("
 	       (commas-between
 		;; needs work: This unsoundly removes code that might do I/O,
@@ -8147,8 +8191,8 @@
 			   bs
 			   xs1
 			   vs1
-			   v1v2s
-			   v1v2s1))
+			   function-instances
+			   widener-instances))
 		      (if (void? v2)
 			  #f
 			  (generate-expression
@@ -8159,8 +8203,8 @@
 			   bs
 			   xs1
 			   vs1
-			   v1v2s
-			   v1v2s1))))
+			   function-instances
+			   widener-instances))))
 	       ")"))))
    ((letrec-expression? e)
     (generate-expression (letrec-expression-body e)
@@ -8170,8 +8214,8 @@
 			 bs
 			 xs1
 			 vs1
-			 v1v2s
-			 v1v2s1))
+			 function-instances
+			 widener-instances))
    ((cons-expression? e)
     (let ((v1 (abstract-eval1 (cons-expression-car e)
 			      (restrict-environment vs e cons-expression-car)))
@@ -8193,8 +8237,8 @@
 		       bs
 		       xs1
 		       vs1
-		       v1v2s
-		       v1v2s1))
+		       function-instances
+		       widener-instances))
 		  (if (void? v2)
 		      #f
 		      (generate-expression
@@ -8205,8 +8249,8 @@
 		       bs
 		       xs1
 		       vs1
-		       v1v2s
-		       v1v2s1))))
+		       function-instances
+		       widener-instances))))
 	   ")")))
    (else (internal-error)))))
 
@@ -8806,10 +8850,10 @@
 (define (generate e bs bs0)
  (let* ((xs (all-variables))
 	(vs (all-nested-abstract-values))
-	(v1v2s (all-functions))
-	(v1v2s1 (all-widenings))
+	(function-instances (all-functions))
+	(widener-instances (all-widenings))
 	(instances1-instances2
-	 (generate-instances1-instances2 bs xs vs v1v2s)))
+	 (generate-instances1-instances2 bs xs vs function-instances)))
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
@@ -8820,7 +8864,7 @@
    #\newline
    (generate-struct-declarations xs vs)
    (generate-constructor-declarations xs vs)
-   (generate-widener-declarations vs v1v2s1)
+   (generate-widener-declarations vs widener-instances)
    (generate-real*real-primitive-declarations '+ "double" "add" bs vs)
    (generate-real*real-primitive-declarations '- "double" "minus" bs vs)
    (generate-real*real-primitive-declarations '* "double" "times" bs vs)
@@ -8886,10 +8930,11 @@
    (generate-unary-ad-declarations
     (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
     *j-inverse '*j-inverse "starj_inverse" bs vs)
-   (generate-if-and-function-declarations bs vs v1v2s instances1-instances2)
+   (generate-if-and-function-declarations
+    bs vs function-instances instances1-instances2)
    "int main(void);" #\newline
    (generate-constructor-definitions xs vs)
-   (generate-widener-definitions xs vs v1v2s1)
+   (generate-widener-definitions xs vs widener-instances)
    (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
    (generate-real*real-primitive-definitions '- "double" "minus" "~a-~a" bs vs)
    (generate-real*real-primitive-definitions '* "double" "times" "~a*~a" bs vs)
@@ -8924,7 +8969,7 @@
    (generate-*j-definitions bs xs vs)
    (generate-*j-inverse-definitions bs xs vs)
    (generate-if-and-function-definitions
-    bs xs vs v1v2s v1v2s1 instances1-instances2)
+    bs xs vs function-instances widener-instances instances1-instances2)
    (list
     "int main(void){"
     (generate-letrec-bindings
@@ -8950,8 +8995,8 @@
 			      bs
 			      xs
 			      vs
-			      v1v2s
-			      v1v2s1)
+			      function-instances
+			      widener-instances)
 	 ";"))
     "return 0;}"
     #\newline))))
