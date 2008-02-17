@@ -163,7 +163,7 @@
 
 (define-structure if-instance v)
 
-(define-structure function-instance v vs)
+(define-structure function-instance v1 v2)
 
 (define-structure widener-instance v1 v2)
 
@@ -1755,10 +1755,13 @@
      (and (tagged-pair? u) (tagged? 'reverse (tagged-pair-tags u)))))
 
 (define (scalar-value? u)
- (assert (not (union? u)))
- (or (vlad-empty-list? u)
-     (vlad-true? u)
-     (vlad-false? u)
+ ;; debugging
+ (unless (or (abstract-boolean? u) (not (union? u)))
+  (write (externalize u))
+  (newline))
+ (assert (or (abstract-boolean? u) (not (union? u))))
+ (or (is-boolean? u)
+     (vlad-empty-list? u)
      (vlad-real? u)
      (primitive-procedure? u)))
 
@@ -4834,7 +4837,7 @@
 		    (k u cs)))))))
     (else
      ;; debugging
-     (begin
+     (when #f
       (pp (externalize-expression
 	   (nonrecursive-closure-lambda-expression v1)))
       (newline)
@@ -6341,18 +6344,6 @@
  (map (lambda (alist) (construct-abstract-environment u1 alist))
       (abstract-destructure (closure-parameter u1) v2)))
 
-(define (used-parameter-variables u)
- (set-intersectionp variable=?
-		    (parameter-variables (closure-parameter u))
-		    (free-variables (closure-body u))))
-
-(define (abstract-apply-instance u vs)
- ;; This depends on used-parameter-variables returning the variables in the
- ;; same order as function-instance-vs.
- (abstract-eval1 (closure-body u)
-		 (construct-abstract-environment
-		  u (map cons (used-parameter-variables u) vs))))
-
 (define (abstract-apply-closure p u1 v2)
  (assert (not (union? u1)))
  (map (lambda (vs) (p (closure-body u1) vs))
@@ -7207,7 +7198,7 @@
 	    (let ((x (find-if
 		      (lambda (x)
 		       (and (function-instance? x)
-			    (recursive-closure? (function-instance-v x))))
+			    (recursive-closure? (function-instance-v1 x))))
 		      l)))
 	     (assert x)
 	     (loop (removeq x l)
@@ -7242,11 +7233,10 @@
 	       (all-abstract-values)))))
 
 (define (function-instance=? function-instance1 function-instance2)
- (and (abstract-value=? (function-instance-v function-instance1)
-			(function-instance-v function-instance2))
-      (every abstract-value=?
-	     (function-instance-vs function-instance1)
-	     (function-instance-vs function-instance2))))
+ (and (abstract-value=? (function-instance-v1 function-instance1)
+			(function-instance-v1 function-instance2))
+      (abstract-value=? (function-instance-v2 function-instance1)
+			(function-instance-v2 function-instance2))))
 
 (define (widener-instance=? widener-instance1 widener-instance2)
  (and (abstract-value=? (widener-instance-v1 widener-instance1)
@@ -7269,14 +7259,6 @@
 	  all-subwidenings
 	  (aggregate-value-values v1)
 	  (aggregate-value-values v2))))))
-
-(define (single-member-vss vss)
- (assert (= (length vss) 1))
- (first vss))
-
-(define (single-member-vs vs)
- (assert (= (length vs) 1))
- (first vs))
 
 (define (all-widenings)
  (cached-topological-sort
@@ -7317,19 +7299,8 @@
 	 (cond
 	  ;; here I am: Need to handle the case where v1 is a union.
 	  ((union? v1) (unimplemented))
-	  ((closure? v1)
-	   (let ((v (abstract-apply v1 v2)))
-	    (map-reduce
-	     (lambda (widener-instances1 widener-instances2)
-	      (unionp
-	       widener-instance=? widener-instances1 widener-instances2))
-	     '()
-	     (lambda (alist)
-	      (all-subwidenings
-	       (abstract-eval1
-		(closure-body v1) (construct-abstract-environment v1 alist))
-	       v))
-	     (abstract-destructure (closure-parameter v1) v2))))
+	  ;; here I am: This needs to be modified when we handle unions.
+	  ((closure? v1) '())
 	  ((and (primitive-procedure? v1)
 		(eq? (primitive-procedure-name v1) 'if-procedure))
 	   ;; Both v2 and v4 should never be unions and should always be pairs.
@@ -7383,18 +7354,7 @@
 	  (cond
 	   ;; here I am: Need to handle the case where v1 is a union.
 	   ((union? v1) (unimplemented))
-	   ((closure? v1)
-	    (let ((xs (used-parameter-variables v1)))
-	     (map (lambda (alist)
-		   (make-function-instance
-		    v1
-		    ;; This depends on used-parameter-variables returning the
-		    ;; variables in the same order as function-instance-vs.
-		    (map cdr
-			 (remove-if
-			  (lambda (x-v) (not (memp variable=? (car x-v) xs)))
-			  alist))))
-		  (abstract-destructure (closure-parameter v1) v2))))
+	   ((closure? v1) (list (make-function-instance v1 v2)))
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
 	    ;; Both v2 and v4 should never be unions and should always be
@@ -7422,13 +7382,12 @@
 		   ;; We make the assumption that v5 and v6 will not be
 		   ;; abstract-value=?. If this assumption is false then
 		   ;; there may be duplicates.
-		   ;; In all of the following function instances, the
-		   ;; vlad-empty-list is removed because it is assumed to be
-		   ;; passed to an ignored parameter.
-		   (list (make-function-instance v5 '())
-			 (make-function-instance v6 '())))
-		  ((vlad-false? v3) (list (make-function-instance v6 '())))
-		  (else (list (make-function-instance v5 '())))))))
+		   (list (make-function-instance v5 (vlad-empty-list))
+			 (make-function-instance v6 (vlad-empty-list))))
+		  ((vlad-false? v3)
+		   (list (make-function-instance v6 (vlad-empty-list))))
+		  (else
+		   (list (make-function-instance v5 (vlad-empty-list))))))))
 	   (else '()))))
 	(expression-environment-bindings e))
        '()))
@@ -7467,12 +7426,12 @@
  (assert (memp abstract-value=? v vs))
  (list s (positionp abstract-value=? v vs)))
 
-(define (generate-function-name v vs function-instances)
+(define (generate-function-name v1 v2 function-instances)
  (assert (memp function-instance=?
-	       (make-function-instance v vs)
+	       (make-function-instance v1 v2)
 	       function-instances))
  (list "f" (positionp function-instance=?
-		      (make-function-instance v vs)
+		      (make-function-instance v1 v2)
 		      function-instances)))
 
 (define (generate-widener-name v1 v2 widener-instances)
@@ -7686,7 +7645,7 @@
 			 v2
 			 (restrict-environment vs e cons-expression-cdr))))))
 
-(define (calls? e v1 vs2 vs)
+(define (calls? e v1 v2 vs)
  (assert (= (length vs) (length (free-variables e))))
  (or (and (application? e)
 	  (or (and (abstract-value=?
@@ -7694,51 +7653,32 @@
 		     (application-callee e)
 		     (restrict-environment vs e application-callee))
 		    v1)
-		   (let ((xs (used-parameter-variables v1)))
-		    (some
-		     (lambda (alist)
-		      (assert
-		       (= (length vs2)
-			  (length
-			   (remove-if (lambda (x-v)
-				       (not (memp variable=? (car x-v) xs)))
-				      alist))))
-		      (every
-		       abstract-value=?
-		       vs2
-		       ;; This depends on used-parameter-variables returning
-		       ;; the variables in the same order as
-		       ;; function-instance-vs.
-		       (map cdr
-			    (remove-if (lambda (x-v)
-					(not (memp variable=? (car x-v) xs)))
-				       alist))))
-		     (abstract-destructure
-		      (closure-parameter v1)
-		      (abstract-eval1
-		       (application-argument e)
-		       (restrict-environment vs e application-argument))))))
+		   (abstract-value=?
+		    (abstract-eval1
+		     (application-argument e)
+		     (restrict-environment vs e application-argument))
+		    v2))
 	      (calls? (application-callee e)
 		      v1
-		      vs2
+		      v2
 		      (restrict-environment vs e application-callee))
 	      (calls? (application-argument e)
 		      v1
-		      vs2
+		      v2
 		      (restrict-environment vs e application-argument))))
      (and (letrec-expression? e)
 	  (calls? (letrec-expression-body e)
 		  v1
-		  vs2
+		  v2
 		  (letrec-nested-environment vs e)))
      (and (cons-expression? e)
 	  (or (calls? (cons-expression-car e)
 		      v1
-		      vs2
+		      v2
 		      (restrict-environment vs e cons-expression-car))
 	      (calls? (cons-expression-cdr e)
 		      v1
-		      vs2
+		      v2
 		      (restrict-environment vs e cons-expression-cdr))))))
 
 (define (generate-instances1-instances2 xs vs function-instances)
@@ -7749,36 +7689,35 @@
    (or (and (function-instance? instance1)
 	    (if-instance? instance2)
 	    (or (abstract-value=?
-		 (function-instance-v instance1)
+		 (function-instance-v1 instance1)
 		 (vlad-car (vlad-cdr (if-instance-v instance2))))
 		(abstract-value=?
-		 (function-instance-v instance1)
+		 (function-instance-v1 instance1)
 		 (vlad-cdr (vlad-cdr (if-instance-v instance2))))))
        (and (if-instance? instance1)
 	    (function-instance? instance2)
 	    (calls-if-procedure?
-	     (closure-body (function-instance-v instance2))
+	     (closure-body (function-instance-v1 instance2))
 	     (if-instance-v instance1)
-	     (construct-abstract-environment
-	      (function-instance-v instance2)
-	      ;; This depends on used-parameter-variables returning the
-	      ;; variables in the same order as function-instance-vs.
-	      (map cons
-		   (used-parameter-variables (function-instance-v instance2))
-		   (function-instance-vs instance2)))))
+	     ;; here I am
+	     (let ((vss (abstract-apply-closure
+			 (lambda (e vs) vs)
+			 (function-instance-v1 instance2)
+			 (function-instance-v2 instance2))))
+	      (unless (= (length vss) 1) (internal-error))
+	      (first vss))))
        (and (function-instance? instance1)
 	    (function-instance? instance2)
-	    (calls?
-	     (closure-body (function-instance-v instance2))
-	     (function-instance-v instance1)
-	     (function-instance-vs instance1)
-	     (construct-abstract-environment
-	      (function-instance-v instance2)
-	      ;; This depends on used-parameter-variables returning the
-	      ;; variables in the same order as function-instance-vs.
-	      (map cons
-		   (used-parameter-variables (function-instance-v instance2))
-		   (function-instance-vs instance2)))))))
+	    (calls? (closure-body (function-instance-v1 instance2))
+		    (function-instance-v1 instance1)
+		    (function-instance-v2 instance1)
+		    ;; here I am
+		    (let ((vss (abstract-apply-closure
+				(lambda (e vs) vs)
+				(function-instance-v1 instance2)
+				(function-instance-v2 instance2))))
+		     (unless (= (length vss) 1) (internal-error))
+		     (first vss))))))
   (append (map make-if-instance (all-primitives 'if-procedure))
 	  function-instances)))
 
@@ -7813,9 +7752,9 @@
 		");"
 		#\newline))))
     ((function-instance? instance)
-     (let* ((v1 (function-instance-v instance))
-	    (vs2 (function-instance-vs instance))
-	    (v3 (abstract-apply-instance v1 vs2)))
+     (let* ((v1 (function-instance-v1 instance))
+	    (v2 (function-instance-v2 instance))
+	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
@@ -7823,20 +7762,11 @@
 	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
-	   (generate-function-name v1 vs2 function-instances)
+	   (generate-function-name v1 v2 function-instances)
 	   "("
 	   (commas-between-void
-	    (cons (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		  ;; This depends on used-parameter-variables returning the
-		  ;; variables in the same order as function-instance-vs.
-		  (map (lambda (v x)
-			(if (void? v)
-			    #f
-			    (list (generate-specifier v vs)
-				  ""
-				  (generate-variable-name x xs))))
-		       vs2
-		       (used-parameter-variables v1))))
+	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
 	   ");"
 	   #\newline))))
     (else (internal-error))))
@@ -7850,7 +7780,7 @@
 	   (if (void? v1) '() code)
 	   ")")))
 
-(define (generate-destructure p e v c xs vs)
+(define (generate-destructure p e v code xs vs)
  (cond
   ((constant-expression? p)
    ;; needs work: To generate run-time equivalence check when the constant
@@ -7882,7 +7812,7 @@
 	" "
 	(generate-variable-name (variable-access-expression-variable p) xs)
 	"="
-	c
+	code
 	";")))
   ((lambda-expression? p)
    (unless (and (nonrecursive-closure? v)
@@ -7896,7 +7826,7 @@
 	  (new-variable-access-expression x)
 	  e
 	  v
-	  (list c
+	  (list code
 		"."
 		(generate-variable-name
 		 (variable-access-expression-variable x) xs))
@@ -7934,7 +7864,7 @@
 	  (new-variable-access-expression x)
 	  e
 	  v
-	  (list c
+	  (list code
 		"."
 		(generate-variable-name
 		 (variable-access-expression-variable x) xs))
@@ -7951,9 +7881,9 @@
      v))
    (append
     (generate-destructure
-     (cons-expression-car p) e (tagged-pair-car v) (list c ".a") xs vs)
+     (cons-expression-car p) e (tagged-pair-car v) (list code ".a") xs vs)
     (generate-destructure
-     (cons-expression-cdr p) e (tagged-pair-cdr v) (list c ".d") xs vs)))
+     (cons-expression-cdr p) e (tagged-pair-cdr v) (list code ".d") xs vs)))
   (else (internal-error))))
 
 (define (generate-if-and-function-definitions
@@ -7996,11 +7926,8 @@
 		    (generate-widen
 		     v6
 		     v5
-		     ;; In all of the following calls to
-		     ;; generate-function-name, the vlad-empty-list is removed
-		     ;; because it is assumed to be passed to an ignored
-		     ;; parameter.
-		     (list (generate-function-name v3 '() function-instances)
+		     (list (generate-function-name
+			    v3 (vlad-empty-list) function-instances)
 			   "("
 			   (if (void? v3) '() "x.d.a")
 			   ")")
@@ -8009,26 +7936,29 @@
 		    (generate-widen
 		     v7
 		     v5
-		     (list (generate-function-name v4 '() function-instances)
+		     (list (generate-function-name
+			    v4 (vlad-empty-list) function-instances)
 			   "("
 			   (if (void? v4) '() "x.d.d")
 			   ")")
 		     widener-instances))))
 	    ((vlad-false? v1)
-	     (list (generate-function-name v4 '() function-instances)
-		   "("
-		   (if (void? v4) '() "x.d.d")
-		   ")"))
-	    (else (list (generate-function-name v3 '() function-instances)
+	     (list
+	      (generate-function-name v4 (vlad-empty-list) function-instances)
+	      "("
+	      (if (void? v4) '() "x.d.d")
+	      ")"))
+	    (else (list (generate-function-name
+			 v3 (vlad-empty-list) function-instances)
 			"("
 			(if (void? v3) '() "x.d.a")
 			")")))
 	   ";}"
 	   #\newline))))
     ((function-instance? instance)
-     (let* ((v1 (function-instance-v instance))
-	    (vs2 (function-instance-vs instance))
-	    (v3 (abstract-apply-instance v1 vs2)))
+     (let* ((v1 (function-instance-v1 instance))
+	    (v2 (function-instance-v2 instance))
+	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
 	  (list
@@ -8036,106 +7966,45 @@
 	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
 	   (generate-specifier v3 vs)
 	   " "
-	   (generate-function-name v1 vs2 function-instances)
+	   (generate-function-name v1 v2 function-instances)
 	   "("
 	   (commas-between-void
-	    (cons (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		  ;; This depends on used-parameter-variables returning the
-		  ;; variables in the same order as function-instance-vs.
-		  (map (lambda (v x)
-			(if (void? v)
-			    #f
-			    (list (generate-specifier v vs)
-				  ""
-				  (generate-variable-name x xs))))
-		       vs2
-		       (used-parameter-variables v1))))
+	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
+		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
 	   "){"
 	   ;; here I am
 	   (generate-destructure
 	    (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
-	   ;; here I am: I don't know if this generates duplicates.
-	   (map-reduce
-	    (lambda (code1 code2) (list code1 code2))
-	    ""
-	    (lambda (vs1)
-	     (generate-letrec-bindings
-	      (closure-body v1)
-	      vs1
-	      (closure-variables v1)
-	      (cond
-	       ((nonrecursive-closure? v1) '())
-	       ((recursive-closure? v1)
-		(vector->list (recursive-closure-procedure-variables v1)))
-	       (else (internal-error)))
-	      xs
-	      vs))
+	   (generate-letrec-bindings
+	    (closure-body v1)
 	    ;; here I am
-	    (abstract-apply-closure (lambda (e vs) vs) v1 v2))
+	    (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	     (unless (= (length vss) 1) (internal-error))
+	     (first vss))
+	    (closure-variables v1)
+	    (cond ((nonrecursive-closure? v1) '())
+		  ((recursive-closure? v1)
+		   (vector->list (recursive-closure-procedure-variables v1)))
+		  (else (internal-error)))
+	    xs
+	    vs)
 	   "return "
-	   ;; here I am: Need to handle the case where v2 is a union but not
-	   ;;            an abstract boolean.
-	   (if (abstract-boolean? v2)
-	       (list
-		"x?("
-		(generate-widen
-		 (single-member-vs
-		  (abstract-apply-closure abstract-eval1 v1 (vlad-true)))
-		 v3
-		 (generate-expression
-		  (closure-body v1)
-		  (single-member-vss
-		   (abstract-apply-closure (lambda (e vs) vs) v1 (vlad-true)))
-		  (closure-variables v1)
-		  (cond
-		   ((nonrecursive-closure? v1) '())
-		   ((recursive-closure? v1)
-		    (vector->list (recursive-closure-procedure-variables v1)))
-		   (else (internal-error)))
-		  bs
-		  xs
-		  vs
-		  function-instances
-		  widener-instances)
-		 widener-instances)
-		"):("
-		(generate-widen
-		 (single-member-vs
-		  (abstract-apply-closure abstract-eval1 v1 (vlad-false)))
-		 v3
-		 (generate-expression
-		  (closure-body v1)
-		  (single-member-vss
-		   (abstract-apply-closure (lambda (e vs) vs) v1 (vlad-false)))
-		  (closure-variables v1)
-		  (cond
-		   ((nonrecursive-closure? v1) '())
-		   ((recursive-closure? v1)
-		    (vector->list (recursive-closure-procedure-variables v1)))
-		   (else (internal-error)))
-		  bs
-		  xs
-		  vs
-		  function-instances
-		  widener-instances)
-		 widener-instances)
-		")")
-	       (generate-expression
-		(closure-body v1)
-		(single-member-vss
-		 ;; here I am
-		 (abstract-apply-closure (lambda (e vs) vs) v1 v2))
-		(closure-variables v1)
-		(cond
-		 ((nonrecursive-closure? v1) '())
-		 ((recursive-closure? v1)
-		  (vector->list (recursive-closure-procedure-variables v1)))
-		 (else (internal-error)))
-		bs
-		xs
-		vs
-		function-instances
-		widener-instances))
+	   (generate-expression
+	    (closure-body v1)
+	    ;; here I am
+	    (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	     (unless (= (length vss) 1) (internal-error))
+	     (first vss))
+	    (closure-variables v1)
+	    (cond ((nonrecursive-closure? v1) '())
+		  ((recursive-closure? v1)
+		   (vector->list (recursive-closure-procedure-variables v1)))
+		  (else (internal-error)))
+	    bs
+	    xs
+	    vs
+	    function-instances
+	    widener-instances)
 	   ";}"
 	   #\newline))))
     (else (internal-error))))
@@ -8198,7 +8067,6 @@
 	       function-instances
 	       widener-instances))
 	  ")")
-	 ;; here I am
 	 (list (generate-function-name v1 v2 function-instances)
 	       "("
 	       (commas-between

@@ -33,7 +33,7 @@
 ;;;             and
 ;;;    Barak A. Pearlmutter
 ;;;    Hamilton Institute
-;;;    National University of Ireland, Maynooth
+;;;    National University of Ireland Maynooth
 ;;;    Co. Kildare
 ;;;    Ireland
 ;;;    voice: +353 1 7086100
