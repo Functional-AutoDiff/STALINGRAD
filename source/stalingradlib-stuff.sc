@@ -1755,12 +1755,8 @@
      (and (tagged-pair? u) (tagged? 'reverse (tagged-pair-tags u)))))
 
 (define (scalar-value? u)
- ;; debugging
- (unless (or (abstract-boolean? u) (not (union? u)))
-  (write (externalize u))
-  (newline))
- (assert (or (abstract-boolean? u) (not (union? u))))
- (or (is-boolean? u)
+ (assert (not (union? u)))
+ (or (vlad-boolean? u)
      (vlad-empty-list? u)
      (vlad-real? u)
      (primitive-procedure? u)))
@@ -6983,15 +6979,14 @@
 ;;; main
 
 (define (abstract-boolean? v)
- ;; particular to union-free
+ ;; here I am: particular to union-free
  (and (every vlad-boolean? (union-members v))
       (some vlad-true? (union-members v))
       (some vlad-false? (union-members v))))
 
-(define (is-boolean? v) (or (abstract-boolean? v) (vlad-boolean? v)))
-
 (define (void? v)
  ;; breaks structure sharing
+ ;; here I am: needs to handle unions
  (and (not (abstract-boolean? v))
       (not (abstract-real? v))
       (or (scalar-value? v)
@@ -7066,8 +7061,8 @@
 
 (define (generate-specifier v vs)
  (assert (not (void? v)))
- (cond ((abstract-boolean? v) "int")
-       ((abstract-real? v) "double")
+ ;; here I am: needs to handle unions
+ (cond ((abstract-real? v) "double")
        (else (assert (memp abstract-value=? v vs))
 	     (list "struct s" (positionp abstract-value=? v vs)))))
 
@@ -7087,6 +7082,7 @@
 
 (define (generate-struct-declarations xs vs)
  (map (lambda (v)
+       ;; here I am: needs to handle unions
        (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
 	   '()
 	   (list (generate-specifier v vs)
@@ -7119,6 +7115,7 @@
  ;; breaks structure sharing
  (let loop ((v v))
   (cons v
+	;; here I am: needs to handle unions
 	(if (or (abstract-boolean? v) (scalar-value? v) (not (p? v)))
 	    '()
 	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
@@ -7130,6 +7127,7 @@
  ;; breaks structure sharing
  (let loop ((v1 (vlad-car v)) (v2 (f-inverse (vlad-cdr v))))
   (cons (vlad-cons v1 (f v2))
+	;; here I am: needs to handle unions
 	(if (or (abstract-boolean? v1) (scalar-value? v1) (not (p? v1)))
 	    '()
 	    (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
@@ -7140,17 +7138,20 @@
 
 (define (component*? v1 v2)
  ;; breaks structure sharing
+ ;; here I am: needs to handle unions
  (or (abstract-value=? v1 v2)
      (and (not (abstract-boolean? v2))
 	  (not (scalar-value? v2))
 	  (memp component*? v1 (aggregate-value-values v2)))))
 
 (define (component? v1 v2)
+ ;; here I am: needs to handle unions
  (and (not (abstract-boolean? v2))
       (not (scalar-value? v2))
       (memp abstract-value=? v1 (aggregate-value-values v2))))
 
 (define (components-before v2)
+ ;; here I am: needs to handle unions
  (if (or (abstract-boolean? v2) (scalar-value? v2))
      '()
      (aggregate-value-values v2)))
@@ -7220,6 +7221,7 @@
    abstract-value=?
    (unionp abstract-value=?
 	   (all-binary-ad (lambda (v)
+			   ;; here I am: needs to handle unions
 			   (or (abstract-boolean? v)
 			       (and (not (perturbation-tagged-value? v))
 				    (not (bundle? v))
@@ -7246,6 +7248,7 @@
 
 (define (all-subwidenings v1 v2)
  ;; breaks structure sharing
+ ;; here I am: needs to handle unions
  (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
        ((or (abstract-boolean? v2) (scalar-value? v2))
 	(list (make-widener-instance v1 v2)))
@@ -7459,6 +7462,7 @@
 (define (generate-constructor-declarations xs vs)
  (map
   (lambda (v)
+   ;; here I am: needs to handle unions
    (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
        '()
        (list "static INLINE "
@@ -7478,6 +7482,7 @@
 (define (generate-constructor-definitions xs vs)
  (map
   (lambda (v)
+   ;; here I am: needs to handle unions
    (if (or (void? v) (abstract-boolean? v) (abstract-real? v))
        '()
        (list "static INLINE "
@@ -7526,6 +7531,7 @@
 	  "("
 	  (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
 	  "){return "
+	  ;; here I am: needs to handle unions
 	  (cond ((abstract-boolean? v2) (if (vlad-false? v1) "FALSE" "TRUE"))
 		;; This assumes that Scheme inexact numbers are printed as C
 		;; doubles.
@@ -8398,7 +8404,7 @@
   (lambda (v) #t)
   (lambda (v)
    (cond
-    ((is-boolean? v) "x")
+    ;; here I am: need to handle unions
     ((vlad-real? v) "0.0")
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (list (generate-builtin-name "m" (zero v) vs)
@@ -8426,8 +8432,8 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (is-boolean? v)
-	 (vlad-real? v)
+    ;; here I am: need to handle unions
+    ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
@@ -8530,8 +8536,8 @@
   (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
     (cond
-     ((or (is-boolean? v1)
-	  (vlad-real? v1)
+     ;; here I am: need to handle unions
+     ((or (vlad-real? v1)
 	  (perturbation-tagged-value? v1)
 	  (bundle? v1)
 	  (sensitivity-tagged-value? v1)
@@ -8577,8 +8583,8 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (is-boolean? v)
-	 (vlad-real? v)
+    ;; here I am: need to handle unions
+    ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
@@ -8631,12 +8637,7 @@
   (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
     (cond
-     ((is-boolean? v1)
-      ;; needs work: To generate run-time conformance check when the primal
-      ;;             and/or tangent are abstract booleans.
-      (if (void? v1)
-	  (if (void? v2) (internal-error) "x.d")
-	  (if (void? v2) "x.a" "x.d")))
+     ;; here I am: need to handle unions
      ((vlad-real? v1)
       (if (void? v1)
 	  (if (void? v2)
@@ -8691,8 +8692,8 @@
 	(not (reverse-tagged-value? v))))
   (lambda (v)
    (cond
-    ((or (is-boolean? v)
-	 (vlad-real? v)
+    ;; here I am: need to handle unions
+    ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
