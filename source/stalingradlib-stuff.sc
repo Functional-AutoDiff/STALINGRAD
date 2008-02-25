@@ -6994,14 +6994,16 @@
 ;;; starj_inverse#
 ;;; main
 
+(define (slot code1 code2) (list code1 "." code2))
+
 (define (void? v)
  ;; needs work: to handle ups and breaks structure sharing
  (or (and (not (union? v))
 	  (not (abstract-real? v))
 	  (or (scalar-value? v) (every void? (aggregate-value-values v))))
      (and (union? v)
-	  (<= (length (union-members v)) 1)
-	  (every void? (union-members v)))))
+	  (<= (length (union-values v)) 1)
+	  (every void? (union-values v)))))
 
 (define (all-variables-in-abstract-value v)
  ;; needs work: to handle ups and breaks structure sharing
@@ -7010,7 +7012,7 @@
    ((union? v) (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
 			   '()
 			   (lambda (u) (loop u (cons v vs)))
-			   (union-members v)))
+			   (union-values v)))
    ((scalar-value? v) '())
    (else (unionp
 	  variable=?
@@ -7082,7 +7084,7 @@
 	(map (lambda (v)
 	      (assert (memp abstract-value=? v vs))
 	      (list "s" (positionp abstract-value=? v vs)))
-	     (union-members v)))
+	     (union-values v)))
        ((nonrecursive-closure? v)
 	(map (lambda (x) (generate-variable-name x xs))
 	     (nonrecursive-closure-variables v)))
@@ -7110,7 +7112,7 @@
 			      '()
 			      (list (generate-specifier v vs) " " s ";")))
 			 (generate-slot-names v xs vs)
-			 (union-members v))
+			 (union-values v))
 		    "};};"
 		    #\newline))
 	     ((abstract-real? v) '())
@@ -7149,7 +7151,7 @@
 	  (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 		      '()
 		      loop
-		      (union-members v)))
+		      (union-values v)))
 	 ((or (scalar-value? v) (not (p? v))) '())
 	 (else (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 			   '()
@@ -7165,12 +7167,12 @@
 	  (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 		      '()
 		      (lambda (v1) (loop v1 v2))
-		      (union-members v1)))
+		      (union-values v1)))
 	 ((union? v2)
 	  (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 		      '()
 		      (lambda (v2) (loop v1 v2))
-		      (union-members v2)))
+		      (union-values v2)))
 	 ((or (scalar-value? v1) (not (p? v1))) '())
 	 (else (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
 			   '()
@@ -7184,16 +7186,16 @@
      (and (not (union? v2))
 	  (not (scalar-value? v2))
 	  (memp component*? v1 (aggregate-value-values v2)))
-     (and (union? v2) (memp component*? v1 (union-members v2)))))
+     (and (union? v2) (memp component*? v1 (union-values v2)))))
 
 (define (component? v1 v2)
  (or (and (not (union? v2))
 	  (not (scalar-value? v2))
 	  (memp abstract-value=? v1 (aggregate-value-values v2)))
-     (and (union? v2) (memp abstract-value=? v1 (union-members v2)))))
+     (and (union? v2) (memp abstract-value=? v1 (union-values v2)))))
 
 (define (components-before v2)
- (cond ((union? v2) (union-members v2))
+ (cond ((union? v2) (union-values v2))
        ((scalar-value? v2) '())
        (else (aggregate-value-values v2))))
 
@@ -7301,7 +7303,7 @@
 	   (unionp widener-instance=? widener-instances1 widener-instances2))
 	  '()
 	  (lambda (v1) (all-subwidenings v1 v2))
-	  (union-members v1))))
+	  (union-values v1))))
        ((union? v2)
 	(cons (make-widener-instance v1 v2)
 	      ;; The fact that such a u2 exists that is a member of v2 relies
@@ -7312,7 +7314,7 @@
 	      (all-subwidenings
 	       v1
 	       (find-if (lambda (u2) (abstract-value-subset? v1 u2))
-			(union-members v2)))))
+			(union-values v2)))))
        ((scalar-value? v2) (list (make-widener-instance v1 v2)))
        (else
 	(cons
@@ -7370,7 +7372,7 @@
 	       widener-instance=? widener-instances1 widener-instances2))
 	     '()
 	     (lambda (u1) (all-subwidenings (abstract-apply u1 v2) v))
-	     (union-members v1))))
+	     (union-values v1))))
 	  ((closure? v1) '())
 	  ((and (primitive-procedure? v1)
 		(eq? (primitive-procedure-name v1) 'if-procedure))
@@ -7379,22 +7381,22 @@
 		  (v4 (vlad-cdr v2))
 		  (v5 (vlad-car v4))
 		  (v6 (vlad-cdr v4))
-		  (v7 (cond ((and (some vlad-false? (union-members v3))
+		  (v7 (cond ((and (some vlad-false? (union-values v3))
 				  (some (lambda (u) (not (vlad-false? u)))
-					(union-members v3)))
+					(union-values v3)))
 			     (abstract-value-union
 			      (abstract-apply v5 (vlad-empty-list))
 			      (abstract-apply v6 (vlad-empty-list))))
-			    ((some vlad-false? (union-members v3))
+			    ((some vlad-false? (union-values v3))
 			     (abstract-apply v6 (vlad-empty-list)))
 			    ((some (lambda (u) (not (vlad-false? u)))
-				   (union-members v3))
+				   (union-values v3))
 			     (abstract-apply v5 (vlad-empty-list)))
 			    (else (internal-error)))))
 	    (if (and (not (void? v7))
-		     (some vlad-false? (union-members v3))
+		     (some vlad-false? (union-values v3))
 		     (some (lambda (u) (not (vlad-false? u)))
-			   (union-members v3)))
+			   (union-values v3)))
 		(unionp
 		 widener-instance=?
 		 (all-subwidenings (abstract-apply v5 (vlad-empty-list)) v7)
@@ -7428,7 +7430,7 @@
 	  (cond
 	   ((union? v1)
 	    (map (lambda (u1) (make-function-instance u1 v2))
-		 (union-members v1)))
+		 (union-values v1)))
 	   ((closure? v1) (list (make-function-instance v1 v2)))
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
@@ -7438,32 +7440,32 @@
 		   (v4 (vlad-cdr v2))
 		   (v5 (vlad-car v4))
 		   (v6 (vlad-cdr v4))
-		   (v7 (cond ((and (some vlad-false? (union-members v3))
+		   (v7 (cond ((and (some vlad-false? (union-values v3))
 				   (some (lambda (u) (not (vlad-false? u)))
-					 (union-members v3)))
+					 (union-values v3)))
 			      (abstract-value-union
 			       (abstract-apply v5 (vlad-empty-list))
 			       (abstract-apply v6 (vlad-empty-list))))
-			     ((some vlad-false? (union-members v3))
+			     ((some vlad-false? (union-values v3))
 			      (abstract-apply v6 (vlad-empty-list)))
 			     ((some (lambda (u) (not (vlad-false? u)))
-				    (union-members v3))
+				    (union-values v3))
 			      (abstract-apply v5 (vlad-empty-list)))
 			     (else (internal-error)))))
 	     (if (void? v7)
 		 '()
 		 (cond
-		  ((and (some vlad-false? (union-members v3))
+		  ((and (some vlad-false? (union-values v3))
 			(some (lambda (u) (not (vlad-false? u)))
-			      (union-members v3)))
+			      (union-values v3)))
 		   ;; We make the assumption that v5 and v6 will not be
 		   ;; abstract-value=?. If this assumption is false then
 		   ;; there may be duplicates.
 		   (list (make-function-instance v5 (vlad-empty-list))
 			 (make-function-instance v6 (vlad-empty-list))))
-		  ((some vlad-false? (union-members v3))
+		  ((some vlad-false? (union-values v3))
 		   (list (make-function-instance v6 (vlad-empty-list))))
-		  ((some (lambda (u) (not (vlad-false? u))) (union-members v3))
+		  ((some (lambda (u) (not (vlad-false? u))) (union-values v3))
 		   (list (make-function-instance v5 (vlad-empty-list))))
 		  (else (internal-error))))))
 	   (else '()))))
@@ -7530,19 +7532,47 @@
 		      (make-widener-instance v1 v2)
 		      widener-instances)))
 
-(define (commas-between-void codes)
- (let ((codes (removeq #f codes)))
-  (cond
-   ((null? codes) "void")
-   ((null? (rest codes)) (first codes))
-   (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '())))))
-
 (define (commas-between codes)
- (let ((codes (removeq #f codes)))
+ (let ((codes (removeq '() codes)))
   (cond
    ((null? codes) '())
    ((null? (rest codes)) (first codes))
    (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '())))))
+
+(define (generate-function-declarator code codes)
+ (list
+  code
+  "("
+  (let ((codes (removeq '() codes)))
+   (cond
+    ((null? codes) "void")
+    ((null? (rest codes)) (first codes))
+    (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '()))))
+  ")"))
+
+(define (generate-function-declaration p1? p2? p3? code1 code2)
+ (list (if p1? (list "static" " ") '())
+       (if p1? (list "INLINE" " ") '())
+       (if p2? (list "NORETURN" " ") '())
+       code1
+       " "
+       code2
+       ";"
+       #\newline))
+
+(define (generate-function-definition p1? p2? p3? code1 code2 code3)
+ (list (if p1? (list "static" " ") '())
+       (if p1? (list "INLINE" " ") '())
+       (if p2? (list "NORETURN" " ") '())
+       code1
+       " "
+       code2
+       "{"
+       code3
+       "}"
+       #\newline))
+
+(define (generate-call code codes) (list code "(" (commas-between codes) ")"))
 
 (define (generate-constructor-declarations xs vs)
  (map
@@ -7551,29 +7581,27 @@
     ((void? v) '())
     ((union? v)
      (map (lambda (u)
-	   (list "static INLINE "
-		 (generate-specifier v vs)
-		 " "
-		 (generate-unioner-name u v vs)
-		 "("
-		 (if (void? u) "void" (list (generate-specifier u vs) " x"))
-		 ");"
-		 #\newline))
-	  (union-members v)))
+	   (generate-function-declaration
+	    #t
+	    #t
+	    #f
+	    (generate-specifier v vs)
+	    (generate-function-declarator
+	     (generate-unioner-name u v vs)
+	     (list (if (void? u) '() (list (generate-specifier u vs) " x"))))))
+	  (union-values v)))
     ((abstract-real? v) '())
-    (else
-     (list "static INLINE "
+    (else (generate-function-declaration
+	   #t
+	   #t
+	   #f
 	   (generate-specifier v vs)
-	   " "
-	   (generate-constructor-name v vs)
-	   "("
-	   (commas-between-void
+	   (generate-function-declarator
+	    (generate-constructor-name v vs)
 	    (map (lambda (s v)
-		  (if (void? v) #f (list (generate-specifier v vs) " " s)))
+		  (if (void? v) '() (list (generate-specifier v vs) " " s)))
 		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ");"
-	   #\newline))))
+		 (aggregate-value-values v)))))))
   vs))
 
 (define (generate-constructor-definitions xs vs)
@@ -7583,72 +7611,78 @@
     ((void? v) '())
     ((union? v)
      (map (lambda (u)
-	   (assert (and (memp abstract-value=? u (union-members v))
+	   (assert (and (memp abstract-value=? u (union-values v))
 			(memp abstract-value=? u vs)))
-	   (list "static INLINE "
-		 (generate-specifier v vs)
-		 " "
-		 (generate-unioner-name u v vs)
-		 "("
-		 (if (void? u) "void" (list (generate-specifier u vs) " x"))
-
-		 "){"
-		 (generate-specifier v vs)
-		 " r;r.t="
-		 ;; This uses per-union tags here instead of per-program tags.
-		 (positionp abstract-value=? u (union-members v))
-		 ";u"
-		 (positionp abstract-value=? u vs)
-		 "=x;return r;}"
-		 #\newline))
-	  (union-members v)))
+	   (generate-function-definition
+	    #t
+	    #t
+	    #f
+	    (generate-specifier v vs)
+	    (generate-function-declarator
+	     (generate-unioner-name u v vs)
+	     ;; here I am: abstract
+	     (list (if (void? u) '() (list (generate-specifier u vs) " x"))))
+	    ;; here I am: abstract
+	    (list
+	     (generate-specifier v vs)
+	     " r;"
+	     (slot "r" "t")
+	     "="
+	     ;; This uses per-union tags here instead of per-program tags.
+	     (positionp abstract-value=? u (union-values v))
+	     ";u"
+	     (positionp abstract-value=? u vs)
+	     "=x;return r;")))
+	  (union-values v)))
     ((abstract-real? v) '())
     (else
-     (list "static INLINE "
-	   (generate-specifier v vs)
-	   " "
-	   (generate-constructor-name v vs)
-	   "("
-	   (commas-between-void
+     (generate-function-definition
+      #t
+      #t
+      #f
+      (generate-specifier v vs)
+      (generate-function-declarator
+       (generate-constructor-name v vs)
+       (map (lambda (s v)
+	     ;; here I am: abstract
+	     (if (void? v) '() (list (generate-specifier v vs) " " s)))
+	    (generate-slot-names v xs vs)
+	    (aggregate-value-values v)))
+      ;; here I am: abstract
+      (list (generate-specifier v vs)
+	    " r;"
 	    (map (lambda (s v)
-		  (if (void? v) #f (list (generate-specifier v vs) " " s)))
+		  (if (void? v) '() (list (slot "r" s) "=" s ";")))
 		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   "){"
-	   (generate-specifier v vs)
-	   " r;"
-	   (map (lambda (s v) (if (void? v) '() (list "r." s "=" s ";")))
-		(generate-slot-names v xs vs)
-		(aggregate-value-values v))
-	   "return r;}"
-	   #\newline))))
+		 (aggregate-value-values v))
+	    "return r;")))))
   vs))
 
 (define (generate-widener-declarations vs widener-instances)
  (map (lambda (widener-instance)
        (let ((v1 (widener-instance-v1 widener-instance))
 	     (v2 (widener-instance-v2 widener-instance)))
-	(list "static INLINE "
-	      (generate-specifier v2 vs)
-	      " "
-	      (generate-widener-name v1 v2 widener-instances)
-	      "("
-	      (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
-	      ");"
-	      #\newline)))
+	(generate-function-declaration
+	 #t
+	 #t
+	 #f
+	 (generate-specifier v2 vs)
+	 (generate-function-declarator
+	  (generate-widener-name v1 v2 widener-instances)
+	  (list (if (void? v1) '() (list (generate-specifier v1 vs) " x")))))))
       widener-instances))
 
 (define (generate-dispatch code v codes)
- (assert (and (= (length (union-members v)) (length codes))
-	      (>= (length (union-members v)) 2)))
+ (assert (and (= (length (union-values v)) (length codes))
+	      (>= (length (union-values v)) 2)))
  ;; This uses per-union tags here instead of per-program tags.
  ;; It would be better to use a switch but while there are conditional
  ;; expressions in C, there are no switch expressions. We could use the GNU C
  ;; statement expression extension. In the case of conditional expressions, we
  ;; could optimize the order (by profiling or static analysis). In the case of
  ;; a switch, could optimize the choice of which case becomes the default.
- (list (map (lambda (i code1) (list code ".t==" i "?" code1))
-	    (enumerate (length (but-last (union-members v))))
+ (list (map (lambda (i code1) (list (slot code "t") "==" i "?" code1))
+	    (enumerate (length (but-last (union-values v))))
 	    (but-last codes))
        ":"
        (last codes)))
@@ -7658,120 +7692,310 @@
   (lambda (widener-instance)
    (let ((v1 (widener-instance-v1 widener-instance))
 	 (v2 (widener-instance-v2 widener-instance)))
-    (list "static INLINE "
-	  (generate-specifier v2 vs)
-	  " "
-	  (generate-widener-name v1 v2 widener-instances)
-	  "("
-	  (if (void? v1) "void" (list (generate-specifier v1 vs) " x"))
-	  "){return "
-	  (cond
-	   ;; See the note for this case in all-subwidenings.
-	   ((union? v1)
-	    (generate-dispatch
-	     "x"
-	     v1
-	     (map (lambda (s u1)
-		   (list (generate-widener-name u1 v2 widener-instances)
-			 "("
-			 (if (void? u1) '() (list "x." s))
-			 ")"))
-		  (generate-slot-names v1 xs vs)
-		  (union-members v1))))
-	   ;; See the note for this case in all-subwidenings.
-	   ((union? v2)
-	    (let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
-			       (union-members v2))))
-	     (list (generate-unioner-name u2 v2 vs)
-		   "("
-		   (generate-widener-name v1 u2 widener-instances)
-		   "("
-		   (if (void? v1) '() "x")
-		   "))")))
-	   ;; This assumes that Scheme inexact numbers are printed as C
-	   ;; doubles.
-	   ((real? v1) (exact->inexact v1))
-	   (else (list
-		  (generate-constructor-name v2 vs)
-		  "("
-		  (commas-between
-		   (map
-		    (lambda (s v1 v2)
-		     (cond
-		      ((void? v2) #f)
-		      ((abstract-value=? v1 v2) (list "x." s))
-		      (else
-		       (list (generate-widener-name v1 v2 widener-instances)
-			     "("
-			     (if (void? v1) '() (list "x." s))
-			     ")"))))
-		    (generate-slot-names v2 xs vs)
-		    (aggregate-value-values v1)
-		    (aggregate-value-values v2)))
-		  ")")))
-	  ";}"
-	  #\newline)))
+    (generate-function-definition
+     #t
+     #t
+     #f
+     (generate-specifier v2 vs)
+     (generate-function-declarator
+      (generate-widener-name v1 v2 widener-instances)
+      ;; here I am: abstract
+      (list (if (void? v1) '() (list (generate-specifier v1 vs) " x"))))
+     ;; here I am: abstract
+     (list
+      "return "
+      (cond
+       ;; See the note for this case in all-subwidenings.
+       ((union? v1)
+	(generate-dispatch
+	 "x"
+	 v1
+	 (map (lambda (s u1)
+	       (generate-call
+		(generate-widener-name u1 v2 widener-instances)
+		(list (if (void? u1) '() (slot "x" s)))))
+	      (generate-slot-names v1 xs vs)
+	      (union-values v1))))
+       ;; See the note for this case in all-subwidenings.
+       ((union? v2)
+	(let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
+			   (union-values v2))))
+	 (generate-call
+	  (generate-unioner-name u2 v2 vs)
+	  (list (generate-call
+		 (generate-widener-name v1 u2 widener-instances)
+		 (list (if (void? v1) '() "x")))))))
+       ;; This assumes that Scheme inexact numbers are printed as C
+       ;; doubles.
+       ((real? v1) (exact->inexact v1))
+       (else (generate-call
+	      (generate-constructor-name v2 vs)
+	      (map (lambda (s v1 v2)
+		    (cond
+		     ((void? v2) '())
+		     ((abstract-value=? v1 v2) (slot "x" s))
+		     (else (generate-call
+			    (generate-widener-name v1 v2 widener-instances)
+			    (list (if (void? v1) '() (slot "x" s)))))))
+		   (generate-slot-names v2 xs vs)
+		   (aggregate-value-values v1)
+		   (aggregate-value-values v2)))))
+      ";"))))
   widener-instances))
 
-(define (generate-real-primitive-declarations s s1 s2 bs vs)
+(define (generate-panic-declarations vs)
  (map (lambda (v)
-       (assert (vlad-real? v))
-       (list "static INLINE "
-	     s1
-	     " "
-	     (generate-builtin-name s2 v vs)
-	     "("
-	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	     ");"
-	     #\newline))
+       (generate-function-declaration
+	#t
+	#t
+	#t
+	(generate-specifier v vs)
+	;; here I am: abstract
+	(list (generate-builtin-name "panic" v vs) "(char *x)")))
+      vs))
+
+(define (generate-panic-definitions vs)
+ (map (lambda (v)
+       (generate-function-definition
+	#t
+	#t
+	#t
+	(generate-specifier v vs)
+	;; here I am: abstract
+	(list (generate-builtin-name "panic" v vs) "(char *x)")
+	;; here I am: abstract
+	"fputs(x,stderr);fputc('\n',stderr);exit(EXIT_FAILURE);"))
+      vs))
+
+(define (generate-boolean-declarations vs)
+ (list
+  (generate-function-declaration
+   ;; here I am: abstract
+   #t #t #f (generate-specifier (abstract-boolean) vs) "true(void)")
+  (generate-function-declaration
+   ;; here I am: abstract
+   #t #t #f (generate-specifier (abstract-boolean) vs) "false(void)")))
+
+(define (generate-boolean-definitions vs)
+ ;; here I am: abstract
+ (list (generate-function-definition
+	#t
+	#t
+	#f
+	(generate-specifier (abstract-boolean) vs)
+	"true(void)"
+	(list (generate-specifier (abstract-boolean) vs)
+	      " r;"
+	      (slot "r" "t")
+	      "="
+	      ;; This uses per-union tags here instead of per-program tags.
+	      (positionq (vlad-true) (abstract-boolean))
+	      ";return r;"))
+       (generate-function-definition
+	#t
+	#t
+	#f
+	(generate-specifier (abstract-boolean) vs)
+	"false(void)"
+	(list (generate-specifier (abstract-boolean) vs)
+	      " r;"
+	      (slot "r" "t")
+	      "="
+	      ;; This uses per-union tags here instead of per-program tags.
+	      (positionq (vlad-false) (abstract-boolean))
+	      ";return r;"))))
+
+(define (generate-panic v s vs)
+ (generate-call (generate-builtin-name "panic" v vs)
+		(list (list "\"" s "\""))))
+
+(define (generate-real-primitive-declarations s v0 s1 vs)
+ (map (lambda (v)
+       (generate-function-declaration
+	#t
+	#t
+	#f
+	(generate-specifier v0 vs)
+	(generate-function-declarator
+	 (generate-builtin-name s1 v vs)
+	 ;; here I am: abstract
+	 (list (if (void? v) '() (list (generate-specifier v vs) " x"))))))
       (all-primitives s)))
 
-(define (generate-real-primitive-definitions s s1 s2 s3 bs vs)
- ;; here I am: must handle unions and errors
+(define (generate-real-primitive-definitions s v0 s1 s2 s3 xs vs)
  (map (lambda (v)
-       (assert (vlad-real? v))
-       (list "static INLINE "
-	     s1
-	     " "
-	     (generate-builtin-name s2 v vs)
-	     "("
-	     (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	     "){return "
-	     (format #f s3 (if (void? v) v "x"))
-	     ";}"
-	     #\newline))
+       (cond
+	((union? v)
+	 (generate-function-definition
+	  #t
+	  #t
+	  #f
+	  (generate-specifier v0 vs)
+	  (generate-function-declarator
+	   (generate-builtin-name s1 v vs)
+	   ;; here I am: abstract
+	   (list (list (generate-specifier v vs) " x")))
+	  ;; here I am: abstract
+	  (list
+	   "return "
+	   (generate-dispatch
+	    "x"
+	    v
+	    (map (lambda (s u)
+		  (generate-call (generate-builtin-name s1 u vs)
+				 (list (if (void? u) '() (slot "x" s)))))
+		 (generate-slot-names v xs vs)
+		 (union-values v)))
+	   ";")))
+	((vlad-real? v)
+	 (generate-function-definition
+	  #t
+	  #t
+	  #f
+	  (generate-specifier v0 vs)
+	  (generate-function-declarator
+	   (generate-builtin-name s1 v vs)
+	   ;; here I am: abstract
+	   (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	  ;; here I am: abstract
+	  (list "return " (format #f s2 (if (void? v) v "x")) ";")))
+	(else
+	 (generate-function-definition
+	  #t
+	  #t
+	  #f
+	  (generate-specifier v0 vs)
+	  (generate-function-declarator
+	   (generate-builtin-name s1 v vs)
+	   ;; here I am: abstract
+	   (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	  ;; here I am: abstract
+	  (list "return "
+		(generate-panic v (list "Argument to " s3 " is invalid") vs)
+		";")))))
       (all-primitives s)))
 
-(define (generate-real*real-primitive-declarations s s1 s2 bs vs)
+(define (generate-real*real-primitive-declarations s v0 s1 vs)
  (map (lambda (v)
-       (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	(assert (and (vlad-real? v1) (vlad-real? v2)))
-	(list "static INLINE "
-	      s1
-	      " "
-	      (generate-builtin-name s2 v vs)
-	      "("
-	      (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	      ");"
-	      #\newline)))
+       (generate-function-declaration
+	#t
+	#t
+	#f
+	(generate-specifier v0 vs)
+	(generate-function-declarator
+	 (generate-builtin-name s1 v vs)
+	 ;; here I am: abstract
+	 (list (if (void? v) '() (list (generate-specifier v vs) " x"))))))
       (all-primitives s)))
 
-(define (generate-real*real-primitive-definitions s s1 s2 s3 bs vs)
- ;; here I am: must handle unions and errors
- (map (lambda (v)
-       (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	(assert (and (vlad-real? v1) (vlad-real? v2)))
-	(list "static INLINE "
-	      s1
-	      " "
-	      (generate-builtin-name s2 v vs)
-	      "("
-	      (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	      "){return "
-	      (format #f s3 (if (void? v1) v1 "x.a") (if (void? v2) v2 "x.d"))
-	      ";}"
-	      #\newline)))
-      (all-primitives s)))
+(define (generate-real*real-primitive-definitions s v0 s1 s2 s3 xs vs)
+ (map
+  (lambda (v)
+   (cond
+    ((union? v)
+     (generate-function-definition
+      #t
+      #t
+      #f
+      (generate-specifier v0 vs)
+      (generate-function-declarator
+       (generate-builtin-name s1 v vs)
+       ;; here I am: abstract
+       (list (list (generate-specifier v vs) " x")))
+      ;; here I am: abstract
+      (list
+       "return "
+       (generate-dispatch "x"
+			  v
+			  (map (lambda (s u)
+				(generate-call
+				 (generate-builtin-name s1 u vs)
+				 (list (if (void? u) '() (slot "x" s)))))
+			       (generate-slot-names v xs vs)
+			       (union-values v)))
+       ";")))
+    ((vlad-pair? v)
+     ;; here I am: need function definition
+     (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+      (cond
+       ((union? v1)
+	(generate-dispatch
+	 (slot "x" "a")
+	 v1
+	 (map (lambda (s u1)
+	       (generate-call
+		(generate-builtin-name s1 (vlad-cons u1 v2) vs)
+		(list (generate-call
+		       (generate-constructor-name (vlad-cons u1 v2) vs)
+		       ;; here I am
+		       (if (void? (vlad-cons u1 v2))
+			   '()
+			   (commas-between
+			    (list (if (void? u1) '() (slot (slot "x" "a") s))
+				  (if (void? v2) '() (slot "x" "d")))))))))
+	      (generate-slot-names v1 xs vs)
+	      (union-values v1))))
+       ((union? v2)
+	(generate-dispatch
+	 (slot "x" "d")
+	 v2
+	 (map (lambda (s u2)
+	       (generate-call
+		(generate-builtin-name s1 (vlad-cons v1 u2) vs)
+		(list (generate-call
+		       (generate-constructor-name (vlad-cons v1 u2) vs)
+		       ;; here I am
+		       (if (void? (vlad-cons v1 u2))
+			   '()
+			   (commas-between
+			    (list
+			     (if (void? v1) '() (slot "x" "a"))
+			     (if (void? u2) '() (slot (slot "x" "d") s)))))))))
+	      (generate-slot-names v2 xs vs)
+	      (union-values v2))))
+       ((and (vlad-real? v1) (vlad-real? v2))
+	(generate-function-definition
+	 #t
+	 #t
+	 #f
+	 (generate-specifier v0 vs)
+	 (generate-function-declarator
+	  (generate-builtin-name s1 v vs)
+	  (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	 ;; here I am: abstract
+	 (list "return "
+	       (format #f s2
+		       (if (void? v1) v1 (slot "x" "a"))
+		       (if (void? v2) v2 (slot "x" "d")))
+	       ";")))
+       (else
+	(generate-function-definition
+	 #t
+	 #t
+	 #f
+	 (generate-specifier v0 vs)
+	 (generate-function-declarator
+	  (generate-builtin-name s1 v vs)
+	  (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	 ;; here I am: abstract
+	 (list "return "
+	       (generate-panic v (list "Argument to " s3 " is invalid") vs)
+	       ";"))))))
+    (else
+     (generate-function-definition
+      #t
+      #t
+      #f
+      (generate-specifier v0 vs)
+      (generate-function-declarator
+       (generate-builtin-name s1 v vs)
+       ;; here I am: abstract
+       (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+      ;; here I am: abstract
+      (list "return "
+	    (generate-panic v (list "Argument to " s3 " is invalid") vs)
+	    ";")))))
+  (all-primitives s)))
 
 (define (calls-if-procedure? e v2 vs)
  (assert (= (length vs) (length (free-variables e))))
@@ -7895,54 +8119,54 @@
 	    (v3 (vlad-car v2))
 	    (v4 (vlad-cdr v2))
 	    (v5 (cond
-		 ((and (some vlad-false? (union-members v1))
+		 ((and (some vlad-false? (union-values v1))
 		       (some (lambda (u) (not (vlad-false? u)))
-			     (union-members v1)))
+			     (union-values v1)))
 		  (abstract-value-union (abstract-apply v3 (vlad-empty-list))
 					(abstract-apply v4 (vlad-empty-list))))
-		 ((some vlad-false? (union-members v1))
+		 ((some vlad-false? (union-values v1))
 		  (abstract-apply v4 (vlad-empty-list)))
-		 ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
+		 ((some (lambda (u) (not (vlad-false? u))) (union-values v1))
 		  (abstract-apply v3 (vlad-empty-list)))
 		 (else (internal-error)))))
       (if (void? v5)
 	  '()
-	  (list "static INLINE "
-		(generate-specifier v5 vs)
-		" "
-		(generate-builtin-name "if_procedure" v vs)
-		"("
-		(if (void? v) "void" (list (generate-specifier v vs) " x"))
-		");"
-		#\newline))))
+	  (generate-function-declaration
+	   #t
+	   #t
+	   #f
+	   (generate-specifier v5 vs)
+	   (generate-function-declarator
+	    (generate-builtin-name "if_procedure" v vs)
+	    (list
+	     ;; here I am: abstract
+	     (if (void? v) '() (list (generate-specifier v vs) " x"))))))))
     ((function-instance? instance)
      (let* ((v1 (function-instance-v1 instance))
 	    (v2 (function-instance-v2 instance))
 	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
-	  (list
-	   "static "
-	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
+	  (generate-function-declaration
+	   #t
+	   (not (memq instance (second instances1-instances2)))
+	   #f
 	   (generate-specifier v3 vs)
-	   " "
-	   (generate-function-name v1 v2 function-instances)
-	   "("
-	   (commas-between-void
-	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
-	   ");"
-	   #\newline))))
+	   (generate-function-declarator
+	    (generate-function-name v1 v2 function-instances)
+	    (list
+	     ;; here I am: abstract
+	     (if (void? v1) '() (list (generate-specifier v1 vs) " c"))
+	     ;; here I am: abstract
+	     (if (void? v2) '() (list (generate-specifier v2 vs) " x"))))))))
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
 (define (generate-widen v1 v2 code widener-instances)
  (if (abstract-value=? v1 v2)
      code
-     (list (generate-widener-name v1 v2 widener-instances)
-	   "("
-	   (if (void? v1) '() code)
-	   ")")))
+     (generate-call (generate-widener-name v1 v2 widener-instances)
+		    (list (if (void? v1) '() code)))))
 
 (define (generate-destructure p e v code xs vs)
  (cond
@@ -7990,8 +8214,7 @@
 	  (new-variable-access-expression x)
 	  e
 	  v
-	  (list code
-		"."
+	  (slot code
 		(generate-variable-name
 		 (variable-access-expression-variable x) xs))
 	  xs
@@ -8028,8 +8251,7 @@
 	  (new-variable-access-expression x)
 	  e
 	  v
-	  (list code
-		"."
+	  (slot code
 		(generate-variable-name
 		 (variable-access-expression-variable x) xs))
 	  xs
@@ -8045,9 +8267,9 @@
      v))
    (append
     (generate-destructure
-     (cons-expression-car p) e (tagged-pair-car v) (list code ".a") xs vs)
+     (cons-expression-car p) e (tagged-pair-car v) (slot code "a") xs vs)
     (generate-destructure
-     (cons-expression-cdr p) e (tagged-pair-cdr v) (list code ".d") xs vs)))
+     (cons-expression-cdr p) e (tagged-pair-cdr v) (slot code "d") xs vs)))
   (else (internal-error))))
 
 (define (generate-if-and-function-definitions
@@ -8062,128 +8284,127 @@
 	    (v3 (vlad-car v2))
 	    (v4 (vlad-cdr v2))
 	    (v5 (cond
-		 ((and (some vlad-false? (union-members v1))
+		 ((and (some vlad-false? (union-values v1))
 		       (some (lambda (u) (not (vlad-false? u)))
-			     (union-members v1)))
+			     (union-values v1)))
 		  (abstract-value-union (abstract-apply v3 (vlad-empty-list))
 					(abstract-apply v4 (vlad-empty-list))))
-		 ((some vlad-false? (union-members v1))
+		 ((some vlad-false? (union-values v1))
 		  (abstract-apply v4 (vlad-empty-list)))
-		 ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
+		 ((some (lambda (u) (not (vlad-false? u))) (union-values v1))
 		  (abstract-apply v3 (vlad-empty-list)))
 		 (else (internal-error)))))
       (if (void? v5)
 	  '()
-	  (list
-	   "static INLINE "
+	  (generate-function-definition
+	   #t
+	   #t
+	   #f
 	   (generate-specifier v5 vs)
-	   " "
-	   (generate-builtin-name "if_procedure" v vs)
-	   "("
-	   (if (void? v) "void" (list (generate-specifier v vs) " x"))
-	   "){return "
-	   (cond
-	    ((and (some vlad-false? (union-members v1))
-		  (some (lambda (u) (not (vlad-false? u))) (union-members v1)))
-	     (let ((v6 (abstract-apply v3 (vlad-empty-list)))
-		   (v7 (abstract-apply v4 (vlad-empty-list))))
-	      (list "x.a.t=="
-		    ;; This uses per-union tags here instead of per-program
-		    ;; tags.
-		    (position-if vlad-false? (union-members v1))
-		    "?"
-		    (generate-widen
-		     v6
-		     v5
-		     (list (generate-function-name
-			    v3 (vlad-empty-list) function-instances)
-			   "("
-			   (if (void? v3) '() "x.d.a")
-			   ")")
-		     widener-instances)
-		    ":"
-		    (generate-widen
-		     v7
-		     v5
-		     (list (generate-function-name
-			    v4 (vlad-empty-list) function-instances)
-			   "("
-			   (if (void? v4) '() "x.d.d")
-			   ")")
-		     widener-instances))))
-	    ((some vlad-false? (union-members v1))
-	     (list
-	      (generate-function-name v4 (vlad-empty-list) function-instances)
-	      "("
-	      (if (void? v4) '() "x.d.d")
-	      ")"))
-	    ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
-	     (list (generate-function-name
-		    v3 (vlad-empty-list) function-instances)
-		   "("
-		   (if (void? v3) '() "x.d.a")
-		   ")"))
-	    (else (internal-error)))
-	   ";}"
-	   #\newline))))
+	   (generate-function-declarator
+	    (generate-builtin-name "if_procedure" v vs)
+	    ;; here I am: abstract
+	    (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	   ;; here I am: abstract
+	   (list
+	    "return "
+	    (cond
+	     ((and (some vlad-false? (union-values v1))
+		   (some (lambda (u) (not (vlad-false? u))) (union-values v1)))
+	      (let ((v6 (abstract-apply v3 (vlad-empty-list)))
+		    (v7 (abstract-apply v4 (vlad-empty-list))))
+	       (list (slot (slot "x" "a") "t")
+		     "=="
+		     ;; This uses per-union tags here instead of per-program
+		     ;; tags.
+		     (position-if vlad-false? (union-values v1))
+		     "?"
+		     (generate-widen
+		      v6
+		      v5
+		      (generate-call
+		       (generate-function-name
+			v3 (vlad-empty-list) function-instances)
+		       (list (if (void? v3) '() (slot (slot "x" "d") "a"))))
+		      widener-instances)
+		     ":"
+		     (generate-widen
+		      v7
+		      v5
+		      (generate-call
+		       (generate-function-name
+			v4 (vlad-empty-list) function-instances)
+		       (list (if (void? v4) '() (slot (slot "x" "d") "d"))))
+		      widener-instances))))
+	     ((some vlad-false? (union-values v1))
+	      (generate-call
+	       (generate-function-name v4 (vlad-empty-list) function-instances)
+	       (list (if (void? v4) '() (slot (slot "x" "d") "d")))))
+	     ((some (lambda (u) (not (vlad-false? u))) (union-values v1))
+	      (generate-call
+	       (generate-function-name v3 (vlad-empty-list) function-instances)
+	       (list (if (void? v3) '() (slot (slot "x" "d") "a")))))
+	     (else (internal-error)))
+	    ";")))))
     ((function-instance? instance)
      (let* ((v1 (function-instance-v1 instance))
 	    (v2 (function-instance-v2 instance))
 	    (v3 (abstract-apply v1 v2)))
       (if (void? v3)
 	  '()
-	  (list
-	   "static "
-	   (if (memq instance (second instances1-instances2)) '() "INLINE ")
+	  (generate-function-definition
+	   #t
+	   (not (memq instance (second instances1-instances2)))
+	   #f
 	   (generate-specifier v3 vs)
-	   " "
-	   (generate-function-name v1 v2 function-instances)
-	   "("
-	   (commas-between-void
-	    (list (if (void? v1) #f (list (generate-specifier v1 vs) " c"))
-		  (if (void? v2) #f (list (generate-specifier v2 vs) " x"))))
-	   "){"
-	   ;; here I am
-	   (generate-destructure
-	    (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
-	   (generate-letrec-bindings
-	    (closure-body v1)
+	   (generate-function-declarator
+	    (generate-function-name v1 v2 function-instances)
+	    ;; here I am: abstract
+	    (list (if (void? v1) '() (list (generate-specifier v1 vs) " c"))
+		  ;; here I am: abstract
+		  (if (void? v2) '() (list (generate-specifier v2 vs) " x"))))
+	   ;; here I am: abstract
+	   (list
 	    ;; here I am
-	    (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
-	     (assert (= (length vss) 1))
-	     (first vss))
-	    (closure-variables v1)
-	    (cond ((nonrecursive-closure? v1) '())
-		  ((recursive-closure? v1)
-		   (vector->list (recursive-closure-procedure-variables v1)))
-		  (else (internal-error)))
-	    xs
-	    vs)
-	   "return "
-	   (generate-expression
-	    (closure-body v1)
-	    ;; here I am
-	    (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
-	     (assert (= (length vss) 1))
-	     (first vss))
-	    (closure-variables v1)
-	    (cond ((nonrecursive-closure? v1) '())
-		  ((recursive-closure? v1)
-		   (vector->list (recursive-closure-procedure-variables v1)))
-		  (else (internal-error)))
-	    bs
-	    xs
-	    vs
-	    function-instances
-	    widener-instances)
-	   ";}"
-	   #\newline))))
+	    (generate-destructure
+	     (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
+	    (generate-letrec-bindings
+	     (closure-body v1)
+	     ;; here I am
+	     (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	      (assert (= (length vss) 1))
+	      (first vss))
+	     (closure-variables v1)
+	     (cond ((nonrecursive-closure? v1) '())
+		   ((recursive-closure? v1)
+		    (vector->list (recursive-closure-procedure-variables v1)))
+		   (else (internal-error)))
+	     xs
+	     vs)
+	    "return "
+	    (generate-expression
+	     (closure-body v1)
+	     ;; here I am
+	     (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	      (assert (= (length vss) 1))
+	      (first vss))
+	     (closure-variables v1)
+	     (cond ((nonrecursive-closure? v1) '())
+		   ((recursive-closure? v1)
+		    (vector->list (recursive-closure-procedure-variables v1)))
+		   (else (internal-error)))
+	     bs
+	     xs
+	     vs
+	     function-instances
+	     widener-instances)
+	    ";")))))
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
 (define (generate-reference x xs2 xs xs1)
  (cond ((memp variable=? x xs2) "c")
-       ((memp variable=? x xs) (list "c." (generate-variable-name x xs1)))
+       ((memp variable=? x xs) (slot "c" (generate-variable-name x xs1)))
        (else (generate-variable-name x xs1))))
 
 (define (generate-expression
@@ -8200,17 +8421,14 @@
    ((variable-access-expression? e)
     (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
-    (list
+    (generate-call
      (generate-constructor-name v vs1)
-     "("
-     (commas-between
-      (map (lambda (x v) (if (void? v) #f (generate-reference x xs2 xs xs1)))
-	   ;; This used to have to be (free-variables e) instead of
-	   ;; (closure-variables v) when we used alpha equivalence for
-	   ;; expression=?.
-	   (closure-variables v)
-	   (aggregate-value-values v)))
-     ")"))
+     (map (lambda (x v) (if (void? v) '() (generate-reference x xs2 xs xs1)))
+	  ;; This used to have to be (free-variables e) instead of
+	  ;; (closure-variables v) when we used alpha equivalence for
+	  ;; expression=?.
+	  (closure-variables v)
+	  (aggregate-value-values v))))
    ((application? e)
     (let ((v1 (abstract-eval1 (application-callee e)
 			      (restrict-environment vs e application-callee)))
@@ -8219,55 +8437,51 @@
 	       (restrict-environment vs e application-argument))))
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
-	 (list
+	 (generate-call
 	  ((primitive-procedure-generator v1) v2 vs1)
-	  "("
 	  ;; needs work: This unsoundly removes the code from the callee, and
 	  ;;             possibly the argument, that might do I/O, signal an
 	  ;;             error, or not terminate.
-	  (if (void? v2)
-	      '()
-	      (generate-expression
-	       (application-argument e)
-	       (restrict-environment vs e application-argument)
-	       xs
-	       xs2
-	       bs
-	       xs1
-	       vs1
-	       function-instances
-	       widener-instances))
-	  ")")
-	 (list (generate-function-name v1 v2 function-instances)
-	       "("
-	       (commas-between
-		;; needs work: This unsoundly removes code that might do I/O,
-		;;             signal an error, or not terminate.
-		(list (if (void? v1)
-			  #f
-			  (generate-expression
-			   (application-callee e)
-			   (restrict-environment vs e application-callee)
-			   xs
-			   xs2
-			   bs
-			   xs1
-			   vs1
-			   function-instances
-			   widener-instances))
-		      (if (void? v2)
-			  #f
-			  (generate-expression
-			   (application-argument e)
-			   (restrict-environment vs e application-argument)
-			   xs
-			   xs2
-			   bs
-			   xs1
-			   vs1
-			   function-instances
-			   widener-instances))))
-	       ")"))))
+	  (list (if (void? v2)
+		    '()
+		    (generate-expression
+		     (application-argument e)
+		     (restrict-environment vs e application-argument)
+		     xs
+		     xs2
+		     bs
+		     xs1
+		     vs1
+		     function-instances
+		     widener-instances))))
+	 (generate-call
+	  (generate-function-name v1 v2 function-instances)
+	  ;; needs work: This unsoundly removes code that might do I/O,
+	  ;;             signal an error, or not terminate.
+	  (list (if (void? v1)
+		    '()
+		    (generate-expression
+		     (application-callee e)
+		     (restrict-environment vs e application-callee)
+		     xs
+		     xs2
+		     bs
+		     xs1
+		     vs1
+		     function-instances
+		     widener-instances))
+		(if (void? v2)
+		    '()
+		    (generate-expression
+		     (application-argument e)
+		     (restrict-environment vs e application-argument)
+		     xs
+		     xs2
+		     bs
+		     xs1
+		     vs1
+		     function-instances
+		     widener-instances)))))))
    ((letrec-expression? e)
     (generate-expression (letrec-expression-body e)
 			 (letrec-nested-environment vs e)
@@ -8284,36 +8498,34 @@
 	  (v2 (abstract-eval1
 	       (cons-expression-cdr e)
 	       (restrict-environment vs e cons-expression-cdr))))
-     (list (generate-constructor-name v vs1)
-	   "("
-	   (commas-between
-	    ;; needs work: This unsoundly removes code that might do I/O,
-	    ;;             signal an error, or not terminate.
-	    (list (if (void? v1)
-		      #f
-		      (generate-expression
-		       (cons-expression-car e)
-		       (restrict-environment vs e cons-expression-car)
-		       xs
-		       xs2
-		       bs
-		       xs1
-		       vs1
-		       function-instances
-		       widener-instances))
-		  (if (void? v2)
-		      #f
-		      (generate-expression
-		       (cons-expression-cdr e)
-		       (restrict-environment vs e cons-expression-cdr)
-		       xs
-		       xs2
-		       bs
-		       xs1
-		       vs1
-		       function-instances
-		       widener-instances))))
-	   ")")))
+     (generate-call
+      (generate-constructor-name v vs1)
+      ;; needs work: This unsoundly removes code that might do I/O,
+      ;;             signal an error, or not terminate.
+      (list (if (void? v1)
+		'()
+		(generate-expression
+		 (cons-expression-car e)
+		 (restrict-environment vs e cons-expression-car)
+		 xs
+		 xs2
+		 bs
+		 xs1
+		 vs1
+		 function-instances
+		 widener-instances))
+	    (if (void? v2)
+		'()
+		(generate-expression
+		 (cons-expression-cdr e)
+		 (restrict-environment vs e cons-expression-cdr)
+		 xs
+		 xs2
+		 bs
+		 xs1
+		 vs1
+		 function-instances
+		 widener-instances))))))
    (else (internal-error)))))
 
 (define (generate-letrec-bindings e vs xs xs2 xs1 vs1)
@@ -8379,18 +8591,17 @@
 		  " "
 		  (generate-variable-name x xs1)
 		  "="
-		  (generate-constructor-name v vs1)
-		  "("
-		  (commas-between
+		  (generate-call
+		   (generate-constructor-name v vs1)
 		   (map (lambda (x v)
-			 (if (void? v) #f (generate-reference x xs2 xs xs1)))
+			 (if (void? v) '() (generate-reference x xs2 xs xs1)))
 			;; This used to have to be
 			;; (letrec-expression-variables e) instead of
 			;; (closure-variables v) when we used alpha
 			;; equivalence for expression=?.
 			(closure-variables v)
 			(aggregate-value-values v)))
-		  ");"))))
+		  ";"))))
       (letrec-expression-procedure-variables e))
      (generate-letrec-bindings (letrec-expression-body e)
 			       (letrec-nested-environment vs e)
@@ -8425,6 +8636,8 @@
 		xs1
 		vs1)))))
    (else (internal-error)))))
+
+;;; here I am: from here down is clean except where noted
 
 (define (all-unary-ad p? s)
  ;; This topological sort is needed so that all INLINE definitions come before
@@ -8505,46 +8718,51 @@
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
-	    (list "static INLINE "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name s1 v vs)
-		  "("
-		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
-		  ");"
-		  #\newline))))
+	    (generate-function-declaration
+	     #t
+	     #t
+	     #f
+	     (generate-specifier v1 vs)
+	     (generate-function-declarator
+	      (generate-builtin-name s1 v vs)
+	      (list
+	       ;; here I am: abstract
+	       (if (void? v) '() (list (generate-specifier v vs) " x"))))))))
       (all-unary-ad p? s)))
 
 (define (generate-binary-ad-declarations p? g s s1 f f-inverse bs vs)
- (map (lambda (v)
-       (let ((v1 (g (vlad-car v) (vlad-cdr v))))
-	(if (void? v1)
-	    '()
-	    (list "static INLINE "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name s1 v vs)
-		  "("
-		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
-		  ");"
-		  #\newline))))
-      (all-binary-ad p? g s f f-inverse)))
+ (map
+  (lambda (v)
+   (let ((v1 (g (vlad-car v) (vlad-cdr v))))
+    (if (void? v1)
+	'()
+	(generate-function-declaration
+	 #t
+	 #t
+	 #f
+	 (generate-specifier v1 vs)
+	 (generate-function-declarator
+	  (generate-builtin-name s1 v vs)
+	  ;; here I am: abstract
+	  (list (if (void? v) '() (list (generate-specifier v vs) " x"))))))))
+  (all-binary-ad p? g s f f-inverse)))
 
 (define (generate-unary-ad-definitions p? g f s s1 bs xs vs)
  (map (lambda (v)
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
-	    (list "static INLINE "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name s1 v vs)
-		  "("
-		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
-		  "){return "
-		  (g v)
-		  ";}"
-		  #\newline))))
+	    (generate-function-definition
+	     #t
+	     #t
+	     #f
+	     (generate-specifier v1 vs)
+	     (generate-function-declarator
+	      (generate-builtin-name s1 v vs)
+	      ;; here I am: abstract
+	      (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	     ;; here I am: abstract
+	     (list "return " (g v) ";")))))
       (all-unary-ad p? s)))
 
 (define (generate-binary-ad-definitions p? h g s s1 f f-inverse bs xs vs)
@@ -8552,41 +8770,38 @@
        (let ((v1 (g (vlad-car v) (vlad-cdr v))))
 	(if (void? v1)
 	    '()
-	    (list "static INLINE "
-		  (generate-specifier v1 vs)
-		  " "
-		  (generate-builtin-name s1 v vs)
-		  "("
-		  (if (void? v) "void" (list (generate-specifier v vs) " x"))
-		  "){return "
-		  (h v)
-		  ";}"
-		  #\newline))))
+	    (generate-function-definition
+	     #t
+	     #t
+	     #f
+	     (generate-specifier v1 vs)
+	     (generate-function-declarator
+	      (generate-builtin-name s1 v vs)
+	      ;; here I am: abstract
+	      (list (if (void? v) '() (list (generate-specifier v vs) " x"))))
+	     ;; here I am: abstract
+	     (list "return " (h v) ";")))))
       (all-binary-ad p? g s f f-inverse)))
 
 (define (generate-zero-definitions bs xs vs)
  (generate-unary-ad-definitions
   (lambda (v) #t)
   (lambda (v)
-   (assert (not (void? v)))
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (zero u) (zero v) vs)
-		  "("
-		  (if (void? (zero u))
-		      '()
-		      (list (generate-builtin-name "zero" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((vlad-real? v) "0.0")
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (zero u) (zero v) vs)
+	 (list (if (void? (zero u))
+		   '()
+		   (generate-call (generate-builtin-name "zero" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
     ((or (nonrecursive-closure? v)
 	 (recursive-closure? v)
 	 (perturbation-tagged-value? v)
@@ -8594,19 +8809,15 @@
 	 (sensitivity-tagged-value? v)
 	 (reverse-tagged-value? v)
 	 (tagged-pair? v))
-     (list (generate-constructor-name (zero v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (zero v))
-		      #f
-		      (list (generate-builtin-name "zero" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
+     (generate-call
+      (generate-constructor-name (zero v) vs)
+      (map (lambda (s v)
+	    (if (void? (zero v))
+		'()
+		(generate-call (generate-builtin-name "zero" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
     (else (internal-error))))
   zero 'zero "zero" bs xs vs))
 
@@ -8618,44 +8829,37 @@
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (perturb u) (perturb v) vs)
-		  "("
-		  (if (void? (perturb u))
-		      '()
-		      (list (generate-builtin-name "perturb" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (perturb u) (perturb v) vs)
+	 (list (if (void? (perturb u))
+		   '()
+		   (generate-call (generate-builtin-name "perturb" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
     ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
 	 (reverse-tagged-value? v))
-     (list (generate-constructor-name (perturb v) vs) "(x)"))
+     (generate-call (generate-constructor-name (perturb v) vs) '("x")))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (perturb v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (perturb v))
-		      #f
-		      (list (generate-builtin-name "perturb" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
+     (generate-call
+      (generate-constructor-name (perturb v) vs)
+      (map (lambda (s v)
+	    (if (void? (perturb v))
+		'()
+		(generate-call (generate-builtin-name "perturb" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
     (else (internal-error))))
   perturb 'perturb "perturb" bs xs vs))
 
@@ -8664,123 +8868,100 @@
   (lambda (v)
    (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
-   ;; here I am: Need to give an error on non-perturbation value.
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (unperturb u) (unperturb v) vs)
-		  "("
-		  (if (void? (unperturb u))
-		      '()
-		      (list (generate-builtin-name "unperturb" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((perturbation-tagged-value? v) "x.p")
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (unperturb u) (unperturb v) vs)
+	 (list (if (void? (unperturb u))
+		   '()
+		   (generate-call (generate-builtin-name "unperturb" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
+    ((perturbation-tagged-value? v) (slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (unperturb v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (unperturb v))
-		      #f
-		      (list (generate-builtin-name "unperturb" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
-    (else (internal-error))))
+     (generate-call
+      (generate-constructor-name (unperturb v) vs)
+      (map (lambda (s v)
+	    (if (void? (unperturb v))
+		'()
+		(generate-call (generate-builtin-name "unperturb" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
+    (else (generate-panic
+	   v "Argument to unperturb is a non-perturbation value" vs))))
   unperturb 'unperturb "unperturb" bs xs vs))
 
 (define (generate-primal-definitions bs xs vs)
  (generate-unary-ad-definitions
   (lambda (v) (and (forward-value? v) (not (bundle? v))))
   (lambda (v)
-   (assert (not (void? v)))
-   ;; here I am: Need to give an error on non-bundle value.
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (primal u) (primal v) vs)
-		  "("
-		  (if (void? (primal u))
-		      '()
-		      (list (generate-builtin-name "primal" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((bundle? v) "x.p")
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (primal u) (primal v) vs)
+	 (list (if (void? (primal u))
+		   '()
+		   (generate-call (generate-builtin-name "primal" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
+    ((bundle? v) (slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (primal v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (primal v))
-		      #f
-		      (list (generate-builtin-name "primal" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
-    (else (internal-error))))
+     (generate-call
+      (generate-constructor-name (primal v) vs)
+      (map (lambda (s v)
+	    (if (void? (primal v))
+		'()
+		(generate-call (generate-builtin-name "primal" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
+    (else (generate-panic v "Argument to primal is a non-forward value" vs))))
   primal 'primal "primal" bs xs vs))
 
 (define (generate-tangent-definitions bs xs vs)
  (generate-unary-ad-definitions
   (lambda (v) (and (forward-value? v) (not (bundle? v))))
   (lambda (v)
-   (assert (not (void? v)))
-   ;; here I am: Need to give an error on non-bundle value.
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (tangent u) (tangent v) vs)
-		  "("
-		  (if (void? (tangent u))
-		      '()
-		      (list (generate-builtin-name "tangent" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((bundle? v) "x.t")
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (tangent u) (tangent v) vs)
+	 (list (if (void? (tangent u))
+		   '()
+		   (generate-call (generate-builtin-name "tangent" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
+    ((bundle? v) (slot "x" "t"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (tangent v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (tangent v))
-		      #f
-		      (list (generate-builtin-name "tangent" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
-    (else (internal-error))))
+     (generate-call
+      (generate-constructor-name (tangent v) vs)
+      (map (lambda (s v)
+	    (if (void? (tangent v))
+		'()
+		(generate-call (generate-builtin-name "tangent" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
+    (else (generate-panic v "Argument to tangent is a non-forward value" vs))))
   tangent 'tangent "tangent" bs xs vs))
 
 (define (generate-bundle-definitions bs xs vs)
@@ -8791,45 +8972,131 @@
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
   (lambda (v)
-   (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-    (assert (and (not (void? v1)) (not (void? v2))))
-    (cond
-     ;; here I am: need to handle unions
-     ((or (vlad-real? v1)
-	  (perturbation-tagged-value? v1)
-	  (bundle? v1)
-	  (sensitivity-tagged-value? v1)
-	  (reverse-tagged-value? v1))
-      ;; needs work: To generate run-time conformance check when the primal
-      ;;             and/or tangent are abstract booleans.
-      (list (generate-constructor-name (bundle v1 v2) vs)
-	    "("
-	    (commas-between
-	     (list (if (void? v1) #f "x.a") (if (void? v2) #f "x.d")))
-	    ")"))
-     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-      (list
-       (generate-constructor-name (bundle v1 v2) vs)
-       "("
-       (commas-between
-	(map (lambda (s3a s3b v3)
-	      (if (void? v3)
-		  #f
-		  (list (generate-builtin-name
-			 "bundle" (vlad-cons (primal v3) (tangent v3)) vs)
-			"("
-			(generate-constructor-name
-			 (vlad-cons (primal v3) (tangent v3)) vs)
-			"("
-			(commas-between
-			 (list (if (void? (primal v3)) #f (list "x.a." s3a))
-			       (if (void? (tangent v3)) #f (list "x.d." s3b))))
-			"))")))
-	     (generate-slot-names v1 xs vs)
-	     (generate-slot-names v2 xs vs)
-	     (aggregate-value-values (bundle v1 v2))))
-       ")"))
-     (else (internal-error)))))
+   (cond
+    ((union? v)
+     (generate-dispatch
+      "x"
+      v
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (bundle u) (bundle v) vs)
+	 (list (if (void? (bundle u))
+		   '()
+		   (generate-call (generate-builtin-name "bundle" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
+    ((vlad-pair? v)
+     (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+      (cond
+       ((union? v1)
+	(generate-dispatch
+	 (slot "x" "a")
+	 v1
+	 (map
+	  (lambda (s u1)
+	   (generate-call
+	    (generate-unioner-name (bundle (vlad-cons u1 v2)) (bundle v) vs)
+	    (list
+	     (if (void? (bundle (vlad-cons u1 v2)))
+		 '()
+		 (generate-call
+		  (generate-builtin-name "bundle" (vlad-cons u1 v2) vs)
+		  (list (if (void? (vlad-cons u1 v2))
+			    '()
+			    (generate-call
+			     (generate-constructor-name (vlad-cons u1 v2) vs)
+			     (list (if (void? u1) '() (slot (slot "x" "a") s))
+				   (if (void? v2) '() (slot "x" "d")))))))))))
+	  (generate-slot-names v1 xs vs)
+	  (union-values v1))))
+       ((union? v2)
+	(generate-dispatch
+	 (slot "x" "d")
+	 v2
+	 (map
+	  (lambda (s u2)
+	   (generate-call
+	    (generate-unioner-name (bundle (vlad-cons v1 u2)) (bundle v) vs)
+	    (list
+	     (if (void? (bundle (vlad-cons v1 u2)))
+		 '()
+		 (generate-call
+		  (generate-builtin-name "bundle" (vlad-cons v1 u2) vs)
+		  (list
+		   (if (void? (vlad-cons v1 u2))
+		       '()
+		       (generate-call
+			(generate-constructor-name (vlad-cons v1 u2) vs)
+			(list
+			 (if (void? v1) '() (slot "x" "a"))
+			 (if (void? u2) '() (slot (slot "x" "d") s)))))))))))
+	  (generate-slot-names v2 xs vs)
+	  (union-values v2))))
+       ((and (perturbation-tagged-value? v2)
+	     (union? (perturbation-tagged-value-primal? v2)))
+	(generate-dispatch
+	 (slot (slot "x" "d") "p")
+	 v2
+	 (map
+	  (lambda (s u2)
+	   (generate-call
+	    (generate-builtin-name "bundle" (vlad-cons v1 (perturb u2)) vs)
+	    (list
+	     (generate-call
+	      (generate-constructor-name (vlad-cons v1 (perturb u2)) vs)
+	      (list
+	       (if (void? (vlad-cons v1 (perturb u2)))
+		   '()
+		   ;; here I am
+		   (commas-between
+		    (list
+		     (if (void? v1) '() (slot "x" "a"))
+		     (if (void? (perturb u2))
+			 '()
+			 (generate-call
+			  (generate-constructor-name (perturb u2) vs)
+			  (list
+			   (if (void? u2)
+			       '()
+			       (slot (slot (slot "x" "d") "p") s)))))))))))))
+	  (generate-slot-names (unperturb v2) xs vs)
+	  (union-values (unperturb v2)))))
+       ;; here I am: need to check conformance
+       ;;            even when one or both arguments is void
+       ;;            and even when one or both arguments is deep
+       ((or (vlad-real? v1)
+	    (perturbation-tagged-value? v1)
+	    (bundle? v1)
+	    (sensitivity-tagged-value? v1)
+	    (reverse-tagged-value? v1))
+	(generate-call (generate-constructor-name (bundle v1 v2) vs)
+		       (list (if (void? v1) '() (slot "x" "a"))
+			     (if (void? v2) '() (slot "x" "d")))))
+       ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+	(generate-call
+	 (generate-constructor-name (bundle v1 v2) vs)
+	 (map (lambda (s3a s3b v3)
+	       (if (void? v3)
+		   '()
+		   (generate-call
+		    (generate-builtin-name
+		     "bundle" (vlad-cons (primal v3) (tangent v3)) vs)
+		    (list (generate-call
+			   (generate-constructor-name
+			    (vlad-cons (primal v3) (tangent v3)) vs)
+			   (list (if (void? (primal v3))
+				     '()
+				     (slot (slot "x" "a") s3a))
+				 (if (void? (tangent v3))
+				     '()
+				     (slot (slot "x" "d") s3b))))))))
+	      (generate-slot-names v1 xs vs)
+	      (generate-slot-names v2 xs vs)
+	      (aggregate-value-values (bundle v1 v2)))))
+       (else (generate-panic v "Arguments to bundle do not conform" vs)))))
+    (else (generate-panic v "Arguments to bundle do not conform" vs))))
   bundle 'bundle "bundle" perturb unperturb bs xs vs))
 
 (define (generate-sensitize-definitions bs xs vs)
@@ -8840,44 +9107,37 @@
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (sensitize u) (sensitize v) vs)
-		  "("
-		  (if (void? (sensitize u))
-		      '()
-		      (list (generate-builtin-name "sensitize" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (sensitize u) (sensitize v) vs)
+	 (list (if (void? (sensitize u))
+		   '()
+		   (generate-call (generate-builtin-name "sensitize" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
     ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
 	 (reverse-tagged-value? v))
-     (list (generate-constructor-name (sensitize v) vs) "(x)"))
+     (generate-call (generate-constructor-name (sensitize v) vs) '("x")))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (sensitize v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (sensitize v))
-		      #f
-		      (list (generate-builtin-name "sensitize" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
+     (generate-call
+      (generate-constructor-name (sensitize v) vs)
+      (map (lambda (s v)
+	    (if (void? (sensitize v))
+		'()
+		(generate-call (generate-builtin-name "sensitize" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
     (else (internal-error))))
   sensitize 'sensitize "sensitize" bs xs vs))
 
@@ -8885,41 +9145,34 @@
  (generate-unary-ad-definitions
   (lambda (v) (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
-   ;; here I am: Need to give an error on non-sensitivity value.
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (unsensitize u) (unsensitize v) vs)
-		  "("
-		  (if (void? (unsensitize u))
-		      '()
-		      (list (generate-builtin-name "unsensitize" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((sensitivity-tagged-value? v) "x.p")
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (unsensitize u) (unsensitize v) vs)
+	 (list (if (void? (unsensitize u))
+		   '()
+		   (generate-call (generate-builtin-name "unsensitize" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
+    ((sensitivity-tagged-value? v) (slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (unsensitize v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (unsensitize v))
-		      #f
-		      (list (generate-builtin-name "unsensitize" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
-    (else (internal-error))))
+     (generate-call
+      (generate-constructor-name (unsensitize v) vs)
+      (map (lambda (s v)
+	    (if (void? (unsensitize v))
+		'()
+		(generate-call (generate-builtin-name "unsensitize" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
+    (else (generate-panic
+	   v "Argument to unsensitize is a non-sensitivity value" vs))))
   unsensitize 'unsensitize "unsensitize" bs xs vs))
 
 (define (generate-plus-definitions bs xs vs)
@@ -8927,21 +9180,21 @@
   (lambda (v) #t)
   (lambda (v)
    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-    (assert (and (not (void? v1)) (not (void? v2))))
     (cond
      ;; here I am: need to handle unions
      ((vlad-real? v1)
+      ;; here I am: abstract
       (if (void? v1)
 	  (if (void? v2)
 	      (internal-error)
 	      ;; This assumes that Scheme inexact numbers are printed as C
 	      ;; doubles.
-	      (list (exact->inexact v1) "+x.d"))
+	      (list (exact->inexact v1) "+" (slot "x" "d")))
 	  (if (void? v2)
 	      ;; This assumes that Scheme inexact numbers are printed as C
 	      ;; doubles.
-	      (list "x.a+" (exact->inexact v2))
-	      "x.a+x.d")))
+	      (list (slot "x" "a") "+" (exact->inexact v2))
+	      (list (slot "x" "a") "+" (slot "x" "d")))))
      ((or (nonrecursive-closure? v)
 	  (recursive-closure? v)
 	  (perturbation-tagged-value? v)
@@ -8949,27 +9202,23 @@
 	  (sensitivity-tagged-value? v)
 	  (reverse-tagged-value? v)
 	  (tagged-pair? v))
-      (list
+      (generate-call
        (generate-constructor-name (plus v1 v2) vs)
-       "("
-       (commas-between
-	(map (lambda (s3a s3b v3 v3a v3b)
-	      (if (void? v3)
-		  #f
-		  (list (generate-builtin-name "plus" (vlad-cons v3a v3b) vs)
-			"("
-			(generate-constructor-name (vlad-cons v3a v3b) vs)
-			"("
-			(commas-between
-			 (list (if (void? v3a) #f (list "x.a." s3a))
-			       (if (void? v3b) #f (list "x.d." s3b))))
-			"))")))
-	     (generate-slot-names v1 xs vs)
-	     (generate-slot-names v2 xs vs)
-	     (aggregate-value-values (plus v1 v2))
-	     (aggregate-value-values v1)
-	     (aggregate-value-values v2)))
-       ")"))
+       (map
+	(lambda (s3a s3b v3 v3a v3b)
+	 (if (void? v3)
+	     '()
+	     (generate-call
+	      (generate-builtin-name "plus" (vlad-cons v3a v3b) vs)
+	      (list (generate-call
+		     (generate-constructor-name (vlad-cons v3a v3b) vs)
+		     (list (if (void? v3a) '() (slot (slot "x" "a") s3a))
+			   (if (void? v3b) '() (slot (slot "x" "d") s3b))))))))
+	(generate-slot-names v1 xs vs)
+	(generate-slot-names v2 xs vs)
+	(aggregate-value-values (plus v1 v2))
+	(aggregate-value-values v1)
+	(aggregate-value-values v2))))
      (else (internal-error)))))
   plus 'plus "plus" identity identity bs xs vs))
 
@@ -8981,44 +9230,37 @@
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
-      (map (lambda (s u)
-	    (list (generate-unioner-name (*j u) (*j v) vs)
-		  "("
-		  (if (void? (*j u))
-		      '()
-		      (list (generate-builtin-name "starj" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
-	   (generate-slot-names v xs vs)
-	   (union-members v))))
+      (map
+       (lambda (s u)
+	(generate-call
+	 (generate-unioner-name (*j u) (*j v) vs)
+	 (list (if (void? (*j u))
+		   '()
+		   (generate-call (generate-builtin-name "starj" u vs)
+				  (list (if (void? u) '() (slot "x" s))))))))
+       (generate-slot-names v xs vs)
+       (union-values v))))
     ((or (vlad-real? v)
 	 (perturbation-tagged-value? v)
 	 (bundle? v)
 	 (sensitivity-tagged-value? v)
 	 (reverse-tagged-value? v))
-     (list (generate-constructor-name (*j v) vs) "(x)"))
+     (generate-call (generate-constructor-name (*j v) vs) '("x")))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (*j v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (*j v))
-		      #f
-		      (list (generate-builtin-name "starj" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
+     (generate-call
+      (generate-constructor-name (*j v) vs)
+      (map (lambda (s v)
+	    (if (void? (*j v))
+		'()
+		(generate-call (generate-builtin-name "starj" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
     (else (internal-error))))
   *j '*j "starj" bs xs vs))
 
@@ -9026,41 +9268,34 @@
  (generate-unary-ad-definitions
   (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
   (lambda (v)
-   (assert (not (void? v)))
-   ;; here I am: Need to give an error on non-reverse value.
    (cond
     ((union? v)
      (generate-dispatch
       "x"
       v
       (map (lambda (s u)
-	    (list (generate-unioner-name (*j-inverse u) (*j-inverse v) vs)
-		  "("
-		  (if (void? (*j-inverse u))
-		      '()
-		      (list (generate-builtin-name "starj_inverse" u vs)
-			    "("
-			    (if (void? u) '() (list "x." s))
-			    ")"))
-		  ")"))
+	    (generate-call
+	     (generate-unioner-name (*j-inverse u) (*j-inverse v) vs)
+	     (list (if (void? (*j-inverse u))
+		       '()
+		       (generate-call
+			(generate-builtin-name "starj_inverse" u vs)
+			(list (if (void? u) '() (slot "x" s))))))))
 	   (generate-slot-names v xs vs)
-	   (union-members v))))
-    ((reverse-tagged-value? v) "x.p")
+	   (union-values v))))
+    ((reverse-tagged-value? v) (slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-     (list (generate-constructor-name (*j-inverse v) vs)
-	   "("
-	   (commas-between
-	    (map (lambda (s v)
-		  (if (void? (*j-inverse v))
-		      #f
-		      (list (generate-builtin-name "starj_inverse" v vs)
-			    "("
-			    (if (void? v) '() (list "x." s))
-			    ")")))
-		 (generate-slot-names v xs vs)
-		 (aggregate-value-values v)))
-	   ")"))
-    (else (internal-error))))
+     (generate-call
+      (generate-constructor-name (*j-inverse v) vs)
+      (map (lambda (s v)
+	    (if (void? (*j-inverse v))
+		'()
+		(generate-call (generate-builtin-name "starj_inverse" v vs)
+			       (list (if (void? v) '() (slot "x" s))))))
+	   (generate-slot-names v xs vs)
+	   (aggregate-value-values v))))
+    (else (generate-panic
+	   v "Argument to *j-inverse is a non-reverse value" vs))))
   *j-inverse '*j-inverse "starj_inverse" bs xs vs))
 
 (define (generate e bs bs0)
@@ -9073,31 +9308,38 @@
   (list
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
-   "#define TRUE (0==0)" #\newline
-   "#define FALSE (0!=0)" #\newline
+   "#include <stdlib.h>" #\newline
    "#define INLINE inline __attribute__ ((always_inline))" #\newline
-   "static INLINE double write_real(double x){printf(\"%.18lg\\n\",x);return x;}"
-   #\newline
+   "#define NORETURN __attribute__ ((noreturn))" #\newline
    (generate-struct-declarations xs vs)
    (generate-constructor-declarations xs vs)
    (generate-widener-declarations vs widener-instances)
-   (generate-real*real-primitive-declarations '+ "double" "add" bs vs)
-   (generate-real*real-primitive-declarations '- "double" "minus" bs vs)
-   (generate-real*real-primitive-declarations '* "double" "times" bs vs)
-   (generate-real*real-primitive-declarations '/ "double" "divide" bs vs)
+   (generate-panic-declarations vs)
+   (generate-boolean-declarations vs)
+   (generate-real*real-primitive-declarations '+ (abstract-real) "add" vs)
+   (generate-real*real-primitive-declarations '- (abstract-real) "minus" vs)
+   (generate-real*real-primitive-declarations '* (abstract-real) "times" vs)
+   (generate-real*real-primitive-declarations '/ (abstract-real) "divide" vs)
    (generate-real*real-primitive-declarations
-    'atan "double" "atantwo" bs vs)
-   (generate-real*real-primitive-declarations '= "int" "eq" bs vs)
-   (generate-real*real-primitive-declarations '< "int" "lt" bs vs)
-   (generate-real*real-primitive-declarations '> "int" "gt" bs vs)
-   (generate-real*real-primitive-declarations '<= "int" "le" bs vs)
-   (generate-real*real-primitive-declarations '>= "int" "ge" bs vs)
-   (generate-real-primitive-declarations 'zero? "int" "iszero" bs vs)
-   (generate-real-primitive-declarations 'positive? "int" "positive" bs vs)
-   (generate-real-primitive-declarations 'negative? "int" "negative" bs vs)
-   "static INLINE double read_real(void);" #\newline
-   (generate-real-primitive-declarations 'real "double" "real" bs vs)
-   (generate-real-primitive-declarations 'write "double" "write" bs vs)
+    'atan (abstract-real) "atantwo" vs)
+   (generate-real*real-primitive-declarations '= (abstract-boolean) "eq" vs)
+   (generate-real*real-primitive-declarations '< (abstract-boolean) "lt" vs)
+   (generate-real*real-primitive-declarations '> (abstract-boolean) "gt" vs)
+   (generate-real*real-primitive-declarations '<= (abstract-boolean) "le" vs)
+   (generate-real*real-primitive-declarations '>= (abstract-boolean) "ge" vs)
+   (generate-real-primitive-declarations 'zero? (abstract-boolean) "iszero" vs)
+   (generate-real-primitive-declarations
+    'positive? (abstract-boolean) "positive" vs)
+   (generate-real-primitive-declarations
+    'negative? (abstract-boolean) "negative" vs)
+   ;; here I am: null, boolean, is_real, pair, procedure, perturbation,
+   ;;            forward, sensitivity, and reverse
+   ;; here I am: abstract
+   (generate-function-declaration #t #t #f "double" "read_real(void)")
+   (generate-real-primitive-declarations 'real (abstract-real) "real" vs)
+   ;; here I am: abstract
+   (generate-function-declaration #t #t #f "double" "write_real(double x)")
+   (generate-real-primitive-declarations 'write (abstract-real) "write" vs)
    (generate-unary-ad-declarations (lambda (v) #t) zero 'zero "zero" bs vs)
    (generate-unary-ad-declarations
     (lambda (v)
@@ -9148,31 +9390,53 @@
     *j-inverse '*j-inverse "starj_inverse" bs vs)
    (generate-if-and-function-declarations
     xs vs function-instances instances1-instances2)
-   "int main(void);" #\newline
+   ;; here I am: abstract
+   (generate-function-declaration #f #f #f "int" "main(void)")
    (generate-constructor-definitions xs vs)
    (generate-widener-definitions xs vs widener-instances)
-   (generate-real*real-primitive-definitions '+ "double" "add" "~a+~a" bs vs)
-   (generate-real*real-primitive-definitions '- "double" "minus" "~a-~a" bs vs)
-   (generate-real*real-primitive-definitions '* "double" "times" "~a*~a" bs vs)
+   (generate-panic-definitions vs)
+   (generate-boolean-definitions vs)
    (generate-real*real-primitive-definitions
-    '/ "double" "divide" "~a/~a" bs vs)
+    '+ (abstract-real) "add" "~a+~a" "+" xs vs)
    (generate-real*real-primitive-definitions
-    'atan "double" "atantwo" "atan2(~a,~a)" bs vs)
-   (generate-real*real-primitive-definitions '= "int" "eq" "~a==~a" bs vs)
-   (generate-real*real-primitive-definitions '< "int" "lt" "~a<~a" bs vs)
-   (generate-real*real-primitive-definitions '> "int" "gt" "~a>~a" bs vs)
-   (generate-real*real-primitive-definitions '<= "int" "le" "~a<=~a" bs vs)
-   (generate-real*real-primitive-definitions '>= "int" "ge" "~a>=~a" bs vs)
-   (generate-real-primitive-definitions 'zero? "int" "iszero" "~a==0.0" bs vs)
+    '- (abstract-real) "minus" "~a-~a" "-" xs vs)
+   (generate-real*real-primitive-definitions
+    '* (abstract-real) "times" "~a*~a" "*" xs vs)
+   (generate-real*real-primitive-definitions
+    '/ (abstract-real) "divide" "~a/~a" "/" xs vs)
+   (generate-real*real-primitive-definitions
+    'atan (abstract-real) "atantwo" "atan2(~a,~a)" "atan" xs vs)
+   (generate-real*real-primitive-definitions
+    '= (abstract-boolean) "eq" "~a==~a?true():false()" "=" xs vs)
+   (generate-real*real-primitive-definitions
+    '< (abstract-boolean) "lt" "~a<~a?true():false()" "<" xs vs)
+   (generate-real*real-primitive-definitions
+    '> (abstract-boolean) "gt" "~a>~a?true():false()" ">" xs vs)
+   (generate-real*real-primitive-definitions
+    '<= (abstract-boolean) "le" "~a<=~a?true():false()" "<=" xs vs)
+   (generate-real*real-primitive-definitions
+    '>= (abstract-boolean) "ge" "~a>=~a?true():false()" ">=" xs vs)
    (generate-real-primitive-definitions
-    'positive? "int" "positive" "~a>0.0" bs vs)
+    'zero? (abstract-boolean) "iszero" "~a==0.0?true():false()" "zero?" xs vs)
    (generate-real-primitive-definitions
-    'negative? "int" "negative" "~a<0.0" bs vs)
-   "static INLINE double read_real(void){double x;scanf(\"%lf\",&x);return x;}"
-   #\newline
-   (generate-real-primitive-definitions 'real "double" "real" "~a" bs vs)
+    'positive? (abstract-boolean) "positive" "~a>0.0?true():false()"
+    "positive?" xs vs)
    (generate-real-primitive-definitions
-    'write "double" "write" "write_real(~a)" bs vs)
+    'negative? (abstract-boolean) "negative" "~a<0.0?true():false()"
+    "negative?" xs vs)
+   ;; here I am: null, boolean, is_real, pair, procedure, perturbation,
+   ;;            forward, sensitivity, and reverse
+   ;; here I am: abstract
+   (generate-function-definition
+    #t #t #f "double" "read_real(void)" "double x;scanf(\"%lf\",&x);return x;")
+   (generate-real-primitive-definitions
+    'real (abstract-real) "real" "~a" "real" xs vs)
+   ;; here I am: abstract
+   (generate-function-definition
+    #t #t #f
+    "double" "write_real(double x)" "printf(\"%.18lg\\n\",x);return x;")
+   (generate-real-primitive-definitions
+    'write (abstract-real) "write" "write_real(~a)" "write" xs vs)
    (generate-zero-definitions bs xs vs)
    (generate-perturb-definitions bs xs vs)
    (generate-unperturb-definitions bs xs vs)
@@ -9186,36 +9450,41 @@
    (generate-*j-inverse-definitions bs xs vs)
    (generate-if-and-function-definitions
     bs xs vs function-instances widener-instances instances1-instances2)
-   (list
-    "int main(void){"
-    (generate-letrec-bindings
-     e
-     (environment-binding-values (first (expression-environment-bindings e)))
-     (free-variables e)
-     '()
-     xs
-     vs)
-    ;; needs work: This unsoundly removes code that might do I/O, signal
-    ;;             an error, or not terminate.
-    (if (void? (abstract-eval1
-		e
-		(environment-binding-values
-		 (first (expression-environment-bindings e)))))
-	'()
-	(list
-	 (generate-expression e
-			      (environment-binding-values
-			       (first (expression-environment-bindings e)))
-			      (free-variables e)
-			      '()
-			      bs
-			      xs
-			      vs
-			      function-instances
-			      widener-instances)
-	 ";"))
-    "return 0;}"
-    #\newline))))
+   ;; here I am: abstract
+   (generate-function-definition
+    #f
+    #f
+    #f
+    "int"
+    "main(void)"
+    (list
+     (generate-letrec-bindings
+      e
+      (environment-binding-values (first (expression-environment-bindings e)))
+      (free-variables e)
+      '()
+      xs
+      vs)
+     ;; needs work: This unsoundly removes code that might do I/O, signal
+     ;;             an error, or not terminate.
+     (if (void? (abstract-eval1
+		 e
+		 (environment-binding-values
+		  (first (expression-environment-bindings e)))))
+	 '()
+	 (list
+	  (generate-expression e
+			       (environment-binding-values
+				(first (expression-environment-bindings e)))
+			       (free-variables e)
+			       '()
+			       bs
+			       xs
+			       vs
+			       function-instances
+			       widener-instances)
+	  ";"))
+     "return 0;")))))
 
 (define (generate-file code pathname)
  (call-with-output-file (replace-extension pathname "c")
@@ -9860,8 +10129,7 @@
 	   (lambda ((sensitivity y)) (sensitize (cons negative? (zero x))))))))
  (define-primitive-procedure 'null?
   (unary-predicate vlad-empty-list? "null?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "null?"))
+  (lambda (v vs) (generate-builtin-name "null" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9872,8 +10140,7 @@
 	   (lambda ((sensitivity y)) (sensitize (cons null? (zero x))))))))
  (define-primitive-procedure 'boolean?
   (unary-predicate vlad-boolean? "boolean?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "boolean?"))
+  (lambda (v vs) (generate-builtin-name "boolean" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9884,8 +10151,7 @@
 	   (lambda ((sensitivity y)) (sensitize (cons boolean? (zero x))))))))
  (define-primitive-procedure 'real?
   (unary-predicate vlad-real? "real?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "real?"))
+  (lambda (v vs) (generate-builtin-name "is_real" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9896,8 +10162,7 @@
 	   (lambda ((sensitivity y)) (sensitize (cons real? (zero x))))))))
  (define-primitive-procedure 'pair?
   (unary-predicate vlad-pair? "pair?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "pair?"))
+  (lambda (v vs) (generate-builtin-name "pair" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9909,8 +10174,7 @@
  (define-primitive-procedure 'procedure?
   ;; needs work: This should probably return #f for any transformed procedure.
   (unary-predicate vlad-procedure? "procedure?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "procedure?"))
+  (lambda (v vs) (generate-builtin-name "procedure" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9925,8 +10189,7 @@
  ;; functions that only rearrange data.
  (define-primitive-procedure 'perturbation?
   (unary-predicate perturbation-value? "perturbation?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "perturbation?"))
+  (lambda (v vs) (generate-builtin-name "perturbation" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9938,8 +10201,7 @@
       (lambda ((sensitivity y)) (sensitize (cons perturbation? (zero x))))))))
  (define-primitive-procedure 'forward?
   (unary-predicate forward-value? "forward?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "forward?"))
+  (lambda (v vs) (generate-builtin-name "forward" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9950,8 +10212,7 @@
 	   (lambda ((sensitivity y)) (sensitize (cons forward? (zero x))))))))
  (define-primitive-procedure 'sensitivity?
   (unary-predicate sensitivity-value? "sensitivity?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "sensitivity?"))
+  (lambda (v vs) (generate-builtin-name "sensitivity" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
@@ -9963,8 +10224,7 @@
       (lambda ((sensitivity y)) (sensitize (cons sensitivity? (zero x))))))))
  (define-primitive-procedure 'reverse?
   (unary-predicate reverse-value? "reverse?")
-  ;; here I am: We can implement this now that we have unions.
-  (lambda (v vs) (unimplemented "reverse?"))
+  (lambda (v vs) (generate-builtin-name "reverse" v vs))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
 	  (j* (lambda (x) (bundle x (perturb (zero x))))))
