@@ -7195,24 +7195,110 @@
 	     c2
 	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
 
+(define (all-unary-ad p? s)
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (cached-topological-sort
+  component?
+  (map-reduce
+   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+   '()
+   (lambda (v) (all-unary-abstract-subvalues p? v))
+   (map-reduce
+    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+    '()
+    (lambda (e)
+     (if (application? e)
+	 (remove-duplicatesp
+	  abstract-value=?
+	  (removeq #f
+		   (map (lambda (b)
+			 (let ((v1 (abstract-eval1
+				    (application-callee e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-callee))))
+			  (if (and (primitive-procedure? v1)
+				   (eq? (primitive-procedure-name v1) s))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument))
+			      #f)))
+			(expression-environment-bindings e))))
+	 '()))
+    *expressions*))))
+
+(define (all-binary-ad p? g s f f-inverse)
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (cached-topological-sort
+  (lambda (v1 v2)
+   (component? (g (vlad-car v1) (vlad-cdr v1))
+	       (g (vlad-car v2) (vlad-cdr v2))))
+  (map-reduce
+   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+   '()
+   (lambda (v) (all-binary-abstract-subvalues p? f f-inverse v))
+   (map-reduce
+    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+    '()
+    (lambda (e)
+     (if (application? e)
+	 (remove-duplicatesp
+	  abstract-value=?
+	  (removeq #f
+		   (map (lambda (b)
+			 (let ((v1 (abstract-eval1
+				    (application-callee e)
+				    (restrict-environment
+				     (environment-binding-values b)
+				     e
+				     application-callee))))
+			  (if (and (primitive-procedure? v1)
+				   (eq? (primitive-procedure-name v1) s))
+			      (abstract-eval1 (application-argument e)
+					      (restrict-environment
+					       (environment-binding-values b)
+					       e
+					       application-argument))
+			      #f)))
+			(expression-environment-bindings e))))
+	 '()))
+    *expressions*))))
+
+(define (binary-ad-argument-and-result-abstract-values g vs)
+ (map-reduce
+  (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+  '()
+  (lambda (v)
+   (unionp abstract-value=? (list v) (list (g (vlad-car v) (vlad-cdr v)))))
+  vs))
+
 (define (all-nested-abstract-values)
  (cached-topological-sort
   component?
-  (unionp
-   abstract-value=?
-   (unionp abstract-value=?
-	   (all-binary-ad (lambda (v)
-			   (or (union? v)
-			       (and (not (perturbation-tagged-value? v))
-				    (not (bundle? v))
-				    (not (sensitivity-tagged-value? v))
-				    (not (reverse-tagged-value? v)))))
-			  bundle 'bundle perturb unperturb)
-	   (all-binary-ad (lambda (v) #t) plus 'plus identity identity))
-   (map-reduce (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-	       '()
-	       (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
-	       (all-abstract-values)))))
+  (map-reduce
+   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
+   '()
+   (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
+   (unionp
+    abstract-value=?
+    (unionp abstract-value=?
+	    (binary-ad-argument-and-result-abstract-values
+	     bundle
+	     (all-binary-ad (lambda (v)
+			     (and (not (perturbation-tagged-value? v))
+				  (not (bundle? v))
+				  (not (sensitivity-tagged-value? v))
+				  (not (reverse-tagged-value? v))))
+			    bundle 'bundle perturb unperturb))
+	    (binary-ad-argument-and-result-abstract-values
+	     plus
+	     (all-binary-ad (lambda (v) #t) plus 'plus identity identity)))
+    (all-abstract-values)))))
 
 (define (function-instance=? function-instance1 function-instance2)
  (and (abstract-value=? (function-instance-v1 function-instance1)
@@ -7553,80 +7639,6 @@
   (append (map make-if-instance (all-primitives 'if-procedure))
 	  function-instances)))
 
-(define (all-unary-ad p? s)
- ;; This topological sort is needed so that all INLINE definitions come before
- ;; their uses as required by gcc.
- (cached-topological-sort
-  component?
-  (map-reduce
-   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-   '()
-   (lambda (v) (all-unary-abstract-subvalues p? v))
-   (map-reduce
-    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-    '()
-    (lambda (e)
-     (if (application? e)
-	 (remove-duplicatesp
-	  abstract-value=?
-	  (removeq #f
-		   (map (lambda (b)
-			 (let ((v1 (abstract-eval1
-				    (application-callee e)
-				    (restrict-environment
-				     (environment-binding-values b)
-				     e
-				     application-callee))))
-			  (if (and (primitive-procedure? v1)
-				   (eq? (primitive-procedure-name v1) s))
-			      (abstract-eval1 (application-argument e)
-					      (restrict-environment
-					       (environment-binding-values b)
-					       e
-					       application-argument))
-			      #f)))
-			(expression-environment-bindings e))))
-	 '()))
-    *expressions*))))
-
-(define (all-binary-ad p? g s f f-inverse)
- ;; This topological sort is needed so that all INLINE definitions come before
- ;; their uses as required by gcc.
- (cached-topological-sort
-  (lambda (v1 v2)
-   (component? (g (vlad-car v1) (vlad-cdr v1))
-	       (g (vlad-car v2) (vlad-cdr v2))))
-  (map-reduce
-   (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-   '()
-   (lambda (v) (all-binary-abstract-subvalues p? f f-inverse v))
-   (map-reduce
-    (lambda (vs1 vs2) (unionp abstract-value=? vs1 vs2))
-    '()
-    (lambda (e)
-     (if (application? e)
-	 (remove-duplicatesp
-	  abstract-value=?
-	  (removeq #f
-		   (map (lambda (b)
-			 (let ((v1 (abstract-eval1
-				    (application-callee e)
-				    (restrict-environment
-				     (environment-binding-values b)
-				     e
-				     application-callee))))
-			  (if (and (primitive-procedure? v1)
-				   (eq? (primitive-procedure-name v1) s))
-			      (abstract-eval1 (application-argument e)
-					      (restrict-environment
-					       (environment-binding-values b)
-					       e
-					       application-argument))
-			      #f)))
-			(expression-environment-bindings e))))
-	 '()))
-    *expressions*))))
-
 ;;; Primitive C syntax generators
 
 (define (c:binary code1 code2 code3) (list code1 code2 code3))
@@ -7937,6 +7949,12 @@
  ;; abstraction
  (map (lambda (v)
        (let ((v1 (g (vlad-car v) (vlad-cdr v))))
+	;; debugging
+	(begin
+	 (unless (memp abstract-value=? v vs)
+	  (format #t "bingo: ~s ~s~%" s (externalize v)))
+	 (unless (memp abstract-value=? v1 vs)
+	  (format #t "ding: ~s ~s~%" s (externalize v1))))
 	(if (void? v1)
 	    '()
 	    (c:function-declaration
