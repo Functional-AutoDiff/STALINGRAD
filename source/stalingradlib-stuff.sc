@@ -305,7 +305,7 @@
  (map-reduce append '() (lambda (x1) (map (lambda (x2) (f x1 x2)) l2)) l1))
 
 (define (without-abstract thunk)
- ;; needs work: to disable errors
+ ;; needs work: To disable errors.
  (let ((abstract? *abstract?*))
   (set! *abstract?* #f)
   (let ((result (thunk)))
@@ -1325,7 +1325,7 @@
 	  cs)))
    (if found?
        (k (cdr found?) cs)
-       ;; needs work: what is the circular value?
+       ;; needs work: What is the circular value?
        (let* ((c (cons (cons v v-perturbation) #f))
 	      (cs (cons c cs))
 	      (k (lambda (r? cs)
@@ -1445,7 +1445,7 @@
 	  cs)))
    (if found?
        (k (cdr found?) cs)
-       ;; needs work: what is the circular value?
+       ;; needs work: What is the circular value?
        (let* ((c (cons (cons v v-perturbation) #t))
 	      (cs (cons c cs))
 	      (k (lambda (r? cs)
@@ -1887,7 +1887,7 @@
 	  cs)))
    (if found?
        (k (cdr found?) cs)
-       ;; needs work: what is the circular value?
+       ;; needs work: What is the circular value?
        (let* ((c (cons (cons v1 v2) #t))
 	      (cs (cons c cs))
 	      (k (lambda (r? cs)
@@ -1992,7 +1992,7 @@
 	  cs)))
    (if found?
        (k (cdr found?) cs)
-       ;; needs work: what is the circular value?
+       ;; needs work: What is the circular value?
        (let* ((c (cons (cons v1 v2) #f))
 	      (cs (cons c cs))
 	      (k (lambda (r? cs)
@@ -2084,7 +2084,7 @@
 	  cs)))
    (if found?
        (k (cdr found?) cs)
-       ;; needs work: what is the circular value?
+       ;; needs work: What is the circular value?
        (let* ((c (cons (cons v1 v2) #t))
 	      (cs (cons c cs))
 	      (k (lambda (r? cs)
@@ -2674,7 +2674,7 @@
 (define (anf-result result)
  ;; needs work: Should have structure instead of list.
  (assert (or (null? (fourth result))
-	     ;; needs work: to abstract this
+	     ;; needs work: To abstract this.
 	     (null?
 	      (rest
 	       (remove-duplicates
@@ -3127,7 +3127,7 @@
   ((pair? v) (vlad-cons (internalize (car v)) (internalize (cdr v))))
   (else (internal-error))))
 
-;;; needs work: to add perturb, bundle, sensitize, and *j parameters
+;;; needs work: To add perturb, bundle, sensitize, and *j parameters.
 
 (define (syntax-check-parameter! p)
  (cond
@@ -3181,7 +3181,7 @@
       ((if)
        (unless (= (length e) 4)
 	(compile-time-error "Invalid expression: ~s" e))
-       ;; needs work: to ensure that you don't shadow if-procedure
+       ;; needs work: To ensure that you don't shadow if-procedure.
        `(if-procedure
 	 ,(second e) (lambda () ,(third e)) (lambda () ,(fourth e))))
       ((cons*) (case (length (rest e))
@@ -3493,90 +3493,91 @@
 
 (define (perturb v)
  ;; This is written in CPS so as not to break structure sharing.
- (let loop ((v v) (cs '()) (k (lambda (v-perturbation cs) v-perturbation)))
-  (let ((found? (assq v cs)))
-   (cond
-    (found? (k (cdr found?) cs))
-    ((union? v)
-     (let ((v-perturbation (make-union 'unfilled)))
-      (map-cps loop
-	       (union-members v)
-	       (cons (cons v v-perturbation) cs)
-	       (lambda (us-perturbation cs)
-		(fill-union-values! v-perturbation us-perturbation)
-		(k v-perturbation cs)))))
-    ((vlad-empty-list? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((vlad-true? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((vlad-false? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((vlad-real? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((primitive-procedure? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((nonrecursive-closure? v)
-     ;; See the note in abstract-environment=?.
-     (let ((u-perturbation (make-nonrecursive-closure
-			    'unfilled
-			    (perturbation-transform
-			     (nonrecursive-closure-lambda-expression v)))))
-      (map-cps
-       loop
-       (nonrecursive-closure-values v)
-       (cons (cons v u-perturbation) cs)
-       (lambda (vs-perturbation cs)
-	(fill-nonrecursive-closure-values! u-perturbation vs-perturbation)
-	(k u-perturbation cs)))))
-    ((recursive-closure? v)
-     ;; See the note in abstract-environment=?.
-     (let ((u-perturbation
-	    (make-recursive-closure
-	     'unfilled
-	     (map-vector perturbationify
-			 (recursive-closure-procedure-variables v))
-	     (map-vector perturbation-transform
-			 (recursive-closure-lambda-expressions v))
-	     (recursive-closure-index v))))
-      (map-cps
-       loop
-       (recursive-closure-values v)
-       (cons (cons v u-perturbation) cs)
-       (lambda (vs-perturbation cs)
-	(fill-recursive-closure-values! u-perturbation vs-perturbation)
-	(k u-perturbation cs)))))
-    ((perturbation-tagged-value? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((bundle? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((sensitivity-tagged-value? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((reverse-tagged-value? v)
-     (let ((u-perturbation (new-perturbation-tagged-value v)))
-      (k u-perturbation (cons (cons v u-perturbation) cs))))
-    ((tagged-pair? v)
-     (let ((u-perturbation
-	    (make-tagged-pair (add-tag 'perturbation (tagged-pair-tags v))
-			      'unfilled
-			      'unfilled)))
-      (loop (tagged-pair-car v)
-	    (cons (cons v u-perturbation) cs)
-	    (lambda (v-car-perturbation cs)
-	     (loop (tagged-pair-cdr v)
-		   cs
-		   (lambda (v-cdr-perturbation cs)
-		    (fill-tagged-pair!
-		     u-perturbation v-car-perturbation v-cdr-perturbation)
-		    (k u-perturbation cs)))))))
-    (else (internal-error))))))
+ (copy-abstract-value
+  (let loop ((v v) (cs '()) (k (lambda (v-perturbation cs) v-perturbation)))
+   (let ((found? (assq v cs)))
+    (cond
+     (found? (k (cdr found?) cs))
+     ((union? v)
+      (let ((v-perturbation (make-union 'unfilled)))
+       (map-cps loop
+		(union-members v)
+		(cons (cons v v-perturbation) cs)
+		(lambda (us-perturbation cs)
+		 (fill-union-values! v-perturbation us-perturbation)
+		 (k v-perturbation cs)))))
+     ((vlad-empty-list? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((vlad-true? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((vlad-false? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((vlad-real? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((primitive-procedure? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((nonrecursive-closure? v)
+      ;; See the note in abstract-environment=?.
+      (let ((u-perturbation (make-nonrecursive-closure
+			     'unfilled
+			     (perturbation-transform
+			      (nonrecursive-closure-lambda-expression v)))))
+       (map-cps
+	loop
+	(nonrecursive-closure-values v)
+	(cons (cons v u-perturbation) cs)
+	(lambda (vs-perturbation cs)
+	 (fill-nonrecursive-closure-values! u-perturbation vs-perturbation)
+	 (k u-perturbation cs)))))
+     ((recursive-closure? v)
+      ;; See the note in abstract-environment=?.
+      (let ((u-perturbation
+	     (make-recursive-closure
+	      'unfilled
+	      (map-vector perturbationify
+			  (recursive-closure-procedure-variables v))
+	      (map-vector perturbation-transform
+			  (recursive-closure-lambda-expressions v))
+	      (recursive-closure-index v))))
+       (map-cps
+	loop
+	(recursive-closure-values v)
+	(cons (cons v u-perturbation) cs)
+	(lambda (vs-perturbation cs)
+	 (fill-recursive-closure-values! u-perturbation vs-perturbation)
+	 (k u-perturbation cs)))))
+     ((perturbation-tagged-value? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((bundle? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((sensitivity-tagged-value? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((reverse-tagged-value? v)
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
+       (k u-perturbation (cons (cons v u-perturbation) cs))))
+     ((tagged-pair? v)
+      (let ((u-perturbation
+	     (make-tagged-pair (add-tag 'perturbation (tagged-pair-tags v))
+			       'unfilled
+			       'unfilled)))
+       (loop (tagged-pair-car v)
+	     (cons (cons v u-perturbation) cs)
+	     (lambda (v-car-perturbation cs)
+	      (loop (tagged-pair-cdr v)
+		    cs
+		    (lambda (v-cdr-perturbation cs)
+		     (fill-tagged-pair!
+		      u-perturbation v-car-perturbation v-cdr-perturbation)
+		     (k u-perturbation cs)))))))
+     (else (internal-error)))))))
 
 (define (unperturb v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
@@ -4370,7 +4371,7 @@
 				       parameter-variables
 				       (anf-let*-parameters e1))
 			   xs1
-			   ;; needs work: why is
+			   ;; needs work: Why is
 			   ;;             (recursive-closure-free-variables
 			   ;;              xs1 es1)
 			   ;;             not here?
@@ -6529,22 +6530,23 @@
    (lambda (u1)
     (cond
      ((primitive-procedure? u1)
-      ;; needs work: should put this into slots of the primitive
-      ;;             procedures
+      ;; needs work: Should put this into slots of the primitive procedures.
       (when (eq? (primitive-procedure-name u1) 'if-procedure)
-       ((ternary-prime
-	 (lambda (v1 v2 v3)
-	  (if
-	   (and (nonrecursive-closure? v2) (nonrecursive-closure? v3))
-	   (if (vlad-false? v1)
-	       (abstract-apply-closure!
-		e abstract-eval-prime! v3 (vlad-empty-list))
-	       (abstract-apply-closure!
-		e abstract-eval-prime! v2 (vlad-empty-list)))
-	   (compile-time-warning
-	    "Consequent and/or alternate might not be a nonrecursive closure"
-	    (vlad-cons v1 (vlad-cons v2 v3)))))
-	 "if-procedure")
+       ((ternary-prime (lambda (v1 v2 v3)
+			;; When v3 and/or v2 is not a procedure the warning is
+			;; issued by abstract-apply. If it is a primitive
+			;; procedure we don't have to do anything here. In
+			;; practise, it will always be a nonrecursive closure
+			;; unless the user calls if-procedure outside the
+			;; context of the if macro.
+			(if (vlad-false? v1)
+			    (when (closure? v3)
+			     (abstract-apply-closure!
+			      e abstract-eval-prime! v3 (vlad-empty-list)))
+			    (when (closure? v2)
+			     (abstract-apply-closure!
+			      e abstract-eval-prime! v2 (vlad-empty-list)))))
+		       "if-procedure")
 	v2)))
      ((closure? u1)
       (cond ((every-value-tags
@@ -7017,7 +7019,7 @@
 ;;; main
 
 (define (void? v)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (or (and (not (union? v))
 	  (not (abstract-real? v))
 	  (or (scalar-value? v) (every void? (aggregate-value-values v))))
@@ -7026,7 +7028,7 @@
 	  (every void? (union-values v)))))
 
 (define (all-variables-in-abstract-value v)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (let loop ((v v) (vs '()))
   (cond
    ((union? v) (map-reduce (lambda (xs1 xs2) (unionp variable=? xs1 xs2))
@@ -7103,7 +7105,7 @@
   *expressions*))
 
 (define (all-unary-abstract-subvalues p? v)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (let loop ((v v))
   (cons v
 	(cond
@@ -7119,7 +7121,7 @@
 			   (aggregate-value-values v)))))))
 
 (define (all-binary-abstract-subvalues p? f f-inverse v)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (let loop ((v1 (vlad-car v)) (v2 (f-inverse (vlad-cdr v))))
   (cons (vlad-cons v1 (f v2))
 	(cond
@@ -7141,7 +7143,7 @@
 			   (aggregate-value-values v2)))))))
 
 (define (component*? v1 v2)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (or (abstract-value=? v1 v2)
      (and (not (union? v2))
 	  (not (scalar-value? v2))
@@ -7401,7 +7403,7 @@
   *expressions*))
 
 (define (all-subwidener-instances v1 v2)
- ;; needs work: to handle ups and breaks structure sharing
+ ;; needs work: To handle ups and not break structure sharing.
  (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
        ;; Note that we have syntactic constraints that widen (union r1 r2) to
        ;; R but not things like (union (perturbation r1) (perturbation r2)) to
@@ -10238,20 +10240,15 @@
      (cons (*j (reverse? x))
 	   (lambda ((sensitivity y)) (sensitize (cons reverse? (zero x))))))))
  (define-primitive-procedure 'if-procedure
-  (ternary
-   (lambda (v1 v2 v3)
-    (if *abstract?*
-	(if (and (nonrecursive-closure? v2) (nonrecursive-closure? v3))
-	    (if (vlad-false? v1)
-		(abstract-apply v3 (vlad-empty-list))
-		(abstract-apply v2 (vlad-empty-list)))
-	    (compile-time-warning
-	     "Consequent and/or alternate might not be a nonrecursive closure"
-	     (vlad-cons v1 (vlad-cons v2 v3))))
-	(if (vlad-false? v1)
-	    (concrete-apply v3 (vlad-empty-list))
-	    (concrete-apply v2 (vlad-empty-list)))))
-   "if-procedure")
+  (ternary (lambda (v1 v2 v3)
+	    (if *abstract?*
+		(if (vlad-false? v1)
+		    (abstract-apply v3 (vlad-empty-list))
+		    (abstract-apply v2 (vlad-empty-list)))
+		(if (vlad-false? v1)
+		    (concrete-apply v3 (vlad-empty-list))
+		    (concrete-apply v2 (vlad-empty-list)))))
+	   "if-procedure")
   (lambda (v vs) (c:builtin-name "if_procedure" v vs))
   '(lambda ((forward x))
     (let (((cons* x1 x2 x3) (primal (forward x)))
