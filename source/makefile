@@ -21,7 +21,7 @@ all: error$(ERROR_OK) $(TARGETS)
 port:
 	-rm -rf $(ARCHITECTURE_PATH)
 	mkdir $(ARCHITECTURE_PATH)
-	cd $(ARCHITECTURE_PATH); csh -cf "ln -s ../*.{sc,c,h} ."
+	cd $(ARCHITECTURE_PATH); ln -s ../*.sc ../*.c ../*.h .
 	$(MAKE) port-makefile
 
 port-makefile:
@@ -271,7 +271,7 @@ error_no_error:
 
 #i686-Linux-2.4.18-4_72smp CC = gcc
 #i686-Linux-2.4.18-4_72smp CFLAGS = -O2 -DLINUX
-#i686-Linux-2.4.18-4_72smp SCCFLAGS =
+#i686-Linux-2.4.18-4_72smp SCCFLAGS = -O2
 #i686-Linux-2.4.18-4_72smp SCCLDFLAGS =
 #i686-Linux-2.4.18-4_72smp LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.4.18-4_72smp       $(INSTALLLIBA)/scxl.a\
@@ -295,7 +295,7 @@ error_no_error:
 
 #i686-Linux-2.6.8.1 CC = gcc
 #i686-Linux-2.6.8.1 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.8.1 SCCFLAGS =
+#i686-Linux-2.6.8.1 SCCFLAGS = -O2
 #i686-Linux-2.6.8.1 SCCLDFLAGS =
 #i686-Linux-2.6.8.1 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.8.1       $(INSTALLLIBA)/scxl.a\
@@ -303,7 +303,7 @@ error_no_error:
 
 #i686-Linux-2.6.8-1-686 CC = gcc
 #i686-Linux-2.6.8-1-686 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.8-1-686 SCCFLAGS =
+#i686-Linux-2.6.8-1-686 SCCFLAGS = -O2
 #i686-Linux-2.6.8-1-686 SCCLDFLAGS =
 #i686-Linux-2.6.8-1-686 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.8-1-686       $(INSTALLLIBA)/scxl.a\
@@ -311,7 +311,7 @@ error_no_error:
 
 #i686-Linux-2.6.11.11-laptop CC = gcc
 #i686-Linux-2.6.11.11-laptop CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.11.11-laptop SCCFLAGS =
+#i686-Linux-2.6.11.11-laptop SCCFLAGS = -O2
 #i686-Linux-2.6.11.11-laptop SCCLDFLAGS =
 #i686-Linux-2.6.11.11-laptop LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.11.11-laptop       $(INSTALLLIBA)/scxl.a\
@@ -319,7 +319,7 @@ error_no_error:
 
 #i686-Linux-2.6.16-2-686 CC = gcc
 #i686-Linux-2.6.16-2-686 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.16-2-686 SCCFLAGS =
+#i686-Linux-2.6.16-2-686 SCCFLAGS = -O2
 #i686-Linux-2.6.16-2-686 SCCLDFLAGS =
 #i686-Linux-2.6.16-2-686 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.16-2-686       $(INSTALLLIBA)/scxl.a\
@@ -327,7 +327,7 @@ error_no_error:
 
 #i686-Linux-2.6.15-1-k7-smp CC = gcc
 #i686-Linux-2.6.15-1-k7-smp CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.15-1-k7-smp SCCFLAGS =
+#i686-Linux-2.6.15-1-k7-smp SCCFLAGS = -O2
 #i686-Linux-2.6.15-1-k7-smp SCCLDFLAGS =
 #i686-Linux-2.6.15-1-k7-smp LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.15-1-k7-smp       $(INSTALLLIBA)/scxl.a\
@@ -335,7 +335,7 @@ error_no_error:
 
 #i686-Linux-2.6.18-3-k7 CC = gcc
 #i686-Linux-2.6.18-3-k7 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.18-3-k7 SCCFLAGS =
+#i686-Linux-2.6.18-3-k7 SCCFLAGS = -O2
 #i686-Linux-2.6.18-3-k7 SCCLDFLAGS =
 #i686-Linux-2.6.18-3-k7 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.18-3-k7       $(INSTALLLIBA)/scxl.a\
@@ -343,7 +343,7 @@ error_no_error:
 
 #i686-Linux-2.6.18-5-686 CC = gcc
 #i686-Linux-2.6.18-5-686 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.18-5-686 SCCFLAGS =
+#i686-Linux-2.6.18-5-686 SCCFLAGS = -O2
 #i686-Linux-2.6.18-5-686 SCCLDFLAGS =
 #i686-Linux-2.6.18-5-686 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.18-5-686       $(INSTALLLIBA)/scxl.a\
@@ -351,7 +351,7 @@ error_no_error:
 
 #i686-Linux-2.6.18-5-k7 CC = gcc
 #i686-Linux-2.6.18-5-k7 CFLAGS = -O2 -DLINUX
-#i686-Linux-2.6.18-5-k7 SCCFLAGS =
+#i686-Linux-2.6.18-5-k7 SCCFLAGS = -O2
 #i686-Linux-2.6.18-5-k7 SCCLDFLAGS =
 #i686-Linux-2.6.18-5-k7 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #i686-Linux-2.6.18-5-k7       $(INSTALLLIBA)/scxl.a\
@@ -359,7 +359,7 @@ error_no_error:
 
 #x86_64-Linux-2.6.18-4-amd64 CC = gcc
 #x86_64-Linux-2.6.18-4-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
-#x86_64-Linux-2.6.18-4-amd64 SCCFLAGS =
+#x86_64-Linux-2.6.18-4-amd64 SCCFLAGS = -O2
 #x86_64-Linux-2.6.18-4-amd64 SCCLDFLAGS =
 #x86_64-Linux-2.6.18-4-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #x86_64-Linux-2.6.18-4-amd64       $(INSTALLLIBA)/scxl.a\
@@ -367,11 +367,19 @@ error_no_error:
 
 #x86_64-Linux-2.6.18-5-amd64 CC = gcc
 #x86_64-Linux-2.6.18-5-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
-#x86_64-Linux-2.6.18-5-amd64 SCCFLAGS =
+#x86_64-Linux-2.6.18-5-amd64 SCCFLAGS = -O2
 #x86_64-Linux-2.6.18-5-amd64 SCCLDFLAGS =
 #x86_64-Linux-2.6.18-5-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #x86_64-Linux-2.6.18-5-amd64       $(INSTALLLIBA)/scxl.a\
 #x86_64-Linux-2.6.18-5-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
+#armv6l-Linux-2.6.21-omap1 CC = gcc
+#armv6l-Linux-2.6.21-omap1 CFLAGS = -O2 -DLINUX
+#armv6l-Linux-2.6.21-omap1 SCCFLAGS = -O2
+#armv6l-Linux-2.6.21-omap1 SCCLDFLAGS =
+#armv6l-Linux-2.6.21-omap1 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#armv6l-Linux-2.6.21-omap1       $(INSTALLLIBA)/scxl.a\
+#armv6l-Linux-2.6.21-omap1       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
 # missing i386-FreeBSD-2.2-STABLE
 
