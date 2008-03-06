@@ -7018,13 +7018,22 @@
 ;;; starj_inverse#
 ;;; main
 
+;;; here I am: In all or almost all of the cases where we eliminate void
+;;;            parameters or arguments or functions that return void results
+;;;            we unsoundly removes code that might do I/O, signal an error, or
+;;             not terminate.
+
 (define (void? v)
  ;; needs work: To handle ups and not break structure sharing.
  (or (and (not (union? v))
 	  (not (abstract-real? v))
 	  (or (scalar-value? v) (every void? (aggregate-value-values v))))
      (and (union? v)
-	  (<= (length (union-values v)) 1)
+	  ;; The empty abstract value is not considered void. This is because
+	  ;; void parameter/arguments are eliminated and we cannot do that for
+	  ;; code that will issue an error. That is why the following is = and
+	  ;; not <=.
+	  (= (length (union-values v)) 1)
 	  (every void? (union-values v)))))
 
 (define (all-variables-in-abstract-value v)
@@ -7105,6 +7114,8 @@
 	(cond
 	 ((union? v)
 	  (map-reduce union-abstract-values '() loop (union-values v)))
+	 ;; here I am: Need to return an empty abstract value for certain
+	 ;;            inputs to certain AD primitives.
 	 ((or (scalar-value? v) (not (p? v))) '())
 	 (else (map-reduce
 		union-abstract-values '() loop (aggregate-value-values v)))))))
@@ -7136,8 +7147,12 @@
 			 '()
 			 (lambda (u2) (loop (vlad-cons v1 (f u2))))
 			 (union-values (f-inverse v2))))
+	    ;; here I am: Need to return an empty abstract value for
+	    ;;            nonconforming inputs.
 	    ((or (scalar-value? v1) (not (p? v1))) '())
 	    ;; here I am: Need to do this only for conforming aggregates.
+	    ;;            Need to return an empty abstract value when for
+	    ;;            nonconforming aggregates.
 	    (else (map-reduce union-abstract-values
 			      '()
 			      (lambda (v1 v2) (loop (vlad-cons v1 v2)))
@@ -7299,48 +7314,71 @@
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  (map-reduce union-abstract-values
 	     '()
-	     ;; The call to g-value might issue "might" warnings.
-	     ;; here I am: g-value might return an empty abstract value.
+	     ;; The call to g-value might issue "might" warnings and might
+	     ;; return an empty abstract value.
 	     (lambda (v) (union-abstract-values (list v) (list (g-value v))))
 	     vs))
 
 (define (bundle-value v)
- ;; here I am: Needs to give warning on nonpair.
+ ;; here I am: Needs to give a warning on a nonpair.
  (new-union (map (lambda (u) (bundle (vlad-car u) (vlad-cdr u)))
 		 (remove-if-not vlad-pair? (union-members v)))))
 
 (define (plus-value v)
- ;; here I am: Needs to give warning on nonpair.
+ ;; here I am: Needs to give a warning on a nonpair.
  (new-union (map (lambda (u) (plus (vlad-car u) (vlad-cdr u)))
 		 (remove-if-not vlad-pair? (union-members v)))))
 
 (define (all-nested-abstract-values)
  (cached-topological-sort
   component?
-  (map-reduce
-   union-abstract-values
-   '()
-   (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
-   ;; This assumes that the abstract values of the  arguments of all internal
-   ;; recursive calls to AD primitives are generated through
-   ;; all-unary-abstract-subvalues.
-   (union-abstract-values
+  (adjoinp
+   abstract-value=?
+   ;; We are lazy and always generate this. This is only needed if (a
+   ;; potentially internal recursive call to) an AD primitive can give a
+   ;; run-time error. All non-AD primitives that issue errors have C return
+   ;; types corresponding to (abstract-real) or (abstract-boolean). And
+   ;; currently we don't handle programs that contain expressions with empty
+   ;; abstract values. Such can result from non-AD primitives that return
+   ;; empty abstract values (even though the C code generated for those
+   ;; primitives has non-empty return types). And from AD primitives that
+   ;; return empty abstract values. And from destructuring errors. And from
+   ;; invalid calls. And from calls that can never return (either because they
+   ;; yield errors or involve infinite recursion). Flow analysis will yield an
+   ;; empy abstract value in all of the above cases except for an internal
+   ;; recursive call to an AD primitive. all-binary-abstract-subvalues doesn't
+   ;; currently handle the cases requiring returning of empty abstract values.
+   ;; binary-ad-argument-and-result-abstract-values does handle this case.
+   ;; And currently, indicated by the comment below, unary AD primitives are
+   ;; handled by a mechanism that is not aware of the particular error
+   ;; characteristics of each primitive. And neither is
+   ;; all-unary-abstract-subvalues. So for now we punt and always generate the
+   ;; empty abstract value.
+   (empty-abstract-value)
+   (map-reduce
+    union-abstract-values
+    '()
+    (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
+    ;; This assumes that the abstract values of the arguments of all internal
+    ;; recursive calls to AD primitives are generated through
+    ;; all-unary-abstract-subvalues.
     (union-abstract-values
-     (binary-ad-argument-and-result-abstract-values
-      bundle-value
-      (all-binary-ad
-       'bundle
-       (lambda (v)
-	(and (not (perturbation-tagged-value? v))
-	     (not (bundle? v))
-	     (not (sensitivity-tagged-value? v))
-	     (not (reverse-tagged-value? v))))
-       perturbation-tagged-value? perturb unperturb bundle-value))
-     (binary-ad-argument-and-result-abstract-values
-      plus-value
-      (all-binary-ad
-       'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value)))
-    (all-abstract-values)))))
+     (union-abstract-values
+      (binary-ad-argument-and-result-abstract-values
+       bundle-value
+       (all-binary-ad
+	'bundle
+	(lambda (v)
+	 (and (not (perturbation-tagged-value? v))
+	      (not (bundle? v))
+	      (not (sensitivity-tagged-value? v))
+	      (not (reverse-tagged-value? v))))
+	perturbation-tagged-value? perturb unperturb bundle-value))
+      (binary-ad-argument-and-result-abstract-values
+       plus-value
+       (all-binary-ad
+	'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value)))
+     (all-abstract-values))))))
 
 (define (function-instance=? function-instance1 function-instance2)
  (and (abstract-value=? (function-instance-v1 function-instance1)
@@ -7437,6 +7475,8 @@
 			  '()
 			  (lambda (u1) (all-subwidener-instances u1 v2))
 			  (union-values v1))))
+       ;; If v2 is an empty abstract value then v1 will be the first case where
+       ;; (abstract-value=? v1 v2) will be taken and this case will never be.
        ((union? v2)
 	(cons (make-widener-instance v1 v2)
 	      ;; The fact that such a u2 exists that is a member of v2 relies
@@ -7466,8 +7506,8 @@
    (if (union? v)
        (map-reduce union-widener-instances
 		   '()
-		   ;; The call to f might issue "might" warnings.
-		   ;; here I am: f might return an empty abstract value.
+		   ;; The call to f might issue "might" warnings and might
+		   ;; return an empty abstract value.
 		   (lambda (u) (all-subwidener-instances (f u) (f v)))
 		   (union-values v))
        '()))
@@ -7847,6 +7887,9 @@
        (cond ((void? v) '())
 	     ((union? v)
 	      (assert (memp abstract-value=? v vs))
+	      ;; By fortuitous confluence, this will eliminate the union
+	      ;; declaration for the empty abstract value and generate a struct
+	      ;; declaration with just a type tag (which will neve be used).
 	      ;; abstraction
 	      (list
 	       (if (every void? (union-values v))
@@ -8030,6 +8073,8 @@
        (cond
 	((void? v) '())
 	((union? v)
+	 ;; By fortuitous confluence, this will not generate constructor
+	 ;; declarations for the empty abstract value.
 	 ;; abstraction
 	 (map (lambda (u)
 	       (c:function-declaration
@@ -8069,15 +8114,14 @@
  (map (lambda (v)
        (if (void? v)
 	   '()
-	   (c:function-declaration
-	    #t #t #t
-	    (c:specifier v vs)
-	    (c:function-declarator
-	     (c:builtin-name "panic" v vs)
-	     (c:parameter
-	      "char"
-	      ;; abstraction
-	      (list "*" "x"))))))
+	   (c:function-declaration #t #t #t
+				   (c:specifier v vs)
+				   (c:function-declarator
+				    (c:builtin-name "panic" v vs)
+				    (c:parameter
+				     "char"
+				     ;; abstraction
+				     (list "*" "x"))))))
       vs))
 
 (define (generate-real*real-primitive-declarations s v0 code vs)
@@ -8105,8 +8149,8 @@
 (define (generate-unary-ad-declarations s p? f code bs vs)
  ;; abstraction
  (map (lambda (v)
-       ;; The call to f might issue "might" warnings.
-       ;; here I am: f might return an empty abstract value.
+       ;; The call to f might issue "might" warnings and might return an empty
+       ;; abstract value.
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -8122,8 +8166,8 @@
 	 s p? f? f f-inverse g-value code bs vs)
  ;; abstraction
  (map (lambda (v)
-       ;; The call to g-value might issue "might" warnings.
-       ;; here I am: g-value might return an empty abstract value.
+       ;; The call to g-value might issue "might" warnings and might return an
+       ;; empty abstract value.
        (let ((v1 (g-value v)))
 	(if (void? v1)
 	    '()
@@ -8192,6 +8236,8 @@
        (cond
 	((void? v) '())
 	((union? v)
+	 ;; By fortuitous confluence, this will not generate constructor
+	 ;; definitions for the empty abstract value.
 	 ;; abstraction
 	 (map (lambda (u)
 	       (assert (and (memp abstract-value=? u (union-values v))
@@ -8250,40 +8296,45 @@
      (c:function-declarator
       (c:widener-name v1 v2 widener-instances)
       (if (void? v1) '() (c:parameter (c:specifier v1 vs) "x")))
-     (c:return
-      (cond
-       ;; See the note for this case in all-subwidener-instances.
-       ((union? v1)
-	(c:dispatch
-	 "x"
-	 v1
-	 (map
-	  (lambda (code1 u1)
-	   (c:widen u1 v2 (c:slot (c:slot "x" "u") code1) widener-instances))
-	  (generate-slot-names v1 xs vs)
-	  (union-values v1))))
-       ;; See the note for this case in all-subwidener-instances.
-       ((union? v2)
-	(let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
-			   (union-values v2))))
-	 (c:call (c:unioner-name u2 v2 vs)
-		 (if (void? u2)
-		     '()
-		     (c:widen v1 u2 "x" widener-instances)))))
-       ;; This assumes that Scheme inexact numbers are printed as C
-       ;; doubles.
-       ((real? v1) (exact->inexact v1))
-       (else (c:call*
-	      (c:constructor-name v2 vs)
-	      ;; This will only be done on conforming structures since the
-	      ;; analysis is almost union free.
-	      (map (lambda (code1 v1 v2)
-		    (if (void? v2)
-			'()
-			(c:widen v1 v2 (c:slot "x" code1) widener-instances)))
-		   (generate-slot-names v1 xs vs)
-		   (aggregate-value-values v1)
-		   (aggregate-value-values v2)))))))))
+     (if (empty-abstract-value? v1)
+	 ;; abstraction
+	 (list (c:declaration (c:specifier v2 vs) "r") (c:return "r"))
+	 (c:return
+	  (cond
+	   ;; See the note for this case in all-subwidener-instances.
+	   ((union? v1)
+	    (c:dispatch
+	     "x"
+	     v1
+	     (map
+	      (lambda (code1 u1)
+	       (c:widen
+		u1 v2 (c:slot (c:slot "x" "u") code1) widener-instances))
+	      (generate-slot-names v1 xs vs)
+	      (union-values v1))))
+	   ;; See the notes for this case in all-subwidener-instances.
+	   ((union? v2)
+	    (let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
+			       (union-values v2))))
+	     (c:call (c:unioner-name u2 v2 vs)
+		     (if (void? u2)
+			 '()
+			 (c:widen v1 u2 "x" widener-instances)))))
+	   ;; This assumes that Scheme inexact numbers are printed as C
+	   ;; doubles.
+	   ((real? v1) (exact->inexact v1))
+	   (else
+	    (c:call*
+	     (c:constructor-name v2 vs)
+	     ;; This will only be done on conforming structures since the
+	     ;; analysis is almost union free.
+	     (map (lambda (code1 v1 v2)
+		   (if (void? v2)
+		       '()
+		       (c:widen v1 v2 (c:slot "x" code1) widener-instances)))
+		  (generate-slot-names v1 xs vs)
+		  (aggregate-value-values v1)
+		  (aggregate-value-values v2))))))))))
   widener-instances))
 
 (define (generate-panic-definitions vs)
@@ -8301,7 +8352,7 @@
 	      ;; abstraction
 	      (list "*" "x")))
 	    ;; abstraction
-	    "fputs(x,stderr);fputc('\n',stderr);exit(EXIT_FAILURE);")))
+	    "fputs(x,stderr);fputc('\\n',stderr);exit(EXIT_FAILURE);")))
       vs))
 
 (define (generate-real*real-primitive-definitions
@@ -8365,8 +8416,9 @@
 	 ((and (vlad-real? v1) (vlad-real? v2))
 	  (generate (if (void? v1) v1 (c:slot "x" "a"))
 		    (if (void? v2) v2 (c:slot "x" "d"))))
-	 (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs)))))
-      (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs))))))
+	 (else
+	  (c:panic v0 (format #f "Argument to ~a is invalid" code2) vs)))))
+      (else (c:panic v0 (format #f "Argument to ~a is invalid" code2) vs))))))
   (all-primitives s)))
 
 (define (generate-real-primitive-definitions s v0 code1 code2 xs vs generate)
@@ -8391,7 +8443,7 @@
 	     (generate-slot-names v xs vs)
 	     (union-values v))))
       ((vlad-real? v) (generate (if (void? v) v "x")))
-      (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs))))))
+      (else (c:panic v0 (format #f "Argument to ~a is invalid" code2) vs))))))
   (all-primitives s)))
 
 (define (generate-destructure p e v code xs vs)
@@ -8539,9 +8591,6 @@
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
 	 (c:call ((primitive-procedure-generator v1) v2 vs1)
-		 ;; needs work: This unsoundly removes the code from the
-		 ;;             callee, and possibly the argument, that might
-		 ;;             do I/O, signal an error, or not terminate.
 		 (if (void? v2)
 		     '()
 		     (generate-expression
@@ -8555,8 +8604,6 @@
 		      function-instances
 		      widener-instances)))
 	 (c:call (c:function-name v1 v2 function-instances)
-		 ;; needs work: This unsoundly removes code that might do I/O,
-		 ;;             signal an error, or not terminate.
 		 (if (void? v1)
 		     '()
 		     (generate-expression
@@ -8598,8 +8645,6 @@
 	       (cons-expression-cdr e)
 	       (restrict-environment vs e cons-expression-cdr))))
      (c:call (c:constructor-name v vs1)
-	     ;; needs work: This unsoundly removes code that might do I/O,
-	     ;;             signal an error, or not terminate.
 	     (if (void? v1)
 		 '()
 		 (generate-expression
@@ -8642,9 +8687,6 @@
 	       (restrict-environment vs e application-argument))))
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
-	 ;; needs work: This unsoundly removes the code from the callee, and
-	 ;;             possibly the argument, that might do I/O, signal an
-	 ;;             error, or not terminate.
 	 (if (void? v2)
 	     '()
 	     (generate-letrec-bindings
@@ -8654,8 +8696,6 @@
 	      xs2
 	      xs1
 	      vs1))
-	 ;; needs work: This unsoundly removes code that might do I/O, signal
-	 ;;             an error, or not terminate.
 	 ;; abstraction
 	 (list (if (void? v1)
 		   '()
@@ -8718,8 +8758,6 @@
 	  (v2 (abstract-eval1
 	       (cons-expression-cdr e)
 	       (restrict-environment vs e cons-expression-cdr))))
-     ;; needs work: This unsoundly removes code that might do I/O, signal an
-     ;;             error, or not terminate.
      ;; abstraction
      (list (if (void? v1)
 	       '()
@@ -8863,8 +8901,8 @@
 (define (generate-unary-ad-definitions s p? f code bs xs vs generate)
  ;; abstraction
  (map (lambda (v)
-       ;; The call to f might issue "might" warnings.
-       ;; here I am: f might return an empty abstract value.
+       ;; The call to f might issue "might" warnings and might return an empty
+       ;; abstract value.
        (let ((v1 (f v)))
 	(if (void? v1)
 	    '()
@@ -8881,8 +8919,8 @@
 	 s p? f? f f-inverse g-value code bs xs vs generate)
  ;; abstraction
  (map (lambda (v)
-       ;; The call to g-value might issue "might" warnings.
-       ;; here I am: g-value might return an empty abstract value.
+       ;; The call to g-value might issue "might" warnings and might return an
+       ;; empty abstract value.
        (let ((v1 (g-value v)))
 	(if (void? v1)
 	    '()
@@ -8999,8 +9037,9 @@
 				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
-    (else
-     (c:panic v "Argument to unperturb is a non-perturbation value" vs))))))
+    (else (c:panic (unperturb v)
+		   "Argument to unperturb is a non-perturbation value"
+		   vs))))))
 
 (define (generate-primal-definitions bs xs vs widener-instances)
  (generate-unary-ad-definitions
@@ -9030,7 +9069,8 @@
 				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
-    (else (c:panic v "Argument to primal is a non-forward value" vs))))))
+    (else
+     (c:panic (primal v) "Argument to primal is a non-forward value" vs))))))
 
 (define (generate-tangent-definitions bs xs vs widener-instances)
  (generate-unary-ad-definitions
@@ -9060,7 +9100,8 @@
 				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
-    (else (c:panic v "Argument to tangent is a non-forward value" vs))))))
+    (else
+     (c:panic (tangent v) "Argument to tangent is a non-forward value" vs))))))
 
 (define (generate-bundle-definitions bs xs vs widener-instances)
  (generate-binary-ad-definitions
@@ -9208,8 +9249,10 @@
 		      (generate-slot-names v1 xs vs)
 		      (generate-slot-names v2 xs vs)
 		      (aggregate-value-values (bundle v1 v2)))))
-       (else (c:panic v "Arguments to bundle do not conform" vs)))))
-    (else (c:panic v "Arguments to bundle do not conform" vs))))))
+       (else
+	(c:panic (bundle-value v) "Arguments to bundle do not conform" vs)))))
+    (else
+     (c:panic (bundle-value v) "Arguments to bundle do not conform" vs))))))
 
 (define (generate-sensitize-definitions bs xs vs widener-instances)
  (generate-unary-ad-definitions
@@ -9280,8 +9323,9 @@
 				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
-    (else (c:panic
-	   v "Argument to unsensitize is a non-sensitivity value" vs))))))
+    (else (c:panic (unsensitize v)
+		   "Argument to unsensitize is a non-sensitivity value"
+		   vs))))))
 
 (define (generate-plus-definitions bs xs vs)
  (generate-binary-ad-definitions
@@ -9398,7 +9442,9 @@
 				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
-    (else (c:panic v "Argument to *j-inverse is a non-reverse value" vs))))))
+    (else
+     (c:panic
+      (*j-inverse v) "Argument to *j-inverse is a non-reverse value" vs))))))
 
 ;;; Top-level generator
 
@@ -9592,8 +9638,6 @@
       '()
       xs
       vs)
-     ;; needs work: This unsoundly removes code that might do I/O, signal
-     ;;             an error, or not terminate.
      (if (void? (abstract-eval1
 		 e
 		 (environment-binding-values
