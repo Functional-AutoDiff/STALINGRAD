@@ -9226,7 +9226,7 @@
 		 (recursive-closure-match? v1 (unperturb v2)))
 	    (and (tagged-pair? v1)
 		 (tagged-pair? v2)
-		 (tagged? 'perturbation (tagged-pair-tags v1))
+		 (tagged? 'perturbation (tagged-pair-tags v2))
 		 (equal-tags?
 		  (tagged-pair-tags v1)
 		  (remove-tag 'perturbation (tagged-pair-tags v2)))))
