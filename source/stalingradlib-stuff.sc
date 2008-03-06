@@ -7305,12 +7305,12 @@
 	     vs))
 
 (define (bundle-value v)
- ;; here I am: Needs give warning on nonpair.
+ ;; here I am: Needs to give warning on nonpair.
  (new-union (map (lambda (u) (bundle (vlad-car u) (vlad-cdr u)))
 		 (remove-if-not vlad-pair? (union-members v)))))
 
 (define (plus-value v)
- ;; here I am: Needs give warning on nonpair.
+ ;; here I am: Needs to give warning on nonpair.
  (new-union (map (lambda (u) (plus (vlad-car u) (vlad-cdr u)))
 		 (remove-if-not vlad-pair? (union-members v)))))
 
@@ -7857,10 +7857,10 @@
 			 ;; abstraction
 			 (list "u" (positionp abstract-value=? v vs))
 			 "{"
-			 (map (lambda (s v)
+			 (map (lambda (code v)
 			       (if (void? v)
 				   '()
-				   (c:declaration (c:specifier v vs) s)))
+				   (c:declaration (c:specifier v vs) code)))
 			      (generate-slot-names v xs vs)
 			      (union-values v))
 			 "}"
@@ -7889,10 +7889,10 @@
 	       ;; abstraction
 	       (list (c:specifier v vs)
 		     "{"
-		     (map (lambda (s v)
+		     (map (lambda (code v)
 			   (if (void? v)
 			       '()
-			       (c:declaration (c:specifier v vs) s)))
+			       (c:declaration (c:specifier v vs) code)))
 			  (generate-slot-names v xs vs)
 			  (aggregate-value-values v))
 		     "}"
@@ -7900,9 +7900,9 @@
 		     #\newline)))))
       vs))
 
-(define (c:builtin-name s v vs)
+(define (c:builtin-name code v vs)
  (assert (memp abstract-value=? v vs))
- (list s (positionp abstract-value=? v vs)))
+ (list code (positionp abstract-value=? v vs)))
 
 (define (c:constructor-name v vs)
  (assert (memp abstract-value=? v vs))
@@ -7974,8 +7974,8 @@
     (else (reduce (lambda (code1 code2) (list code1 "," code2)) codes '()))))
   ")"))
 
-(define (c:panic v s vs)
- (c:call (c:builtin-name "panic" v vs) (list "\"" s "\"")))
+(define (c:panic v code vs)
+ (c:call (c:builtin-name "panic" v vs) (list "\"" code "\"")))
 
 ;;; Derived C syntax generators
 
@@ -8045,8 +8045,8 @@
 	       (c:specifier v vs)
 	       (c:function-declarator*
 		(c:constructor-name v vs)
-		(map (lambda (s v)
-		      (if (void? v) '() (c:parameter (c:specifier v vs) s)))
+		(map (lambda (code v)
+		      (if (void? v) '() (c:parameter (c:specifier v vs) code)))
 		     (generate-slot-names v xs vs)
 		     (aggregate-value-values v)))))))
       vs))
@@ -8080,29 +8080,29 @@
 	      (list "*" "x"))))))
       vs))
 
-(define (generate-real*real-primitive-declarations s v0 s1 vs)
+(define (generate-real*real-primitive-declarations s v0 code vs)
  ;; abstraction
  (map (lambda (v)
        (c:function-declaration
 	#t #t #f
 	(c:specifier v0 vs)
 	(c:function-declarator
-	 (c:builtin-name s1 v vs)
+	 (c:builtin-name code v vs)
 	 (if (void? v) '() (c:parameter (c:specifier v vs) "x")))))
       (all-primitives s)))
 
-(define (generate-real-primitive-declarations s v0 s1 vs)
+(define (generate-real-primitive-declarations s v0 code vs)
  ;; abstraction
  (map (lambda (v)
        (c:function-declaration
 	#t #t #f
 	(c:specifier v0 vs)
 	(c:function-declarator
-	 (c:builtin-name s1 v vs)
+	 (c:builtin-name code v vs)
 	 (if (void? v) '() (c:parameter (c:specifier v vs) "x")))))
       (all-primitives s)))
 
-(define (generate-unary-ad-declarations s p? f s1 bs vs)
+(define (generate-unary-ad-declarations s p? f code bs vs)
  ;; abstraction
  (map (lambda (v)
        ;; The call to f might issue "might" warnings.
@@ -8114,11 +8114,12 @@
 	     #t #t #f
 	     (c:specifier v1 vs)
 	     (c:function-declarator
-	      (c:builtin-name s1 v vs)
+	      (c:builtin-name code v vs)
 	      (if (void? v) '() (c:parameter (c:specifier v vs) "x")))))))
       (all-unary-ad s p?)))
 
-(define (generate-binary-ad-declarations s p? f? f f-inverse g-value s1 bs vs)
+(define (generate-binary-ad-declarations
+	 s p? f? f f-inverse g-value code bs vs)
  ;; abstraction
  (map (lambda (v)
        ;; The call to g-value might issue "might" warnings.
@@ -8130,7 +8131,7 @@
 	     #t #t #f
 	     (c:specifier v1 vs)
 	     (c:function-declarator
-	      (c:builtin-name s1 v vs)
+	      (c:builtin-name code v vs)
 	      (if (void? v) '() (c:parameter (c:specifier v vs) "x")))))))
       (all-binary-ad s p? f? f f-inverse g-value)))
 
@@ -8218,70 +8219,72 @@
 		 (c:return "r"))))
 	      (union-values v)))
 	((abstract-real? v) '())
-	(else (c:function-definition
-	       #t #t #f
-	       (c:specifier v vs)
-	       (c:function-declarator*
-		(c:constructor-name v vs)
-		(map (lambda (s v)
-		      (if (void? v) '() (c:parameter (c:specifier v vs) s)))
+	(else
+	 (c:function-definition
+	  #t #t #f
+	  (c:specifier v vs)
+	  (c:function-declarator*
+	   (c:constructor-name v vs)
+	   (map (lambda (code v)
+		 (if (void? v) '() (c:parameter (c:specifier v vs) code)))
+		(generate-slot-names v xs vs)
+		(aggregate-value-values v)))
+	  ;; abstraction
+	  (list (c:declaration (c:specifier v vs) "r")
+		(map (lambda (code v)
+		      (if (void? v) '() (c:assignment (c:slot "r" code) code)))
 		     (generate-slot-names v xs vs)
-		     (aggregate-value-values v)))
-	       ;; abstraction
-	       (list (c:declaration (c:specifier v vs) "r")
-		     (map (lambda (s v)
-			   (if (void? v) '() (c:assignment (c:slot "r" s) s)))
-			  (generate-slot-names v xs vs)
-			  (aggregate-value-values v))
-		     (c:return "r"))))))
+		     (aggregate-value-values v))
+		(c:return "r"))))))
       vs))
 
 (define (generate-widener-definitions xs vs widener-instances)
  ;; abstraction
- (map (lambda (widener-instance)
-       (let ((v1 (widener-instance-v1 widener-instance))
-	     (v2 (widener-instance-v2 widener-instance)))
-	(c:function-definition
-	 #t #t #f
-	 (c:specifier v2 vs)
-	 (c:function-declarator
-	  (c:widener-name v1 v2 widener-instances)
-	  (if (void? v1) '() (c:parameter (c:specifier v1 vs) "x")))
-	 (c:return
-	  (cond
-	   ;; See the note for this case in all-subwidener-instances.
-	   ((union? v1)
-	    (c:dispatch
-	     "x"
-	     v1
-	     (map
-	      (lambda (s u1)
-	       (c:widen u1 v2 (c:slot (c:slot "x" "u") s) widener-instances))
-	      (generate-slot-names v1 xs vs)
-	      (union-values v1))))
-	   ;; See the note for this case in all-subwidener-instances.
-	   ((union? v2)
-	    (let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
-			       (union-values v2))))
-	     (c:call (c:unioner-name u2 v2 vs)
-		     (if (void? u2)
-			 '()
-			 (c:widen v1 u2 "x" widener-instances)))))
-	   ;; This assumes that Scheme inexact numbers are printed as C
-	   ;; doubles.
-	   ((real? v1) (exact->inexact v1))
-	   (else (c:call*
-		  (c:constructor-name v2 vs)
-		  ;; This will only be done on conforming structures since the
-		  ;; analysis is almost union free.
-		  (map (lambda (s v1 v2)
-			(if (void? v2)
-			    '()
-			    (c:widen v1 v2 (c:slot "x" s) widener-instances)))
-		       (generate-slot-names v2 xs vs)
-		       (aggregate-value-values v1)
-		       (aggregate-value-values v2)))))))))
-      widener-instances))
+ (map
+  (lambda (widener-instance)
+   (let ((v1 (widener-instance-v1 widener-instance))
+	 (v2 (widener-instance-v2 widener-instance)))
+    (c:function-definition
+     #t #t #f
+     (c:specifier v2 vs)
+     (c:function-declarator
+      (c:widener-name v1 v2 widener-instances)
+      (if (void? v1) '() (c:parameter (c:specifier v1 vs) "x")))
+     (c:return
+      (cond
+       ;; See the note for this case in all-subwidener-instances.
+       ((union? v1)
+	(c:dispatch
+	 "x"
+	 v1
+	 (map
+	  (lambda (code1 u1)
+	   (c:widen u1 v2 (c:slot (c:slot "x" "u") code1) widener-instances))
+	  (generate-slot-names v1 xs vs)
+	  (union-values v1))))
+       ;; See the note for this case in all-subwidener-instances.
+       ((union? v2)
+	(let ((u2 (find-if (lambda (u2) (abstract-value-subset? v1 u2))
+			   (union-values v2))))
+	 (c:call (c:unioner-name u2 v2 vs)
+		 (if (void? u2)
+		     '()
+		     (c:widen v1 u2 "x" widener-instances)))))
+       ;; This assumes that Scheme inexact numbers are printed as C
+       ;; doubles.
+       ((real? v1) (exact->inexact v1))
+       (else (c:call*
+	      (c:constructor-name v2 vs)
+	      ;; This will only be done on conforming structures since the
+	      ;; analysis is almost union free.
+	      (map (lambda (code1 v1 v2)
+		    (if (void? v2)
+			'()
+			(c:widen v1 v2 (c:slot "x" code1) widener-instances)))
+		   (generate-slot-names v1 xs vs)
+		   (aggregate-value-values v1)
+		   (aggregate-value-values v2)))))))))
+  widener-instances))
 
 (define (generate-panic-definitions vs)
  ;; abstraction
@@ -8301,7 +8304,8 @@
 	    "fputs(x,stderr);fputc('\n',stderr);exit(EXIT_FAILURE);")))
       vs))
 
-(define (generate-real*real-primitive-definitions s v0 s1 p s2 xs vs)
+(define (generate-real*real-primitive-definitions
+	 s v0 code1 code2 xs vs generate)
  ;; abstraction
  (map
   (lambda (v)
@@ -8309,7 +8313,7 @@
     #t #t #f
     (c:specifier v0 vs)
     (c:function-declarator
-     (c:builtin-name s1 v vs)
+     (c:builtin-name code1 v vs)
      (if (void? v) '() (c:parameter (c:specifier v vs) "x")))
     (c:return
      (cond
@@ -8317,9 +8321,9 @@
        (c:dispatch
 	"x"
 	v
-	(map (lambda (s u)
-	      (c:call (c:builtin-name s1 u vs)
-		      (if (void? u) '() (c:slot (c:slot "x" "u") s))))
+	(map (lambda (code u)
+	      (c:call (c:builtin-name code1 u vs)
+		      (if (void? u) '() (c:slot (c:slot "x" "u") code))))
 	     (generate-slot-names v xs vs)
 	     (union-values v))))
       ((vlad-pair? v)
@@ -8329,15 +8333,15 @@
 	  (c:dispatch
 	   (c:slot "x" "a")
 	   v1
-	   (map (lambda (s u1)
+	   (map (lambda (code1 u1)
 		 (c:call
-		  (c:builtin-name s1 (vlad-cons u1 v2) vs)
+		  (c:builtin-name code1 (vlad-cons u1 v2) vs)
 		  (if (void? (vlad-cons u1 v2))
 		      '()
 		      (c:call (c:constructor-name (vlad-cons u1 v2) vs)
 			      (if (void? u1)
 				  '()
-				  (c:slot (c:slot (c:slot "x" "a") "u") s))
+				  (c:slot (c:slot (c:slot "x" "a") "u") code1))
 			      (if (void? v2) '() (c:slot "x" "d"))))))
 		(generate-slot-names v1 xs vs)
 		(union-values v1))))
@@ -8346,48 +8350,49 @@
 	   (c:slot "x" "d")
 	   v2
 	   (map
-	    (lambda (s u2)
+	    (lambda (code2 u2)
 	     (c:call
-	      (c:builtin-name s1 (vlad-cons v1 u2) vs)
+	      (c:builtin-name code1 (vlad-cons v1 u2) vs)
 	      (if (void? (vlad-cons v1 u2))
 		  '()
 		  (c:call (c:constructor-name (vlad-cons v1 u2) vs)
 			  (if (void? v1) '() (c:slot "x" "a"))
 			  (if (void? u2)
 			      '()
-			      (c:slot (c:slot (c:slot "x" "d") "u") s))))))
+			      (c:slot (c:slot (c:slot "x" "d") "u") code2))))))
 	    (generate-slot-names v2 xs vs)
 	    (union-values v2))))
 	 ((and (vlad-real? v1) (vlad-real? v2))
-	  (p (if (void? v1) v1 (c:slot "x" "a"))
-	     (if (void? v2) v2 (c:slot "x" "d"))))
-	 (else (c:panic v (format #f "Argument to ~a is invalid" s2) vs)))))
-      (else (c:panic v (format #f "Argument to ~a is invalid" s2) vs))))))
+	  (generate (if (void? v1) v1 (c:slot "x" "a"))
+		    (if (void? v2) v2 (c:slot "x" "d"))))
+	 (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs)))))
+      (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs))))))
   (all-primitives s)))
 
-(define (generate-real-primitive-definitions s v0 s1 p s2 xs vs)
+(define (generate-real-primitive-definitions s v0 code1 code2 xs vs generate)
  ;; abstraction
- (map (lambda (v)
-       (c:function-definition
-	#t #t #f
-	(c:specifier v0 vs)
-	(c:function-declarator
-	 (c:builtin-name s1 v vs)
-	 (if (void? v) '() (c:parameter (c:specifier v vs) "x")))
-	(c:return
-	 (cond
-	  ((union? v)
-	   (c:dispatch
-	    "x"
-	    v
-	    (map (lambda (s u)
-		  (c:call (c:builtin-name s1 u vs)
-			  (if (void? u) '() (c:slot (c:slot "x" "u") s))))
-		 (generate-slot-names v xs vs)
-		 (union-values v))))
-	  ((vlad-real? v) (p (if (void? v) v "x")))
-	  (else (c:panic v (format #f "Argument to ~a is invalid" s2) vs))))))
-      (all-primitives s)))
+ (map
+  (lambda (v)
+   (c:function-definition
+    #t #t #f
+    (c:specifier v0 vs)
+    (c:function-declarator
+     (c:builtin-name code1 v vs)
+     (if (void? v) '() (c:parameter (c:specifier v vs) "x")))
+    (c:return
+     (cond
+      ((union? v)
+       (c:dispatch
+	"x"
+	v
+	(map (lambda (code u)
+	      (c:call (c:builtin-name code1 u vs)
+		      (if (void? u) '() (c:slot (c:slot "x" "u") code))))
+	     (generate-slot-names v xs vs)
+	     (union-values v))))
+      ((vlad-real? v) (generate (if (void? v) v "x")))
+      (else (c:panic v (format #f "Argument to ~a is invalid" code2) vs))))))
+  (all-primitives s)))
 
 (define (generate-destructure p e v code xs vs)
  ;; here I am: misplaced
@@ -8855,7 +8860,7 @@
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
-(define (generate-unary-ad-definitions s p? f s1 bs xs vs g)
+(define (generate-unary-ad-definitions s p? f code bs xs vs generate)
  ;; abstraction
  (map (lambda (v)
        ;; The call to f might issue "might" warnings.
@@ -8867,13 +8872,13 @@
 	     #t #t #f
 	     (c:specifier v1 vs)
 	     (c:function-declarator
-	      (c:builtin-name s1 v vs)
+	      (c:builtin-name code v vs)
 	      (if (void? v) '() (c:parameter (c:specifier v vs) "x")))
-	     (c:return (g v))))))
+	     (c:return (generate v))))))
       (all-unary-ad s p?)))
 
 (define (generate-binary-ad-definitions
-	 s p? f? f f-inverse g-value s1 bs xs vs h)
+	 s p? f? f f-inverse g-value code bs xs vs generate)
  ;; abstraction
  (map (lambda (v)
        ;; The call to g-value might issue "might" warnings.
@@ -8885,9 +8890,9 @@
 	     #t #t #f
 	     (c:specifier v1 vs)
 	     (c:function-declarator
-	      (c:builtin-name s1 v vs)
+	      (c:builtin-name code v vs)
 	      (if (void? v) '() (c:parameter (c:specifier v vs) "x")))
-	     (c:return (h v))))))
+	     (c:return (generate v))))))
       (all-binary-ad s p? f? f f-inverse g-value)))
 
 (define (generate-zero-definitions bs xs vs widener-instances)
@@ -8899,11 +8904,11 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (zero u)
 		     (zero v)
 		     (c:call (c:builtin-name "zero" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
@@ -8915,11 +8920,11 @@
 	 (reverse-tagged-value? v)
 	 (tagged-pair? v))
      (c:call* (c:constructor-name (zero v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (zero v))
 			'()
 			(c:call (c:builtin-name "zero" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (internal-error))))))
@@ -8939,11 +8944,11 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (perturb u)
 		     (perturb v)
 		     (c:call (c:builtin-name "perturb" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
@@ -8955,11 +8960,11 @@
      (c:call (c:constructor-name (perturb v) vs) "x"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (perturb v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (perturb v))
 			'()
 			(c:call (c:builtin-name "perturb" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (internal-error))))))
@@ -8976,22 +8981,22 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (unperturb u)
 		     (unperturb v)
 		     (c:call (c:builtin-name "unperturb" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((perturbation-tagged-value? v) (c:slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (unperturb v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (unperturb v))
 			'()
 			(c:call (c:builtin-name "unperturb" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else
@@ -9007,22 +9012,22 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (primal u)
 		     (primal v)
 		     (c:call (c:builtin-name "primal" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((bundle? v) (c:slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (primal v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (primal v))
 			'()
 			(c:call (c:builtin-name "primal" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (c:panic v "Argument to primal is a non-forward value" vs))))))
@@ -9037,22 +9042,22 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (tangent u)
 		     (tangent v)
 		     (c:call (c:builtin-name "tangent" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((bundle? v) (c:slot "x" "t"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (tangent v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (tangent v))
 			'()
 			(c:call (c:builtin-name "tangent" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (c:panic v "Argument to tangent is a non-forward value" vs))))))
@@ -9072,11 +9077,11 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (bundle-value u)
 		     (bundle-value v)
 		     (c:call (c:builtin-name "bundle" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
@@ -9087,7 +9092,7 @@
 	(c:dispatch
 	 (c:slot "x" "a")
 	 v1
-	 (map (lambda (s u1)
+	 (map (lambda (code1 u1)
 	       (c:widen
 		(bundle u1 v2)
 		(bundle v1 v2)
@@ -9098,7 +9103,7 @@
 		     (c:call (c:constructor-name (vlad-cons u1 v2) vs)
 			     (if (void? u1)
 				 '()
-				 (c:slot (c:slot (c:slot "x" "a") "u") s))
+				 (c:slot (c:slot (c:slot "x" "a") "u") code1))
 			     (if (void? v2) '() (c:slot "x" "d")))))
 		widener-instances))
 	      (generate-slot-names v1 xs vs)
@@ -9107,7 +9112,7 @@
 	(c:dispatch
 	 (c:slot "x" "d")
 	 v2
-	 (map (lambda (s u2)
+	 (map (lambda (code2 u2)
 	       (c:widen
 		(bundle v1 u2)
 		(bundle v1 v2)
@@ -9115,11 +9120,12 @@
 		 (c:builtin-name "bundle" (vlad-cons v1 u2) vs)
 		 (if (void? (vlad-cons v1 u2))
 		     '()
-		     (c:call (c:constructor-name (vlad-cons v1 u2) vs)
-			     (if (void? v1) '() (c:slot "x" "a"))
-			     (if (void? u2)
-				 '()
-				 (c:slot (c:slot (c:slot "x" "d") "u") s)))))
+		     (c:call
+		      (c:constructor-name (vlad-cons v1 u2) vs)
+		      (if (void? v1) '() (c:slot "x" "a"))
+		      (if (void? u2)
+			  '()
+			  (c:slot (c:slot (c:slot "x" "d") "u") code2)))))
 		widener-instances))
 	      (generate-slot-names v2 xs vs)
 	      (union-values v2))))
@@ -9127,7 +9133,7 @@
 	(c:dispatch
 	 (c:slot (c:slot "x" "d") "p")
 	 (unperturb v2)
-	 (map (lambda (s u2)
+	 (map (lambda (code2 u2)
 	       (c:widen
 		(bundle v1 (perturb u2))
 		(bundle v1 v2)
@@ -9146,7 +9152,7 @@
 			       '()
 			       (c:slot
 				(c:slot (c:slot (c:slot "x" "d") "p") "u")
-				s)))))))
+				code2)))))))
 		widener-instances))
 	      (generate-slot-names (unperturb v2) xs vs)
 	      (union-values (unperturb v2)))))
@@ -9158,10 +9164,10 @@
 	;; In all cases, the result will be void so this case should never
 	;; happen.
 	(internal-error))
-       ;; here I am: need to check conformance
-       ;;            even when one or both arguments is void
-       ;;            and even when one or both arguments is deep
-       ((or (vlad-real? v1)
+       ((or (and (vlad-real? v1) (every-bundlable? v1 v2))
+	    ;; here I am: need to check conformance
+	    ;;            even when one or both arguments is void
+	    ;;            and even when one or both arguments is deep
 	    (perturbation-tagged-value? v1)
 	    (bundle? v1)
 	    (sensitivity-tagged-value? v1)
@@ -9169,12 +9175,22 @@
 	(c:call (c:constructor-name (bundle v1 v2) vs)
 		(if (void? v1) '() (c:slot "x" "a"))
 		(if (void? v2) '() (c:slot "x" "d"))))
-       ;; here I am: need to check conformance
-       ;;            even when one or both arguments is void
-       ;;            and even when one or both arguments is deep
-       ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+       ((or (and (nonrecursive-closure? v1)
+		 (nonrecursive-closure? v2)
+		 (perturbation-parameter? (nonrecursive-closure-parameter v2))
+		 (nonrecursive-closure-match? v1 (unperturb v2)))
+	    (and (recursive-closure? v1)
+		 (recursive-closure? v2)
+		 (perturbation-parameter? (recursive-closure-parameter v2))
+		 (recursive-closure-match? v1 (unperturb v2)))
+	    (and (tagged-pair? v1)
+		 (tagged-pair? v2)
+		 (tagged? 'perturbation (tagged-pair-tags v1))
+		 (equal-tags?
+		  (tagged-pair-tags v1)
+		  (remove-tag 'perturbation (tagged-pair-tags v2)))))
 	(c:call* (c:constructor-name (bundle v1 v2) vs)
-		 (map (lambda (s3a s3b v3)
+		 (map (lambda (code3a code3b v3)
 		       (if (void? v3)
 			   '()
 			   (c:call
@@ -9185,10 +9201,10 @@
 			      (vlad-cons (primal v3) (tangent v3)) vs)
 			     (if (void? (primal v3))
 				 '()
-				 (c:slot (c:slot "x" "a") s3a))
+				 (c:slot (c:slot "x" "a") code3a))
 			     (if (void? (tangent v3))
 				 '()
-				 (c:slot (c:slot "x" "d") s3b))))))
+				 (c:slot (c:slot "x" "d") code3b))))))
 		      (generate-slot-names v1 xs vs)
 		      (generate-slot-names v2 xs vs)
 		      (aggregate-value-values (bundle v1 v2)))))
@@ -9210,11 +9226,11 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (sensitize u)
 		     (sensitize v)
 		     (c:call (c:builtin-name "sensitize" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
@@ -9226,11 +9242,11 @@
      (c:call (c:constructor-name (sensitize v) vs) "x"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (sensitize v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (sensitize v))
 			'()
 			(c:call (c:builtin-name "sensitize" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (internal-error))))))
@@ -9246,22 +9262,22 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (unsensitize u)
 		     (unsensitize v)
 		     (c:call (c:builtin-name "unsensitize" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((sensitivity-tagged-value? v) (c:slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (unsensitize v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (unsensitize v))
 			'()
 			(c:call (c:builtin-name "unsensitize" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (c:panic
@@ -9298,14 +9314,14 @@
        (c:constructor-name (plus v1 v2) vs)
        ;; here I am: need to check conformance
        (map
-	(lambda (s3a s3b v3 v3a v3b)
+	(lambda (code3a code3b v3 v3a v3b)
 	 (if (void? v3)
 	     '()
 	     (c:call
 	      (c:builtin-name "plus" (vlad-cons v3a v3b) vs)
 	      (c:call (c:constructor-name (vlad-cons v3a v3b) vs)
-		      (if (void? v3a) '() (c:slot (c:slot "x" "a") s3a))
-		      (if (void? v3b) '() (c:slot (c:slot "x" "d") s3b))))))
+		      (if (void? v3a) '() (c:slot (c:slot "x" "a") code3a))
+		      (if (void? v3b) '() (c:slot (c:slot "x" "d") code3b))))))
 	(generate-slot-names v1 xs vs)
 	(generate-slot-names v2 xs vs)
 	(aggregate-value-values (plus v1 v2))
@@ -9328,11 +9344,11 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (*j u)
 		     (*j v)
 		     (c:call (c:builtin-name "starj" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
@@ -9344,11 +9360,11 @@
      (c:call (c:constructor-name (*j v) vs) "x"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (*j v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (*j v))
 			'()
 			(c:call (c:builtin-name "starj" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (internal-error))))))
@@ -9364,22 +9380,22 @@
      (c:dispatch
       "x"
       v
-      (map (lambda (s u)
+      (map (lambda (code u)
 	    (c:widen (*j-inverse u)
 		     (*j-inverse v)
 		     (c:call (c:builtin-name "starj_inverse" u vs)
-			     (if (void? u) '() (c:slot (c:slot "x" "u") s)))
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
 		     widener-instances))
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((reverse-tagged-value? v) (c:slot "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (*j-inverse v) vs)
-	      (map (lambda (s v)
+	      (map (lambda (code v)
 		    (if (void? (*j-inverse v))
 			'()
 			(c:call (c:builtin-name "starj_inverse" v vs)
-				(if (void? v) '() (c:slot "x" s)))))
+				(if (void? v) '() (c:slot "x" code)))))
 		   (generate-slot-names v xs vs)
 		   (aggregate-value-values v))))
     (else (c:panic v "Argument to *j-inverse is a non-reverse value" vs))))))
@@ -9494,38 +9510,38 @@
    (generate-widener-definitions xs vs widener-instances)
    (generate-panic-definitions vs)
    (generate-real*real-primitive-definitions
-    '+ (abstract-real) "add"
-    (lambda (code1 code2) (c:binary code1 "+" code2)) "+" xs vs)
+    '+ (abstract-real) "add" "+" xs vs
+    (lambda (code1 code2) (c:binary code1 "+" code2)))
    (generate-real*real-primitive-definitions
-    '- (abstract-real) "minus"
-    (lambda (code1 code2) (c:binary code1 "-" code2)) "-" xs vs)
+    '- (abstract-real) "minus" "-" xs vs
+    (lambda (code1 code2) (c:binary code1 "-" code2)))
    (generate-real*real-primitive-definitions
-    '* (abstract-real) "times"
-    (lambda (code1 code2) (c:binary code1 "*" code2)) "*" xs vs)
+    '* (abstract-real) "times" "*" xs vs
+    (lambda (code1 code2) (c:binary code1 "*" code2)))
    (generate-real*real-primitive-definitions
-    '/ (abstract-real) "divide"
-    (lambda (code1 code2) (c:binary code1 "/" code2)) "/" xs vs)
+    '/ (abstract-real) "divide" "/" xs vs
+    (lambda (code1 code2) (c:binary code1 "/" code2)))
    (generate-real*real-primitive-definitions
-    'atan (abstract-real) "atantwo"
-    (lambda (code1 code2) (c:call "atan2" code1 code2)) "atan" xs vs)
+    'atan (abstract-real) "atantwo" "atan" xs vs
+    (lambda (code1 code2) (c:call "atan2" code1 code2)))
    (generate-real*real-primitive-definitions
-    '= (abstract-boolean) "eq" (c:binary-boolean "==" vs) "=" xs vs)
+    '= (abstract-boolean) "eq" "=" xs vs (c:binary-boolean "==" vs))
    (generate-real*real-primitive-definitions
-    '< (abstract-boolean) "lt" (c:binary-boolean "<" vs) "<" xs vs)
+    '< (abstract-boolean) "lt" "<" xs vs (c:binary-boolean "<" vs))
    (generate-real*real-primitive-definitions
-    '> (abstract-boolean) "gt" (c:binary-boolean ">" vs) ">" xs vs)
+    '> (abstract-boolean) "gt" ">" xs vs (c:binary-boolean ">" vs))
    (generate-real*real-primitive-definitions
-    '<= (abstract-boolean) "le" (c:binary-boolean "<=" vs) "<=" xs vs)
+    '<= (abstract-boolean) "le" "<=" xs vs (c:binary-boolean "<=" vs))
    (generate-real*real-primitive-definitions
-    '>= (abstract-boolean) "ge" (c:binary-boolean ">=" vs) ">=" xs vs)
+    '>= (abstract-boolean) "ge" ">=" xs vs (c:binary-boolean ">=" vs))
    (generate-real-primitive-definitions
-    'zero? (abstract-boolean) "iszero" (c:unary-boolean "==" vs) "zero?" xs vs)
+    'zero? (abstract-boolean) "iszero" "zero?" xs vs (c:unary-boolean "==" vs))
    (generate-real-primitive-definitions
-    'positive? (abstract-boolean) "positive" (c:unary-boolean ">" vs)
-    "positive?" xs vs)
+    'positive? (abstract-boolean) "positive" "positive?" xs vs
+    (c:unary-boolean ">" vs))
    (generate-real-primitive-definitions
-    'negative? (abstract-boolean) "negative" (c:unary-boolean "<" vs)
-    "negative?" xs vs)
+    'negative? (abstract-boolean) "negative" "negative?" xs vs
+    (c:unary-boolean "<" vs))
    ;; here I am: null, boolean, is_real, pair, procedure, perturbation,
    ;;            forward, sensitivity, and reverse
    (c:function-definition
@@ -9537,7 +9553,7 @@
 	  "scanf(\"%lf\",&x);"
 	  (c:return "x")))
    (generate-real-primitive-definitions
-    'real (abstract-real) "real" (lambda (code) code) "real" xs vs)
+    'real (abstract-real) "real" "real" xs vs (lambda (code) code))
    (c:function-definition
     #t #t #f (c:specifier (abstract-real) '())
     (c:function-declarator
@@ -9548,8 +9564,8 @@
      "printf(\"%.18lg\\n\",x);"
      (c:return "x")))
    (generate-real-primitive-definitions
-    'write (abstract-real) "write"
-    (lambda (code) (c:call "write_real" code)) "write" xs vs)
+    'write (abstract-real) "write" "write" xs vs
+    (lambda (code) (c:call "write_real" code)))
    (generate-zero-definitions bs xs vs widener-instances)
    (generate-perturb-definitions bs xs vs widener-instances)
    (generate-unperturb-definitions bs xs vs widener-instances)
