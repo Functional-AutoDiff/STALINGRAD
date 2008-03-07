@@ -1038,15 +1038,15 @@
 
 ;;; Expression Equivalence
 
+(define (dereference-expression e)
+ (if (and (lambda-expression? e)
+	  (lambda-expression-alpha-conversion-inverse e))
+     (dereference-expression (lambda-expression-alpha-conversion-inverse e))
+     e))
+
 (define (expression-eqv? e1 e2)
  ;; needs work: We need to look for all implicit eq? comparisons.
- (cond ((and (lambda-expression? e1)
-	     (lambda-expression-alpha-conversion-inverse e1))
-	(expression-eqv? (lambda-expression-alpha-conversion-inverse e1) e2))
-       ((and (lambda-expression? e2)
-	     (lambda-expression-alpha-conversion-inverse e2))
-	(expression-eqv? e1 (lambda-expression-alpha-conversion-inverse e2)))
-       (else (eq? e1 e2))))
+ (eq? (dereference-expression e1) (dereference-expression e2)))
 
 ;;; Values
 
@@ -7812,7 +7812,6 @@
 	     (if-instance-v instance1)
 	     ;; here I am
 	     (let ((vss (construct-abstract-environments
-			 (lambda (e vs) vs)
 			 (function-instance-v1 instance2)
 			 (function-instance-v2 instance2))))
 	      (assert (= (length vss) 1))
@@ -7852,6 +7851,46 @@
   (else (assert (memp abstract-value=? v vs))
 	(list "struct" " " (list "s" (positionp abstract-value=? v vs))))))
 
+(define (dereferenced-nonrecursive-closure-variables u)
+ (free-variables
+  (dereference-expression
+   (nonrecursive-closure-lambda-expression u))))
+
+(define (dereferenced-recursive-closure-variables u)
+ (recursive-closure-free-variables
+  (vector->list (recursive-closure-procedure-variables u))
+  (map dereference-expression
+       (vector->list (recursive-closure-lambda-expressions u)))))
+
+(define (dereferenced-closure-variables u)
+ (cond
+  ((nonrecursive-closure? u) (dereferenced-nonrecursive-closure-variables u))
+  ((recursive-closure? u) (dereferenced-recursive-closure-variables u))
+  (else (internal-error))))
+
+(define (dereferenced-letrec-expression-variables e)
+ (recursive-closure-free-variables
+  (letrec-expression-procedure-variables e)
+  (map dereference-expression (letrec-expression-lambda-expressions e))))
+
+(define (dereferenced-parameter-variables p)
+ (cond
+  ((constant-expression? p) '())
+  ((variable-access-expression? p)
+   (list (variable-access-expression-variable p)))
+  ((lambda-expression? p) (free-variables (dereference-expression p)))
+  ((letrec-expression? p)
+   (assert (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p))))
+   (dereferenced-letrec-expression-variables p))
+  ((cons-expression? p)
+   (append (dereferenced-parameter-variables (cons-expression-car p))
+	   (dereferenced-parameter-variables (cons-expression-cdr p))))
+  (else (internal-error))))
+
 (define (generate-slot-names v xs vs)
  ;; here I am: generate -~-> c:
  (cond ((union? v)
@@ -7861,9 +7900,11 @@
 	     (union-values v)))
        ((nonrecursive-closure? v)
 	(map (lambda (x) (c:variable-name x xs))
+	     ;; dereferenced
 	     (nonrecursive-closure-variables v)))
        ((recursive-closure? v)
 	(map (lambda (x) (c:variable-name x xs))
+	     ;; dereferenced
 	     (recursive-closure-variables v)))
        ((perturbation-tagged-value? v) '("p"))
        ((bundle? v) '("p" "t"))
@@ -8485,17 +8526,18 @@
 	     (externalize-expression p))
      v))
    ;; abstraction
-   (map (lambda (x v)
+   (map (lambda (x1 x2 v)
 	 (generate-destructure
-	  (new-variable-access-expression x)
+	  (new-variable-access-expression x1)
 	  e
 	  v
-	  (c:slot code
-		  (c:variable-name
-		   (variable-access-expression-variable x) xs))
+	  (c:slot code (c:variable-name x2 xs))
 	  xs
 	  vs))
+	;; dereferenced
 	(parameter-variables p)
+	;; dereferenced
+	(nonrecursive-closure-variables v)
 	(nonrecursive-closure-values v)))
   ((letrec-expression? p)
    (assert (and (variable-access-expression? (letrec-expression-body p))
@@ -8523,17 +8565,18 @@
 	     (externalize-expression p))
      v))
    ;; abstraction
-   (map (lambda (x v)
+   (map (lambda (x1 x2 v)
 	 (generate-destructure
-	  (new-variable-access-expression x)
+	  (new-variable-access-expression x1)
 	  e
 	  v
-	  (c:slot code
-		  (c:variable-name
-		   (variable-access-expression-variable x) xs))
+	  (c:slot code (c:variable-name x2 xs))
 	  xs
 	  vs))
+	;; dereferenced
 	(parameter-variables p)
+	;; dereferenced
+	(recursive-closure-variables v)
 	(recursive-closure-values v)))
   ((cons-expression? p)
    (unless (and (tagged-pair? v)
@@ -8576,7 +8619,9 @@
 	  ;; This used to have to be (free-variables e) instead of
 	  ;; (closure-variables v) when we used alpha equivalence for
 	  ;; expression=?.
-	  (closure-variables v)
+	  ;;(closure-variables v)
+	  ;; dereferenced
+	  (free-variables e)
 	  (aggregate-value-values v))))
    ((application? e)
     (let ((v1 (abstract-eval1 (application-callee e)
@@ -8738,7 +8783,9 @@
 			;; (letrec-expression-variables e) instead of
 			;; (closure-variables v) when we used alpha
 			;; equivalence for expression=?.
-			(closure-variables v)
+			;;(closure-variables v)
+			;; dereferenced
+			(letrec-expression-variables e)
 			(aggregate-value-values v)))
 		  ";"))))
       (letrec-expression-procedure-variables e))
@@ -9111,6 +9158,7 @@
   (lambda (v)
    (cond
     ((union? v)
+     (format #t "debugging1~%")
      (c:dispatch
       "x"
       v
@@ -9123,6 +9171,7 @@
 	   (generate-slot-names v xs vs)
 	   (union-values v))))
     ((vlad-pair? v)
+     (format #t "debugging2~%")
      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
       (cond
        ((union? v1)
@@ -9146,6 +9195,7 @@
 	      (generate-slot-names v1 xs vs)
 	      (union-values v1))))
        ((union? v2)
+	(format #t "debugging3~%")
 	(c:dispatch
 	 (c:slot "x" "d")
 	 v2
@@ -9167,6 +9217,7 @@
 	      (generate-slot-names v2 xs vs)
 	      (union-values v2))))
        ((and (perturbation-tagged-value? v2) (union? (unperturb v2)))
+	(format #t "debugging4~%")
 	(c:dispatch
 	 (c:slot (c:slot "x" "d") "p")
 	 (unperturb v2)
@@ -9226,6 +9277,7 @@
 		 (equal-tags?
 		  (tagged-pair-tags v1)
 		  (remove-tag 'perturbation (tagged-pair-tags v2)))))
+	(format #t "debugging5~%")
 	(c:call* (c:constructor-name (bundle v1 v2) vs)
 		 (map (lambda (code3a code3b v3)
 		       (if (void? v3)
@@ -9233,6 +9285,7 @@
 			   (c:call
 			    (c:builtin-name
 			     "bundle" (vlad-cons (primal v3) (tangent v3)) vs)
+			    ;; here I am: need to handle void
 			    (c:call
 			     (c:constructor-name
 			      (vlad-cons (primal v3) (tangent v3)) vs)
@@ -9323,7 +9376,7 @@
 		   "Argument to unsensitize is a non-sensitivity value"
 		   vs))))))
 
-(define (generate-plus-definitions bs xs vs)
+(define (generate-plus-definitions bs xs vs widener-instances)
  (generate-binary-ad-definitions
   'plus
   (lambda (v) #t) (lambda (v) #f) identity identity plus-value "plus" bs xs vs
@@ -9421,6 +9474,15 @@
 	    (and (tagged-pair? v1)
 		 (tagged-pair? v2)
 		 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))))
+	;; debugging
+	(when (nonrecursive-closure? v1)
+	 (write 'debugging) (newline)
+	 (pp (debugging-externalize v)) (newline)
+	 (pp (debugging-externalize v1)) (newline)
+	 (pp (debugging-externalize v2)) (newline)
+	 (pp (debugging-externalize (plus v1 v2))) (newline)
+	 (write (generate-slot-names v1 xs vs)) (newline)
+	 (write (generate-slot-names v2 xs vs)) (newline))
 	(c:call*
 	 (c:constructor-name (plus v1 v2) vs)
 	 (map
@@ -9429,6 +9491,7 @@
 	       '()
 	       (c:call
 		(c:builtin-name "plus" (vlad-cons v3a v3b) vs)
+		;; here I am: need to handle void
 		(c:call
 		 (c:constructor-name (vlad-cons v3a v3b) vs)
 		 (if (void? v3a) '() (c:slot (c:slot "x" "a") code3a))
@@ -9688,7 +9751,7 @@
    (generate-bundle-definitions bs xs vs widener-instances)
    (generate-sensitize-definitions bs xs vs widener-instances)
    (generate-unsensitize-definitions bs xs vs widener-instances)
-   (generate-plus-definitions bs xs vs)
+   (generate-plus-definitions bs xs vs widener-instances)
    (generate-*j-definitions bs xs vs widener-instances)
    (generate-*j-inverse-definitions bs xs vs widener-instances)
    (generate-if-and-function-definitions
