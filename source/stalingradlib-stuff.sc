@@ -6363,11 +6363,6 @@
  (map (lambda (alist) (construct-abstract-environment u1 alist))
       (abstract-destructure (closure-parameter u1) v2)))
 
-(define (abstract-apply-closure p u1 v2)
- (assert (not (union? u1)))
- (map (lambda (vs) (p (closure-body u1) vs))
-      (construct-abstract-environments u1 v2)))
-
 (define (abstract-apply v1 v2)
  (if (empty-abstract-value? v2)
      v2
@@ -6379,12 +6374,14 @@
 	 (cond
 	  ((every-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	   (new-union (abstract-apply-closure abstract-eval1 u1 v2)))
+	   (new-union (map (lambda (vs) (abstract-eval1 (closure-body u1) vs))
+			   (construct-abstract-environments u1 v2))))
 	  ((some-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	   (compile-time-warning
 	    "Argument might have wrong type for target" u1 v2)
-	   (new-union (abstract-apply-closure abstract-eval1 u1 v2)))
+	   (new-union (map (lambda (vs) (abstract-eval1 (closure-body u1) vs))
+			   (construct-abstract-environments u1 v2))))
 	  (else (compile-time-warning
 		 "Argument might have wrong type for target" u1 v2))))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
@@ -6513,7 +6510,7 @@
     (expression-environment-bindings e)))
   (else (internal-error))))
 
-(define (abstract-apply-closure! e p u1 v2)
+(define (abstract-apply-closure! e u1 v2)
  (assert (not (union? u1)))
  (for-each (lambda (vs)
 	    (let ((e1 (closure-body u1)))
@@ -6521,7 +6518,7 @@
 	     (unless (memp expression-eqv? e (expression-parents e1))
 	      (set-expression-parents! e1 (cons e (expression-parents e1)))
 	      (enqueue! e))
-	     (p e1 vs)))
+	     (abstract-eval-prime! e1 vs)))
 	   (construct-abstract-environments u1 v2)))
 
 (define (abstract-apply-prime! e v1 v2)
@@ -6532,31 +6529,29 @@
      ((primitive-procedure? u1)
       ;; needs work: Should put this into slots of the primitive procedures.
       (when (eq? (primitive-procedure-name u1) 'if-procedure)
-       ((ternary-prime (lambda (v1 v2 v3)
-			;; When v3 and/or v2 is not a procedure the warning is
-			;; issued by abstract-apply. If it is a primitive
-			;; procedure we don't have to do anything here. In
-			;; practise, it will always be a nonrecursive closure
-			;; unless the user calls if-procedure outside the
-			;; context of the if macro.
-			(if (vlad-false? v1)
-			    (when (closure? v3)
-			     (abstract-apply-closure!
-			      e abstract-eval-prime! v3 (vlad-empty-list)))
-			    (when (closure? v2)
-			     (abstract-apply-closure!
-			      e abstract-eval-prime! v2 (vlad-empty-list)))))
-		       "if-procedure")
+       ((ternary-prime
+	 (lambda (v1 v2 v3)
+	  ;; When v3 and/or v2 is not a procedure the warning is issued by
+	  ;; abstract-apply. If it is a primitive procedure we don't have to
+	  ;; do anything here. In practise, it will always be a nonrecursive
+	  ;; closure unless the user calls if-procedure outside the context of
+	  ;; the if macro.
+	  (if (vlad-false? v1)
+	      (when (closure? v3)
+	       (abstract-apply-closure! e v3 (vlad-empty-list)))
+	      (when (closure? v2)
+	       (abstract-apply-closure! e v2 (vlad-empty-list)))))
+	 "if-procedure")
 	v2)))
      ((closure? u1)
       (cond ((every-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	     (abstract-apply-closure! e abstract-eval-prime! u1 v2))
+	     (abstract-apply-closure! e u1 v2))
 	    ((some-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	     (compile-time-warning
 	      "Argument might have wrong type for target" u1 v2)
-	     (abstract-apply-closure! e abstract-eval-prime! u1 v2))
+	     (abstract-apply-closure! e u1 v2))
 	    (else (compile-time-warning
 		   "Argument might have wrong type for target" u1 v2))))
      (else (compile-time-warning "Target might not be a procedure" u1))))
@@ -7409,6 +7404,8 @@
 		     (environment-binding-values b) e application-argument))))
 	  (cond
 	   ((union? v1)
+	    ;; here I am: This is wrong because it has to handle the
+	    ;;            closure case and the if-procedure case from below.
 	    (map (lambda (u1) (make-function-instance u1 v2))
 		 (union-values v1)))
 	   ((closure? v1) (list (make-function-instance v1 v2)))
@@ -7814,7 +7811,7 @@
 	     (closure-body (function-instance-v1 instance2))
 	     (if-instance-v instance1)
 	     ;; here I am
-	     (let ((vss (abstract-apply-closure
+	     (let ((vss (construct-abstract-environments
 			 (lambda (e vs) vs)
 			 (function-instance-v1 instance2)
 			 (function-instance-v2 instance2))))
@@ -7826,8 +7823,7 @@
 		    (function-instance-v1 instance1)
 		    (function-instance-v2 instance1)
 		    ;; here I am
-		    (let ((vss (abstract-apply-closure
-				(lambda (e vs) vs)
+		    (let ((vss (construct-abstract-environments
 				(function-instance-v1 instance2)
 				(function-instance-v2 instance2))))
 		     (assert (= (length vss) 1))
@@ -8868,7 +8864,7 @@
 	    (generate-letrec-bindings
 	     (closure-body v1)
 	     ;; here I am
-	     (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	     (let ((vss (construct-abstract-environments v1 v2)))
 	      (assert (= (length vss) 1))
 	      (first vss))
 	     (closure-variables v1)
@@ -8882,7 +8878,7 @@
 	     (generate-expression
 	      (closure-body v1)
 	      ;; here I am
-	      (let ((vss (abstract-apply-closure (lambda (e vs) vs) v1 v2)))
+	      (let ((vss (construct-abstract-environments v1 v2)))
 	       (assert (= (length vss) 1))
 	       (first vss))
 	      (closure-variables v1)
@@ -9332,46 +9328,118 @@
   'plus
   (lambda (v) #t) (lambda (v) #f) identity identity plus-value "plus" bs xs vs
   (lambda (v)
-   (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-    (cond
-     ;; here I am: need to handle unions
-     ((vlad-real? v1)
-      (if (void? v1)
-	  (if (void? v2)
-	      (internal-error)
-	      ;; This assumes that Scheme inexact numbers are printed as C
-	      ;; doubles.
-	      (c:binary (exact->inexact v1) "+" (c:slot "x" "d")))
-	  (if (void? v2)
-	      ;; This assumes that Scheme inexact numbers are printed as C
-	      ;; doubles.
-	      (c:binary (c:slot "x" "a") "+" (exact->inexact v2))
-	      (c:binary (c:slot "x" "a") "+" (c:slot "x" "d")))))
-     ((or (nonrecursive-closure? v)
-	  (recursive-closure? v)
-	  (perturbation-tagged-value? v)
-	  (bundle? v)
-	  (sensitivity-tagged-value? v)
-	  (reverse-tagged-value? v)
-	  (tagged-pair? v))
-      (c:call*
-       (c:constructor-name (plus v1 v2) vs)
-       ;; here I am: need to check conformance
-       (map
-	(lambda (code3a code3b v3 v3a v3b)
-	 (if (void? v3)
-	     '()
-	     (c:call
-	      (c:builtin-name "plus" (vlad-cons v3a v3b) vs)
-	      (c:call (c:constructor-name (vlad-cons v3a v3b) vs)
-		      (if (void? v3a) '() (c:slot (c:slot "x" "a") code3a))
-		      (if (void? v3b) '() (c:slot (c:slot "x" "d") code3b))))))
-	(generate-slot-names v1 xs vs)
-	(generate-slot-names v2 xs vs)
-	(aggregate-value-values (plus v1 v2))
-	(aggregate-value-values v1)
-	(aggregate-value-values v2))))
-     (else (internal-error)))))))
+   (cond
+    ((union? v)
+     (c:dispatch
+      "x"
+      v
+      (map (lambda (code u)
+	    (c:widen (plus-value u)
+		     (plus-value v)
+		     (c:call (c:builtin-name "plus" u vs)
+			     (if (void? u) '() (c:slot (c:slot "x" "u") code)))
+		     widener-instances))
+	   (generate-slot-names v xs vs)
+	   (union-values v))))
+    ((vlad-pair? v)
+     (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+      (cond
+       ((union? v1)
+	(c:dispatch
+	 (c:slot "x" "a")
+	 v1
+	 (map (lambda (code1 u1)
+	       (c:widen
+		(plus u1 v2)
+		(plus v1 v2)
+		(c:call
+		 (c:builtin-name "plus" (vlad-cons u1 v2) vs)
+		 (if (void? (vlad-cons u1 v2))
+		     '()
+		     (c:call (c:constructor-name (vlad-cons u1 v2) vs)
+			     (if (void? u1)
+				 '()
+				 (c:slot (c:slot (c:slot "x" "a") "u") code1))
+			     (if (void? v2) '() (c:slot "x" "d")))))
+		widener-instances))
+	      (generate-slot-names v1 xs vs)
+	      (union-values v1))))
+       ((union? v2)
+	(c:dispatch
+	 (c:slot "x" "d")
+	 v2
+	 (map (lambda (code2 u2)
+	       (c:widen
+		(plus v1 u2)
+		(plus v1 v2)
+		(c:call
+		 (c:builtin-name "plus" (vlad-cons v1 u2) vs)
+		 (if (void? (vlad-cons v1 u2))
+		     '()
+		     (c:call
+		      (c:constructor-name (vlad-cons v1 u2) vs)
+		      (if (void? v1) '() (c:slot "x" "a"))
+		      (if (void? u2)
+			  '()
+			  (c:slot (c:slot (c:slot "x" "d") "u") code2)))))
+		widener-instances))
+	      (generate-slot-names v2 xs vs)
+	      (union-values v2))))
+       ((or
+	 (and (vlad-empty-list? v1) (vlad-empty-list? v2))
+	 (and (vlad-true? v1) (vlad-true? v2))
+	 (and (vlad-false? v1) (vlad-false? v2))
+	 (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2)))
+	;; In all cases, the result will be void so this case should never
+	;; happen.
+	(internal-error))
+       ((and (vlad-real? v1) (vlad-real? v2))
+	(if (void? v1)
+	    (if (void? v2)
+		;; In this case, the result will be void so this case should
+		;; never happen.
+		(internal-error)
+		;; This assumes that Scheme inexact numbers are printed as C
+		;; doubles.
+		(c:binary (exact->inexact v1) "+" (c:slot "x" "d")))
+	    (if (void? v2)
+		;; This assumes that Scheme inexact numbers are printed as C
+		;; doubles.
+		(c:binary (c:slot "x" "a") "+" (exact->inexact v2))
+		(c:binary (c:slot "x" "a") "+" (c:slot "x" "d")))))
+       ((or (and (nonrecursive-closure? v1)
+		 (nonrecursive-closure? v2)
+		 (nonrecursive-closure-match? v1 v2))
+	    (and (recursive-closure? v1)
+		 (recursive-closure? v2)
+		 (recursive-closure-match? v1 v2))
+	    (and (perturbation-tagged-value? v1)
+		 (perturbation-tagged-value? v2))
+	    (and (bundle? v1) (bundle? v2))
+	    (and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+	    (and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+	    (and (tagged-pair? v1)
+		 (tagged-pair? v2)
+		 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))))
+	(c:call*
+	 (c:constructor-name (plus v1 v2) vs)
+	 (map
+	  (lambda (code3a code3b v3 v3a v3b)
+	   (if (void? v3)
+	       '()
+	       (c:call
+		(c:builtin-name "plus" (vlad-cons v3a v3b) vs)
+		(c:call
+		 (c:constructor-name (vlad-cons v3a v3b) vs)
+		 (if (void? v3a) '() (c:slot (c:slot "x" "a") code3a))
+		 (if (void? v3b) '() (c:slot (c:slot "x" "d") code3b))))))
+	  (generate-slot-names v1 xs vs)
+	  (generate-slot-names v2 xs vs)
+	  (aggregate-value-values (plus v1 v2))
+	  (aggregate-value-values v1)
+	  (aggregate-value-values v2))))
+       (else (c:panic (plus-value v) "Arguments to plus do not conform" vs)))))
+    (else (c:panic (plus-value v) "Arguments to plus do not conform" vs))))))
 
 (define (generate-*j-definitions bs xs vs widener-instances)
  (generate-unary-ad-definitions
