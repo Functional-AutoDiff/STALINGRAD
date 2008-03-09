@@ -6926,41 +6926,58 @@
 ;;             not terminate.
 
 (define (void? v)
- ;; needs work: To handle ups and not break structure sharing.
- (or (and (not (union? v))
-	  (not (abstract-real? v))
-	  (or (scalar-value? v) (every void? (aggregate-value-values v))))
-     (and (union? v)
-	  ;; The empty abstract value is not considered void. This is because
-	  ;; void parameter/arguments are eliminated and we cannot do that for
-	  ;; code that will issue an error. That is why the following is = and
-	  ;; not <=.
-	  (= (length (union-values v)) 1)
-	  (every void? (union-values v)))))
+ ;; This is written in CPS so as not to break structure sharing.
+ (let loop ((v v) (cs '()) (k (lambda (r? cs) r?)))
+  (cond ((memq v cs) (k #t cs))
+	((union? v)
+	 ;; The empty abstract value is not considered void. This is because
+	 ;; void parameter/arguments are eliminated and we cannot do that for
+	 ;; code that will issue an error. That is why the following is = and
+	 ;; not <=.
+	 (if (= (length (union-values v)) 1)
+	     (every-cps loop (union-values v) (cons v cs) k)
+	     (k #f cs)))
+	((abstract-real? v) (k #f cs))
+	((scalar-value? v) (k #t cs))
+	(else (every-cps loop (aggregate-value-values v) (cons v cs) k)))))
 
 (define (all-variables-in-abstract-value v)
- ;; needs work: To handle ups and not break structure sharing.
- (let loop ((v v) (vs '()))
+ ;; This is written in CPS so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n '()) (k (lambda (n vs) n)))
   (cond
+   ((memq v vs) (k n vs))
    ((union? v)
-    (map-reduce
-     union-variables '() (lambda (u) (loop u (cons v vs))) (union-values v)))
-   ((scalar-value? v) '())
+    (let inner ((us (union-values v)) (vs (cons v vs)) (n n))
+     (if (null? us)
+	 (k n vs)
+	 (outer (first us)
+		vs
+		n
+		(lambda (n vs) (inner (rest us) vs n))))))
+   ((scalar-value? v) (k n vs))
    (else
-    (union-variables
-     (map-reduce
-      union-variables '() (lambda (v) (loop v vs)) (aggregate-value-values v))
-     (cond ((nonrecursive-closure? v)
-	    (all-variables-in-expression
-	     (nonrecursive-closure-lambda-expression v)))
-	   ((recursive-closure? v)
-	    (union-variables
-	     (recursive-closure-procedure-variables v)
-	     (map-reduce union-variables
-			 '()
-			 all-variables-in-expression
-			 (recursive-closure-lambda-expressions v))))
-	   (else '())))))))
+    (let inner ((vs1 (aggregate-value-values v))
+		(vs (cons v vs))
+		(n (union-variables
+		    n
+		    (cond
+		     ((nonrecursive-closure? v)
+		      (all-variables-in-expression
+		       (nonrecursive-closure-lambda-expression v)))
+		     ((recursive-closure? v)
+		      (union-variables
+		       (recursive-closure-procedure-variables v)
+		       (map-reduce union-variables
+				   '()
+				   all-variables-in-expression
+				   (recursive-closure-lambda-expressions v))))
+		     (else '())))))
+     (if (null? vs1)
+	 (k n vs)
+	 (outer (first vs1)
+		vs
+		n
+		(lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (all-variables-in-expression e)
  (cond ((constant-expression? e)
@@ -7010,17 +7027,32 @@
   *expressions*))
 
 (define (all-unary-abstract-subvalues p? v)
- ;; needs work: To handle ups and not break structure sharing.
- (let loop ((v v))
-  (cons v
-	(cond
-	 ((union? v)
-	  (map-reduce union-abstract-values '() loop (union-values v)))
-	 ;; here I am: Need to return an empty abstract value for certain
-	 ;;            inputs to certain AD primitives.
-	 ((or (scalar-value? v) (not (p? v))) '())
-	 (else (map-reduce
-		union-abstract-values '() loop (aggregate-value-values v)))))))
+ ;; This is written in CPS so as not to break structure sharing.
+ (let outer ((v v) (vs '()) (n '()) (k (lambda (n vs) n)))
+  (cond ((memq v vs) (k n vs))
+	((union? v)
+	 (let inner ((us (union-values v))
+		     (vs (cons v vs))
+		     (n (adjoinp abstract-value=? v n)))
+	  (if (null? us)
+	      (k n vs)
+	      (outer (first us)
+		     vs
+		     n
+		     (lambda (n vs) (inner (rest us) vs n))))))
+	;; here I am: Need to return an empty abstract value for certain
+	;;            inputs to certain AD primitives.
+	((or (scalar-value? v) (not (p? v)))
+	 (k (adjoinp abstract-value=? v n) vs))
+	(else (let inner ((vs1 (aggregate-value-values v))
+			  (vs (cons v vs))
+			  (n (adjoinp abstract-value=? v n)))
+	       (if (null? vs1)
+		   (k n vs)
+		   (outer (first vs1)
+			  vs
+			  n
+			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (all-binary-abstract-subvalues p? f? f f-inverse v)
  ;; needs work: To handle ups and not break structure sharing.
@@ -7061,14 +7093,6 @@
 			      (aggregate-value-values v1)
 			      (aggregate-value-values v2))))))
     (else '())))))
-
-(define (component*? v1 v2)
- ;; needs work: To handle ups and not break structure sharing.
- (or (abstract-value=? v1 v2)
-     (and (not (union? v2))
-	  (not (scalar-value? v2))
-	  (memp component*? v1 (aggregate-value-values v2)))
-     (and (union? v2) (memp component*? v1 (union-values v2)))))
 
 (define (component? v1 v2)
  (or (and (not (union? v2))
