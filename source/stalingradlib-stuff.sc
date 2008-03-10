@@ -7055,44 +7055,91 @@
 			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
 (define (all-binary-abstract-subvalues p? f? f f-inverse v)
- ;; needs work: To handle ups and not break structure sharing.
- (let loop ((v v))
-  (cons
-   v
-   (cond
-    ((union? v) (map-reduce union-abstract-values '() loop (union-values v)))
-    ((vlad-pair? v)
-     (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-      (cond ((union? v1)
-	     (map-reduce union-abstract-values
-			 '()
-			 (lambda (u1) (loop (vlad-cons u1 v2)))
-			 (union-values v1)))
-	    ((union? v2)
-	     (map-reduce union-abstract-values
-			 '()
-			 (lambda (u2) (loop (vlad-cons v1 u2)))
-			 (union-values v2)))
-	    ;; The calls to f and f-inverse should never return an empty
-	    ;; abstract value. The call to f-inverse might issue "might"
-	    ;; warnings.
-	    ((and (f? v2) (union? (f-inverse v2)))
-	     (map-reduce union-abstract-values
-			 '()
-			 (lambda (u2) (loop (vlad-cons v1 (f u2))))
-			 (union-values (f-inverse v2))))
-	    ;; here I am: Need to return an empty abstract value for
-	    ;;            nonconforming inputs.
-	    ((or (scalar-value? v1) (not (p? v1))) '())
-	    ;; here I am: Need to do this only for conforming aggregates.
-	    ;;            Need to return an empty abstract value when for
-	    ;;            nonconforming aggregates.
-	    (else (map-reduce union-abstract-values
-			      '()
-			      (lambda (v1 v2) (loop (vlad-cons v1 v2)))
-			      (aggregate-value-values v1)
-			      (aggregate-value-values v2))))))
-    (else '())))))
+ ;; This is written in CPS so as not to break structure sharing.
+ (define (outer1 v vs cs n k)
+  (cond ((memq v vs) (k n vs cs))
+	((union? v)
+	 (let inner ((us (union-values v))
+		     (vs (cons v vs))
+		     (cs cs)
+		     (n (adjoinp abstract-value=? v n)))
+	  (if (null? us)
+	      (k n vs cs)
+	      (outer1 (first us)
+		      vs
+		      cs
+		      n
+		      (lambda (n vs cs) (inner (rest us) vs cs n))))))
+	((vlad-pair? v) (outer2 (vlad-car v) (vlad-cdr v) vs cs n k))
+	(else (k n vs cs))))
+ (define (outer2 v1 v2 vs cs n k)
+  (cond ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs)
+	 (k n vs cs))
+	((union? v1)
+	 (let inner ((us (union-values v1))
+		     (vs vs)
+		     (cs (cons (cons v1 v2) cs))
+		     (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
+	  (if (null? us)
+	      (k n vs cs)
+	      (outer2 (first us)
+		      v2
+		      vs
+		      cs
+		      n
+		      (lambda (n vs cs)
+		       ;; This is needed because of a bug in Scheme->C
+		       (let ((result (inner (rest us) vs cs n))) result))))))
+	((union? v2)
+	 (let inner ((us (union-values v2))
+		     (vs vs)
+		     (cs (cons (cons v1 v2) cs))
+		     (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
+	  (if (null? us)
+	      (k n vs cs)
+	      (outer2 v1
+		      (first us)
+		      vs
+		      cs
+		      n
+		      (lambda (n vs cs) (inner (rest us) vs cs n))))))
+	;; The calls to f and f-inverse should never return an empty abstract
+	;; value. The call to f-inverse might issue "might" warnings.
+	((and (f? v2) (union? (f-inverse v2)))
+	 (let inner ((us (union-values (f-inverse v2)))
+		     (vs vs)
+		     (cs (cons (cons v1 v2) cs))
+		     (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
+	  (if (null? us)
+	      (k n vs cs)
+	      (outer2 v1
+		      (f (first us))
+		      vs
+		      cs
+		      n
+		      (lambda (n vs cs) (inner (rest us) vs cs n))))))
+	;; here I am: Need to return an empty abstract value for nonconforming
+	;;            inputs.
+	((or (scalar-value? v1) (not (p? v1)))
+	 (k (adjoinp abstract-value=? (vlad-cons v1 v2) n) vs cs))
+	;; here I am: Need to do this only for conforming aggregates.
+	;;            Need to return an empty abstract value when for
+	;;            nonconforming aggregates.
+	(else (let inner ((vs1 (aggregate-value-values v1))
+			  (vs2 (aggregate-value-values v2))
+			  (vs vs)
+			  (cs (cons (cons v1 v2) cs))
+			  (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
+	       (if (null? vs1)
+		   (k n vs cs)
+		   (outer2 (first vs1)
+			   (first vs2)
+			   vs
+			   cs
+			   n
+			   (lambda (n vs cs)
+			    (inner (rest vs1) (rest vs2) vs cs n))))))))
+ (outer1 v '() '() '() (lambda (n vs cs) n)))
 
 (define (component? v1 v2)
  (or (and (not (union? v2))
@@ -7391,40 +7438,53 @@
  (unionp widener-instance=? widener-instances1 widener-instances2))
 
 (define (all-subwidener-instances v1 v2)
- ;; needs work: To handle ups and not break structure sharing.
- (cond ((or (void? v2) (abstract-value=? v1 v2)) '())
-       ;; Note that we have syntactic constraints that widen (union r1 r2) to
-       ;; R but not things like (union (perturbation r1) (perturbation r2)) to
-       ;; (perturbation R). Because of this, v1 might be a union even though
-       ;; v2 might not be.
-       ((union? v1)
-	(cons (make-widener-instance v1 v2)
-	      (map-reduce union-widener-instances
-			  '()
-			  (lambda (u1) (all-subwidener-instances u1 v2))
-			  (union-values v1))))
-       ;; If v2 is an empty abstract value then v1 will be the first case where
-       ;; (abstract-value=? v1 v2) will be taken and this case will never be.
-       ((union? v2)
-	(cons (make-widener-instance v1 v2)
-	      ;; The fact that such a u2 exists that is a member of v2 relies
-	      ;; on our imprecise notion of abstract-value subset. There may be
-	      ;; more than one. Any will do, it is only a matter of efficiency
-	      ;; to choose between the alternatives. I don't even know how to
-	      ;; define/determine which alternative would be most efficient.
-	      (all-subwidener-instances
-	       v1
-	       (find-if (lambda (u2) (abstract-value-subset? v1 u2))
-			(union-values v2)))))
-       ((scalar-value? v2) (list (make-widener-instance v1 v2)))
-       (else (cons (make-widener-instance v1 v2)
-		   ;; This will only be done on conforming structures since the
-		   ;; analysis is almost union free.
-		   (map-reduce union-widener-instances
-			       '()
-			       all-subwidener-instances
-			       (aggregate-value-values v1)
-			       (aggregate-value-values v2))))))
+ ;; This is written in CPS so as not to break structure sharing.
+ (let outer ((v1 v1) (v2 v2) (cs '()) (n '()) (k (lambda (n cs) n)))
+  (cond
+   ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) (k n cs))
+   ((or (void? v2) (abstract-value=? v1 v2)) (k n cs))
+   ;; Note that we have syntactic constraints that widen (union r1 r2) to R but
+   ;; not things like (union (perturbation r1) (perturbation r2)) to
+   ;; (perturbation R). Because of this, v1 might be a union even though v2
+   ;; might not be.
+   ((union? v1)
+    (let inner ((us (union-values v1))
+		(cs (cons (cons v1 v2) cs))
+		(n (adjoinp
+		    widener-instance=? (make-widener-instance v1 v2) n)))
+     (if (null? us)
+	 (k n cs)
+	 (outer (first us) v2 cs n (lambda (n cs) (inner (rest us) cs n))))))
+   ;; If v2 is an empty abstract value then v1 will be and the first case where
+   ;; (abstract-value=? v1 v2) will be taken and this case will never be.
+   ((union? v2)
+    (outer v1
+	   ;; The fact that such a u2 exists that is a member of v2 relies on
+	   ;; our imprecise notion of abstract-value subset. There may be more
+	   ;; than one. Any will do, it is only a matter of efficiency to
+	   ;; choose between the alternatives. I don't even know how to
+	   ;; define/determine which alternative would be most efficient.
+	   (find-if (lambda (u2) (abstract-value-subset? v1 u2))
+		    (union-values v2))
+	   cs
+	   (adjoinp widener-instance=? (make-widener-instance v1 v2) n)
+	   k))
+   ((scalar-value? v2)
+    (k (adjoinp widener-instance=? (make-widener-instance v1 v2) n) cs))
+   ;; This will only be done on conforming structures since the
+   ;; analysis is almost union free.
+   (else (let inner ((vs1 (aggregate-value-values v1))
+		     (vs2 (aggregate-value-values v2))
+		     (cs (cons (cons v1 v2) cs))
+		     (n (adjoinp
+			 widener-instance=? (make-widener-instance v1 v2) n)))
+	  (if (null? vs1)
+	      (k n cs)
+	      (outer (first vs1)
+		     (first vs2)
+		     cs
+		     n
+		     (lambda (n cs) (inner (rest vs1) (rest vs2) cs n)))))))))
 
 (define (all-unary-ad-widener-instances s p? f)
  (map-reduce
