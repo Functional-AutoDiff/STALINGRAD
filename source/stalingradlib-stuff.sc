@@ -8489,8 +8489,7 @@
        (c:panic v0 (format #f "Argument to ~a is invalid" code2) vs1-vs2))))))
   (all-primitives s)))
 
-;;; here I am: work in progress
-(define (generate-destructure p e v code xs vs)
+(define (generate-destructure p e v code xs vs1-vs2)
  ;; here I am: misplaced
  (cond
   ((constant-expression? p)
@@ -8541,7 +8540,7 @@
 	  v1
 	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
 	  xs
-	  vs))
+	  vs1-vs2))
 	(parameter-variables p)
 	(nonrecursive-closure-variables v)
 	(nonrecursive-closure-values v)))
@@ -8578,7 +8577,7 @@
 	  v1
 	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
 	  xs
-	  vs))
+	  vs1-vs2))
 	(parameter-variables p)
 	(recursive-closure-variables v)
 	(recursive-closure-values v)))
@@ -8595,25 +8594,23 @@
 				 (tagged-pair-car v)
 				 (c:slot v vs1-vs2 code "a")
 				 xs
-				 vs)
+				 vs1-vs2)
 	   (generate-destructure (cons-expression-cdr p)
 				 e
 				 (tagged-pair-cdr v)
 				 (c:slot v vs1-vs2 code "d")
 				 xs
-				 vs)))
+				 vs1-vs2)))
   (else (internal-error))))
 
-(define (generate-reference x xs2 xs xs1)
+(define (generate-reference v vs1-vs2 x xs2 xs xs1)
  ;; here I am: misplaced
  (cond ((memp variable=? x xs2) "c")
-       ;; here I am: work in progress
-       ((memp variable=? x xs) (c:slot "c" (c:variable-name x xs1)))
+       ((memp variable=? x xs) (c:slot v vs1-vs2 "c" (c:variable-name x xs1)))
        (else (c:variable-name x xs1))))
 
-;;; here I am: work in progress
 (define (generate-expression
-	 e vs xs xs2 bs xs1 vs1 function-instances widener-instances)
+	 e vs xs xs2 bs xs1 vs1-vs2 function-instances widener-instances)
  ;; here I am: misplaced
  ;; xs is the list of free variables of the environent in which e is evaluated.
  ;; xs2 is the list of procedure variables of the environent in which e is
@@ -8625,11 +8622,13 @@
     (assert (void? (constant-expression-value e)))
     (c:widen (constant-expression-value e) v '() widener-instances))
    ((variable-access-expression? e)
-    (generate-reference (variable-access-expression-variable e) xs2 xs xs1))
+    (generate-reference
+     v vs1-vs2 (variable-access-expression-variable e) xs2 xs xs1))
    ((lambda-expression? e)
     (c:call*
      (c:constructor-name v vs1-vs2)
-     (map (lambda (x v) (if (void? v) '() (generate-reference x xs2 xs xs1)))
+     (map (lambda (x1 v1)
+	   (if (void? v1) '() (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
 	  ;; This used to have to be (free-variables e) instead of
 	  ;; (closure-variables v) when we used alpha equivalence for
 	  ;; expression=?.
@@ -8643,7 +8642,7 @@
 	       (restrict-environment vs e application-argument))))
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
-	 (c:call ((primitive-procedure-generator v1) v2 vs1)
+	 (c:call ((primitive-procedure-generator v1) v2 vs1-vs2)
 		 (if (void? v2)
 		     '()
 		     (generate-expression
@@ -8653,7 +8652,7 @@
 		      xs2
 		      bs
 		      xs1
-		      vs1
+		      vs1-vs2
 		      function-instances
 		      widener-instances)))
 	 (c:call (c:function-name v1 v2 function-instances)
@@ -8666,7 +8665,7 @@
 		      xs2
 		      bs
 		      xs1
-		      vs1
+		      vs1-vs2
 		      function-instances
 		      widener-instances))
 		 (if (void? v2)
@@ -8678,7 +8677,7 @@
 		      xs2
 		      bs
 		      xs1
-		      vs1
+		      vs1-vs2
 		      function-instances
 		      widener-instances))))))
    ((letrec-expression? e)
@@ -8688,7 +8687,7 @@
 			 xs2
 			 bs
 			 xs1
-			 vs1
+			 vs1-vs2
 			 function-instances
 			 widener-instances))
    ((cons-expression? e)
@@ -8707,7 +8706,7 @@
 		  xs2
 		  bs
 		  xs1
-		  vs1
+		  vs1-vs2
 		  function-instances
 		  widener-instances))
 	     (if (void? v2)
@@ -8719,13 +8718,12 @@
 		  xs2
 		  bs
 		  xs1
-		  vs1
+		  vs1-vs2
 		  function-instances
 		  widener-instances)))))
    (else (internal-error)))))
 
-;;; here I am: work in progress
-(define (generate-letrec-bindings e vs xs xs2 xs1 vs1)
+(define (generate-letrec-bindings e vs xs xs2 xs1 vs1-vs2)
  ;; here I am: misplaced
  (let ((v (abstract-eval1 e vs)))
   (cond
@@ -8749,7 +8747,7 @@
 	      xs
 	      xs2
 	      xs1
-	      vs1))
+	      vs1-vs2))
 	 ;; abstraction
 	 (list (if (void? v1)
 		   '()
@@ -8759,7 +8757,7 @@
 		    xs
 		    xs2
 		    xs1
-		    vs1))
+		    vs1-vs2))
 	       (if (void? v2)
 		   '()
 		   (generate-letrec-bindings
@@ -8768,7 +8766,7 @@
 		    xs
 		    xs2
 		    xs1
-		    vs1))))))
+		    vs1-vs2))))))
    ((letrec-expression? e)
     ;; abstraction
     (list
@@ -8790,8 +8788,10 @@
 		  "="
 		  (c:call*
 		   (c:constructor-name v vs1-vs2)
-		   (map (lambda (x v)
-			 (if (void? v) '() (generate-reference x xs2 xs xs1)))
+		   (map (lambda (x1 v1)
+			 (if (void? v1)
+			     '()
+			     (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
 			;; This used to have to be
 			;; (letrec-expression-variables e) instead of
 			;; (closure-variables v) when we used alpha
@@ -8805,7 +8805,7 @@
 			       xs
 			       xs2
 			       xs1
-			       vs1)))
+			       vs1-vs2)))
    ((cons-expression? e)
     (let ((v1 (abstract-eval1 (cons-expression-car e)
 			      (restrict-environment vs e cons-expression-car)))
@@ -8821,7 +8821,7 @@
 		xs
 		xs2
 		xs1
-		vs1))
+		vs1-vs2))
 	   (if (void? v2)
 	       '()
 	       (generate-letrec-bindings
@@ -8830,12 +8830,15 @@
 		xs
 		xs2
 		xs1
-		vs1)))))
+		vs1-vs2)))))
    (else (internal-error)))))
 
-;;; here I am: work in progress
-(define (generate-if-and-function-definitions
-	 bs xs vs function-instances widener-instances instances1-instances2)
+(define (generate-if-and-function-definitions bs
+					      xs
+					      vs1-vs2
+					      function-instances
+					      widener-instances
+					      instances1-instances2)
  ;; abstraction
  (map
   (lambda (instance)
@@ -8923,7 +8926,7 @@
        (list
 	;; here I am
 	(generate-destructure
-	 (closure-parameter v1) (closure-body v1) v2 "x" xs vs)
+	 (closure-parameter v1) (closure-body v1) v2 "x" xs vs1-vs2)
 	(generate-letrec-bindings
 	 (closure-body v1)
 	 ;; here I am
@@ -8936,7 +8939,7 @@
 		(vector->list (recursive-closure-procedure-variables v1)))
 	       (else (internal-error)))
 	 xs
-	 vs)
+	 vs1-vs2)
 	(c:return
 	 (generate-expression
 	  (closure-body v1)
@@ -8951,7 +8954,7 @@
 		(else (internal-error)))
 	  bs
 	  xs
-	  vs
+	  vs1-vs2
 	  function-instances
 	  widener-instances))))))
     (else (internal-error))))
@@ -9811,7 +9814,7 @@
    (generate-*j-definitions xs vs1-vs2 widener-instances)
    (generate-*j-inverse-definitions xs vs1-vs2 widener-instances)
    (generate-if-and-function-definitions
-    bs xs vs function-instances widener-instances instances1-instances2)
+    bs xs vs1-vs2 function-instances widener-instances instances1-instances2)
    (c:function-definition
     #f #f #f
     "int"
@@ -9824,7 +9827,7 @@
       (free-variables e)
       '()
       xs
-      vs)
+      vs1-vs2)
      (if (void? (abstract-eval1
 		 e
 		 (environment-binding-values
@@ -9839,7 +9842,7 @@
 			       '()
 			       bs
 			       xs
-			       vs
+			       vs1-vs2
 			       function-instances
 			       widener-instances)
 	  ;; abstraction
