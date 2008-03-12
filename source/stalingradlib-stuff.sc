@@ -6920,6 +6920,9 @@
 ;;; starj_inverse#
 ;;; main
 
+;;; We box abstract values, not slots of aggregates, not arguments, not return
+;;; values, not local variables, not type tags, and not unions.
+
 ;;; here I am: In all or almost all of the cases where we eliminate void
 ;;;            parameters or arguments or functions that return void results
 ;;;            we unsoundly removes code that might do I/O, signal an error, or
@@ -7867,6 +7870,13 @@
 
 (define (c:parameter code1 code2) (list code1 " " code2))
 
+(define (c:specifier-parameter v vs1-vs2 code)
+ (if (void? v)
+     '()
+     (c:parameter
+      (c:specifier v vs1-vs2)
+      (if (memq v (first vs1-vs2)) code (c:pointer-declarator code)))))
+
 (define (c:declaration code1 code2) (list code1 " " code2 ";"))
 
 (define (c:specifier-declaration v vs1-vs2 code)
@@ -7887,25 +7897,26 @@
 	 (cond ((void? v) '())
 	       ((union? v)
 		(assert (memp abstract-value=? v vs))
-		;; abstraction (list
-		(if (every void? (union-values v))
-		    '()
-		    ;; abstraction
-		    (list "union"
-			  " "
-			  ;; abstraction
-			  (list "u" (positionp abstract-value=? v vs))
-			  ";"
-			  #\newline))
 		;; abstraction
-		(list (c:specifier v vs1-vs2) ";" #\newline)))
-	 ((abstract-real? v) '())
-	 (else
-	  ;; abstraction
-	  (list
-	   ;; abstraction
-	   (list (c:specifier v vs1-vs2) ";" #\newline))))
-	vs2)
+		(list
+		 (if (every void? (union-values v))
+		     '()
+		     ;; abstraction
+		     (list "union"
+			   " "
+			   ;; abstraction
+			   (list "u" (positionp abstract-value=? v vs))
+			   ";"
+			   #\newline))
+		 ;; abstraction
+		 (list (c:specifier v vs1-vs2) ";" #\newline)))
+	       ((abstract-real? v) '())
+	       (else
+		;; abstraction
+		(list
+		 ;; abstraction
+		 (list (c:specifier v vs1-vs2) ";" #\newline)))))
+	(second vs1-vs2))
    ;; abstraction
    (map (lambda (v)
 	 (cond ((void? v) '())
@@ -8127,25 +8138,20 @@
 	 ;; By fortuitous confluence, this will not generate constructor
 	 ;; declarations for the empty abstract value.
 	 ;; abstraction
-	 (map
-	  (lambda (u)
-	   (c:specifier-function-declaration
-	    #t #t #f v vs1-vs2
-	    (c:function-declarator
-	     (c:unioner-name u v vs1-vs2)
-	     (if (void? u) '() (c:parameter (c:specifier u vs1-vs2) "x")))))
-	  (union-values v)))
+	 (map (lambda (u)
+	       (c:specifier-function-declaration
+		#t #t #f v vs1-vs2
+		(c:function-declarator (c:unioner-name u v vs1-vs2)
+				       (c:specifier-parameter u vs1-vs2 "x"))))
+	      (union-values v)))
 	((abstract-real? v) '())
-	(else
-	 (c:specifier-function-declaration
-	  #t #t #f v vs1-vs2
-	  (c:function-declarator*
-	   (c:constructor-name v vs1-vs2)
-	   (map
-	    (lambda (code v)
-	     (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) code)))
-	    (generate-slot-names v xs vs1-vs2)
-	    (aggregate-value-values v)))))))
+	(else (c:specifier-function-declaration
+	       #t #t #f v vs1-vs2
+	       (c:function-declarator*
+		(c:constructor-name v vs1-vs2)
+		(map (lambda (code v) (c:specifier-parameter v vs1-vs2 code))
+		     (generate-slot-names v xs vs1-vs2)
+		     (aggregate-value-values v)))))))
       (append (first vs1-vs2) (second vs1-vs2))))
 
 (define (generate-widener-declarations vs1-vs2 widener-instances)
@@ -8155,22 +8161,18 @@
 	     (v2 (widener-instance-v2 widener-instance)))
 	(c:specifier-function-declaration
 	 #t #t #f v2 vs1-vs2
-	 (c:function-declarator
-	  (c:widener-name v1 v2 widener-instances)
-	  (if (void? v1) '() (c:parameter (c:specifier v1 vs1-vs2) "x"))))))
+	 (c:function-declarator (c:widener-name v1 v2 widener-instances)
+				(c:specifier-parameter v1 vs1-vs2 "x")))))
       widener-instances))
 
 (define (generate-panic-declarations vs1-vs2)
  ;; abstraction
  (map (lambda (v)
-       (if (void? v)
-	   '()
-	   (c:specifier-function-declaration
-	    #t #t #t v vs1-vs2
-	    (c:function-declarator
-	     (c:builtin-name "panic" v vs1-vs2)
-	     (c:parameter
-	      "char" (c:pointer-declarator "x"))))))
+       (c:specifier-function-declaration
+	#t #t #t v vs1-vs2
+	(c:function-declarator
+	 (c:builtin-name "panic" v vs1-vs2)
+	 (c:parameter "char" (c:pointer-declarator "x")))))
       (append (first vs1-vs2) (second vs1-vs2))))
 
 (define (generate-real*real-primitive-declarations s v0 code vs1-vs2)
@@ -8178,9 +8180,8 @@
  (map (lambda (v)
        (c:specifier-function-declaration
 	#t #t #f v0 vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))))
       (all-primitives s)))
 
 (define (generate-real-primitive-declarations s v0 code vs1-vs2)
@@ -8188,9 +8189,8 @@
  (map (lambda (v)
        (c:specifier-function-declaration
 	#t #t #f v0 vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))))
       (all-primitives s)))
 
 (define (generate-unary-ad-declarations s p? f code vs1-vs2)
@@ -8200,9 +8200,8 @@
 	;; The call to f might issue "might" warnings and might return an empty
 	;; abstract value.
 	#t #t #f (f v) vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))))
       (all-unary-ad s p?)))
 
 (define (generate-binary-ad-declarations
@@ -8213,9 +8212,8 @@
 	;; The call to g-value might issue "might" warnings and might return an
 	;; empty abstract value.
 	#t #t #f (g-value v) vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))))
       (all-binary-ad s p? f? f f-inverse g-value)))
 
 (define (generate-if-and-function-declarations
@@ -8243,9 +8241,8 @@
 	      (abstract-apply v3 (vlad-empty-list)))
 	     (else (internal-error)))
        vs1-vs2
-       (c:function-declarator
-	(c:builtin-name "if_procedure" v vs1-vs2)
-	(if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x"))))))
+       (c:function-declarator (c:builtin-name "if_procedure" v vs1-vs2)
+			      (c:specifier-parameter v vs1-vs2 "x")))))
     ((function-instance? instance)
      (let ((v1 (function-instance-v1 instance))
 	   (v2 (function-instance-v2 instance)))
@@ -8255,75 +8252,74 @@
        #f
        (abstract-apply v1 v2)
        vs1-vs2
-       (c:function-declarator
-	(c:function-name v1 v2 function-instances)
-	(if (void? v1) '() (c:parameter (c:specifier v1 vs1-vs2) "c"))
-	(if (void? v2) '() (c:parameter (c:specifier v2 vs1-vs2) "x"))))))
+       (c:function-declarator (c:function-name v1 v2 function-instances)
+			      (c:specifier-parameter v1 vs1-vs2 "c")
+			      (c:specifier-parameter v2 vs1-vs2 "x")))))
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
 ;;; Definition generators
 
-;;; here I am: work in progress
-(define (generate-constructor-definitions xs vs)
- ;; abstraction
- (map (lambda (v)
-       (cond
-	((void? v) '())
-	((union? v)
-	 ;; By fortuitous confluence, this will not generate constructor
-	 ;; definitions for the empty abstract value.
-	 ;; abstraction
-	 (map (lambda (u)
-	       (assert (and (memp abstract-value=? u (union-values v))
-			    (memp abstract-value=? u vs)))
-	       (c:specifier-function-definition
-		#t #t #f v vs1-vs2
-		(c:function-declarator
-		 (c:unioner-name u v vs1-vs2)
-		 (if (void? u) '() (c:parameter (c:specifier u vs1-vs2) "x")))
-		;; abstraction
-		(list
-		 (c:specifier-declaration v vs1-vs2 "r")
-		 (c:assignment
-		  ;; The type tag is always unboxed.
-		  (c:tag v vs1-vs2 "r")
-		  ;; This uses per-union tags here instead of per-program tags.
-		  (positionp abstract-value=? u (union-values v)))
-		 (if (void? u)
-		     '()
-		     (c:assignment
-		      (c:union v
-			       vs1-vs2
-			       "r"
-			       ;; abstraction
-			       (list "s" (positionp abstract-value=? u vs)))
-		      "x"))
-		 (c:return "r"))))
-	      (union-values v)))
-	((abstract-real? v) '())
-	(else
-	 (c:specifier-function-definition
-	  #t #t #f v vs1-vs2
-	  (c:function-declarator*
-	   (c:constructor-name v vs1-vs2)
-	   (map (lambda (code v)
-		 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) code)))
-		(generate-slot-names v xs vs1-vs2)
-		(aggregate-value-values v)))
-	  ;; abstraction
-	  (list (c:specifier-declaration v vs1-vs2 "r")
-		(map (lambda (code v)
-		      (if (void? v)
-			  '()
-			  (c:assignment (c:slot v vs1-vs2 "r" code) code)))
-		     (generate-slot-names v xs vs1-vs2)
-		     (aggregate-value-values v))
-		(c:return "r"))))))
-      vs))
+(define (generate-constructor-definitions xs vs1-vs2)
+ (let ((vs (append (first vs1-vs2) (second vs1-vs2))))
+  ;; abstraction
+  (map
+   (lambda (v)
+    (cond
+     ((void? v) '())
+     ((union? v)
+      ;; By fortuitous confluence, this will not generate constructor
+      ;; definitions for the empty abstract value.
+      ;; abstraction
+      (map (lambda (u)
+	    (assert (and (memp abstract-value=? u (union-values v))
+			 (memp abstract-value=? u vs)))
+	    (c:specifier-function-definition
+	     #t #t #f v vs1-vs2
+	     (c:function-declarator (c:unioner-name u v vs1-vs2)
+				    (c:specifier-parameter u vs1-vs2 "x"))
+	     ;; abstraction
+	     (list
+	      (c:specifier-declaration v vs1-vs2 "r")
+	      ;; here I am: work in progress
+	      (c:assignment
+	       ;; The type tag is always unboxed.
+	       (c:tag v vs1-vs2 "r")
+	       ;; This uses per-union tags here instead of per-program tags.
+	       (positionp abstract-value=? u (union-values v)))
+	      (if (void? u)
+		  '()
+		  (c:assignment
+		   (c:union v
+			    vs1-vs2
+			    "r"
+			    ;; abstraction
+			    (list "s" (positionp abstract-value=? u vs)))
+		   "x"))
+	      (c:return "r"))))
+	   (union-values v)))
+     ((abstract-real? v) '())
+     (else
+      (c:specifier-function-definition
+       #t #t #f v vs1-vs2
+       (c:function-declarator*
+	(c:constructor-name v vs1-vs2)
+	(map (lambda (code v) (c:specifier-parameter v vs1-vs2 code))
+	     (generate-slot-names v xs vs1-vs2)
+	     (aggregate-value-values v)))
+       ;; abstraction
+       (list (c:specifier-declaration v vs1-vs2 "r")
+	     ;; here I am: work in progress
+	     (map (lambda (code v)
+		   (if (void? v)
+		       '()
+		       (c:assignment (c:slot v vs1-vs2 "r" code) code)))
+		  (generate-slot-names v xs vs1-vs2)
+		  (aggregate-value-values v))
+	     (c:return "r"))))))
+   vs)))
 
-;;; here I am: work in progress
-(define (generate-widener-definitions xs vs widener-instances)
+(define (generate-widener-definitions xs vs1-vs2 widener-instances)
  ;; abstraction
  (map
   (lambda (widener-instance)
@@ -8331,9 +8327,8 @@
 	 (v2 (widener-instance-v2 widener-instance)))
     (c:specifier-function-definition
      #t #t #f v2 vs1-vs2
-     (c:function-declarator
-      (c:widener-name v1 v2 widener-instances)
-      (if (void? v1) '() (c:parameter (c:specifier v1 vs1-vs2) "x")))
+     (c:function-declarator (c:widener-name v1 v2 widener-instances)
+			    (c:specifier-parameter v1 vs1-vs2 "x"))
      (if (empty-abstract-value? v1)
 	 ;; abstraction
 	 (list (c:specifier-declaration v2 vs1-vs2 "r") (c:return "r"))
@@ -8382,9 +8377,8 @@
  (map (lambda (v)
        (c:specifier-function-definition
 	#t #t #t v vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name "panic" v vs1-vs2)
-	 (c:parameter "char" (c:pointer-declarator "x")))
+	(c:function-declarator (c:builtin-name "panic" v vs1-vs2)
+			       (c:parameter "char" (c:pointer-declarator "x")))
 	;; abstraction
 	"fputs(x,stderr);fputc('\\n',stderr);exit(EXIT_FAILURE);"))
       (append (first vs1-vs2) (second vs1-vs2))))
@@ -8396,9 +8390,8 @@
   (lambda (v)
    (c:specifier-function-definition
     #t #t #f v0 vs1-vs2
-    (c:function-declarator
-     (c:builtin-name code1 v vs1-vs2)
-     (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))
+    (c:function-declarator (c:builtin-name code1 v vs1-vs2)
+			   (c:specifier-parameter v vs1-vs2 "x"))
     (c:return
      (cond
       ((union? v)
@@ -8469,9 +8462,8 @@
   (lambda (v)
    (c:specifier-function-definition
     #t #t #f v0 vs1-vs2
-    (c:function-declarator
-     (c:builtin-name code1 v vs1-vs2)
-     (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))
+    (c:function-declarator (c:builtin-name code1 v vs1-vs2)
+			   (c:specifier-parameter v vs1-vs2 "x"))
     (c:return
      (cond
       ((union? v)
@@ -8517,6 +8509,7 @@
 		      (variable-access-expression-variable p)
 		      (free-variables e))))
        '()
+       ;; here I am: work in progress
        ;; abstraction
        (list (c:specifier v vs1-vs2)
 	     " "
@@ -8781,6 +8774,7 @@
 		  variable=? x (letrec-expression-procedure-variables e)))))
 	(if (void? v)
 	    '()
+	    ;; here I am: work in progress
 	    ;; abstraction
 	    (list (c:specifier v vs1-vs2)
 		  " "
@@ -8862,9 +8856,8 @@
 		 (else (internal-error)))))
       (c:specifier-function-definition
        #t #t #f v5 vs1-vs2
-       (c:function-declarator
-	(c:builtin-name "if_procedure" v vs1-vs2)
-	(if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))
+       (c:function-declarator (c:builtin-name "if_procedure" v vs1-vs2)
+			      (c:specifier-parameter v vs1-vs2 "x"))
        (c:return
 	(cond
 	 ((and
@@ -8918,10 +8911,9 @@
        #f
        (abstract-apply v1 v2)
        vs1-vs2
-       (c:function-declarator
-	(c:function-name v1 v2 function-instances)
-	(if (void? v1) '() (c:parameter (c:specifier v1 vs1-vs2) "c"))
-	(if (void? v2) '() (c:parameter (c:specifier v2 vs1-vs2) "x")))
+       (c:function-declarator (c:function-name v1 v2 function-instances)
+			      (c:specifier-parameter v1 vs1-vs2 "c")
+			      (c:specifier-parameter v2 vs1-vs2 "x"))
        ;; abstraction
        (list
 	;; here I am
@@ -8967,9 +8959,8 @@
 	;; The call to f might issue "might" warnings and might return an empty
 	;; abstract value.
 	#t #t #f (f v) vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))
 	(c:return (generate v))))
       (all-unary-ad s p?)))
 
@@ -8981,9 +8972,8 @@
 	;; The call to g-value might issue "might" warnings and might return an
 	;; empty abstract value.
 	#t #t #f (g-value v) vs1-vs2
-	(c:function-declarator
-	 (c:builtin-name code v vs1-vs2)
-	 (if (void? v) '() (c:parameter (c:specifier v vs1-vs2) "x")))
+	(c:function-declarator (c:builtin-name code v vs1-vs2)
+			       (c:specifier-parameter v vs1-vs2 "x"))
 	(c:return (generate v))))
       (all-binary-ad s p? f? f f-inverse g-value)))
 
@@ -9266,6 +9256,8 @@
 		       (if (void? u2)
 			   '()
 			   (c:union
+			    (unperturb v2)
+			    vs1-vs2
 			    (c:slot v2 vs1-vs2 (c:slot v vs1-vs2 "x" "d") "p")
 			    code2)))))))
 	    widener-instances))
@@ -9491,20 +9483,13 @@
 	;; happen.
 	(internal-error))
        ((and (vlad-real? v1) (vlad-real? v2))
-	(if (void? v1)
-	    (if (void? v2)
-		;; In this case, the result will be void so this case should
-		;; never happen.
-		(internal-error)
-		;; This assumes that Scheme inexact numbers are printed as C
-		;; doubles.
-		(c:binary (exact->inexact v1) "+" (c:slot v vs1-vs2 "x" "d")))
-	    (if (void? v2)
-		;; This assumes that Scheme inexact numbers are printed as C
-		;; doubles.
-		(c:binary (c:slot v vs1-vs2 "x" "a") "+" (exact->inexact v2))
-		(c:binary
-		 (c:slot v vs1-vs2 "x" "a") "+" (c:slot v vs1-vs2 "x" "d")))))
+	(assert (not (and (void? v1) (void? v2))))
+	(c:binary
+	 ;; This assumes that Scheme inexact numbers are printed as C doubles.
+	 (if (void? v1) (exact->inexact v1) (c:slot v vs1-vs2 "x" "a"))
+	 "+"
+	 ;; This assumes that Scheme inexact numbers are printed as C doubles.
+	 (if (void? v2) (exact->inexact v2) (c:slot v vs1-vs2 "x" "d"))))
        ((or (and (nonrecursive-closure? v1)
 		 (nonrecursive-closure? v2)
 		 (dereferenced-nonrecursive-closure-match? v1 v2))
@@ -9678,7 +9663,7 @@
    (c:specifier-function-declaration
     #t #t #f (abstract-real) vs1-vs2
     (c:function-declarator
-     "write_real" (c:parameter (c:specifier (abstract-real) vs1-vs2) "x")))
+     "write_real" (c:specifier-parameter (abstract-real) vs1-vs2 "x")))
    (generate-real-primitive-declarations
     'write (abstract-real) "write" vs1-vs2)
    (generate-unary-ad-declarations 'zero (lambda (v) #t) zero "zero" vs1-vs2)
@@ -9740,8 +9725,8 @@
    (generate-if-and-function-declarations
     xs vs1-vs2 function-instances instances1-instances2)
    (c:function-declaration #f #f #f "int" (c:function-declarator "main"))
-   (generate-constructor-definitions xs vs)
-   (generate-widener-definitions xs vs widener-instances)
+   (generate-constructor-definitions xs vs1-vs2)
+   (generate-widener-definitions xs vs1-vs2 widener-instances)
    (generate-panic-definitions vs1-vs2)
    (generate-real*real-primitive-definitions
     '+ (abstract-real) "add" "+" xs vs1-vs2
@@ -9793,7 +9778,7 @@
    (c:specifier-function-definition
     #t #t #f (abstract-real) vs1-vs2
     (c:function-declarator
-     "write_real" (c:parameter (c:specifier (abstract-real) vs1-vs2) "x"))
+     "write_real" (c:specifier-parameter (abstract-real) vs1-vs2 "x"))
     ;; abstraction
     (list
      ;; abstraction
