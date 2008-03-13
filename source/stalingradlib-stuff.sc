@@ -4758,7 +4758,6 @@
 		     (fill-tagged-pair! u v-car v-cdr)
 		     (k u cs)))))))
      (else
-      ;; debugging
       (when #f
        (format #t "debugging~%")
        (pp (externalize-expression
@@ -7177,7 +7176,7 @@
 	      (append xs c)
 	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
 
-(define (feedback-cached-topological-sort p l)
+(define (feedback-cached-topological-sort p p1 l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
  (let ((graph (map-reduce append
 			  '()
@@ -7195,11 +7194,7 @@
        (list (reverse c1) c2)
        (let ((xs (set-differenceq l (map second graph))))
 	(if (null? xs)
-	    (let ((x (find-if
-		      (lambda (x)
-		       (and (function-instance? x)
-			    (recursive-closure? (function-instance-v1 x))))
-		      l)))
+	    (let ((x (p1 l)))
 	     (assert x)
 	     (loop (removeq x l)
 		   c1
@@ -7214,78 +7209,91 @@
 	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
 
 (define (all-unary-ad s p?)
- ;; This topological sort is needed so that all INLINE definitions come before
- ;; their uses as required by gcc.
- (cached-topological-sort
-  component?
+ ;; This is called redundantly thrice, once in all-unary-ad-widener-instances,
+ ;; once to generate declarations, and once to generate definitions.
+ (map-reduce
+  union-abstract-values
+  '()
+  (lambda (v) (all-unary-abstract-subvalues p? v))
   (map-reduce
    union-abstract-values
    '()
-   (lambda (v) (all-unary-abstract-subvalues p? v))
-   (map-reduce
-    union-abstract-values
-    '()
-    (lambda (e)
-     (if (application? e)
-	 (remove-duplicatesp
-	  abstract-value=?
-	  (removeq #f
-		   (map (lambda (b)
-			 (let ((v1 (abstract-eval1
-				    (application-callee e)
-				    (restrict-environment
-				     (environment-binding-values b)
-				     e
-				     application-callee))))
-			  (if (and (primitive-procedure? v1)
-				   (eq? (primitive-procedure-name v1) s))
-			      (abstract-eval1 (application-argument e)
-					      (restrict-environment
-					       (environment-binding-values b)
-					       e
-					       application-argument))
-			      #f)))
-			(expression-environment-bindings e))))
-	 '()))
-    *expressions*))))
+   (lambda (e)
+    (if (application? e)
+	(remove-duplicatesp
+	 abstract-value=?
+	 (removeq #f
+		  (map (lambda (b)
+			(let ((v1 (abstract-eval1
+				   (application-callee e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    e
+				    application-callee))))
+			 (if (and (primitive-procedure? v1)
+				  (eq? (primitive-procedure-name v1) s))
+			     (abstract-eval1 (application-argument e)
+					     (restrict-environment
+					      (environment-binding-values b)
+					      e
+					      application-argument))
+			     #f)))
+		       (expression-environment-bindings e))))
+	'()))
+   *expressions*)))
 
-(define (all-binary-ad s p? f? f f-inverse g-value)
+(define (all-sorted-unary-ad s p?)
+ ;; This is called redundantly twice, once to generate declarations and once to
+ ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
- (cached-topological-sort
+ (feedback-cached-topological-sort component? first (all-unary-ad s p?)))
+
+(define (all-binary-ad s p? f? f f-inverse g-value)
+ ;; This is called redundantly thrice, once in all-binary-ad-widener-instances,
+ ;; once to generate declarations, and once to generate definitions.
+ (map-reduce
+  union-abstract-values
+  '()
+  (lambda (v) (all-binary-abstract-subvalues p? f? f f-inverse v))
+  (map-reduce
+   union-abstract-values
+   '()
+   (lambda (e)
+    (if (application? e)
+	(remove-duplicatesp
+	 abstract-value=?
+	 (removeq #f
+		  (map (lambda (b)
+			(let ((v1 (abstract-eval1
+				   (application-callee e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    e
+				    application-callee))))
+			 (if (and (primitive-procedure? v1)
+				  (eq? (primitive-procedure-name v1) s))
+			     (abstract-eval1 (application-argument e)
+					     (restrict-environment
+					      (environment-binding-values b)
+					      e
+					      application-argument))
+			     #f)))
+		       (expression-environment-bindings e))))
+	'()))
+   *expressions*)))
+
+(define (all-sorted-binary-ad s p? f? f f-inverse g-value)
+ ;; This is called redundantly twice, once to generate declarations and once to
+ ;; generate definitions.
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (feedback-cached-topological-sort
   ;; The calls to g-value might issue "might" warnings.
   ;; here I am: g-value might return an empty abstract value.
   (lambda (v1 v2) (component? (g-value v1) (g-value v2)))
-  (map-reduce
-   union-abstract-values
-   '()
-   (lambda (v) (all-binary-abstract-subvalues p? f? f f-inverse v))
-   (map-reduce
-    union-abstract-values
-    '()
-    (lambda (e)
-     (if (application? e)
-	 (remove-duplicatesp
-	  abstract-value=?
-	  (removeq #f
-		   (map (lambda (b)
-			 (let ((v1 (abstract-eval1
-				    (application-callee e)
-				    (restrict-environment
-				     (environment-binding-values b)
-				     e
-				     application-callee))))
-			  (if (and (primitive-procedure? v1)
-				   (eq? (primitive-procedure-name v1) s))
-			      (abstract-eval1 (application-argument e)
-					      (restrict-environment
-					       (environment-binding-values b)
-					       e
-					       application-argument))
-			      #f)))
-			(expression-environment-bindings e))))
-	 '()))
-    *expressions*))))
+  first
+  (all-binary-ad s p? f? f f-inverse g-value)))
 
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  (map-reduce union-abstract-values
@@ -7308,53 +7316,60 @@
 (define (all-nested-abstract-values)
  (feedback-cached-topological-sort
   component?
+  first
   (adjoinp
    abstract-value=?
-   ;; We are lazy and always generate this. This is only needed if (a
-   ;; potentially internal recursive call to) an AD primitive can give a
-   ;; run-time error. All non-AD primitives that issue errors have C return
-   ;; types corresponding to (abstract-real) or (abstract-boolean). And
-   ;; currently we don't handle programs that contain expressions with empty
-   ;; abstract values. Such can result from non-AD primitives that return
-   ;; empty abstract values (even though the C code generated for those
-   ;; primitives has non-empty return types). And from AD primitives that
-   ;; return empty abstract values. And from destructuring errors. And from
-   ;; invalid calls. And from calls that can never return (either because they
-   ;; yield errors or involve infinite recursion). Flow analysis will yield an
-   ;; empy abstract value in all of the above cases except for an internal
-   ;; recursive call to an AD primitive. all-binary-abstract-subvalues doesn't
-   ;; currently handle the cases requiring returning of empty abstract values.
-   ;; binary-ad-argument-and-result-abstract-values does handle this case.
-   ;; And currently, indicated by the comment below, unary AD primitives are
-   ;; handled by a mechanism that is not aware of the particular error
-   ;; characteristics of each primitive. And neither is
-   ;; all-unary-abstract-subvalues. So for now we punt and always generate the
-   ;; empty abstract value.
-   (empty-abstract-value)
-   (map-reduce
-    union-abstract-values
-    '()
-    (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
-    ;; This assumes that the abstract values of the arguments of all internal
-    ;; recursive calls to AD primitives are generated through
-    ;; all-unary-abstract-subvalues.
-    (union-abstract-values
+   ;; We are lazy and always generate this. This is needed to generate
+   ;; real_real and write_real when the program otherwise has no abstract
+   ;; reals.
+   (abstract-real)
+   (adjoinp
+    abstract-value=?
+    ;; We are lazy and always generate this. This is only needed if (a
+    ;; potentially internal recursive call to) an AD primitive can give a
+    ;; run-time error. All non-AD primitives that issue errors have C return
+    ;; types corresponding to (abstract-real) or (abstract-boolean). And
+    ;; currently we don't handle programs that contain expressions with empty
+    ;; abstract values. Such can result from non-AD primitives that return
+    ;; empty abstract values (even though the C code generated for those
+    ;; primitives has non-empty return types). And from AD primitives that
+    ;; return empty abstract values. And from destructuring errors. And from
+    ;; invalid calls. And from calls that can never return (either because they
+    ;; yield errors or involve infinite recursion). Flow analysis will yield an
+    ;; empy abstract value in all of the above cases except for an internal
+    ;; recursive call to an AD primitive. all-binary-abstract-subvalues doesn't
+    ;; currently handle the cases requiring returning of empty abstract values.
+    ;; binary-ad-argument-and-result-abstract-values does handle this case.
+    ;; And currently, indicated by the comment below, unary AD primitives are
+    ;; handled by a mechanism that is not aware of the particular error
+    ;; characteristics of each primitive. And neither is
+    ;; all-unary-abstract-subvalues. So for now we punt and always generate the
+    ;; empty abstract value.
+    (empty-abstract-value)
+    (map-reduce
+     union-abstract-values
+     '()
+     (lambda (v) (all-unary-abstract-subvalues (lambda (v) #t) v))
+     ;; This assumes that the abstract values of the arguments of all internal
+     ;; recursive calls to AD primitives are generated through
+     ;; all-unary-abstract-subvalues.
      (union-abstract-values
-      (binary-ad-argument-and-result-abstract-values
-       bundle-value
-       (all-binary-ad
-	'bundle
-	(lambda (v)
-	 (and (not (perturbation-tagged-value? v))
-	      (not (bundle? v))
-	      (not (sensitivity-tagged-value? v))
-	      (not (reverse-tagged-value? v))))
-	perturbation-tagged-value? perturb unperturb bundle-value))
-      (binary-ad-argument-and-result-abstract-values
-       plus-value
-       (all-binary-ad
-	'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value)))
-     (all-abstract-values))))))
+      (union-abstract-values
+       (binary-ad-argument-and-result-abstract-values
+	bundle-value
+	(all-binary-ad
+	 'bundle
+	 (lambda (v)
+	  (and (not (perturbation-tagged-value? v))
+	       (not (bundle? v))
+	       (not (sensitivity-tagged-value? v))
+	       (not (reverse-tagged-value? v))))
+	 perturbation-tagged-value? perturb unperturb bundle-value))
+       (binary-ad-argument-and-result-abstract-values
+	plus-value
+	(all-binary-ad
+	 'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value)))
+      (all-abstract-values)))))))
 
 (define (function-instance=? function-instance1 function-instance2)
  (and (abstract-value=? (function-instance-v1 function-instance1)
@@ -7444,7 +7459,7 @@
  (let outer ((v1 v1) (v2 v2) (cs '()) (n '()) (k (lambda (n cs) n)))
   (cond
    ((some (lambda (c) (and (eq? (car c) v1) (eq? (cdr c) v2))) cs) (k n cs))
-   ((or (void? v2) (abstract-value=? v1 v2)) (k n cs))
+   ((abstract-value=? v1 v2) (k n cs))
    ;; Note that we have syntactic constraints that widen (union r1 r2) to R but
    ;; not things like (union (perturbation r1) (perturbation r2)) to
    ;; (perturbation R). Because of this, v1 might be a union even though v2
@@ -7820,10 +7835,19 @@
 				(function-instance-v2 instance2))))
 		     (assert (= (length vss) 1))
 		     (first vss))))))
+  (lambda (l)
+   (find-if (lambda (x)
+	     (and (function-instance? x)
+		  (recursive-closure? (function-instance-v1 x))))
+	    l))
   (append (map make-if-instance (all-primitives 'if-procedure))
 	  function-instances)))
 
 ;;; Primitive C syntax generators
+
+(define (c:sizeof code) (list "sizeof" " " code))
+
+(define (c:pointer-cast code1 code2) (list "(" code1 "*" " " ")" code2))
 
 (define (c:binary code1 code2 code3) (list code1 code2 code3))
 
@@ -7871,20 +7895,43 @@
 (define (c:parameter code1 code2) (list code1 " " code2))
 
 (define (c:specifier-parameter v vs1-vs2 code)
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
  (if (void? v)
      '()
-     (c:parameter
-      (c:specifier v vs1-vs2)
-      (if (memq v (first vs1-vs2)) code (c:pointer-declarator code)))))
+     (c:parameter (c:specifier v vs1-vs2)
+		  (if (memp abstract-value=? v (first vs1-vs2))
+		      code
+		      (c:pointer-declarator code)))))
 
 (define (c:declaration code1 code2) (list code1 " " code2 ";"))
 
 (define (c:specifier-declaration v vs1-vs2 code)
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
  (if (void? v)
      '()
-     (c:declaration
-      (c:specifier v vs1-vs2)
-      (if (memq v (first vs1-vs2)) code (c:pointer-declarator code)))))
+     (c:declaration (c:specifier v vs1-vs2)
+		    (if (memp abstract-value=? v (first vs1-vs2))
+			code
+			(c:pointer-declarator code)))))
+
+(define (c:init-declaration code1 code2 code3)
+ (list code1 " " code2 "=" code3 ";"))
+
+(define (c:specifier-init-declaration v vs1-vs2 code1 code2)
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
+ (if (void? v)
+     '()
+     (c:init-declaration (c:specifier v vs1-vs2)
+			 (if (memp abstract-value=? v (first vs1-vs2))
+			     code1
+			     (c:pointer-declarator code1))
+			 code2)))
 
 (define (generate-struct-and-union-declarations xs vs1-vs2)
  ;; here I am: generate -~-> c:
@@ -7896,7 +7943,6 @@
    (map (lambda (v)
 	 (cond ((void? v) '())
 	       ((union? v)
-		(assert (memp abstract-value=? v vs))
 		;; abstraction
 		(list
 		 (if (every void? (union-values v))
@@ -7921,7 +7967,6 @@
    (map (lambda (v)
 	 (cond ((void? v) '())
 	       ((union? v)
-		(assert (memp abstract-value=? v vs))
 		;; By fortuitous confluence, this will eliminate the union
 		;; declaration for the empty abstract value and generate a
 		;; struct declaration with just a type tag (which will never be
@@ -8034,11 +8079,15 @@
        #\newline))
 
 (define (c:specifier-function-declaration p1? p2? p3? v vs1-vs2 code)
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
  (if (void? v)
      '()
-     (c:function-declaration
-      p1? p2? p3? (c:specifier v vs1-vs2)
-      (if (memq v (first vs1-vs2)) code (c:pointer-declarator code)))))
+     (c:function-declaration p1? p2? p3? (c:specifier v vs1-vs2)
+			     (if (memp abstract-value=? v (first vs1-vs2))
+				 code
+				 (c:pointer-declarator code)))))
 
 (define (c:function-definition p1? p2? p3? code1 code2 code3)
  (list (if p1? (list "static" " ") '())
@@ -8053,12 +8102,16 @@
        #\newline))
 
 (define (c:specifier-function-definition p1? p2? p3? v vs1-vs2 code1 code2)
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
  (if (void? v)
      '()
-     (c:function-definition
-      p1? p2? p3? (c:specifier v vs1-vs2)
-      (if (memq v (first vs1-vs2)) code1 (c:pointer-declarator code1))
-      code2)))
+     (c:function-definition p1? p2? p3? (c:specifier v vs1-vs2)
+			    (if (memp abstract-value=? v (first vs1-vs2))
+				code1
+				(c:pointer-declarator code1))
+			    code2)))
 
 (define (c:call* code codes)
  (list
@@ -8096,7 +8149,14 @@
 (define (c:call code . codes) (c:call* code codes))
 
 (define (c:slot v vs1-vs2 code1 code2)
- (c:binary code1 (if (memq v (first vs1-vs2)) "." "->") code2))
+ (assert (or (void? v)
+	     (memp abstract-value=? v (first vs1-vs2))
+	     (memp abstract-value=? v (second vs1-vs2))))
+ (if (void? v)
+     'error
+     (c:binary code1
+	       (if (memp abstract-value=? v (first vs1-vs2)) "." "->")
+	       code2)))
 
 (define (c:tag v vs1-vs2 code) (c:slot v vs1-vs2 code "t"))
 
@@ -8194,69 +8254,70 @@
       (all-primitives s)))
 
 (define (generate-unary-ad-declarations s p? f code vs1-vs2)
- ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-declaration
-	;; The call to f might issue "might" warnings and might return an empty
-	;; abstract value.
-	#t #t #f (f v) vs1-vs2
-	(c:function-declarator (c:builtin-name code v vs1-vs2)
-			       (c:specifier-parameter v vs1-vs2 "x"))))
-      (all-unary-ad s p?)))
+ (let ((vs1a-vs2a (all-sorted-unary-ad s p?)))
+  ;; abstraction
+  (map (lambda (v)
+	(c:specifier-function-declaration
+	 ;; The call to f might issue "might" warnings and might return an
+	 ;; empty abstract value.
+	 #t (memq v (first vs1a-vs2a)) #f (f v) vs1-vs2
+	 (c:function-declarator (c:builtin-name code v vs1-vs2)
+				(c:specifier-parameter v vs1-vs2 "x"))))
+       (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-declarations
 	 s p? f? f f-inverse g-value code vs1-vs2)
- ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-declaration
-	;; The call to g-value might issue "might" warnings and might return an
-	;; empty abstract value.
-	#t #t #f (g-value v) vs1-vs2
-	(c:function-declarator (c:builtin-name code v vs1-vs2)
-			       (c:specifier-parameter v vs1-vs2 "x"))))
-      (all-binary-ad s p? f? f f-inverse g-value)))
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value)))
+  ;; abstraction
+  (map (lambda (v)
+	(c:specifier-function-declaration
+	 ;; The call to g-value might issue "might" warnings and might return
+	 ;; an empty abstract value.
+	 #t (memq v (first vs1a-vs2a)) #f (g-value v) vs1-vs2
+	 (c:function-declarator (c:builtin-name code v vs1-vs2)
+				(c:specifier-parameter v vs1-vs2 "x"))))
+       (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-if-and-function-declarations
 	 xs vs1-vs2 function-instances instances1-instances2)
  ;; abstraction
- (map
-  (lambda (instance)
-   (cond
-    ((if-instance? instance)
-     (let* ((v (if-instance-v instance))
-	    (v1 (vlad-car v))
-	    (v2 (vlad-cdr v))
-	    (v3 (vlad-car v2))
-	    (v4 (vlad-cdr v2)))
-      (c:specifier-function-declaration
-       #t #t #f
-       (cond ((and (some vlad-false? (union-members v1))
-		   (some (lambda (u) (not (vlad-false? u)))
-			 (union-members v1)))
-	      (abstract-value-union (abstract-apply v3 (vlad-empty-list))
-				    (abstract-apply v4 (vlad-empty-list))))
-	     ((some vlad-false? (union-members v1))
-	      (abstract-apply v4 (vlad-empty-list)))
-	     ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
-	      (abstract-apply v3 (vlad-empty-list)))
-	     (else (internal-error)))
-       vs1-vs2
-       (c:function-declarator (c:builtin-name "if_procedure" v vs1-vs2)
-			      (c:specifier-parameter v vs1-vs2 "x")))))
-    ((function-instance? instance)
-     (let ((v1 (function-instance-v1 instance))
-	   (v2 (function-instance-v2 instance)))
-      (c:specifier-function-declaration
-       #t
-       (not (memq instance (second instances1-instances2)))
-       #f
-       (abstract-apply v1 v2)
-       vs1-vs2
-       (c:function-declarator (c:function-name v1 v2 function-instances)
-			      (c:specifier-parameter v1 vs1-vs2 "c")
-			      (c:specifier-parameter v2 vs1-vs2 "x")))))
-    (else (internal-error))))
-  (append (first instances1-instances2) (second instances1-instances2))))
+ (map (lambda (instance)
+       (cond
+	((if-instance? instance)
+	 (let* ((v (if-instance-v instance))
+		(v1 (vlad-car v))
+		(v2 (vlad-cdr v))
+		(v3 (vlad-car v2))
+		(v4 (vlad-cdr v2)))
+	  (c:specifier-function-declaration
+	   #t #t #f
+	   (cond ((and (some vlad-false? (union-members v1))
+		       (some (lambda (u) (not (vlad-false? u)))
+			     (union-members v1)))
+		  (abstract-value-union (abstract-apply v3 (vlad-empty-list))
+					(abstract-apply v4 (vlad-empty-list))))
+		 ((some vlad-false? (union-members v1))
+		  (abstract-apply v4 (vlad-empty-list)))
+		 ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
+		  (abstract-apply v3 (vlad-empty-list)))
+		 (else (internal-error)))
+	   vs1-vs2
+	   (c:function-declarator (c:builtin-name "if_procedure" v vs1-vs2)
+				  (c:specifier-parameter v vs1-vs2 "x")))))
+	((function-instance? instance)
+	 (let ((v1 (function-instance-v1 instance))
+	       (v2 (function-instance-v2 instance)))
+	  (c:specifier-function-declaration
+	   #t
+	   (memq instance (first instances1-instances2))
+	   #f
+	   (abstract-apply v1 v2)
+	   vs1-vs2
+	   (c:function-declarator (c:function-name v1 v2 function-instances)
+				  (c:specifier-parameter v1 vs1-vs2 "c")
+				  (c:specifier-parameter v2 vs1-vs2 "x")))))
+	(else (internal-error))))
+      (append (first instances1-instances2) (second instances1-instances2))))
 
 ;;; Definition generators
 
@@ -8280,8 +8341,16 @@
 				    (c:specifier-parameter u vs1-vs2 "x"))
 	     ;; abstraction
 	     (list
-	      (c:specifier-declaration v vs1-vs2 "r")
-	      ;; here I am: work in progress
+	      (if (memq v (first vs1-vs2))
+		  (c:specifier-declaration v vs1-vs2 "r")
+		  ;; We don't check for out of memory.
+		  (c:specifier-init-declaration
+		   v
+		   vs1-vs2
+		   "r"
+		   (c:pointer-cast
+		    (c:specifier v vs1-vs2)
+		    (c:call "GC_malloc" (c:sizeof (c:specifier v vs1-vs2))))))
 	      (c:assignment
 	       ;; The type tag is always unboxed.
 	       (c:tag v vs1-vs2 "r")
@@ -8308,8 +8377,16 @@
 	     (generate-slot-names v xs vs1-vs2)
 	     (aggregate-value-values v)))
        ;; abstraction
-       (list (c:specifier-declaration v vs1-vs2 "r")
-	     ;; here I am: work in progress
+       (list (if (memq v (first vs1-vs2))
+		 (c:specifier-declaration v vs1-vs2 "r")
+		 ;; We don't check for out of memory.
+		 (c:specifier-init-declaration
+		  v
+		  vs1-vs2
+		  "r"
+		  (c:pointer-cast
+		   (c:specifier v vs1-vs2)
+		   (c:call "GC_malloc" (c:sizeof (c:specifier v vs1-vs2))))))
 	     (map (lambda (code v)
 		   (if (void? v)
 		       '()
@@ -8496,27 +8573,22 @@
 		    v))
    '())
   ((variable-access-expression? p)
-   (if (or (void? v)
-	   ;; We get "warning: unused variable" messages from gcc. This is an
-	   ;; unsuccessful attempt to eliminate such messages. It is difficult
-	   ;; to soundly eliminate all unneeded destructuring bindings. This
-	   ;; is sound but eliminates only some. One can't simply check
-	   ;; if the variable is referenced in the VLAD source. Because
-	   ;; suppose you have code like (F (G X)). Even though X is not void,
-	   ;; (G X) might be, and then code is not generated for (G X). For
-	   ;; example (REST '(3)) or (NULL? '(3)).
-	   (not (memp variable=?
-		      (variable-access-expression-variable p)
-		      (free-variables e))))
-       '()
-       ;; here I am: work in progress
-       ;; abstraction
-       (list (c:specifier v vs1-vs2)
-	     " "
-	     (c:variable-name (variable-access-expression-variable p) xs)
-	     "="
-	     code
-	     ";")))
+   ;; We get "warning: unused variable" messages from gcc. This is an
+   ;; unsuccessful attempt to eliminate such messages. It is difficult to
+   ;; soundly eliminate all unneeded destructuring bindings. This is sound but
+   ;; eliminates only some. One can't simply check if the variable is
+   ;; referenced in the VLAD source. Because suppose you have code like
+   ;; (F (G X)). Even though X is not void, (G X) might be, and then code is
+   ;; not generated for (G X). For example (REST '(3)) or (NULL? '(3)).
+   (if (memp variable=?
+	     (variable-access-expression-variable p)
+	     (free-variables e))
+       (c:specifier-init-declaration
+	v
+	vs1-vs2
+	(c:variable-name (variable-access-expression-variable p) xs)
+	code)
+       '()))
   ((lambda-expression? p)
    (unless (and (nonrecursive-closure? v)
 		(dereferenced-expression-eqv?
@@ -8633,6 +8705,7 @@
 	  (v2 (abstract-eval1
 	       (application-argument e)
 	       (restrict-environment vs e application-argument))))
+     ;; here I am: Need to handle union targets.
      ;; needs work: To give an error on an improper call.
      (if (primitive-procedure? v1)
 	 (c:call ((primitive-procedure-generator v1) v2 vs1-vs2)
@@ -8772,27 +8845,21 @@
 		 (list->vector (letrec-expression-lambda-expressions e))
 		 (positionp
 		  variable=? x (letrec-expression-procedure-variables e)))))
-	(if (void? v)
-	    '()
-	    ;; here I am: work in progress
-	    ;; abstraction
-	    (list (c:specifier v vs1-vs2)
-		  " "
-		  (c:variable-name x xs1)
-		  "="
-		  (c:call*
-		   (c:constructor-name v vs1-vs2)
-		   (map (lambda (x1 v1)
-			 (if (void? v1)
-			     '()
-			     (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
-			;; This used to have to be
-			;; (letrec-expression-variables e) instead of
-			;; (closure-variables v) when we used alpha
-			;; equivalence for expression=?.
-			(closure-variables v)
-			(aggregate-value-values v)))
-		  ";"))))
+	(c:specifier-init-declaration
+	 v
+	 vs1-vs2
+	 (c:variable-name x xs1)
+	 (c:call* (c:constructor-name v vs1-vs2)
+		  (map (lambda (x1 v1)
+			(if (void? v1)
+			    '()
+			    (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
+		       ;; This used to have to be
+		       ;; (letrec-expression-variables e) instead of
+		       ;; (closure-variables v) when we used alpha
+		       ;; equivalence for expression=?.
+		       (closure-variables v)
+		       (aggregate-value-values v))))))
       (letrec-expression-procedure-variables e))
      (generate-letrec-bindings (letrec-expression-body e)
 			       (letrec-nested-environment vs e)
@@ -8870,26 +8937,23 @@
 	     ;; The type tag is always unboxed.
 	     (c:tag v1 vs1-vs2 (c:slot v vs1-vs2 "x" "a"))
 	     "!="
-	     ;; This uses per-union tags here instead of per-program
-	     ;; tags.
+	     ;; This uses per-union tags here instead of per-program tags.
 	     (position-if vlad-false? (union-members v1)))
 	    (c:widen
 	     v6
 	     v5
-	     (c:call
-	      (c:function-name v3 (vlad-empty-list) function-instances)
-	      (if (void? v3)
-		  '()
-		  (c:slot v2 vs1-vs2 (c:slot v vs1-vs2 "x" "d") "a")))
+	     (c:call (c:function-name v3 (vlad-empty-list) function-instances)
+		     (if (void? v3)
+			 '()
+			 (c:slot v2 vs1-vs2 (c:slot v vs1-vs2 "x" "d") "a")))
 	     widener-instances)
 	    (c:widen
 	     v7
 	     v5
-	     (c:call
-	      (c:function-name v4 (vlad-empty-list) function-instances)
-	      (if (void? v4)
-		  '()
-		  (c:slot v2 vs1-vs2 (c:slot v vs1-vs2 "x" "d") "d")))
+	     (c:call (c:function-name v4 (vlad-empty-list) function-instances)
+		     (if (void? v4)
+			 '()
+			 (c:slot v2 vs1-vs2 (c:slot v vs1-vs2 "x" "d") "d")))
 	     widener-instances))))
 	 ((some vlad-false? (union-members v1))
 	  (c:call (c:function-name v4 (vlad-empty-list) function-instances)
@@ -8907,7 +8971,7 @@
 	   (v2 (function-instance-v2 instance)))
       (c:specifier-function-definition
        #t
-       (not (memq instance (second instances1-instances2)))
+       (memq instance (first instances1-instances2))
        #f
        (abstract-apply v1 v2)
        vs1-vs2
@@ -8953,29 +9017,31 @@
   (append (first instances1-instances2) (second instances1-instances2))))
 
 (define (generate-unary-ad-definitions s p? f code xs vs1-vs2 generate)
- ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-definition
-	;; The call to f might issue "might" warnings and might return an empty
-	;; abstract value.
-	#t #t #f (f v) vs1-vs2
-	(c:function-declarator (c:builtin-name code v vs1-vs2)
-			       (c:specifier-parameter v vs1-vs2 "x"))
-	(c:return (generate v))))
-      (all-unary-ad s p?)))
+ (let ((vs1a-vs2a (all-sorted-unary-ad s p?)))
+  ;; abstraction
+  (map (lambda (v)
+	(c:specifier-function-definition
+	 ;; The call to f might issue "might" warnings and might return an
+	 ;; empty abstract value.
+	 #t (memq v (first vs1a-vs2a)) #f (f v) vs1-vs2
+	 (c:function-declarator (c:builtin-name code v vs1-vs2)
+				(c:specifier-parameter v vs1-vs2 "x"))
+	 (c:return (generate v))))
+       (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-definitions
 	 s p? f? f f-inverse g-value code xs vs1-vs2 generate)
- ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-definition
-	;; The call to g-value might issue "might" warnings and might return an
-	;; empty abstract value.
-	#t #t #f (g-value v) vs1-vs2
-	(c:function-declarator (c:builtin-name code v vs1-vs2)
-			       (c:specifier-parameter v vs1-vs2 "x"))
-	(c:return (generate v))))
-      (all-binary-ad s p? f? f f-inverse g-value)))
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value)))
+  ;; abstraction
+  (map (lambda (v)
+	(c:specifier-function-definition
+	 ;; The call to g-value might issue "might" warnings and might return
+	 ;; an empty abstract value.
+	 #t (memq v (first vs1a-vs2a)) #f (g-value v) vs1-vs2
+	 (c:function-declarator (c:builtin-name code v vs1-vs2)
+				(c:specifier-parameter v vs1-vs2 "x"))
+	 (c:return (generate v))))
+       (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-zero-definitions xs vs1-vs2 widener-instances)
  (generate-unary-ad-definitions
@@ -9011,7 +9077,7 @@
 			(if (void? v1) '() (c:slot v vs1-vs2 "x" code1)))))
 	   (generate-slot-names v xs vs1-vs2)
 	   (aggregate-value-values v))))
-    (else (internal-error))))))
+    (else 'error)))))
 
 (define (generate-perturb-definitions xs vs1-vs2 widener-instances)
  (generate-unary-ad-definitions
@@ -9053,7 +9119,7 @@
 			(if (void? v1) '() (c:slot v vs1-vs2 "x" code1)))))
 	   (generate-slot-names v xs vs1-vs2)
 	   (aggregate-value-values v))))
-    (else (internal-error))))))
+    (else 'error)))))
 
 (define (generate-unperturb-definitions xs vs1-vs2 widener-instances)
  (generate-unary-ad-definitions
@@ -9270,7 +9336,7 @@
 	     (every-bundlable? v1 v2))
 	;; In all cases, the result will be void so this case should never
 	;; happen.
-	(internal-error))
+	'error)
        ((or (and (vlad-real? v1) (every-bundlable? v1 v2))
 	    ;; here I am: need to check conformance
 	    ;;            even when one or both arguments is void
@@ -9368,7 +9434,7 @@
 			(if (void? v1) '() (c:slot v vs1-vs2 "x" code1)))))
 	   (generate-slot-names v xs vs1-vs2)
 	   (aggregate-value-values v))))
-    (else (internal-error))))))
+    (else 'error)))))
 
 (define (generate-unsensitize-definitions xs vs1-vs2 widener-instances)
  (generate-unary-ad-definitions
@@ -9481,10 +9547,9 @@
 	 (and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2)))
 	;; In all cases, the result will be void so this case should never
 	;; happen.
-	(internal-error))
+	'error)
        ((and (vlad-real? v1) (vlad-real? v2))
-	(assert (not (and (void? v1) (void? v2))))
-	(c:binary
+  	(c:binary
 	 ;; This assumes that Scheme inexact numbers are printed as C doubles.
 	 (if (void? v1) (exact->inexact v1) (c:slot v vs1-vs2 "x" "a"))
 	 "+"
@@ -9573,7 +9638,7 @@
 			(if (void? v1) '() (c:slot v vs1-vs2 "x" code1)))))
 	   (generate-slot-names v xs vs1-vs2)
 	   (aggregate-value-values v))))
-    (else (internal-error))))))
+    (else 'error)))))
 
 (define (generate-*j-inverse-definitions xs vs1-vs2 widener-instances)
  (generate-unary-ad-definitions
