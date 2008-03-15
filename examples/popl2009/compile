@@ -4,7 +4,7 @@ unlimit stack
 rm -rf /aux/qobi/popl2009
 mkdir /aux/qobi/popl2009
 cp -i *.vlad /aux/qobi/popl2009/.
-cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad, unbuff}\
+cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
   /aux/qobi/popl2009/.
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-FF.text time\
