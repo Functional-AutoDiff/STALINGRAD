@@ -1,3 +1,4 @@
+qobi@ingqondo>./run
 Compiling t1
 5
 Compiling t2
@@ -88,6 +89,852 @@ t19.c: In function ‘f20’:
 t19.c:1776: warning: unused variable ‘x465’
 10
 3
+Compiling t20
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+t20.c: In function ‘f1344’:
+t20.c:8752: warning: unused variable ‘x1433’
+t20.c: In function ‘f1343’:
+t20.c:8753: warning: unused variable ‘x1433’
+t20.c: In function ‘f977’:
+t20.c:8841: warning: unused variable ‘x1015’
+t20.c: In function ‘f1271’:
+t20.c:8972: warning: unused variable ‘x1309’
+t20.c: In function ‘f181’:
+t20.c:9003: warning: unused variable ‘x1316’
+t20.c: In function ‘f169’:
+t20.c:9079: warning: unused variable ‘x1400’
+t20.c: In function ‘f163’:
+t20.c:9105: warning: unused variable ‘x1433’
+t20.c: In function ‘f58’:
+t20.c:9274: warning: unused variable ‘x1283’
+t20.c: In function ‘f52’:
+t20.c:9292: warning: unused variable ‘x1288’
+t20.c: In function ‘f46’:
+t20.c:9310: warning: unused variable ‘x1310’
+t20.c: In function ‘f34’:
+t20.c:9344: warning: unused variable ‘x1320’
+t20.c: In function ‘f16’:
+t20.c:9362: warning: unused variable ‘x1466’
+t20.c: In function ‘f211’:
+t20.c:9488: warning: unused variable ‘x1004’
+t20.c: In function ‘f217’:
+t20.c:9520: warning: unused variable ‘x999’
+t20.c: In function ‘f223’:
+t20.c:9525: warning: unused variable ‘x913’
+t20.c: In function ‘f229’:
+t20.c:9530: warning: unused variable ‘x908’
+t20.c: In function ‘f345’:
+t20.c:9570: warning: unused variable ‘x1007’
+t20.c: In function ‘f953’:
+t20.c:9581: warning: unused variable ‘x915’
+t20.c: In function ‘f947’:
+t20.c:9587: warning: unused variable ‘x1001’
+t20.c: In function ‘f941’:
+t20.c:9593: warning: unused variable ‘x1006’
+t20.c: In function ‘f935’:
+t20.c:9599: warning: unused variable ‘x1011’
+t20.c: In function ‘f1272’:
+t20.c:9608: warning: unused variable ‘x1309’
+t20.c: In function ‘f621’:
+t20.c:9620: warning: unused variable ‘x395’
+t20.c: In function ‘f573’:
+t20.c:9668: warning: unused variable ‘x435’
+t20.c: In function ‘f561’:
+t20.c:9680: warning: unused variable ‘x445’
+t20.c: In function ‘f555’:
+t20.c:9686: warning: unused variable ‘x450’
+t20.c: In function ‘f549’:
+t20.c:9692: warning: unused variable ‘x455’
+t20.c: In function ‘f537’:
+t20.c:9704: warning: unused variable ‘x465’
+t20.c: In function ‘f531’:
+t20.c:9710: warning: unused variable ‘x470’
+t20.c: In function ‘f525’:
+t20.c:9716: warning: unused variable ‘x475’
+t20.c: In function ‘f519’:
+t20.c:9722: warning: unused variable ‘x480’
+t20.c: In function ‘f513’:
+t20.c:9728: warning: unused variable ‘x485’
+t20.c: In function ‘f507’:
+t20.c:9734: warning: unused variable ‘x490’
+t20.c: In function ‘f501’:
+t20.c:9740: warning: unused variable ‘x495’
+t20.c: In function ‘f471’:
+t20.c:9770: warning: unused variable ‘x520’
+t20.c: In function ‘f465’:
+t20.c:9776: warning: unused variable ‘x525’
+t20.c: In function ‘f459’:
+t20.c:9782: warning: unused variable ‘x530’
+t20.c: In function ‘f453’:
+t20.c:9788: warning: unused variable ‘x535’
+t20.c: In function ‘f447’:
+t20.c:9794: warning: unused variable ‘x540’
+t20.c: In function ‘f441’:
+t20.c:9800: warning: unused variable ‘x545’
+t20.c: In function ‘f435’:
+t20.c:9806: warning: unused variable ‘x550’
+t20.c: In function ‘f429’:
+t20.c:9812: warning: unused variable ‘x555’
+t20.c: In function ‘f417’:
+t20.c:9824: warning: unused variable ‘x565’
+t20.c: In function ‘f411’:
+t20.c:9830: warning: unused variable ‘x570’
+t20.c: In function ‘f405’:
+t20.c:9836: warning: unused variable ‘x575’
+t20.c: In function ‘f399’:
+t20.c:9842: warning: unused variable ‘x580’
+t20.c: In function ‘f393’:
+t20.c:9848: warning: unused variable ‘x585’
+t20.c: In function ‘f387’:
+t20.c:9854: warning: unused variable ‘x590’
+t20.c: In function ‘f381’:
+t20.c:9860: warning: unused variable ‘x595’
+t20.c: In function ‘f357’:
+t20.c:9884: warning: unused variable ‘x916’
+0.250000259408078351
+Compiling t21
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+t21.c: In function ‘f539’:
+t21.c:3743: warning: unused variable ‘x728’
+t21.c: In function ‘f334’:
+t21.c:3782: warning: unused variable ‘x768’
+t21.c: In function ‘f20’:
+t21.c:3954: warning: unused variable ‘x695’
+t21.c: In function ‘f282’:
+t21.c:3986: warning: unused variable ‘x209’
+t21.c: In function ‘f258’:
+t21.c:4022: warning: unused variable ‘x229’
+t21.c: In function ‘f252’:
+t21.c:4028: warning: unused variable ‘x408’
+t21.c: In function ‘f246’:
+t21.c:4034: warning: unused variable ‘x573’
+t21.c: In function ‘f240’:
+t21.c:4040: warning: unused variable ‘x578’
+t21.c: In function ‘f228’:
+t21.c:4052: warning: unused variable ‘x605’
+t21.c: In function ‘f210’:
+t21.c:4070: warning: unused variable ‘x694’
+t21.c: In function ‘f503’:
+t21.c:4085: warning: unused variable ‘x604’
+t21.c: In function ‘f74’:
+t21.c:4133: warning: unused variable ‘x225’
+t21.c: In function ‘f68’:
+t21.c:4139: warning: unused variable ‘x230’
+t21.c: In function ‘f62’:
+t21.c:4145: warning: unused variable ‘x409’
+t21.c: In function ‘f50’:
+t21.c:4157: warning: unused variable ‘x579’
+t21.c: In function ‘f44’:
+t21.c:4163: warning: unused variable ‘x601’
+t21.c: In function ‘f38’:
+t21.c:4169: warning: unused variable ‘x606’
+1.99999809265136719
 Compiling t22
 t22.c: In function ‘f621’:
 t22.c:3460: warning: unused variable ‘x806’
@@ -215,6 +1062,526 @@ t19.c: In function ‘f20’:
 t19.c:1698: warning: unused variable ‘x465’
 10
 3
+Compiling t20
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+#T
+#F
+Warning: Arguments to plus might not conform
+#F
+#T
+Warning: Arguments to plus might not conform
+t20.c: In function ‘f2051’:
+t20.c:12965: warning: unused variable ‘x1433’
+t20.c: In function ‘f2050’:
+t20.c:12966: warning: unused variable ‘x1433’
+t20.c: In function ‘f1960’:
+t20.c:13228: warning: unused variable ‘x1309’
+t20.c: In function ‘f181’:
+t20.c:13288: warning: unused variable ‘x1316’
+t20.c: In function ‘f169’:
+t20.c:13372: warning: unused variable ‘x1400’
+t20.c: In function ‘f163’:
+t20.c:13406: warning: unused variable ‘x1433’
+t20.c: In function ‘f58’:
+t20.c:13681: warning: unused variable ‘x1283’
+t20.c: In function ‘f52’:
+t20.c:13711: warning: unused variable ‘x1288’
+t20.c: In function ‘f46’:
+t20.c:13741: warning: unused variable ‘x1310’
+t20.c: In function ‘f34’:
+t20.c:13789: warning: unused variable ‘x1320’
+t20.c: In function ‘f16’:
+t20.c:13807: warning: unused variable ‘x1466’
+t20.c: In function ‘f212’:
+t20.c:14047: warning: unused variable ‘x1004’
+t20.c: In function ‘f218’:
+t20.c:14079: warning: unused variable ‘x999’
+t20.c: In function ‘f230’:
+t20.c:14089: warning: unused variable ‘x908’
+t20.c: In function ‘f399’:
+t20.c:14131: warning: unused variable ‘x1007’
+t20.c: In function ‘f1511’:
+t20.c:14140: warning: unused variable ‘x915’
+t20.c: In function ‘f1505’:
+t20.c:14146: warning: unused variable ‘x1001’
+t20.c: In function ‘f1499’:
+t20.c:14152: warning: unused variable ‘x1006’
+t20.c: In function ‘f1493’:
+t20.c:14158: warning: unused variable ‘x1011’
+t20.c: In function ‘f1959’:
+t20.c:14168: warning: unused variable ‘x1309’
+t20.c: In function ‘f952’:
+t20.c:14191: warning: unused variable ‘x395’
+t20.c: In function ‘f951’:
+t20.c:14192: warning: unused variable ‘x395’
+t20.c: In function ‘f856’:
+t20.c:14287: warning: unused variable ‘x435’
+t20.c: In function ‘f855’:
+t20.c:14288: warning: unused variable ‘x435’
+t20.c: In function ‘f832’:
+t20.c:14311: warning: unused variable ‘x445’
+t20.c: In function ‘f831’:
+t20.c:14312: warning: unused variable ‘x445’
+t20.c: In function ‘f820’:
+t20.c:14323: warning: unused variable ‘x450’
+t20.c: In function ‘f819’:
+t20.c:14324: warning: unused variable ‘x450’
+t20.c: In function ‘f807’:
+t20.c:14336: warning: unused variable ‘x455’
+t20.c: In function ‘f784’:
+t20.c:14359: warning: unused variable ‘x465’
+t20.c: In function ‘f783’:
+t20.c:14360: warning: unused variable ‘x465’
+t20.c: In function ‘f760’:
+t20.c:14383: warning: unused variable ‘x475’
+t20.c: In function ‘f759’:
+t20.c:14384: warning: unused variable ‘x475’
+t20.c: In function ‘f748’:
+t20.c:14395: warning: unused variable ‘x480’
+t20.c: In function ‘f747’:
+t20.c:14396: warning: unused variable ‘x480’
+t20.c: In function ‘f736’:
+t20.c:14407: warning: unused variable ‘x485’
+t20.c: In function ‘f735’:
+t20.c:14408: warning: unused variable ‘x485’
+t20.c: In function ‘f724’:
+t20.c:14419: warning: unused variable ‘x490’
+t20.c: In function ‘f723’:
+t20.c:14420: warning: unused variable ‘x490’
+t20.c: In function ‘f711’:
+t20.c:14432: warning: unused variable ‘x495’
+t20.c: In function ‘f652’:
+t20.c:14491: warning: unused variable ‘x520’
+t20.c: In function ‘f651’:
+t20.c:14492: warning: unused variable ‘x520’
+t20.c: In function ‘f640’:
+t20.c:14503: warning: unused variable ‘x525’
+t20.c: In function ‘f639’:
+t20.c:14504: warning: unused variable ‘x525’
+t20.c: In function ‘f628’:
+t20.c:14515: warning: unused variable ‘x530’
+t20.c: In function ‘f627’:
+t20.c:14516: warning: unused variable ‘x530’
+t20.c: In function ‘f616’:
+t20.c:14527: warning: unused variable ‘x535’
+t20.c: In function ‘f615’:
+t20.c:14528: warning: unused variable ‘x535’
+t20.c: In function ‘f603’:
+t20.c:14540: warning: unused variable ‘x540’
+t20.c: In function ‘f591’:
+t20.c:14552: warning: unused variable ‘x545’
+t20.c: In function ‘f579’:
+t20.c:14564: warning: unused variable ‘x550’
+t20.c: In function ‘f567’:
+t20.c:14576: warning: unused variable ‘x555’
+t20.c: In function ‘f544’:
+t20.c:14599: warning: unused variable ‘x565’
+t20.c: In function ‘f543’:
+t20.c:14600: warning: unused variable ‘x565’
+t20.c: In function ‘f532’:
+t20.c:14611: warning: unused variable ‘x570’
+t20.c: In function ‘f531’:
+t20.c:14612: warning: unused variable ‘x570’
+t20.c: In function ‘f520’:
+t20.c:14623: warning: unused variable ‘x575’
+t20.c: In function ‘f519’:
+t20.c:14624: warning: unused variable ‘x575’
+t20.c: In function ‘f507’:
+t20.c:14636: warning: unused variable ‘x580’
+t20.c: In function ‘f495’:
+t20.c:14648: warning: unused variable ‘x585’
+t20.c: In function ‘f483’:
+t20.c:14660: warning: unused variable ‘x590’
+t20.c: In function ‘f471’:
+t20.c:14672: warning: unused variable ‘x595’
+t20.c: In function ‘f423’:
+t20.c:14720: warning: unused variable ‘x916’
+0.250000259408078351
 Compiling t22
 t22.c: In function ‘f621’:
 t22.c:1973: warning: unused variable ‘x806’
+3117.830u 5.468s 52:22.26 99.3%      0+0k 0+0io 1pf+0w
+qobi@ingqondo>
