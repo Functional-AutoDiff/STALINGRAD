@@ -1,0 +1,24 @@
+#!/bin/tcsh -f
+setenv SCMAXHEAP 65536
+unlimit stack
+rm -f /aux/qobi/popl2009/{saddle,particle}-??-stalingrad1000.text
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/saddle-FF-stalingrad1000.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  saddle-FF-stalingrad1000&
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/particle-FF-stalingrad1000.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  particle-FF-stalingrad1000&
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/saddle-FR-stalingrad1000.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  saddle-FR-stalingrad1000&
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/particle-FR-stalingrad1000.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  particle-FR-stalingrad1000&

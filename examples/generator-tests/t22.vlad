@@ -1,0 +1,12 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (sum l) (if (null? l) 0.0 (+ (car l) (sum (cdr l)))))
+
+(define (f l) (sum l))
+
+(write
+ (car
+  (cdr
+   (unsensitize ((cdr ((*j f) (*j (list (read-real))))) (sensitize 1.0))))))

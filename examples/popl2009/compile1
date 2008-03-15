@@ -1,0 +1,44 @@
+#!/bin/tcsh -f
+setenv SCMAXHEAP 65536
+unlimit stack
+rm -f /aux/qobi/popl2009a/{series,nr-sqrt}-??.text
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/series-FF.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  series-FF&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/nr-sqrt-FF.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  nr-sqrt-FF&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/series-FR.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  series-FR&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/nr-sqrt-FR.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  nr-sqrt-FR&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/series-RF.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  series-RF&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/nr-sqrt-RF.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  nr-sqrt-RF&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/series-RR.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  series-RR&
+/aux/qobi/popl2009a/unbuff\
+  >/aux/qobi/popl2009a/nr-sqrt-RR.text time\
+  /aux/qobi/popl2009a/stalingrad\
+  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  nr-sqrt-RR&
