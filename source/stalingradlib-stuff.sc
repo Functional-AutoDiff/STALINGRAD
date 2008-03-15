@@ -7283,17 +7283,13 @@
 	'()))
    *expressions*)))
 
-(define (all-sorted-binary-ad s p? f? f f-inverse g-value)
+(define (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort
-  ;; The calls to g-value might issue "might" warnings.
-  ;; here I am: g-value might return an empty abstract value.
-  (lambda (v1 v2) (component? (g-value v1) (g-value v2)))
-  first
-  (all-binary-ad s p? f? f f-inverse g-value)))
+  p1? first (all-binary-ad s p? f? f f-inverse g-value)))
 
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  (map-reduce union-abstract-values
@@ -8337,8 +8333,8 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-declarations
-	 s p? f? f f-inverse g-value code vs1-vs2)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value)))
+	 s p? f? f f-inverse g-value p1? code vs1-vs2)
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-declaration
@@ -9138,8 +9134,8 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-definitions
-	 s p? f? f f-inverse g-value code xs vs1-vs2 generate)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value)))
+	 s p? f? f f-inverse g-value p1? code xs vs1-vs2 generate)
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-definition
@@ -9333,6 +9329,46 @@
      (c:panic
       (tangent v) "Argument to tangent is a non-forward value" vs1-vs2))))))
 
+(define (bundle-before? v1 v2)
+ (or
+  (and (union? v2)
+       (some (lambda (u2) (abstract-value=? v1 u2)) (union-values v2)))
+  (and
+   (vlad-pair? v2)
+   (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
+    (or
+     (and (union? v2a)
+	  (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
+		(union-values v2a)))
+     (and (not (union? v2a))
+	  (union? v2b)
+	  (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
+		(union-values v2b)))
+     (and (not (union? v2a))
+	  (perturbation-tagged-value? v2b)
+	  (union? (unperturb v2b))
+	  (some (lambda (u2b)
+		 (abstract-value=? v1 (vlad-cons v2a (perturb u2b))))
+		(union-values (unperturb v2b))))
+     (and
+      (or (and (nonrecursive-closure? v2a)
+	       (nonrecursive-closure? v2b)
+	       (perturbation-parameter? (nonrecursive-closure-parameter v2b))
+	       (nonrecursive-closure-match? v2a (unperturb v2b)))
+	  (and (recursive-closure? v2a)
+	       (recursive-closure? v2b)
+	       (perturbation-parameter? (recursive-closure-parameter v2b))
+	       (recursive-closure-match? v2a (unperturb v2b)))
+	  (and (tagged-pair? v2a)
+	       (tagged-pair? v2b)
+	       (tagged? 'perturbation (tagged-pair-tags v2b))
+	       (equal-tags?
+		(tagged-pair-tags v2a)
+		(remove-tag 'perturbation (tagged-pair-tags v2b)))))
+      (some (lambda (v3)
+	     (abstract-value=? v1 (vlad-cons (primal v3) (tangent v3))))
+	    (aggregate-value-values (bundle v2a v2b)))))))))
+
 (define (generate-bundle-definitions xs vs1-vs2 widener-instances)
  (generate-binary-ad-definitions
   'bundle
@@ -9341,7 +9377,8 @@
 	(not (bundle? v))
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
-  perturbation-tagged-value? perturb unperturb bundle-value "bundle" xs vs1-vs2
+  perturbation-tagged-value? perturb unperturb bundle-value bundle-before?
+  "bundle" xs vs1-vs2
   (lambda (v)
    (cond
     ((union? v)
@@ -9579,11 +9616,45 @@
 		   "Argument to unsensitize is a non-sensitivity value"
 		   vs1-vs2))))))
 
+(define (plus-before? v1 v2)
+ (or
+  (and (union? v2)
+       (some (lambda (u2) (abstract-value=? v1 u2)) (union-values v2)))
+  (and
+   (vlad-pair? v2)
+   (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
+    (or
+     (and (union? v2a)
+	  (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
+		(union-values v2a)))
+     (and (not (union? v2a))
+	  (union? v2b)
+	  (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
+		(union-values v2b)))
+     (and
+      (or (and (nonrecursive-closure? v2a)
+	       (nonrecursive-closure? v2b)
+	       (dereferenced-nonrecursive-closure-match? v2a v2b))
+	  (and (recursive-closure? v2a)
+	       (recursive-closure? v2b)
+	       (dereferenced-recursive-closure-match? v2a v2b))
+	  (and (perturbation-tagged-value? v2a)
+	       (perturbation-tagged-value? v2b))
+	  (and (bundle? v2a) (bundle? v2b))
+	  (and (sensitivity-tagged-value? v2a) (sensitivity-tagged-value? v2b))
+	  (and (reverse-tagged-value? v2a) (reverse-tagged-value? v2b))
+	  (and (tagged-pair? v2a)
+	       (tagged-pair? v2b)
+	       (equal-tags? (tagged-pair-tags v2a) (tagged-pair-tags v2b))))
+      (some (lambda (v3a v3b) (abstract-value=? v1 (vlad-cons v3a v3b)))
+	    (aggregate-value-values v2a)
+	    (aggregate-value-values v2b))))))))
+
 (define (generate-plus-definitions xs vs1-vs2 widener-instances)
  (generate-binary-ad-definitions
   'plus
   (lambda (v) #t) (lambda (v) #f)
-  identity identity plus-value "plus" xs vs1-vs2
+  identity identity plus-value plus-before? "plus" xs vs1-vs2
   (lambda (v)
    (cond
     ((union? v)
@@ -9866,8 +9937,9 @@
      (and (not (perturbation-tagged-value? v))
 	  (not (bundle? v))
 	  (not (sensitivity-tagged-value? v))
-	  (not (reverse-tagged-value? v)))) perturbation-tagged-value?
-	  perturb unperturb bundle-value "bundle" vs1-vs2)
+	  (not (reverse-tagged-value? v))))
+    perturbation-tagged-value? perturb unperturb bundle-value bundle-before?
+    "bundle" vs1-vs2)
    (generate-unary-ad-declarations
     'sensitize
     (lambda (v)
@@ -9882,8 +9954,8 @@
      (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
     unsensitize "unsensitize" vs1-vs2)
    (generate-binary-ad-declarations
-    'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value "plus"
-    vs1-vs2)
+    'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value
+    plus-before? "plus" vs1-vs2)
    (generate-unary-ad-declarations
     '*j
     (lambda (v)
