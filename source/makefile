@@ -375,7 +375,7 @@ error_no_error:
 
 #armv6l-Linux-2.6.21-omap1 CC = gcc
 #armv6l-Linux-2.6.21-omap1 CFLAGS = -O2 -DLINUX
-#armv6l-Linux-2.6.21-omap1 SCCFLAGS = -O2
+#armv6l-Linux-2.6.21-omap1 SCCFLAGS =
 #armv6l-Linux-2.6.21-omap1 SCCLDFLAGS =
 #armv6l-Linux-2.6.21-omap1 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #armv6l-Linux-2.6.21-omap1       $(INSTALLLIBA)/scxl.a\
