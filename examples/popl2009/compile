@@ -2,8 +2,7 @@
 setenv SCMAXHEAP 65536
 unlimit stack
 rm -rf /aux/qobi/popl2009
-cp -i {{series,nr-sqrt}-??,{saddle,particle}-??-stalingrad1000}.vlad\
-  /aux/qobi/popl2009/.
+cp -i *.vlad /aux/qobi/popl2009/.
 cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad, unbuff}\
   /aux/qobi/popl2009/.
 /aux/qobi/popl2009/unbuff\
