@@ -26,10 +26,195 @@ Compiling t11
 Compiling t12
 3
 Compiling t13
+t13.c: In function ‘f177’:
+t13.c:967: warning: unused variable ‘x461’
+t13.c: In function ‘f104’:
+t13.c:970: warning: unused variable ‘x344’
+t13.c: In function ‘f171’:
+t13.c:973: warning: unused variable ‘x464’
+t13.c: In function ‘f63’:
+t13.c:1006: warning: unused variable ‘x375’
+t13.c: In function ‘f123’:
+t13.c:1015: warning: unused variable ‘x538’
+t13.c: In function ‘f64’:
+t13.c:1052: warning: unused variable ‘x375’
+t13.c: In function ‘f124’:
+t13.c:1068: warning: unused variable ‘x538’
 39
 Compiling t14
 14
 Compiling t15
+t15.c: In function ‘f377’:
+t15.c:2141: warning: unused variable ‘x601’
+t15.c: In function ‘f295’:
+t15.c:2274: warning: unused variable ‘x611’
+t15.c: In function ‘f239’:
+t15.c:2276: warning: unused variable ‘x611’
 2
 Compiling t16
 Compiling t17
+Compiling t18
+t18.c: In function ‘f35’:
+t18.c:796: warning: unused variable ‘x318’
+t18.c: In function ‘f29’:
+t18.c:802: warning: unused variable ‘x323’
+t18.c: In function ‘f23’:
+t18.c:808: warning: unused variable ‘x328’
+t18.c: In function ‘f11’:
+t18.c:820: warning: unused variable ‘x412’
+14
+Compiling t19
+t19.c: In function ‘f98’:
+t19.c:1698: warning: unused variable ‘x51’
+t19.c: In function ‘f92’:
+t19.c:1704: warning: unused variable ‘x56’
+t19.c: In function ‘f86’:
+t19.c:1710: warning: unused variable ‘x61’
+t19.c: In function ‘f80’:
+t19.c:1716: warning: unused variable ‘x66’
+t19.c: In function ‘f74’:
+t19.c:1722: warning: unused variable ‘x71’
+t19.c: In function ‘f62’:
+t19.c:1734: warning: unused variable ‘x81’
+t19.c: In function ‘f56’:
+t19.c:1740: warning: unused variable ‘x86’
+t19.c: In function ‘f50’:
+t19.c:1746: warning: unused variable ‘x263’
+t19.c: In function ‘f44’:
+t19.c:1752: warning: unused variable ‘x428’
+t19.c: In function ‘f26’:
+t19.c:1770: warning: unused variable ‘x460’
+t19.c: In function ‘f20’:
+t19.c:1776: warning: unused variable ‘x465’
+10
+3
+Compiling t22
+t22.c: In function ‘f621’:
+t22.c:3460: warning: unused variable ‘x806’
+t22.c: In function ‘f27’:
+t22.c:3538: warning: unused variable ‘x806’
+t22.c: In function ‘f440’:
+t22.c:3662: warning: unused variable ‘x217’
+t22.c: In function ‘f416’:
+t22.c:3686: warning: unused variable ‘x237’
+t22.c: In function ‘f410’:
+t22.c:3692: warning: unused variable ‘x441’
+t22.c: In function ‘f398’:
+t22.c:3704: warning: unused variable ‘x611’
+t22.c: In function ‘f380’:
+t22.c:3722: warning: unused variable ‘x643’
+t22.c: In function ‘f374’:
+t22.c:3728: warning: unused variable ‘x648’
+t22.c: In function ‘f171’:
+t22.c:3797: warning: unused variable ‘x437’
+t22.c: In function ‘f159’:
+t22.c:3803: warning: unused variable ‘x602’
+t22.c: In function ‘f147’:
+t22.c:3809: warning: unused variable ‘x607’
+t22.c: In function ‘f111’:
+t22.c:3827: warning: unused variable ‘x639’
+t22.c: In function ‘f75’:
+t22.c:3845: warning: unused variable ‘x728’
+t22.c: In function ‘f525’:
+t22.c:3860: warning: unused variable ‘x641’
+t22.c: In function ‘f513’:
+t22.c:3872: warning: unused variable ‘x725’
+1
+Compiling t1
+Compiling t2
+2
+Compiling t3
+1.41421356237309515
+Compiling t4
+7
+Compiling t5
+7
+Compiling t5a
+7
+Compiling t6
+Compiling t6a
+7
+Compiling t7
+0
+Compiling t8
+0
+Compiling t9
+1
+Compiling t10
+1
+Compiling t11
+0
+Compiling t12
+3
+Compiling t13
+t13.c: In function ‘f104’:
+t13.c:874: warning: unused variable ‘x344’
+t13.c: In function ‘f179’:
+t13.c:875: warning: unused variable ‘x461’
+t13.c: In function ‘f173’:
+t13.c:881: warning: unused variable ‘x464’
+t13.c: In function ‘f63’:
+t13.c:910: warning: unused variable ‘x375’
+t13.c: In function ‘f125’:
+t13.c:923: warning: unused variable ‘x538’
+t13.c: In function ‘f64’:
+t13.c:956: warning: unused variable ‘x375’
+t13.c: In function ‘f126’:
+t13.c:974: warning: unused variable ‘x538’
+39
+Compiling t14
+t14.c: In function ‘f52’:
+t14.c:388: warning: unused variable ‘x504’
+14
+Compiling t15
+t15.c: In function ‘f332’:
+t15.c:1993: warning: unused variable ‘x613’
+t15.c: In function ‘f404’:
+t15.c:2070: warning: unused variable ‘x612’
+t15.c: In function ‘f159’:
+t15.c:2072: warning: unused variable ‘x612’
+t15.c: In function ‘f158’:
+t15.c:2073: warning: unused variable ‘x612’
+t15.c: In function ‘f6’:
+t15.c:2123: warning: unused variable ‘x51’
+2
+Compiling t16
+Compiling t17
+Compiling t18
+t18.c: In function ‘f35’:
+t18.c:801: warning: unused variable ‘x318’
+t18.c: In function ‘f29’:
+t18.c:807: warning: unused variable ‘x323’
+t18.c: In function ‘f23’:
+t18.c:813: warning: unused variable ‘x328’
+t18.c: In function ‘f11’:
+t18.c:825: warning: unused variable ‘x412’
+14
+Compiling t19
+t19.c: In function ‘f98’:
+t19.c:1620: warning: unused variable ‘x51’
+t19.c: In function ‘f92’:
+t19.c:1626: warning: unused variable ‘x56’
+t19.c: In function ‘f86’:
+t19.c:1632: warning: unused variable ‘x61’
+t19.c: In function ‘f80’:
+t19.c:1638: warning: unused variable ‘x66’
+t19.c: In function ‘f74’:
+t19.c:1644: warning: unused variable ‘x71’
+t19.c: In function ‘f62’:
+t19.c:1656: warning: unused variable ‘x81’
+t19.c: In function ‘f56’:
+t19.c:1662: warning: unused variable ‘x258’
+t19.c: In function ‘f50’:
+t19.c:1668: warning: unused variable ‘x263’
+t19.c: In function ‘f44’:
+t19.c:1674: warning: unused variable ‘x428’
+t19.c: In function ‘f26’:
+t19.c:1692: warning: unused variable ‘x460’
+t19.c: In function ‘f20’:
+t19.c:1698: warning: unused variable ‘x465’
+10
+3
+Compiling t22
+t22.c: In function ‘f621’:
+t22.c:1973: warning: unused variable ‘x806’
