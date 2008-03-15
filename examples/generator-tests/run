@@ -111,5 +111,124 @@ stalingrad -compile -backpropagator-depth-limit 1 -imprecise-inexacts t19
 EOF
 # t20
 # t21
-# t22
-# versions without -imprecise-inexacts (except t21)
+echo Compiling t22
+stalingrad -compile -backpropagator-depth-limit 1 -imprecise-inexacts t22
+./t22 <<EOF
+3
+EOF
+echo Compiling t1
+stalingrad -compile -backpropagator-depth-limit 1 t1
+./t1
+echo Compiling t2
+stalingrad -compile -backpropagator-depth-limit 1 t2
+./t2 <<EOF
+2
+EOF
+echo Compiling t3
+stalingrad -compile -backpropagator-depth-limit 1 t3
+./t3 <<EOF
+2
+EOF
+echo Compiling t4
+stalingrad -compile -backpropagator-depth-limit 1 t4
+./t4 <<EOF
+3
+4
+EOF
+echo Compiling t5
+stalingrad -compile -backpropagator-depth-limit 1 t5
+./t5 <<EOF
+4
+EOF
+echo Compiling t5a
+stalingrad -compile -backpropagator-depth-limit 1 t5a
+./t5a <<EOF
+4
+EOF
+echo Compiling t6
+stalingrad -compile -backpropagator-depth-limit 1 t6
+./t6
+echo Compiling t6a
+stalingrad -compile -backpropagator-depth-limit 1 t6a
+./t6a
+echo Compiling t7
+stalingrad -compile -backpropagator-depth-limit 1 t7
+./t7 <<EOF
+0
+EOF
+echo Compiling t8
+stalingrad -compile -backpropagator-depth-limit 1 t8
+./t8 <<EOF
+0
+EOF
+echo Compiling t9
+stalingrad -compile -backpropagator-depth-limit 1 t9
+./t9 <<EOF
+0
+EOF
+echo Compiling t10
+stalingrad -compile -backpropagator-depth-limit 1 t10
+./t10 <<EOF
+3
+4
+0
+EOF
+echo Compiling t11
+stalingrad -compile -backpropagator-depth-limit 1 t11
+./t11 <<EOF
+5
+EOF
+echo Compiling t12
+stalingrad -compile -backpropagator-depth-limit 1 t12
+./t12 <<EOF
+3
+4
+EOF
+echo Compiling t13
+stalingrad -compile -backpropagator-depth-limit 1 t13
+./t13 <<EOF
+3
+4
+5
+6
+EOF
+echo Compiling t14
+stalingrad -compile -backpropagator-depth-limit 1 t14
+./t14 <<EOF
+7
+EOF
+echo Compiling t15
+stalingrad -compile -backpropagator-depth-limit 1 t15
+./t15 <<EOF
+7
+EOF
+echo Compiling t16
+stalingrad -compile -backpropagator-depth-limit 1 t16
+./t16
+echo Compiling t17
+stalingrad -compile -backpropagator-depth-limit 1 t17
+./t17 <<EOF
+1
+1
+1
+1
+1
+1
+EOF
+echo Compiling t18
+stalingrad -compile -backpropagator-depth-limit 1 t18
+./t18 <<EOF
+7
+EOF
+echo Compiling t19
+stalingrad -compile -backpropagator-depth-limit 1 t19
+./t19 <<EOF
+3
+4
+EOF
+# t20
+echo Compiling t22
+stalingrad -compile -backpropagator-depth-limit 1 t22
+./t22 <<EOF
+3
+EOF
