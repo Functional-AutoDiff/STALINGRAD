@@ -267,7 +267,7 @@
 	   ;; needs work: to update call to generate
 	   (generate-file (generate e 'needs-work bs) pathname)
 	   ;; needs work: -c -k -cc -copt
-	   (system (format #f "gcc -o ~a -Wall ~a -lm"
+	   (system (format #f "gcc -o ~a -Wall ~a -lm -lgc"
 			   (strip-extension pathname)
 			   (replace-extension pathname "c"))))
 	  (else

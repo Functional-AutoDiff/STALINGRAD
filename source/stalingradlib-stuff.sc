@@ -6871,6 +6871,7 @@
 ;;; x# variable name; # is index in xs
 ;;; x# variable slot of closure struct; # is index in xs
 ;;; x# letrec binding; # is index in xs
+;;; y  target temporary in function call dispatch
 ;;; u# union name; # is index in vs1-vs2
 ;;; s# struct name; # is index in vs1-vs2
 ;;;    union member name; # is index of member in vs1-vs2
@@ -7042,8 +7043,8 @@
 		     vs
 		     n
 		     (lambda (n vs) (inner (rest us) vs n))))))
-	;; here I am: Need to return an empty abstract value for certain
-	;;            inputs to certain AD primitives.
+	;; here I am: Need to return an empty abstract value for certain inputs
+	;;            to certain AD primitives.
 	((or (scalar-value? v) (not (p? v)))
 	 (k (adjoinp abstract-value=? v n) vs))
 	(else (let inner ((vs1 (aggregate-value-values v))
@@ -7195,7 +7196,6 @@
        (let ((xs (set-differenceq l (map second graph))))
 	(if (null? xs)
 	    (let ((x (p1 l)))
-	     (assert x)
 	     (loop (removeq x l)
 		   c1
 		   (cons x c2)
@@ -7400,15 +7400,60 @@
 		     (environment-binding-values b) e application-argument))))
 	  (cond
 	   ((union? v1)
-	    ;; here I am: This is wrong because it has to handle the
-	    ;;            closure case and the if-procedure case from below.
-	    (map (lambda (u1) (make-function-instance u1 v2))
-		 (union-values v1)))
+	    (map-reduce
+	     union-function-instances
+	     '()
+	     (lambda (u1)
+	      (cond
+	       ((closure? u1) (list (make-function-instance u1 v2)))
+	       ((and (primitive-procedure? u1)
+		     (eq? (primitive-procedure-name u1) 'if-procedure))
+		(assert (and (vlad-pair? v2)
+			     (vlad-pair? (vlad-cdr v2))
+			     (closure? (vlad-car (vlad-cdr v2)))
+			     (closure? (vlad-cdr (vlad-cdr v2)))))
+		(let* ((v3 (vlad-car v2))
+		       (v4 (vlad-cdr v2))
+		       (v5 (vlad-car v4))
+		       (v6 (vlad-cdr v4)))
+		 (if (void?
+		      (cond ((and (some vlad-false? (union-members v3))
+				  (some (lambda (u) (not (vlad-false? u)))
+					(union-members v3)))
+			     (abstract-value-union
+			      (abstract-apply v5 (vlad-empty-list))
+			      (abstract-apply v6 (vlad-empty-list))))
+			    ((some vlad-false? (union-members v3))
+			     (abstract-apply v6 (vlad-empty-list)))
+			    ((some (lambda (u) (not (vlad-false? u)))
+				   (union-members v3))
+			     (abstract-apply v5 (vlad-empty-list)))
+			    (else (internal-error))))
+		     '()
+		     (cond
+		      ((and (some vlad-false? (union-members v3))
+			    (some (lambda (u) (not (vlad-false? u)))
+				  (union-members v3)))
+		       ;; We make the assumption that v5 and v6 will not be
+		       ;; abstract-value=?. If this assumption is false then
+		       ;; there may be duplicates.
+		       (list (make-function-instance v5 (vlad-empty-list))
+			     (make-function-instance v6 (vlad-empty-list))))
+		      ((some vlad-false? (union-members v3))
+		       (list (make-function-instance v6 (vlad-empty-list))))
+		      ((some (lambda (u) (not (vlad-false? u)))
+			     (union-members v3))
+		       (list (make-function-instance v5 (vlad-empty-list))))
+		      (else (internal-error))))))
+	       (else '())))
+	     (union-values v1)))
 	   ((closure? v1) (list (make-function-instance v1 v2)))
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
-	    ;; Both v2 and v4 should never be unions and should always be
-	    ;; pairs.
+	    (assert (and (vlad-pair? v2)
+			 (vlad-pair? (vlad-cdr v2))
+			 (closure? (vlad-car (vlad-cdr v2)))
+			 (closure? (vlad-cdr (vlad-cdr v2)))))
 	    (let* ((v3 (vlad-car v2))
 		   (v4 (vlad-cdr v2))
 		   (v5 (vlad-car v4))
@@ -7600,17 +7645,19 @@
 		     (environment-binding-values b) e application-argument))))
 	  (cond
 	   ((union? v1)
-	    (let ((v (abstract-apply v1 v2)))
-	     (map-reduce
-	      union-widener-instances
-	      '()
-	      (lambda (u1) (all-subwidener-instances (abstract-apply u1 v2) v))
-	      (union-values v1))))
+	    (map-reduce union-widener-instances
+			'()
+			(lambda (u1)
+			 (all-subwidener-instances
+			  (abstract-apply u1 v2) (abstract-apply v1 v2)))
+			(union-values v1)))
 	   ((closure? v1) '())
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
-	    ;; Both v2 and v4 should never be unions and should always be
-	    ;; pairs.
+	    (assert (and (vlad-pair? v2)
+			 (vlad-pair? (vlad-cdr v2))
+			 (closure? (vlad-car (vlad-cdr v2)))
+			 (closure? (vlad-cdr (vlad-cdr v2)))))
 	    (let* ((v3 (vlad-car v2))
 		   (v4 (vlad-cdr v2))
 		   (v5 (vlad-car v4))
@@ -7735,11 +7782,13 @@
  (or
   (and
    (application? e)
-   (or (and (let ((v1 (abstract-eval1
-		       (application-callee e)
-		       (restrict-environment vs e application-callee))))
-	     (and (primitive-procedure? v1)
-		  (eq? (primitive-procedure-name v1) 'if-procedure)))
+   (or (and (some (lambda (u1)
+		   (and (primitive-procedure? u1)
+			(eq? (primitive-procedure-name u1) 'if-procedure)))
+		  (union-members
+		   (abstract-eval1
+		    (application-callee e)
+		    (restrict-environment vs e application-callee))))
 	    (abstract-value=?
 	     (abstract-eval1 (application-argument e)
 			     (restrict-environment vs e application-argument))
@@ -7767,11 +7816,11 @@
 (define (calls? e v1 v2 vs)
  (assert (= (length vs) (length (free-variables e))))
  (or (and (application? e)
-	  (or (and (abstract-value=?
-		    (abstract-eval1
-		     (application-callee e)
-		     (restrict-environment vs e application-callee))
-		    v1)
+	  (or (and (some (lambda (u1) (abstract-value=? u1 v1))
+			 (union-members
+			  (abstract-eval1
+			   (application-callee e)
+			   (restrict-environment vs e application-callee))))
 		   (abstract-value=?
 		    (abstract-eval1
 		     (application-argument e)
@@ -7815,39 +7864,52 @@
 		 (vlad-cdr (vlad-cdr (if-instance-v instance2))))))
        (and (if-instance? instance1)
 	    (function-instance? instance2)
-	    (calls-if-procedure?
-	     (closure-body (function-instance-v1 instance2))
-	     (if-instance-v instance1)
-	     ;; here I am
-	     (let ((vss (construct-abstract-environments
-			 (function-instance-v1 instance2)
-			 (function-instance-v2 instance2))))
-	      (assert (= (length vss) 1))
-	      (first vss))))
+	    (some (lambda (vs)
+		   (calls-if-procedure?
+		    (closure-body (function-instance-v1 instance2))
+		    (if-instance-v instance1)
+		    vs))
+		  (construct-abstract-environments
+		   (function-instance-v1 instance2)
+		   (function-instance-v2 instance2))))
        (and (function-instance? instance1)
 	    (function-instance? instance2)
-	    (calls? (closure-body (function-instance-v1 instance2))
-		    (function-instance-v1 instance1)
-		    (function-instance-v2 instance1)
-		    ;; here I am
-		    (let ((vss (construct-abstract-environments
-				(function-instance-v1 instance2)
-				(function-instance-v2 instance2))))
-		     (assert (= (length vss) 1))
-		     (first vss))))))
-  (lambda (l)
-   (find-if (lambda (x)
-	     (and (function-instance? x)
-		  (recursive-closure? (function-instance-v1 x))))
-	    l))
-  (append (map make-if-instance (all-primitives 'if-procedure))
+	    (some (lambda (vs)
+		   (calls? (closure-body (function-instance-v1 instance2))
+			   (function-instance-v1 instance1)
+			   (function-instance-v2 instance1)
+			   vs))
+		  (construct-abstract-environments
+		   (function-instance-v1 instance2)
+		   (function-instance-v2 instance2))))))
+  (lambda (instances)
+   (let ((instance
+	  (or (find-if
+	       (lambda (instance)
+		(and (function-instance? instance)
+		     (recursive-closure? (function-instance-v1 instance))))
+	       instances)
+	      (find-if
+	       (lambda (instance)
+		(and (function-instance? instance)
+		     (backpropagator? (function-instance-v1 instance))))
+	       instances))))
+    (assert instance)
+    instance))
+  (append (map (lambda (v)
+		(assert (and (vlad-pair? v)
+			     (vlad-pair? (vlad-cdr v))
+			     (closure? (vlad-car (vlad-cdr v)))
+			     (closure? (vlad-cdr (vlad-cdr v)))))
+		(make-if-instance v))
+	       (all-primitives 'if-procedure))
 	  function-instances)))
 
 ;;; Primitive C syntax generators
 
-(define (c:sizeof code) (list "sizeof" " " code))
+(define (c:sizeof code) (list "sizeof" "(" code ")"))
 
-(define (c:pointer-cast code1 code2) (list "(" code1 "*" " " ")" code2))
+(define (c:pointer-cast code1 code2) (list "(" code1 " " "*" ")" code2))
 
 (define (c:binary code1 code2 code3) (list code1 code2 code3))
 
@@ -7932,6 +7994,15 @@
 			     code1
 			     (c:pointer-declarator code1))
 			 code2)))
+
+(define (c:let v vs1-vs2 code1 code2 code3)
+ (list "("
+       "{"
+       (c:specifier-init-declaration v vs1-vs2 code1 code2)
+       code3
+       ";"
+       "}"
+       ")"))
 
 (define (generate-struct-and-union-declarations xs vs1-vs2)
  ;; here I am: generate -~-> c:
@@ -8319,6 +8390,378 @@
 	(else (internal-error))))
       (append (first instances1-instances2) (second instances1-instances2))))
 
+;;; Expression generators
+
+(define (generate-destructure p e v code xs vs1-vs2)
+ ;; here I am: Need to handle unions for everything except variable access
+ ;;            expressions and to convert run-time-error to c:panic.
+ (cond
+  ((constant-expression? p)
+   ;; needs work: To generate run-time equivalence check when the constant
+   ;;             expression parameter and/or argument contain abstract
+   ;;             booleans or abstract reals.
+   (unless (abstract-value-nondisjoint?
+	    (concrete-value->abstract-value (constant-expression-value p))
+	    v)
+    (run-time-error "Argument is not an equivalent value"
+		    (constant-expression-value p)
+		    v))
+   '())
+  ((variable-access-expression? p)
+   ;; We get "warning: unused variable" messages from gcc. This is an
+   ;; unsuccessful attempt to eliminate such messages. It is difficult to
+   ;; soundly eliminate all unneeded destructuring bindings. This is sound but
+   ;; eliminates only some. One can't simply check if the variable is
+   ;; referenced in the VLAD source. Because suppose you have code like
+   ;; (F (G X)). Even though X is not void, (G X) might be, and then code is
+   ;; not generated for (G X). For example (REST '(3)) or (NULL? '(3)).
+   (if (memp variable=?
+	     (variable-access-expression-variable p)
+	     (free-variables e))
+       (c:specifier-init-declaration
+	v
+	vs1-vs2
+	(c:variable-name (variable-access-expression-variable p) xs)
+	code)
+       '()))
+  ((lambda-expression? p)
+   (unless (and (nonrecursive-closure? v)
+		(dereferenced-expression-eqv?
+		 p (nonrecursive-closure-lambda-expression v)))
+    (run-time-error
+     (format #f "Argument is not a matching nonrecursive closure for ~s"
+	     (externalize-expression p))
+     v))
+   ;; abstraction
+   (map (lambda (x1 x2 v1)
+	 (generate-destructure
+	  (new-variable-access-expression x1)
+	  e
+	  v1
+	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
+	  xs
+	  vs1-vs2))
+	(parameter-variables p)
+	(nonrecursive-closure-variables v)
+	(nonrecursive-closure-values v)))
+  ((letrec-expression? p)
+   (assert (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p))))
+   (unless (and (recursive-closure? v)
+		(= (recursive-closure-index v)
+		   (positionp variable=?
+			      (variable-access-expression-variable
+			       (letrec-expression-body p))
+			      (letrec-expression-procedure-variables p)))
+		(= (vector-length
+		    (recursive-closure-procedure-variables v))
+		   (length (letrec-expression-procedure-variables p)))
+		(= (vector-length
+		    (recursive-closure-lambda-expressions v))
+		   (length (letrec-expression-lambda-expressions p)))
+		(every dereferenced-expression-eqv?
+		       (vector->list (recursive-closure-lambda-expressions v))
+		       (letrec-expression-lambda-expressions p)))
+    (run-time-error
+     (format #f "Argument is not a matching recursive closure for ~s"
+	     (externalize-expression p))
+     v))
+   ;; abstraction
+   (map (lambda (x1 x2 v1)
+	 (generate-destructure
+	  (new-variable-access-expression x1)
+	  e
+	  v1
+	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
+	  xs
+	  vs1-vs2))
+	(parameter-variables p)
+	(recursive-closure-variables v)
+	(recursive-closure-values v)))
+  ((cons-expression? p)
+   (unless (and (tagged-pair? v)
+		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
+    (run-time-error
+     (format #f "Argument is not a matching tagged pair with tags ~s"
+	     (cons-expression-tags p))
+     v))
+   ;; abstraction
+   (append (generate-destructure (cons-expression-car p)
+				 e
+				 (tagged-pair-car v)
+				 (c:slot v vs1-vs2 code "a")
+				 xs
+				 vs1-vs2)
+	   (generate-destructure (cons-expression-cdr p)
+				 e
+				 (tagged-pair-cdr v)
+				 (c:slot v vs1-vs2 code "d")
+				 xs
+				 vs1-vs2)))
+  (else (internal-error))))
+
+(define (generate-reference v vs1-vs2 x xs2 xs xs1)
+ (cond ((memp variable=? x xs2) "c")
+       ((memp variable=? x xs) (c:slot v vs1-vs2 "c" (c:variable-name x xs1)))
+       (else (c:variable-name x xs1))))
+
+(define (generate-expression
+	 e vs v0 xs xs2 bs xs1 vs1-vs2 function-instances widener-instances)
+ ;; xs is the list of free variables of the environent in which e is evaluated.
+ ;; xs2 is the list of procedure variables of the environent in which e is
+ ;;     evaluated.
+ ;; xs1 is the list of all variables for the entire program.
+ (cond
+  ((constant-expression? e)
+   (assert (void? (constant-expression-value e)))
+   (c:widen
+    (constant-expression-value e) (abstract-eval1 e vs) '() widener-instances))
+  ((variable-access-expression? e)
+   (generate-reference
+    v0 vs1-vs2 (variable-access-expression-variable e) xs2 xs xs1))
+  ((lambda-expression? e)
+   (let ((v (abstract-eval1 e vs)))
+    (c:call*
+     (c:constructor-name v vs1-vs2)
+     (map (lambda (x1 v1)
+	   (if (void? v1) '() (generate-reference v0 vs1-vs2 x1 xs2 xs xs1)))
+	  ;; This used to have to be (free-variables e) instead of
+	  ;; (closure-variables v) when we used alpha equivalence for
+	  ;; expression=?.
+	  (closure-variables v)
+	  (aggregate-value-values v)))))
+  ((application? e)
+   ;; We don't check the "Argument has wrong type for target" condition.
+   (let ((v1 (abstract-eval1 (application-callee e)
+			     (restrict-environment vs e application-callee)))
+	 (v2 (abstract-eval1
+	      (application-argument e)
+	      (restrict-environment vs e application-argument))))
+    (cond
+     ((union? v1)
+      (c:let
+       v1
+       vs1-vs2
+       "y"
+       (generate-expression (application-callee e)
+			    (restrict-environment vs e application-callee)
+			    v0
+			    xs
+			    xs2
+			    bs
+			    xs1
+			    vs1-vs2
+			    function-instances
+			    widener-instances)
+       (c:dispatch
+	v1
+	vs1-vs2
+	"y"
+	(map (lambda (code1 u1)
+	      (c:widen
+	       (abstract-apply u1 v2)
+	       (abstract-apply v1 v2)
+	       (cond
+		((primitive-procedure? u1)
+		 (c:call ((primitive-procedure-generator u1) v2 vs1-vs2)
+			 (if (void? v2)
+			     '()
+			     (generate-expression
+			      (application-argument e)
+			      (restrict-environment vs e application-argument)
+			      v0
+			      xs
+			      xs2
+			      bs
+			      xs1
+			      vs1-vs2
+			      function-instances
+			      widener-instances))))
+		((closure? u1)
+		 (c:call (c:function-name u1 v2 function-instances)
+			 (if (void? u1) '() (c:union v1 vs1-vs2 "y" code1))
+			 (if (void? v2)
+			     '()
+			     (generate-expression
+			      (application-argument e)
+			      (restrict-environment vs e application-argument)
+			      v0
+			      xs
+			      xs2
+			      bs
+			      xs1
+			      vs1-vs2
+			      function-instances
+			      widener-instances))))
+		(else
+		 (c:panic
+		  (abstract-apply u1 v2) "Target is not a procedure" vs1-vs2)))
+	       widener-instances))
+	     (generate-slot-names v1 xs vs1-vs2)
+	     (union-values v1)))))
+     ((primitive-procedure? v1)
+      (c:call ((primitive-procedure-generator v1) v2 vs1-vs2)
+	      (if (void? v2)
+		  '()
+		  (generate-expression
+		   (application-argument e)
+		   (restrict-environment vs e application-argument)
+		   v0
+		   xs
+		   xs2
+		   bs
+		   xs1
+		   vs1-vs2
+		   function-instances
+		   widener-instances))))
+     ((closure? v1)
+      (c:call (c:function-name v1 v2 function-instances)
+	      (if (void? v1)
+		  '()
+		  (generate-expression
+		   (application-callee e)
+		   (restrict-environment vs e application-callee)
+		   v0
+		   xs
+		   xs2
+		   bs
+		   xs1
+		   vs1-vs2
+		   function-instances
+		   widener-instances))
+	      (if (void? v2)
+		  '()
+		  (generate-expression
+		   (application-argument e)
+		   (restrict-environment vs e application-argument)
+		   v0
+		   xs
+		   xs2
+		   bs
+		   xs1
+		   vs1-vs2
+		   function-instances
+		   widener-instances))))
+     (else
+      (c:panic (abstract-apply v1 v2) "Target is not a procedure" vs1-vs2)))))
+  ((letrec-expression? e)
+   (generate-expression (letrec-expression-body e)
+			(letrec-nested-environment vs e)
+			v0
+			xs
+			xs2
+			bs
+			xs1
+			vs1-vs2
+			function-instances
+			widener-instances))
+  ((cons-expression? e)
+   (let ((v1 (abstract-eval1 (cons-expression-car e)
+			     (restrict-environment vs e cons-expression-car)))
+	 (v2 (abstract-eval1 (cons-expression-cdr e)
+			     (restrict-environment vs e cons-expression-cdr))))
+    (c:call (c:constructor-name (abstract-eval1 e vs) vs1-vs2)
+	    (if (void? v1)
+		'()
+		(generate-expression
+		 (cons-expression-car e)
+		 (restrict-environment vs e cons-expression-car)
+		 v0
+		 xs
+		 xs2
+		 bs
+		 xs1
+		 vs1-vs2
+		 function-instances
+		 widener-instances))
+	    (if (void? v2)
+		'()
+		(generate-expression
+		 (cons-expression-cdr e)
+		 (restrict-environment vs e cons-expression-cdr)
+		 v0
+		 xs
+		 xs2
+		 bs
+		 xs1
+		 vs1-vs2
+		 function-instances
+		 widener-instances)))))
+  (else (internal-error))))
+
+(define (generate-letrec-bindings e vs xs xs2 xs1 vs1-vs2)
+ (cond
+  ((constant-expression? e) '())
+  ((variable-access-expression? e) '())
+  ((lambda-expression? e) '())
+  ((application? e)
+   ;; abstraction
+   (list
+    (generate-letrec-bindings (application-callee e)
+			      (restrict-environment vs e application-callee)
+			      xs
+			      xs2
+			      xs1
+			      vs1-vs2)
+    (generate-letrec-bindings (application-argument e)
+			      (restrict-environment vs e application-argument)
+			      xs
+			      xs2
+			      xs1
+			      vs1-vs2)))
+  ((letrec-expression? e)
+   ;; abstraction
+   (list
+    ;; abstraction
+    (map (lambda (x)
+	  (let ((v (new-recursive-closure
+		    (letrec-restrict-environment vs e)
+		    (list->vector (letrec-expression-procedure-variables e))
+		    (list->vector (letrec-expression-lambda-expressions e))
+		    (positionp
+		     variable=? x (letrec-expression-procedure-variables e)))))
+	   (c:specifier-init-declaration
+	    v
+	    vs1-vs2
+	    (c:variable-name x xs1)
+	    (c:call* (c:constructor-name v vs1-vs2)
+		     (map (lambda (x1 v1)
+			   (if (void? v1)
+			       '()
+			       (generate-reference v vs1-vs2 x1 xs2 xs xs1)))
+			  ;; This used to have to be
+			  ;; (letrec-expression-variables e) instead of
+			  ;; (closure-variables v) when we used alpha
+			  ;; equivalence for expression=?.
+			  (closure-variables v)
+			  (aggregate-value-values v))))))
+	 (letrec-expression-procedure-variables e))
+    (generate-letrec-bindings (letrec-expression-body e)
+			      (letrec-nested-environment vs e)
+			      xs
+			      xs2
+			      xs1
+			      vs1-vs2)))
+  ((cons-expression? e)
+   ;; abstraction
+   (list
+    (generate-letrec-bindings (cons-expression-car e)
+			      (restrict-environment vs e cons-expression-car)
+			      xs
+			      xs2
+			      xs1
+			      vs1-vs2)
+    (generate-letrec-bindings (cons-expression-cdr e)
+			      (restrict-environment vs e cons-expression-cdr)
+			      xs
+			      xs2
+			      xs1
+			      vs1-vs2)))
+  (else (internal-error))))
+
 ;;; Definition generators
 
 (define (generate-constructor-definitions xs vs1-vs2)
@@ -8387,10 +8830,10 @@
 		  (c:pointer-cast
 		   (c:specifier v vs1-vs2)
 		   (c:call "GC_malloc" (c:sizeof (c:specifier v vs1-vs2))))))
-	     (map (lambda (code v)
-		   (if (void? v)
+	     (map (lambda (code1 v1)
+		   (if (void? v1)
 		       '()
-		       (c:assignment (c:slot v vs1-vs2 "r" code) code)))
+		       (c:assignment (c:slot v vs1-vs2 "r" code1) code1)))
 		  (generate-slot-names v xs vs1-vs2)
 		  (aggregate-value-values v))
 	     (c:return "r"))))))
@@ -8439,11 +8882,11 @@
 	     ;; This will only be done on conforming structures since the
 	     ;; analysis is almost union free.
 	     (map
-	      (lambda (code1 v1 v2)
-	       (if (void? v2)
+	      (lambda (code1a v1a v2a)
+	       (if (void? v2a)
 		   '()
 		   (c:widen
-		    v1 v2 (c:slot v1 vs1-vs2 "x" code1) widener-instances)))
+		    v1a v2a (c:slot v1 vs1-vs2 "x" code1a) widener-instances)))
 	      (generate-slot-names v1 xs vs1-vs2)
 	      (aggregate-value-values v1)
 	      (aggregate-value-values v2))))))))))
@@ -8558,342 +9001,6 @@
        (c:panic v0 (format #f "Argument to ~a is invalid" code2) vs1-vs2))))))
   (all-primitives s)))
 
-(define (generate-destructure p e v code xs vs1-vs2)
- ;; here I am: misplaced
- (cond
-  ((constant-expression? p)
-   ;; needs work: To generate run-time equivalence check when the constant
-   ;;             expression parameter and/or argument contain abstract
-   ;;             booleans or abstract reals.
-   (unless (abstract-value-nondisjoint?
-	    (concrete-value->abstract-value (constant-expression-value p))
-	    v)
-    (run-time-error "Argument is not an equivalent value"
-		    (constant-expression-value p)
-		    v))
-   '())
-  ((variable-access-expression? p)
-   ;; We get "warning: unused variable" messages from gcc. This is an
-   ;; unsuccessful attempt to eliminate such messages. It is difficult to
-   ;; soundly eliminate all unneeded destructuring bindings. This is sound but
-   ;; eliminates only some. One can't simply check if the variable is
-   ;; referenced in the VLAD source. Because suppose you have code like
-   ;; (F (G X)). Even though X is not void, (G X) might be, and then code is
-   ;; not generated for (G X). For example (REST '(3)) or (NULL? '(3)).
-   (if (memp variable=?
-	     (variable-access-expression-variable p)
-	     (free-variables e))
-       (c:specifier-init-declaration
-	v
-	vs1-vs2
-	(c:variable-name (variable-access-expression-variable p) xs)
-	code)
-       '()))
-  ((lambda-expression? p)
-   (unless (and (nonrecursive-closure? v)
-		(dereferenced-expression-eqv?
-		 p (nonrecursive-closure-lambda-expression v)))
-    (run-time-error
-     (format #f "Argument is not a matching nonrecursive closure for ~s"
-	     (externalize-expression p))
-     v))
-   ;; abstraction
-   (map (lambda (x1 x2 v1)
-	 (generate-destructure
-	  (new-variable-access-expression x1)
-	  e
-	  v1
-	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
-	  xs
-	  vs1-vs2))
-	(parameter-variables p)
-	(nonrecursive-closure-variables v)
-	(nonrecursive-closure-values v)))
-  ((letrec-expression? p)
-   (assert (and (variable-access-expression? (letrec-expression-body p))
-		(memp variable=?
-		      (variable-access-expression-variable
-		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p))))
-   (unless (and (recursive-closure? v)
-		(= (recursive-closure-index v)
-		   (positionp variable=?
-			      (variable-access-expression-variable
-			       (letrec-expression-body p))
-			      (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-procedure-variables v))
-		   (length (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-lambda-expressions v))
-		   (length (letrec-expression-lambda-expressions p)))
-		(every dereferenced-expression-eqv?
-		       (vector->list (recursive-closure-lambda-expressions v))
-		       (letrec-expression-lambda-expressions p)))
-    (run-time-error
-     (format #f "Argument is not a matching recursive closure for ~s"
-	     (externalize-expression p))
-     v))
-   ;; abstraction
-   (map (lambda (x1 x2 v1)
-	 (generate-destructure
-	  (new-variable-access-expression x1)
-	  e
-	  v1
-	  (c:slot v vs1-vs2 code (c:variable-name x2 xs))
-	  xs
-	  vs1-vs2))
-	(parameter-variables p)
-	(recursive-closure-variables v)
-	(recursive-closure-values v)))
-  ((cons-expression? p)
-   (unless (and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-    (run-time-error
-     (format #f "Argument is not a matching tagged pair with tags ~s"
-	     (cons-expression-tags p))
-     v))
-   ;; abstraction
-   (append (generate-destructure (cons-expression-car p)
-				 e
-				 (tagged-pair-car v)
-				 (c:slot v vs1-vs2 code "a")
-				 xs
-				 vs1-vs2)
-	   (generate-destructure (cons-expression-cdr p)
-				 e
-				 (tagged-pair-cdr v)
-				 (c:slot v vs1-vs2 code "d")
-				 xs
-				 vs1-vs2)))
-  (else (internal-error))))
-
-(define (generate-reference v vs1-vs2 x xs2 xs xs1)
- ;; here I am: misplaced
- (cond ((memp variable=? x xs2) "c")
-       ((memp variable=? x xs) (c:slot v vs1-vs2 "c" (c:variable-name x xs1)))
-       (else (c:variable-name x xs1))))
-
-(define (generate-expression
-	 e vs xs xs2 bs xs1 vs1-vs2 function-instances widener-instances)
- ;; here I am: misplaced
- ;; xs is the list of free variables of the environent in which e is evaluated.
- ;; xs2 is the list of procedure variables of the environent in which e is
- ;;     evaluated.
- ;; xs1 is the list of all variables for the entire program.
- (let ((v (abstract-eval1 e vs)))
-  (cond
-   ((constant-expression? e)
-    (assert (void? (constant-expression-value e)))
-    (c:widen (constant-expression-value e) v '() widener-instances))
-   ((variable-access-expression? e)
-    (generate-reference
-     v vs1-vs2 (variable-access-expression-variable e) xs2 xs xs1))
-   ((lambda-expression? e)
-    (c:call*
-     (c:constructor-name v vs1-vs2)
-     (map (lambda (x1 v1)
-	   (if (void? v1) '() (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
-	  ;; This used to have to be (free-variables e) instead of
-	  ;; (closure-variables v) when we used alpha equivalence for
-	  ;; expression=?.
-	  (closure-variables v)
-	  (aggregate-value-values v))))
-   ((application? e)
-    (let ((v1 (abstract-eval1 (application-callee e)
-			      (restrict-environment vs e application-callee)))
-	  (v2 (abstract-eval1
-	       (application-argument e)
-	       (restrict-environment vs e application-argument))))
-     ;; here I am: Need to handle union targets.
-     ;; needs work: To give an error on an improper call.
-     (if (primitive-procedure? v1)
-	 (c:call ((primitive-procedure-generator v1) v2 vs1-vs2)
-		 (if (void? v2)
-		     '()
-		     (generate-expression
-		      (application-argument e)
-		      (restrict-environment vs e application-argument)
-		      xs
-		      xs2
-		      bs
-		      xs1
-		      vs1-vs2
-		      function-instances
-		      widener-instances)))
-	 (c:call (c:function-name v1 v2 function-instances)
-		 (if (void? v1)
-		     '()
-		     (generate-expression
-		      (application-callee e)
-		      (restrict-environment vs e application-callee)
-		      xs
-		      xs2
-		      bs
-		      xs1
-		      vs1-vs2
-		      function-instances
-		      widener-instances))
-		 (if (void? v2)
-		     '()
-		     (generate-expression
-		      (application-argument e)
-		      (restrict-environment vs e application-argument)
-		      xs
-		      xs2
-		      bs
-		      xs1
-		      vs1-vs2
-		      function-instances
-		      widener-instances))))))
-   ((letrec-expression? e)
-    (generate-expression (letrec-expression-body e)
-			 (letrec-nested-environment vs e)
-			 xs
-			 xs2
-			 bs
-			 xs1
-			 vs1-vs2
-			 function-instances
-			 widener-instances))
-   ((cons-expression? e)
-    (let ((v1 (abstract-eval1 (cons-expression-car e)
-			      (restrict-environment vs e cons-expression-car)))
-	  (v2 (abstract-eval1
-	       (cons-expression-cdr e)
-	       (restrict-environment vs e cons-expression-cdr))))
-     (c:call (c:constructor-name v vs1-vs2)
-	     (if (void? v1)
-		 '()
-		 (generate-expression
-		  (cons-expression-car e)
-		  (restrict-environment vs e cons-expression-car)
-		  xs
-		  xs2
-		  bs
-		  xs1
-		  vs1-vs2
-		  function-instances
-		  widener-instances))
-	     (if (void? v2)
-		 '()
-		 (generate-expression
-		  (cons-expression-cdr e)
-		  (restrict-environment vs e cons-expression-cdr)
-		  xs
-		  xs2
-		  bs
-		  xs1
-		  vs1-vs2
-		  function-instances
-		  widener-instances)))))
-   (else (internal-error)))))
-
-(define (generate-letrec-bindings e vs xs xs2 xs1 vs1-vs2)
- ;; here I am: misplaced
- (let ((v (abstract-eval1 e vs)))
-  (cond
-   ((void? v) '())
-   ((constant-expression? e) '())
-   ((variable-access-expression? e) '())
-   ((lambda-expression? e) '())
-   ((application? e)
-    (let ((v1 (abstract-eval1 (application-callee e)
-			      (restrict-environment vs e application-callee)))
-	  (v2 (abstract-eval1
-	       (application-argument e)
-	       (restrict-environment vs e application-argument))))
-     ;; needs work: To give an error on an improper call.
-     (if (primitive-procedure? v1)
-	 (if (void? v2)
-	     '()
-	     (generate-letrec-bindings
-	      (application-argument e)
-	      (restrict-environment vs e application-argument)
-	      xs
-	      xs2
-	      xs1
-	      vs1-vs2))
-	 ;; abstraction
-	 (list (if (void? v1)
-		   '()
-		   (generate-letrec-bindings
-		    (application-callee e)
-		    (restrict-environment vs e application-callee)
-		    xs
-		    xs2
-		    xs1
-		    vs1-vs2))
-	       (if (void? v2)
-		   '()
-		   (generate-letrec-bindings
-		    (application-argument e)
-		    (restrict-environment vs e application-argument)
-		    xs
-		    xs2
-		    xs1
-		    vs1-vs2))))))
-   ((letrec-expression? e)
-    ;; abstraction
-    (list
-     ;; abstraction
-     (map
-      (lambda (x)
-       (let ((v (new-recursive-closure
-		 (letrec-restrict-environment vs e)
-		 (list->vector (letrec-expression-procedure-variables e))
-		 (list->vector (letrec-expression-lambda-expressions e))
-		 (positionp
-		  variable=? x (letrec-expression-procedure-variables e)))))
-	(c:specifier-init-declaration
-	 v
-	 vs1-vs2
-	 (c:variable-name x xs1)
-	 (c:call* (c:constructor-name v vs1-vs2)
-		  (map (lambda (x1 v1)
-			(if (void? v1)
-			    '()
-			    (generate-reference v1 vs1-vs2 x1 xs2 xs xs1)))
-		       ;; This used to have to be
-		       ;; (letrec-expression-variables e) instead of
-		       ;; (closure-variables v) when we used alpha
-		       ;; equivalence for expression=?.
-		       (closure-variables v)
-		       (aggregate-value-values v))))))
-      (letrec-expression-procedure-variables e))
-     (generate-letrec-bindings (letrec-expression-body e)
-			       (letrec-nested-environment vs e)
-			       xs
-			       xs2
-			       xs1
-			       vs1-vs2)))
-   ((cons-expression? e)
-    (let ((v1 (abstract-eval1 (cons-expression-car e)
-			      (restrict-environment vs e cons-expression-car)))
-	  (v2 (abstract-eval1
-	       (cons-expression-cdr e)
-	       (restrict-environment vs e cons-expression-cdr))))
-     ;; abstraction
-     (list (if (void? v1)
-	       '()
-	       (generate-letrec-bindings
-		(cons-expression-car e)
-		(restrict-environment vs e cons-expression-car)
-		xs
-		xs2
-		xs1
-		vs1-vs2))
-	   (if (void? v2)
-	       '()
-	       (generate-letrec-bindings
-		(cons-expression-cdr e)
-		(restrict-environment vs e cons-expression-cdr)
-		xs
-		xs2
-		xs1
-		vs1-vs2)))))
-   (else (internal-error)))))
-
 (define (generate-if-and-function-definitions bs
 					      xs
 					      vs1-vs2
@@ -9003,6 +9110,7 @@
 	  (let ((vss (construct-abstract-environments v1 v2)))
 	   (assert (= (length vss) 1))
 	   (first vss))
+	  v1
 	  (closure-variables v1)
 	  (cond ((nonrecursive-closure? v1) '())
 		((recursive-closure? v1)
@@ -9688,6 +9796,7 @@
    "#include <math.h>" #\newline
    "#include <stdio.h>" #\newline
    "#include <stdlib.h>" #\newline
+   "#include <gc/gc.h>" #\newline
    "#define INLINE inline __attribute__ ((always_inline))" #\newline
    "#define NORETURN __attribute__ ((noreturn))" #\newline
    (generate-struct-and-union-declarations xs vs1-vs2)
@@ -9888,6 +9997,8 @@
 	  (generate-expression e
 			       (environment-binding-values
 				(first (expression-environment-bindings e)))
+			       ;; A placeholder.
+			       (empty-abstract-value)
 			       (free-variables e)
 			       '()
 			       bs
