@@ -2511,30 +2511,63 @@
   (else (internal-error))))
 
 (define (link-inverses e1 e)
- ;; needs work: Should we copy the other inverses?
  (assert
-  (or (and (not (lambda-expression-sensitivity-transform-inverse e))
-	   (not (lambda-expression-sensitivity-transform-inverse e1)))
-      (and (lambda-expression-sensitivity-transform-inverse e)
-	   (or (not (lambda-expression-sensitivity-transform-inverse e1))
-	       (expression-eqv?
-		(lambda-expression-sensitivity-transform-inverse e)
-		(lambda-expression-sensitivity-transform-inverse e1))))))
- (assert (or (and (not (lambda-expression-alpha-conversion-inverse e))
-		  (not (lambda-expression-alpha-conversion-inverse e1)))
-	     (and (lambda-expression-alpha-conversion-inverse e)
-		  (or (not (lambda-expression-alpha-conversion-inverse e1))
-		      (expression-eqv?
-		       (lambda-expression-alpha-conversion-inverse e)
-		       (lambda-expression-alpha-conversion-inverse e1))))))
- (when (and (lambda-expression-sensitivity-transform-inverse e)
+  (and
+   (or (and (not (lambda-expression-alpha-conversion-inverse e))
+	    (not (lambda-expression-alpha-conversion-inverse e1)))
+       (and (lambda-expression-alpha-conversion-inverse e)
+	    (or (not (lambda-expression-alpha-conversion-inverse e1))
+		(expression-eqv?
+		 (lambda-expression-alpha-conversion-inverse e)
+		 (lambda-expression-alpha-conversion-inverse e1)))))
+   (or (and (not (lambda-expression-perturbation-transform-inverse e))
+	    (not (lambda-expression-perturbation-transform-inverse e1)))
+       (and (lambda-expression-perturbation-transform-inverse e)
+	    (or (not (lambda-expression-perturbation-transform-inverse e1))
+		(expression-eqv?
+		 (lambda-expression-perturbation-transform-inverse e)
+		 (lambda-expression-perturbation-transform-inverse e1)))))
+   (or (and (not (lambda-expression-forward-transform-inverse e))
+	    (not (lambda-expression-forward-transform-inverse e1)))
+       (and (lambda-expression-forward-transform-inverse e)
+	    (or (not (lambda-expression-forward-transform-inverse e1))
+		(expression-eqv?
+		 (lambda-expression-forward-transform-inverse e)
+		 (lambda-expression-forward-transform-inverse e1)))))
+   (or (and (not (lambda-expression-sensitivity-transform-inverse e))
 	    (not (lambda-expression-sensitivity-transform-inverse e1)))
-  (set-lambda-expression-sensitivity-transform-inverse!
-   e1 (lambda-expression-sensitivity-transform-inverse e)))
+       (and (lambda-expression-sensitivity-transform-inverse e)
+	    (or (not (lambda-expression-sensitivity-transform-inverse e1))
+		(expression-eqv?
+		 (lambda-expression-sensitivity-transform-inverse e)
+		 (lambda-expression-sensitivity-transform-inverse e1)))))
+   (or (and (not (lambda-expression-reverse-transform-inverse e))
+	    (not (lambda-expression-reverse-transform-inverse e1)))
+       (and (lambda-expression-reverse-transform-inverse e)
+	    (or (not (lambda-expression-reverse-transform-inverse e1))
+		(expression-eqv?
+		 (lambda-expression-reverse-transform-inverse e)
+		 (lambda-expression-reverse-transform-inverse e1)))))))
  (when (and (lambda-expression-alpha-conversion-inverse e)
 	    (not (lambda-expression-alpha-conversion-inverse e1)))
   (set-lambda-expression-alpha-conversion-inverse!
    e1 (lambda-expression-alpha-conversion-inverse e)))
+ (when (and (lambda-expression-perturbation-transform-inverse e)
+	    (not (lambda-expression-perturbation-transform-inverse e1)))
+  (set-lambda-expression-perturbation-transform-inverse!
+   e1 (lambda-expression-perturbation-transform-inverse e)))
+ (when (and (lambda-expression-forward-transform-inverse e)
+	    (not (lambda-expression-forward-transform-inverse e1)))
+  (set-lambda-expression-forward-transform-inverse!
+   e1 (lambda-expression-forward-transform-inverse e)))
+ (when (and (lambda-expression-sensitivity-transform-inverse e)
+	    (not (lambda-expression-sensitivity-transform-inverse e1)))
+  (set-lambda-expression-sensitivity-transform-inverse!
+   e1 (lambda-expression-sensitivity-transform-inverse e)))
+ (when (and (lambda-expression-reverse-transform-inverse e)
+	    (not (lambda-expression-reverse-transform-inverse e1)))
+  (set-lambda-expression-reverse-transform-inverse!
+   e1 (lambda-expression-reverse-transform-inverse e)))
  e1)
 
 (define (alpha-convert-expression e bs)
