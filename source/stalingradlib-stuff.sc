@@ -1028,15 +1028,37 @@
  ;; needs work: We need to look for all implicit eq? comparisons.
  (eq? e1 e2))
 
-(define (dereference-expression e)
- (if (and (lambda-expression? e)
-	  (lambda-expression-alpha-conversion-inverse e))
-     (dereference-expression (lambda-expression-alpha-conversion-inverse e))
-     e))
-
 (define (dereferenced-expression-eqv? e1 e2)
  ;; needs work: We need to look for all implicit eq? comparisons.
- (eq? (dereference-expression e1) (dereference-expression e2)))
+ (if (and (lambda-expression? e1) (lambda-expression? e2))
+     (cond ((lambda-expression-alpha-conversion-inverse e1)
+	    (dereferenced-expression-eqv?
+	     (lambda-expression-alpha-conversion-inverse e1) e2))
+	   ((lambda-expression-alpha-conversion-inverse e2)
+	    (dereferenced-expression-eqv?
+	     e1 (lambda-expression-alpha-conversion-inverse e2)))
+	   ((and (lambda-expression-perturbation-transform-inverse e1)
+		 (lambda-expression-perturbation-transform-inverse e2))
+	    (dereferenced-expression-eqv?
+	     (lambda-expression-perturbation-transform-inverse e1)
+	     (lambda-expression-perturbation-transform-inverse e2)))
+	   ((and (lambda-expression-forward-transform-inverse e1)
+		 (lambda-expression-forward-transform-inverse e2))
+	    (dereferenced-expression-eqv?
+	     (lambda-expression-forward-transform-inverse e1)
+	     (lambda-expression-forward-transform-inverse e2)))
+	   ((and (lambda-expression-sensitivity-transform-inverse e1)
+		 (lambda-expression-sensitivity-transform-inverse e2))
+	    (dereferenced-expression-eqv?
+	     (lambda-expression-sensitivity-transform-inverse e1)
+	     (lambda-expression-sensitivity-transform-inverse e2)))
+	   ((and (lambda-expression-reverse-transform-inverse e1)
+		 (lambda-expression-reverse-transform-inverse e2))
+	    (dereferenced-expression-eqv?
+	     (lambda-expression-reverse-transform-inverse e1)
+	     (lambda-expression-reverse-transform-inverse e2)))
+	   (else (eq? e1 e2)))
+     (eq? e1 e2)))
 
 ;;; Values
 
@@ -3947,7 +3969,8 @@
 		  (nonrecursive-closure? v-perturbation)
 		  (perturbation-parameter?
 		   (nonrecursive-closure-parameter v-perturbation))
-		  (nonrecursive-closure-match? v (unperturb v-perturbation)))
+		  (dereferenced-nonrecursive-closure-match?
+		   v (unperturb v-perturbation)))
 	     ;; See the note in abstract-environment=?.
 	     (let ((u-forward (make-nonrecursive-closure
 			       'unfilled
@@ -3965,7 +3988,8 @@
 		  (recursive-closure? v-perturbation)
 		  (perturbation-parameter?
 		   (recursive-closure-parameter v-perturbation))
-		  (recursive-closure-match? v (unperturb v-perturbation)))
+		  (dereferenced-recursive-closure-match?
+		   v (unperturb v-perturbation)))
 	     ;; See the note in abstract-environment=?.
 	     (let ((u-forward
 		    (make-recursive-closure
@@ -9354,11 +9378,11 @@
       (or (and (nonrecursive-closure? v2a)
 	       (nonrecursive-closure? v2b)
 	       (perturbation-parameter? (nonrecursive-closure-parameter v2b))
-	       (nonrecursive-closure-match? v2a (unperturb v2b)))
+	       (dereferenced-nonrecursive-closure-match? v2a (unperturb v2b)))
 	  (and (recursive-closure? v2a)
 	       (recursive-closure? v2b)
 	       (perturbation-parameter? (recursive-closure-parameter v2b))
-	       (recursive-closure-match? v2a (unperturb v2b)))
+	       (dereferenced-recursive-closure-match? v2a (unperturb v2b)))
 	  (and (tagged-pair? v2a)
 	       (tagged-pair? v2b)
 	       (tagged? 'perturbation (tagged-pair-tags v2b))
@@ -9496,11 +9520,11 @@
        ((or (and (nonrecursive-closure? v1)
 		 (nonrecursive-closure? v2)
 		 (perturbation-parameter? (nonrecursive-closure-parameter v2))
-		 (nonrecursive-closure-match? v1 (unperturb v2)))
+		 (dereferenced-nonrecursive-closure-match? v1 (unperturb v2)))
 	    (and (recursive-closure? v1)
 		 (recursive-closure? v2)
 		 (perturbation-parameter? (recursive-closure-parameter v2))
-		 (recursive-closure-match? v1 (unperturb v2)))
+		 (dereferenced-recursive-closure-match? v1 (unperturb v2)))
 	    (and (tagged-pair? v1)
 		 (tagged-pair? v2)
 		 (tagged? 'perturbation (tagged-pair-tags v2))
