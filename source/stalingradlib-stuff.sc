@@ -7114,7 +7114,7 @@
 			  n
 			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
-(define (all-binary-abstract-subvalues p? f? f f-inverse v)
+(define (all-binary-abstract-subvalues p? f? f f-inverse p1? v)
  ;; This is written in CPS so as not to break structure sharing.
  (define (outer1 v vs cs n k)
   (cond ((memq v vs) (k n vs cs))
@@ -7182,23 +7182,24 @@
 	;;            inputs.
 	((or (scalar-value? v1) (not (p? v1)))
 	 (k (adjoinp abstract-value=? (vlad-cons v1 v2) n) vs cs))
-	;; here I am: Need to do this only for conforming aggregates.
-	;;            Need to return an empty abstract value when for
-	;;            nonconforming aggregates.
-	(else (let inner ((vs1 (aggregate-value-values v1))
-			  (vs2 (aggregate-value-values v2))
-			  (vs vs)
-			  (cs (cons (cons v1 v2) cs))
-			  (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
-	       (if (null? vs1)
-		   (k n vs cs)
-		   (outer2 (first vs1)
-			   (first vs2)
-			   vs
-			   cs
-			   n
-			   (lambda (n vs cs)
-			    (inner (rest vs1) (rest vs2) vs cs n))))))))
+	((p1? v1 v2)
+	 (let inner ((vs1 (aggregate-value-values v1))
+		     (vs2 (aggregate-value-values v2))
+		     (vs vs)
+		     (cs (cons (cons v1 v2) cs))
+		     (n (adjoinp abstract-value=? (vlad-cons v1 v2) n)))
+	  (if (null? vs1)
+	      (k n vs cs)
+	      (outer2 (first vs1)
+		      (first vs2)
+		      vs
+		      cs
+		      n
+		      (lambda (n vs cs)
+		       (inner (rest vs1) (rest vs2) vs cs n))))))
+	;; here I am: Need to return an empty abstract value for nonconforming
+	;;            inputs.
+	(else (k (adjoinp abstract-value=? (vlad-cons v1 v2) n) vs cs))))
  (outer1 v '() '() '() (lambda (n vs cs) n)))
 
 (define (component? v1 v2)
@@ -7306,13 +7307,13 @@
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort component? first (all-unary-ad s p?)))
 
-(define (all-binary-ad s p? f? f f-inverse g-value)
+(define (all-binary-ad s p? f? f f-inverse g-value p1?)
  ;; This is called redundantly thrice, once in all-binary-ad-widener-instances,
  ;; once to generate declarations, and once to generate definitions.
  (map-reduce
   union-abstract-values
   '()
-  (lambda (v) (all-binary-abstract-subvalues p? f? f f-inverse v))
+  (lambda (v) (all-binary-abstract-subvalues p? f? f f-inverse p1? v))
   (map-reduce
    union-abstract-values
    '()
@@ -7340,13 +7341,13 @@
 	'()))
    *expressions*)))
 
-(define (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)
+(define (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort
-  p1? first (all-binary-ad s p? f? f f-inverse g-value)))
+  p2? first (all-binary-ad s p? f? f f-inverse g-value p1?)))
 
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  (map-reduce union-abstract-values
@@ -7365,6 +7366,36 @@
  ;; here I am: Needs to give a warning on a nonpair.
  (new-union (map (lambda (u) (plus (vlad-car u) (vlad-cdr u)))
 		 (remove-if-not vlad-pair? (union-members v)))))
+
+(define (bundle-aggregates-match? v1 v2)
+ (or (and (nonrecursive-closure? v1)
+	  (nonrecursive-closure? v2)
+	  (perturbation-parameter? (nonrecursive-closure-parameter v2))
+	  (dereferenced-nonrecursive-closure-match? v1 (unperturb v2)))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (perturbation-parameter? (recursive-closure-parameter v2))
+	  (dereferenced-recursive-closure-match? v1 (unperturb v2)))
+     (and (tagged-pair? v1)
+	  (tagged-pair? v2)
+	  (tagged? 'perturbation (tagged-pair-tags v2))
+	  (equal-tags? (tagged-pair-tags v1)
+		       (remove-tag 'perturbation (tagged-pair-tags v2))))))
+
+(define (plus-aggregates-match? v1 v2)
+ (or (and (nonrecursive-closure? v1)
+	  (nonrecursive-closure? v2)
+	  (dereferenced-nonrecursive-closure-match? v1 v2))
+     (and (recursive-closure? v1)
+	  (recursive-closure? v2)
+	  (dereferenced-recursive-closure-match? v1 v2))
+     (and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+     (and (bundle? v1) (bundle? v2))
+     (and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+     (and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+     (and (tagged-pair? v1)
+	  (tagged-pair? v2)
+	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))))
 
 (define (all-nested-abstract-values)
  (feedback-cached-topological-sort
@@ -7417,11 +7448,13 @@
 	       (not (bundle? v))
 	       (not (sensitivity-tagged-value? v))
 	       (not (reverse-tagged-value? v))))
-	 perturbation-tagged-value? perturb unperturb bundle-value))
+	 perturbation-tagged-value? perturb unperturb bundle-value
+	 bundle-aggregates-match?))
        (binary-ad-argument-and-result-abstract-values
 	plus-value
 	(all-binary-ad
-	 'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value)))
+	 'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value
+	 plus-aggregates-match?)))
       (all-abstract-values)))))))
 
 (define (function-instance=? function-instance1 function-instance2)
@@ -7616,7 +7649,7 @@
        '()))
   (all-unary-ad s p?)))
 
-(define (all-binary-ad-widener-instances s p? f? f f-inverse g g-value)
+(define (all-binary-ad-widener-instances s p? f? f f-inverse g g-value p1?)
  (map-reduce
   union-widener-instances
   '()
@@ -7661,7 +7694,7 @@
 	      (union-values (f-inverse v2))))
 	    (else '()))))
     (else '())))
-  (all-binary-ad s p? f? f f-inverse g-value)))
+  (all-binary-ad s p? f? f f-inverse g-value p1?)))
 
 (define (all-widener-instances)
  (cached-topological-sort
@@ -7769,7 +7802,8 @@
 	    (not (bundle? v))
 	    (not (sensitivity-tagged-value? v))
 	    (not (reverse-tagged-value? v))))
-      perturbation-tagged-value? perturb unperturb bundle bundle-value)
+      perturbation-tagged-value? perturb unperturb bundle bundle-value
+      bundle-aggregates-match?)
      (all-unary-ad-widener-instances
       'sensitize
       (lambda (v)
@@ -7784,7 +7818,8 @@
        (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
       unsensitize)
      (all-binary-ad-widener-instances
-      'plus (lambda (v) #t) (lambda (v) #f) identity identity plus plus-value)
+      'plus (lambda (v) #t) (lambda (v) #f) identity identity plus plus-value
+      plus-aggregates-match?)
      (all-unary-ad-widener-instances
       '*j
       (lambda (v)
@@ -8390,8 +8425,8 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-declarations
-	 s p? f? f f-inverse g-value p1? code vs1-vs2)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)))
+	 s p? f? f f-inverse g-value p1? p2? code vs1-vs2)
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-declaration
@@ -9191,8 +9226,8 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-definitions
-	 s p? f? f f-inverse g-value p1? code xs vs1-vs2 generate)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1?)))
+	 s p? f? f f-inverse g-value p1? p2? code xs vs1-vs2 generate)
+ (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-definition
@@ -9393,38 +9428,23 @@
   (and
    (vlad-pair? v2)
    (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
-    (or
-     (and (union? v2a)
-	  (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
-		(union-values v2a)))
-     (and (not (union? v2a))
-	  (union? v2b)
-	  (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
-		(union-values v2b)))
-     (and (not (union? v2a))
-	  (perturbation-tagged-value? v2b)
-	  (union? (unperturb v2b))
-	  (some (lambda (u2b)
-		 (abstract-value=? v1 (vlad-cons v2a (perturb u2b))))
-		(union-values (unperturb v2b))))
-     (and
-      (or (and (nonrecursive-closure? v2a)
-	       (nonrecursive-closure? v2b)
-	       (perturbation-parameter? (nonrecursive-closure-parameter v2b))
-	       (dereferenced-nonrecursive-closure-match? v2a (unperturb v2b)))
-	  (and (recursive-closure? v2a)
-	       (recursive-closure? v2b)
-	       (perturbation-parameter? (recursive-closure-parameter v2b))
-	       (dereferenced-recursive-closure-match? v2a (unperturb v2b)))
-	  (and (tagged-pair? v2a)
-	       (tagged-pair? v2b)
-	       (tagged? 'perturbation (tagged-pair-tags v2b))
-	       (equal-tags?
-		(tagged-pair-tags v2a)
-		(remove-tag 'perturbation (tagged-pair-tags v2b)))))
-      (some (lambda (v3)
-	     (abstract-value=? v1 (vlad-cons (primal v3) (tangent v3))))
-	    (aggregate-value-values (bundle v2a v2b)))))))))
+    (or (and (union? v2a)
+	     (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
+		   (union-values v2a)))
+	(and (not (union? v2a))
+	     (union? v2b)
+	     (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
+		   (union-values v2b)))
+	(and (not (union? v2a))
+	     (perturbation-tagged-value? v2b)
+	     (union? (unperturb v2b))
+	     (some (lambda (u2b)
+		    (abstract-value=? v1 (vlad-cons v2a (perturb u2b))))
+		   (union-values (unperturb v2b))))
+	(and (bundle-aggregates-match? v2a v2b)
+	     (some (lambda (v3)
+		    (abstract-value=? v1 (vlad-cons (primal v3) (tangent v3))))
+		   (aggregate-value-values (bundle v2a v2b)))))))))
 
 (define (generate-bundle-definitions xs vs1-vs2 widener-instances)
  (generate-binary-ad-definitions
@@ -9434,8 +9454,8 @@
 	(not (bundle? v))
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
-  perturbation-tagged-value? perturb unperturb bundle-value bundle-before?
-  "bundle" xs vs1-vs2
+  perturbation-tagged-value? perturb unperturb bundle-value
+  bundle-aggregates-match? bundle-before? "bundle" xs vs1-vs2
   (lambda (v)
    (cond
     ((union? v)
@@ -9680,38 +9700,24 @@
   (and
    (vlad-pair? v2)
    (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
-    (or
-     (and (union? v2a)
-	  (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
-		(union-values v2a)))
-     (and (not (union? v2a))
-	  (union? v2b)
-	  (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
-		(union-values v2b)))
-     (and
-      (or (and (nonrecursive-closure? v2a)
-	       (nonrecursive-closure? v2b)
-	       (dereferenced-nonrecursive-closure-match? v2a v2b))
-	  (and (recursive-closure? v2a)
-	       (recursive-closure? v2b)
-	       (dereferenced-recursive-closure-match? v2a v2b))
-	  (and (perturbation-tagged-value? v2a)
-	       (perturbation-tagged-value? v2b))
-	  (and (bundle? v2a) (bundle? v2b))
-	  (and (sensitivity-tagged-value? v2a) (sensitivity-tagged-value? v2b))
-	  (and (reverse-tagged-value? v2a) (reverse-tagged-value? v2b))
-	  (and (tagged-pair? v2a)
-	       (tagged-pair? v2b)
-	       (equal-tags? (tagged-pair-tags v2a) (tagged-pair-tags v2b))))
-      (some (lambda (v3a v3b) (abstract-value=? v1 (vlad-cons v3a v3b)))
-	    (aggregate-value-values v2a)
-	    (aggregate-value-values v2b))))))))
+    (or (and (union? v2a)
+	     (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
+		   (union-values v2a)))
+	(and (not (union? v2a))
+	     (union? v2b)
+	     (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
+		   (union-values v2b)))
+	(and (plus-aggregates-match? v2a v2b)
+	     (some (lambda (v3a v3b) (abstract-value=? v1 (vlad-cons v3a v3b)))
+		   (aggregate-value-values v2a)
+		   (aggregate-value-values v2b))))))))
 
 (define (generate-plus-definitions xs vs1-vs2 widener-instances)
  (generate-binary-ad-definitions
   'plus
   (lambda (v) #t) (lambda (v) #f)
-  identity identity plus-value plus-before? "plus" xs vs1-vs2
+  identity identity plus-value plus-aggregates-match? plus-before? "plus"
+  xs vs1-vs2
   (lambda (v)
    (cond
     ((union? v)
@@ -9995,8 +10001,8 @@
 	  (not (bundle? v))
 	  (not (sensitivity-tagged-value? v))
 	  (not (reverse-tagged-value? v))))
-    perturbation-tagged-value? perturb unperturb bundle-value bundle-before?
-    "bundle" vs1-vs2)
+    perturbation-tagged-value? perturb unperturb bundle-value
+    bundle-aggregates-match? bundle-before? "bundle" vs1-vs2)
    (generate-unary-ad-declarations
     'sensitize
     (lambda (v)
@@ -10012,7 +10018,7 @@
     unsensitize "unsensitize" vs1-vs2)
    (generate-binary-ad-declarations
     'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value
-    plus-before? "plus" vs1-vs2)
+    plus-aggregates-match? plus-before? "plus" vs1-vs2)
    (generate-unary-ad-declarations
     '*j
     (lambda (v)
