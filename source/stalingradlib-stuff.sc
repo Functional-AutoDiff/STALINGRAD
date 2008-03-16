@@ -4814,24 +4814,11 @@
 		    (lambda (v-cdr cs)
 		     (fill-tagged-pair! u v-car v-cdr)
 		     (k u cs)))))))
-     (else
-      (when #f
-       (format #t "debugging~%")
-       (pp (externalize-expression
-	    (nonrecursive-closure-lambda-expression v1)))
-       (newline)
-       (pp (externalize-expression
-	    (nonrecursive-closure-lambda-expression v2)))
-       (newline)
-       (write (expression-eqv? (nonrecursive-closure-lambda-expression v1)
-			       (nonrecursive-closure-lambda-expression v2)))
-       (newline)
-       (exit -1))
-      (if *abstract?*
-	  (let ((u (compile-time-warning
-		    "Arguments to plus might not conform" v1 v2)))
-	   (k u (cons (cons (cons v1 v2) u) cs)))
-	  (run-time-error "Arguments to plus do not conform" v1 v2))))))))
+     (else (if *abstract?*
+	       (let ((u (compile-time-warning
+			 "Arguments to plus might not conform" v1 v2)))
+		(k u (cons (cons (cons v1 v2) u) cs)))
+	       (run-time-error "Arguments to plus do not conform" v1 v2))))))))
 
 (define (*j v)
  ;; This is written in CPS so as not to break structure sharing.
@@ -7209,12 +7196,6 @@
 	  (memp abstract-value=? v1 (aggregate-value-values v2)))
      (and (union? v2) (memp abstract-value=? v1 (union-values v2)))))
 
-(define (components-before v2)
- ;; here I am: Remove this when done with this.
- (cond ((union? v2) (union-values v2))
-       ((scalar-value? v2) '())
-       (else (aggregate-value-values v2))))
-
 (define (cached-topological-sort before? l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
  (let ((graph (map-reduce
@@ -7422,19 +7403,6 @@
  (feedback-cached-topological-sort
   component?
   (lambda (vs)
-   (format #t "debugging: ~s ~s ~s ~s~%"
-	   (length vs)
-	   (count-if backpropagator? vs)
-	   (map (lambda (v)
-		 (count-if (lambda (v1) (component? v v1)) vs))
-		vs)
-	   (map (lambda (v)
-		 (count-if
-		  (lambda (v1)
-		   (every (lambda (v2) (or (eq? v2 v) (not (memq v2 vs))))
-			  (components-before v1)))
-		  vs))
-		vs))
    (let ((v (find-if backpropagator? vs)))
     (assert v)
     v))
