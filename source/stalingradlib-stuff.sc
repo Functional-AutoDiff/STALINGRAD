@@ -7086,7 +7086,7 @@
 	       (expression-environment-bindings e)))
   *expressions*))
 
-(define (all-unary-abstract-subvalues p? v)
+(define (all-unary-abstract-subvalues descend? v)
  ;; This is written in CPS so as not to break structure sharing.
  (let outer ((v v) (vs '()) (n '()) (k (lambda (n vs) n)))
   (cond ((memq v vs) (k n vs))
@@ -7102,7 +7102,7 @@
 		     (lambda (n vs) (inner (rest us) vs n))))))
 	;; here I am: Need to return an empty abstract value for certain inputs
 	;;            to certain AD primitives.
-	((or (scalar-value? v) (not (p? v)))
+	((or (scalar-value? v) (not (descend? v)))
 	 (k (adjoinp abstract-value=? v n) vs))
 	(else (let inner ((vs1 (aggregate-value-values v))
 			  (vs (cons v vs))
@@ -7114,7 +7114,8 @@
 			  n
 			  (lambda (n vs) (inner (rest vs1) vs n)))))))))
 
-(define (all-binary-abstract-subvalues p? f? f f-inverse p1? v)
+(define (all-binary-abstract-subvalues
+	 descend? f? f f-inverse aggregates-match? v)
  ;; This is written in CPS so as not to break structure sharing.
  (define (outer1 v vs cs n k)
   (cond ((memq v vs) (k n vs cs))
@@ -7180,9 +7181,9 @@
 		      (lambda (n vs cs) (inner (rest us) vs cs n))))))
 	;; here I am: Need to return an empty abstract value for nonconforming
 	;;            inputs.
-	((or (scalar-value? v1) (not (p? v1)))
+	((or (scalar-value? v1) (not (descend? v1)))
 	 (k (adjoinp abstract-value=? (vlad-cons v1 v2) n) vs cs))
-	((p1? v1 v2)
+	((aggregates-match? v1 v2)
 	 (let inner ((vs1 (aggregate-value-values v1))
 		     (vs2 (aggregate-value-values v2))
 		     (vs vs)
@@ -7209,23 +7210,25 @@
      (and (union? v2) (memp abstract-value=? v1 (union-values v2)))))
 
 (define (components-before v2)
+ ;; here I am: Remove this when done with this.
  (cond ((union? v2) (union-values v2))
        ((scalar-value? v2) '())
        (else (aggregate-value-values v2))))
 
-(define (cached-topological-sort p l)
+(define (cached-topological-sort before? l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
- (let ((graph (map-reduce append
-			  '()
-			  (lambda (x1)
-			   (map-reduce append
-				       '()
-				       (lambda (x2)
-					(if (and (not (eq? x1 x2)) (p x1 x2))
-					    (list (list x1 x2))
-					    '()))
-				       l))
-			  l)))
+ (let ((graph (map-reduce
+	       append
+	       '()
+	       (lambda (x1)
+		(map-reduce append
+			    '()
+			    (lambda (x2)
+			     (if (and (not (eq? x1 x2)) (before? x1 x2))
+				 (list (list x1 x2))
+				 '()))
+			    l))
+	       l)))
   (let loop ((l l) (c '()) (graph graph))
    (if (null? l)
        (reverse c)
@@ -7235,25 +7238,37 @@
 	      (append xs c)
 	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
 
-(define (feedback-cached-topological-sort p p1 l)
+(define (feedback-cached-topological-sort before? choose l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
- (let ((graph (map-reduce append
-			  '()
-			  (lambda (x1)
-			   (map-reduce append
-				       '()
-				       (lambda (x2)
-					(if (and (not (eq? x1 x2)) (p x1 x2))
-					    (list (list x1 x2))
-					    '()))
-				       l))
-			  l)))
+ (let ((graph (map-reduce
+	       append
+	       '()
+	       (lambda (x1)
+		(map-reduce append
+			    '()
+			    (lambda (x2)
+			     (if (and (not (eq? x1 x2)) (before? x1 x2))
+				 (list (list x1 x2))
+				 '()))
+			    l))
+	       l)))
   (let loop ((l l) (c1 '()) (c2 '()) (graph graph))
    (if (null? l)
        (list (reverse c1) c2)
        (let ((xs (set-differenceq l (map second graph))))
 	(if (null? xs)
-	    (let ((x (p1 l)))
+	    ;; here I am: Should use caching for this.
+	    (let ((x (let loop ((l l))
+		      (let ((l-prime
+			     (remove-if-not
+			      (lambda (x1)
+			       (some (lambda (x2)
+				      (and (not (eq? x1 x2)) (before? x1 x2)))
+				     l))
+			      l)))
+		       (if (= (length l) (length l-prime))
+			   (choose l)
+			   (loop l-prime))))))
 	     (loop (removeq x l)
 		   c1
 		   (cons x c2)
@@ -7266,13 +7281,13 @@
 	     c2
 	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
 
-(define (all-unary-ad s p?)
+(define (all-unary-ad s descend?)
  ;; This is called redundantly thrice, once in all-unary-ad-widener-instances,
  ;; once to generate declarations, and once to generate definitions.
  (map-reduce
   union-abstract-values
   '()
-  (lambda (v) (all-unary-abstract-subvalues p? v))
+  (lambda (v) (all-unary-abstract-subvalues descend? v))
   (map-reduce
    union-abstract-values
    '()
@@ -7300,20 +7315,22 @@
 	'()))
    *expressions*)))
 
-(define (all-sorted-unary-ad s p?)
+(define (all-sorted-unary-ad s descend?)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
- (feedback-cached-topological-sort component? first (all-unary-ad s p?)))
+ ;; here I am: Need better choice function.
+ (feedback-cached-topological-sort component? first (all-unary-ad s descend?)))
 
-(define (all-binary-ad s p? f? f f-inverse g-value p1?)
+(define (all-binary-ad s descend? f? f f-inverse g-value aggregates-match?)
  ;; This is called redundantly thrice, once in all-binary-ad-widener-instances,
  ;; once to generate declarations, and once to generate definitions.
  (map-reduce
   union-abstract-values
   '()
-  (lambda (v) (all-binary-abstract-subvalues p? f? f f-inverse p1? v))
+  (lambda (v)
+   (all-binary-abstract-subvalues descend? f? f f-inverse aggregates-match? v))
   (map-reduce
    union-abstract-values
    '()
@@ -7341,13 +7358,17 @@
 	'()))
    *expressions*)))
 
-(define (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)
+(define (all-sorted-binary-ad
+	 s descend? f? f f-inverse g-value aggregates-match? before?)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  (feedback-cached-topological-sort
-  p2? first (all-binary-ad s p? f? f f-inverse g-value p1?)))
+  before?
+  ;; here I am: Need better choice function.
+  first
+  (all-binary-ad s descend? f? f f-inverse g-value aggregates-match?)))
 
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  (map-reduce union-abstract-values
@@ -7400,7 +7421,23 @@
 (define (all-nested-abstract-values)
  (feedback-cached-topological-sort
   component?
-  first
+  (lambda (vs)
+   (format #t "debugging: ~s ~s ~s ~s~%"
+	   (length vs)
+	   (count-if backpropagator? vs)
+	   (map (lambda (v)
+		 (count-if (lambda (v1) (component? v v1)) vs))
+		vs)
+	   (map (lambda (v)
+		 (count-if
+		  (lambda (v1)
+		   (every (lambda (v2) (or (eq? v2 v) (not (memq v2 vs))))
+			  (components-before v1)))
+		  vs))
+		vs))
+   (let ((v (find-if backpropagator? vs)))
+    (assert v)
+    v))
   (adjoinp
    abstract-value=?
    ;; We are lazy and always generate this. This is needed to generate
@@ -7634,7 +7671,7 @@
 		     n
 		     (lambda (n cs) (inner (rest vs1) (rest vs2) cs n)))))))))
 
-(define (all-unary-ad-widener-instances s p? f)
+(define (all-unary-ad-widener-instances s descend? f)
  (map-reduce
   union-widener-instances
   '()
@@ -7647,9 +7684,10 @@
 		   (lambda (u) (all-subwidener-instances (f u) (f v)))
 		   (union-values v))
        '()))
-  (all-unary-ad s p?)))
+  (all-unary-ad s descend?)))
 
-(define (all-binary-ad-widener-instances s p? f? f f-inverse g g-value p1?)
+(define (all-binary-ad-widener-instances
+	 s descend? f? f f-inverse g g-value aggregates-match?)
  (map-reduce
   union-widener-instances
   '()
@@ -7694,7 +7732,7 @@
 	      (union-values (f-inverse v2))))
 	    (else '()))))
     (else '())))
-  (all-binary-ad s p? f? f f-inverse g-value p1?)))
+  (all-binary-ad s descend? f? f f-inverse g-value aggregates-match?)))
 
 (define (all-widener-instances)
  (cached-topological-sort
@@ -8412,8 +8450,8 @@
 			       (c:specifier-parameter v vs1-vs2 "x"))))
       (all-primitives s)))
 
-(define (generate-unary-ad-declarations s p? f code vs1-vs2)
- (let ((vs1a-vs2a (all-sorted-unary-ad s p?)))
+(define (generate-unary-ad-declarations s descend? f code vs1-vs2)
+ (let ((vs1a-vs2a (all-sorted-unary-ad s descend?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-declaration
@@ -8425,8 +8463,11 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-declarations
-	 s p? f? f f-inverse g-value p1? p2? code vs1-vs2)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)))
+	 s descend? f? f f-inverse g-value aggregates-match? before?
+	 code vs1-vs2)
+ (let ((vs1a-vs2a
+	(all-sorted-binary-ad
+	 s descend? f? f f-inverse g-value aggregates-match? before?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-declaration
@@ -9212,8 +9253,8 @@
     (else (internal-error))))
   (append (first instances1-instances2) (second instances1-instances2))))
 
-(define (generate-unary-ad-definitions s p? f code xs vs1-vs2 generate)
- (let ((vs1a-vs2a (all-sorted-unary-ad s p?)))
+(define (generate-unary-ad-definitions s descend? f code xs vs1-vs2 generate)
+ (let ((vs1a-vs2a (all-sorted-unary-ad s descend?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-definition
@@ -9226,8 +9267,11 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-definitions
-	 s p? f? f f-inverse g-value p1? p2? code xs vs1-vs2 generate)
- (let ((vs1a-vs2a (all-sorted-binary-ad s p? f? f f-inverse g-value p1? p2?)))
+	 s descend? f? f f-inverse g-value aggregates-match? before?
+	 code xs vs1-vs2 generate)
+ (let ((vs1a-vs2a
+	(all-sorted-binary-ad
+	 s descend? f? f f-inverse g-value aggregates-match? before?)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-definition
