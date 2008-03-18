@@ -7234,25 +7234,32 @@
 			    l))
 	       l)))
   (let loop ((l l) (c1 '()) (c2 '()) (graph graph))
+   ;; Each time through the loop the graph only contains edges that both enter
+   ;; and leave vertices in l.
    (if (null? l)
        (list (reverse c1) c2)
+       ;; xs is the set of vertices in l with no in-edges.
        (let ((xs (set-differenceq l (map second graph))))
 	(if (null? xs)
-	    ;; here I am: Should use caching for this.
-	    (let ((x (let loop ((l l))
-		      (let ((l-prime
-			     (remove-if-not
-			      (lambda (x1)
-			       (some (lambda (x2)
-				      (and (not (eq? x1 x2)) (before? x1 x2)))
-				     l))
-			      l)))
+	    ;; Each time through the loop the graph only contains edges that
+	    ;; both enter and leave vertices in l.
+	    (let ((x (let loop ((l l) (graph graph))
+		      ;; l-prime is the set of vertices in l with out-edges.
+		      (let ((l-prime (intersectionq l (map first graph))))
 		       (if (= (length l) (length l-prime))
 			   (choose l)
-			   (loop l-prime))))))
+			   (loop l-prime
+				 ;; Update graph to contain only edges that
+				 ;; leave vertices in l-prime which is the new
+				 ;; l.
+				 (remove-if-not
+				  (lambda (edge) (memq (second edge) l-prime))
+				  graph)))))))
 	     (loop (removeq x l)
 		   c1
 		   (cons x c2)
+		   ;; We are removing x from l so remove all edges entering or
+		   ;; leaving x.
 		   (remove-if (lambda (edge)
 			       (or (eq? (first edge) x) (eq? (second edge) x)))
 			      graph)))
@@ -7260,6 +7267,9 @@
 	     (set-differenceq l xs)
 	     (append xs c1)
 	     c2
+	     ;; We are removing xs from l so remove all edges leaving xs. Since
+	     ;; xs=(set-differenceq l (map second graph)) there can be no edges
+	     ;; entering xs.
 	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
 
 (define (all-unary-ad s descend?)
