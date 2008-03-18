@@ -1,20 +1,20 @@
 #!/bin/tcsh -f
-set lines = `fgrep -v : $1.s|\
-             fgrep -v .file|\
-             fgrep -v .section|\
-             fgrep -v .align|\
-             fgrep -v .long|\
-             fgrep -v .p2align|\
-             fgrep -v .type|\
-             fgrep -v .text|\
-             fgrep -v .globl|\
-             fgrep -v .size|\
-             fgrep -v .string|\
+set lines = `fgrep -v : $1.s   | \
+             fgrep -v .file    | \
+             fgrep -v .section | \
+             fgrep -v .align   | \
+             fgrep -v .long    | \
+             fgrep -v .p2align | \
+             fgrep -v .type    | \
+             fgrep -v .text    | \
+             fgrep -v .globl   | \
+             fgrep -v .size    | \
+             fgrep -v .string  | \
              wc -l`
-set adds = `fgrep addsd $1.s|wc -l`
-set subs = `fgrep subsd $1.s|wc -l`
-set muls = `fgrep mulsd $1.s|wc -l`
-set divs = `fgrep divsd $1.s|wc -l`
-set sqrts = `fgrep sqrtsd $1.s|wc -l`
+set adds = `fgrep --count addsd $1.s`
+set subs = `fgrep --count subsd $1.s`
+set muls = `fgrep --count mulsd $1.s`
+set divs = `fgrep --count divsd $1.s`
+set sqrts = `fgrep --count sqrtsd $1.s`
 set density = `dc -e "$adds $subs + $muls + $divs + $sqrts + 100 * $lines 1 k / p"`
 echo $lines lines $adds adds $subs subs $muls muls $divs divs $sqrts sqrts $density\% density
