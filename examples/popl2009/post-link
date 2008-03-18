@@ -1,2 +1,2 @@
 #!/bin/tcsh -f
-gcc -o $1 $1.s -lm
+gcc -o $1 $1.s -lm -lgc
