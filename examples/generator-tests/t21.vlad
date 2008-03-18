@@ -1,0 +1,8 @@
+(define (cdr (cons x y)) y)
+
+(define ((derivative f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1.0)))))
+
+(define (series x) (if (< x 1e-5) x (+ x (series (/ x 2)))))
+
+(write ((derivative series) (read-real)))

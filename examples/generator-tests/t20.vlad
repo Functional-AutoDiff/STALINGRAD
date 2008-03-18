@@ -1,0 +1,16 @@
+(define (abs x) (if (negative? x) (- 0 x) x))
+
+(define (cdr (cons x y)) y)
+
+(define ((derivative f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1.0)))))
+
+(define (nr-sqrt x)
+ (letrec ((loop (lambda (y)
+		 (let ((y-prime (- y (/ (- (* y y) x) (+ y y)))))
+		  (if (<= (abs (- y y-prime)) 1e-5)
+		      y
+		      (loop y-prime))))))
+  (loop 1.0)))
+
+(write ((derivative nr-sqrt) (read-real)))
