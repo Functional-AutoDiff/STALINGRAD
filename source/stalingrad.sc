@@ -233,6 +233,7 @@
 	   #f))
  (set! *tagged-pair-depth-limit*
        (if tagged-pair-depth-limit? tagged-pair-depth-limit #f))
+ (set! *memoized?* *flow-analysis?*)
  (initialize-basis!)
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
