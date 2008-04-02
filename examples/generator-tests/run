@@ -1,4 +1,5 @@
 #!/bin/tcsh -f
+unlimit stack
 echo Compiling t1
 stalingrad -compile -backpropagator-depth-limit 1 -imprecise-inexacts t1
 ./t1
