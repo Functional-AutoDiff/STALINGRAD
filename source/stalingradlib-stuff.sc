@@ -2621,6 +2621,11 @@
  ;;   booleans. For bundles, this widens in the process.
  ;; If assq is replaced with assp deep-abstract-value=? then this also:
  ;; - discovers structure to share.
+ ;; It is necessary to use assp deep-abstract-value=? or else an error occurs
+ ;; during nr-sqrt-RR where equivalent but non-eq recursive abstract values are
+ ;; nested and then path-of-greatest-depth finds a path with equivalent but
+ ;; non-eq values which when merged yield a value that agai has that path
+ ;; causing an infinite loop.
  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
   (if (or (and (nonrecursive-closure? v)
 	       (nonrecursive-closure-canonical? v))
@@ -2636,7 +2641,7 @@
 	  (and (tagged-pair? v) (tagged-pair-canonical? v))
 	  (and (union? v) (union-canonical? v)))
       (k v cs)
-      (let ((found? (assq v cs)))
+      (let ((found? (assp deep-abstract-value=? v cs)))
        (cond
 	(found? (k (cdr found?) cs))
 	((deep-empty-abstract-value? v)
@@ -6836,27 +6841,109 @@
 	     (transitive-equivalence-classesp
 	      match? (remove-if-not type? (remove-if union? path)))))
 
+(define (path-of-greatest-depth match? type? v)
+ ;; This is written in CPS so as not to break structure sharing.
+ (let outer ((v v)
+	     (cs '())
+	     (path '())
+	     (depth-of-path 0)
+	     (longest-path #f)
+	     (depth-of-longest-path #f)
+	     (k (lambda (longest-path depth-of-longest-path cs) longest-path)))
+  (let ((found? (assq v cs)))
+   (cond
+    (found?
+     (if (> depth-of-path (cdr found?))
+	 (if (memq v path)
+	     (k (if (or (eq? longest-path #f)
+			(> depth-of-path depth-of-longest-path))
+		    path
+		    longest-path)
+		(if (or (eq? longest-path #f)
+			(> depth-of-path depth-of-longest-path))
+		    depth-of-path
+		    depth-of-longest-path)
+		(map (lambda (c) (if (eq? (car c) v) (cons v depth-of-path) c))
+		     cs))
+	     (outer v
+		    (remove-if (lambda (c) (eq? (car c) v)) cs)
+		    path
+		    depth-of-path
+		    longest-path
+		    depth-of-longest-path
+		    k))
+	 (k longest-path depth-of-longest-path cs)))
+    ((union? v)
+     ;; This assumes that unions never contribute to depth.
+     (let ((path (cons v path)))
+      (let inner ((us (get-union-values v))
+		  (cs (cons (cons v depth-of-path) cs))
+		  (longest-path
+		   (if (or (eq? longest-path #f)
+			   (> depth-of-path depth-of-longest-path))
+		       path
+		       longest-path))
+		  (depth-of-longest-path
+		   (if (or (eq? longest-path #f)
+			   (> depth-of-path depth-of-longest-path))
+		       depth-of-path
+		       depth-of-longest-path)))
+       (if (null? us)
+	   (k longest-path depth-of-longest-path cs)
+	   (outer
+	    (first us)
+	    cs
+	    path
+	    depth-of-path
+	    longest-path
+	    depth-of-longest-path
+	    (lambda (longest-path depth-of-longest-path cs)
+	     (inner (rest us) cs longest-path depth-of-longest-path)))))))
+    ((scalar-value? v)
+     ;; This assumes that scalars never contribute to depth.
+     (let ((path (cons v path)))
+      (k (if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
+	     path
+	     longest-path)
+	 (if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
+	     depth-of-path
+	     depth-of-longest-path)
+	 (cons (cons v depth-of-path) cs))))
+    (else
+     (let* ((path (cons v path))
+	    (depth-of-path
+	     ;; This assumes that only values of type? contribute to depth.
+	     (if (type? v) (depth match? type? path) depth-of-path)))
+      (let inner ((vs (aggregate-value-values v))
+		  (cs (cons (cons v depth-of-path) cs))
+		  (longest-path
+		   (if (or (eq? longest-path #f)
+			   (> depth-of-path depth-of-longest-path))
+		       path
+		       longest-path))
+		  (depth-of-longest-path
+		   (if (or (eq? longest-path #f)
+			   (> depth-of-path depth-of-longest-path))
+		       depth-of-path
+		       depth-of-longest-path)))
+       (if (null? vs)
+	   (k longest-path depth-of-longest-path cs)
+	   (outer
+	    (first vs)
+	    cs
+	    path
+	    depth-of-path
+	    longest-path
+	    depth-of-longest-path
+	    (lambda (longest-path depth-of-longest-path cs)
+	     (inner (rest vs) cs longest-path depth-of-longest-path)))))))))))
+
 (define (path-of-depth-greater-than-limit limit match? type? v)
- ;; needs work: This breaks structure sharing, but I don't know how to do it
- ;;             without doing so.
- (let outer ((v v) (path '()))
-  (cond ((memq v path)
-	 (if (> (depth match? type? (reverse path)) limit) (reverse path) #f))
-	((union? v)
-	 (let inner ((us (union-members v)))
-	  (if (null? us)
-	      #f
-	      (let ((path (outer (first us) (cons v path))))
-	       (if (eq? path #f) (inner (rest us)) path)))))
-	((scalar-value? v)
-	 (if (> (depth match? type? (reverse (cons v path))) limit)
-	     (reverse (cons v path))
-	     #f))
-	(else (let inner ((vs (aggregate-value-values v)))
-	       (if (null? vs)
-		   #f
-		   (let ((path (outer (first vs) (cons v path))))
-		    (if (eq? path #f) (inner (rest vs)) path))))))))
+ (let ((longest-path (path-of-greatest-depth match? type? v)))
+  (if (and (not (eq? longest-path #f))
+	   (> (depth match? type? longest-path) limit))
+      longest-path
+      #f)))
 
 (define (pick-values-to-coalesce-for-depth-limit match? type? path)
  (let* ((classes (transitive-equivalence-classesp
@@ -6872,11 +6959,13 @@
 
 (define (reduce-depth v u1 u2)
  ;; This is written in CPS so as not to break structure sharing.
+ ;; note: reduce-depth is now identical to reduce-width.
  (canonize-and-maybe-intern-abstract-value
   (let ((u12 (create-aggregate-value-with-new-values
-	      u1 (map abstract-value-union
-		      (aggregate-value-values u1)
-		      (aggregate-value-values u2)))))
+	      u1
+	      (map abstract-value-union
+		   (aggregate-value-values u1)
+		   (aggregate-value-values u2)))))
    (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
     (let ((found? (assq v cs)))
      (cond
