@@ -81,7 +81,7 @@
 		     string
 		     (substring string 0 60))))
    (expander
-    (if #t				;debugging
+    (if #f				;debugging
 	`(time ,(format #f "~~a ~a~~%" string) (lambda () ,(second form)))
 	(second form))
     expander))))
@@ -8072,17 +8072,6 @@
 	 (analysis-max-width)
 	 (concrete-reals-in-analysis)))
 
-(define (debugging-verbosity)
- (format #t
-	 "expressions: ~s, |analysis|=~s, max flow size: ~s, |queue|=~s~%bottoms: ~s~%"
-	 (count-if
-	  (lambda (e) (not (null? (expression-environment-bindings e))))
-	  *expressions*)
-	 (analysis-size)
-	 (max-flow-size)
-	 (length *queue*)
-	 (bottoms-in-analysis)))
-
 (define (flow-analysis! e bs)
  (set! *abstract?* #t)
  (abstract-eval-prime!
@@ -8399,29 +8388,6 @@
 	  (memp abstract-value=? v1 (aggregate-value-values v2)))
      (and (union? v2) (memp abstract-value=? v1 (get-union-values v2)))))
 
-(define (cached-topological-sort before? l)
- ;; A list of pairs (x1 x2) where x1 must come before x2.
- (let ((graph (map-reduce
-	       append
-	       '()
-	       (lambda (x1)
-		(map-reduce append
-			    '()
-			    (lambda (x2)
-			     (if (and (not (eq? x1 x2)) (before? x1 x2))
-				 (list (list x1 x2))
-				 '()))
-			    l))
-	       l)))
-  (let loop ((l l) (c '()) (graph graph))
-   (if (null? l)
-       (reverse c)
-       (let ((xs (set-differenceq l (map second graph))))
-	(assert (not (null? xs)))
-	(loop (set-differenceq l xs)
-	      (append xs c)
-	      (remove-if (lambda (edge) (memq (first edge) xs)) graph)))))))
-
 (define (feedback-cached-topological-sort before? choose l)
  ;; A list of pairs (x1 x2) where x1 must come before x2.
  (let ((graph (map-reduce
@@ -8613,7 +8579,7 @@
 	  (tagged-pair? v2)
 	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))))
 
-(define (all-nested-abstract-values)
+(define (all-nested-abstract-values widener-instances)
  (feedback-cached-topological-sort
   component?
   (lambda (vs)
@@ -8658,21 +8624,35 @@
      ;; all-unary-abstract-subvalues.
      (union-abstract-values
       (union-abstract-values
-       (binary-ad-argument-and-result-abstract-values
-	bundle-value
-	(all-binary-ad 'bundle
-		       (lambda (v)
-			(and (not (perturbation-tagged-value? v))
-			     (not (bundle? v))
-			     (not (sensitivity-tagged-value? v))
-			     (not (reverse-tagged-value? v))))
-		       perturbation-tagged-value? perturb unperturb
-		       bundle-aggregates-match?))
-       (binary-ad-argument-and-result-abstract-values
-	plus-value
-	(all-binary-ad 'plus (lambda (v) #t) (lambda (v) #f) identity identity
-		       plus-aggregates-match?)))
-      (all-abstract-values)))))))
+       (union-abstract-values
+	(binary-ad-argument-and-result-abstract-values
+	 bundle-value
+	 (all-binary-ad 'bundle
+			(lambda (v)
+			 (and (not (perturbation-tagged-value? v))
+			      (not (bundle? v))
+			      (not (sensitivity-tagged-value? v))
+			      (not (reverse-tagged-value? v))))
+			perturbation-tagged-value? perturb unperturb
+			bundle-aggregates-match?))
+	(binary-ad-argument-and-result-abstract-values
+	 plus-value
+	 (all-binary-ad 'plus (lambda (v) #t) (lambda (v) #f) identity identity
+			plus-aggregates-match?)))
+       (all-abstract-values))
+      (union-abstract-values
+       (map-reduce
+	union-abstract-values
+	'()
+	(lambda (widener-instance)
+	 (list (widener-instance-v1 widener-instance)))
+	(append (first widener-instances) (second widener-instances)))
+       (map-reduce
+	union-abstract-values
+	'()
+	(lambda (widener-instance)
+	 (list (widener-instance-v2 widener-instance)))
+	(append (first widener-instances) (second widener-instances))))))))))
 
 (define (function-instance=? function-instance1 function-instance2)
  (and (abstract-value=? (function-instance-v1 function-instance1)
@@ -8922,30 +8902,32 @@
   (all-binary-ad s descend? f? f f-inverse aggregates-match?)))
 
 (define (all-widener-instances)
- (cached-topological-sort
+ (feedback-cached-topological-sort
   (lambda (widener-instance1 widener-instance2)
    (or (component? (widener-instance-v1 widener-instance1)
 		   (widener-instance-v1 widener-instance2))
        (component? (widener-instance-v2 widener-instance1)
 		   (widener-instance-v2 widener-instance2))))
+  ;; here I am: Need better choice function.
+  first
   (union-widener-instances
    (map-reduce
     union-widener-instances
     '()
     (lambda (e)
-     (cond
-      ((constant-expression? e)
-       (map-reduce union-widener-instances
-		   '()
-		   (lambda (b)
-		    (all-subwidener-instances (constant-expression-value e)
-					      (environment-binding-value b)))
-		   (expression-environment-bindings e)))
-      ((application? e)
-       (map-reduce
-	union-widener-instances
-	'()
-	(lambda (b)
+     (map-reduce
+      union-widener-instances
+      '()
+      (lambda (b)
+       (cond
+	((constant-expression? e)
+	 (all-subwidener-instances
+	  (constant-expression-value e) (environment-binding-value b)))
+	((lambda-expression? e)
+	 (all-subwidener-instances
+	  (new-nonrecursive-closure (environment-binding-values b) e)
+	  (environment-binding-value b)))
+	((application? e)
 	 (let ((v1 (abstract-eval1
 		    (application-callee e)
 		    (restrict-environment
@@ -8998,8 +8980,36 @@
 		   (abstract-apply v6 (vlad-empty-list)) v7))
 		 '())))
 	   (else '()))))
-	(expression-environment-bindings e)))
-      (else '())))
+	((letrec-expression? e)
+	 (map-reduce
+	  union-widener-instances
+	  '()
+	  (lambda (x)
+	   (let ((v (new-recursive-closure
+		     (letrec-restrict-environment
+		      (environment-binding-values b) e)
+		     (list->vector (letrec-expression-procedure-variables e))
+		     (list->vector (letrec-expression-lambda-expressions e))
+		     (positionp variable=?
+				x
+				(letrec-expression-procedure-variables e)))))
+	    (all-subwidener-instances v (widen-abstract-value v))))
+	  (letrec-expression-procedure-variables e)))
+	((cons-expression? e)
+	 (all-subwidener-instances
+	  (new-tagged-pair
+	   (cons-expression-tags e)
+	   (abstract-eval1
+	    (cons-expression-car e)
+	    (restrict-environment
+	     (environment-binding-values b) e cons-expression-car))
+	   (abstract-eval1
+	    (cons-expression-cdr e)
+	    (restrict-environment
+	     (environment-binding-values b) e cons-expression-cdr)))
+	  (environment-binding-value b)))
+	(else '())))
+      (expression-environment-bindings e)))
     *expressions*)
    (reduce
     union-widener-instances
@@ -9418,10 +9428,12 @@
 (define (c:widener-name v1 v2 widener-instances)
  (assert (memp widener-instance=?
 	       (make-widener-instance v1 v2)
-	       widener-instances))
- (list "w" (positionp widener-instance=?
-		      (make-widener-instance v1 v2)
-		      widener-instances)))
+	       (append (first widener-instances) (second widener-instances))))
+ (list
+  "w"
+  (positionp widener-instance=?
+	     (make-widener-instance v1 v2)
+	     (append (first widener-instances) (second widener-instances)))))
 
 (define (c:function-declarator* code codes)
  (list
@@ -9567,10 +9579,10 @@
        (let ((v1 (widener-instance-v1 widener-instance))
 	     (v2 (widener-instance-v2 widener-instance)))
 	(c:specifier-function-declaration
-	 #t #t #f v2
+	 #t (memq widener-instance (first widener-instances)) #f v2
 	 (c:function-declarator (c:widener-name v1 v2 widener-instances)
 				(c:specifier-parameter v1 "x")))))
-      widener-instances))
+      (append (first widener-instances) (second widener-instances))))
 
 (define (generate-panic-declarations vs1-vs2)
  ;; abstraction
@@ -10120,7 +10132,7 @@
    (let ((v1 (widener-instance-v1 widener-instance))
 	 (v2 (widener-instance-v2 widener-instance)))
     (c:specifier-function-definition
-     #t #t #f v2
+     #t (memq widener-instance (first widener-instances)) #f v2
      (c:function-declarator (c:widener-name v1 v2 widener-instances)
 			    (c:specifier-parameter v1 "x"))
      (if (empty-abstract-value? v1)
@@ -10161,7 +10173,7 @@
 	      (generate-slot-names v1 xs)
 	      (aggregate-value-values v1)
 	      (aggregate-value-values v2))))))))))
-  widener-instances))
+  (append (first widener-instances) (second widener-instances))))
 
 (define (generate-panic-definitions vs1-vs2)
  ;; abstraction
@@ -11027,9 +11039,9 @@
 
 (define (generate e bs bs0)
  (let* ((xs (time-it (all-variables)))
-	(vs1-vs2 (time-it (all-nested-abstract-values)))
 	(function-instances (time-it (all-function-instances)))
 	(widener-instances (time-it (all-widener-instances)))
+	(vs1-vs2 (time-it (all-nested-abstract-values widener-instances)))
 	(instances1-instances2 (time-it (all-instances1-instances2 function-instances))))
   (for-each-indexed
    (lambda (v i)
