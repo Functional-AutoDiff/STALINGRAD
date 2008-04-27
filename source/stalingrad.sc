@@ -72,6 +72,10 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
+		 (at-most-one ("c" disable-run-cc?))
+		 (at-most-one ("k" keep-c?))
+		 (at-most-one
+		  ("cc" cc? (cc "C-compiler" string-argument "gcc")))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("trace-primitive-procedures"
 			       trace-primitive-procedures?))
@@ -178,6 +182,12 @@
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-recursive-closures"))
+ (when (and disable-run-cc? (not compile?))
+  (compile-time-error "Can't specify -c without -compile"))
+ (when (and keep-c? (not compile?))
+  (compile-time-error "Can't specify -k without -compile"))
+ (when (and cc? (not compile?))
+  (compile-time-error "Can't specify -cc without -compile"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
  (set! *assert?* (not no-assert?))
@@ -267,10 +277,14 @@
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
 	   (generate-file (generate e 'needs-work bs) pathname)
-	   ;; needs work: -c -k -cc -copt
-	   (system (format #f "gcc -o ~a -Wall ~a -lm -lgc"
-			   (strip-extension pathname)
-			   (replace-extension pathname "c"))))
+	   ;; needs work: -copt
+	   (unless disable-run-cc?
+	    (system (format #f "~a -o ~a -Wall ~a -lm -lgc"
+			    cc
+			    (strip-extension pathname)
+			    (replace-extension pathname "c"))))
+	   (unless (or disable-run-cc? keep-c?)
+	    (rm (replace-extension pathname "c"))))
 	  (else
 	   (when metered?
 	    (for-each (lambda (b)
