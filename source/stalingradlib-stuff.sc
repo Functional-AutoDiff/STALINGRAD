@@ -7386,7 +7386,7 @@
  ;; We don't need to enforce the constraint that the abstract values in the
  ;; result environment not violate the syntactic constraints since the result
  ;; environment is only passed to abstract-eval1, abstract-eval-prime!,
- ;; calls-if-procedure?, calls?, generate-letrec-bindings, and
+ ;; all-instances1-instances2, generate-letrec-bindings, and
  ;; generate-expression and the constraint is enforced there.
  (assert (not (union? u1)))
  (cond
@@ -8382,64 +8382,75 @@
 	(else (k (adjoinp abstract-value=? (vlad-cons v1 v2) n) vs cs))))
  (outer1 v '() '() '() (lambda (n vs cs) n)))
 
-(define (component? v1 v2)
- (or (and (not (union? v2))
-	  (not (scalar-value? v2))
-	  (memp abstract-value=? v1 (aggregate-value-values v2)))
-     (and (union? v2) (memp abstract-value=? v1 (get-union-values v2)))))
-
-(define (feedback-cached-topological-sort before? choose l)
- ;; A list of pairs (x1 x2) where x1 must come before x2.
- (let ((graph (map-reduce
-	       append
-	       '()
-	       (lambda (x1)
-		(map-reduce append
-			    '()
-			    (lambda (x2)
-			     (if (and (not (eq? x1 x2)) (before? x1 x2))
-				 (list (list x1 x2))
-				 '()))
-			    l))
-	       l)))
-  (let loop ((l l) (c1 '()) (c2 '()) (graph graph))
-   ;; Each time through the loop the graph only contains edges that both enter
-   ;; and leave vertices in l.
-   (if (null? l)
-       (list (reverse c1) c2)
-       ;; xs is the set of vertices in l with no in-edges.
-       (let ((xs (set-differenceq l (map second graph))))
-	(if (null? xs)
-	    ;; Each time through the loop the graph only contains edges that
-	    ;; both enter and leave vertices in l.
-	    (let ((x (let loop ((l l) (graph graph))
-		      ;; l-prime is the set of vertices in l with out-edges.
-		      (let ((l-prime (intersectionq l (map first graph))))
-		       (if (= (length l) (length l-prime))
-			   (choose l)
-			   (loop l-prime
-				 ;; Update graph to contain only edges that
-				 ;; leave vertices in l-prime which is the new
-				 ;; l.
-				 (remove-if-not
-				  (lambda (edge) (memq (second edge) l-prime))
-				  graph)))))))
-	     (loop (removeq x l)
-		   c1
-		   (cons x c2)
-		   ;; We are removing x from l so remove all edges entering or
-		   ;; leaving x.
-		   (remove-if (lambda (edge)
-			       (or (eq? (first edge) x) (eq? (second edge) x)))
-			      graph)))
-	    (loop
-	     (set-differenceq l xs)
-	     (append xs c1)
-	     c2
-	     ;; We are removing xs from l so remove all edges leaving xs. Since
-	     ;; xs=(set-differenceq l (map second graph)) there can be no edges
-	     ;; entering xs.
-	     (remove-if (lambda (edge) (memq (first edge) xs)) graph))))))))
+(define (feedback-topological-sort vertex=? before choose vertices)
+ ;; Minimal feedback set is the problem of computing the smallest set of edges
+ ;; to remove from a digraph to make it acyclic. It is NP complete. This solves
+ ;; a related problem of finding a minimal set of vertices to remove from a
+ ;; digraph to make it acyclic. I don't know if this problem is NP hard. This
+ ;; is a greedy heuristic for solving this problem. It partitions vertices into
+ ;; two sets, vertices1 and vertices2, where vertices2 is the set of removed
+ ;; vertices and vertices1 is topologically sorted. (before vertex) returns the
+ ;; vertices that must come before vertex.
+ (let loop ((vertices vertices)
+	    (vertices1 '())
+	    (vertices2 '())
+	    ;; edges is a list of pairs (vertex1 vertex2) where vertex1 must
+	    ;; come before vertex2.
+	    (edges (map-reduce
+		    append
+		    '()
+		    (lambda (vertex2)
+		     (map (lambda (vertex1) (list vertex1 vertex2))
+			  (remove-if-not
+			   (lambda (vertex1) (memp vertex=? vertex1 vertices))
+			   (before vertex2))))
+		    vertices)))
+  ;; Each time through the loop the graph only contains edges that both enter
+  ;; and leave vertices in vertices.
+  (if (null? vertices)
+      (list (reverse vertices1) vertices2)
+      ;; vertices-prime is the set of vertices in vertices with no in-edges.
+      (let ((vertices-prime
+	     (set-differencep vertex=? vertices (map second edges))))
+       (if (null? vertices-prime)
+	   ;; Each time through the loop the graph only contains edges that
+	   ;; both enter and leave vertices in l.
+	   (let ((vertex
+		  (let loop ((vertices vertices) (edges edges))
+		   ;; vertices-prime is the set of vertices in vertices with
+		   ;; out-edges.
+		   (let ((vertices-prime
+			  (intersectionp
+			   vertex=? vertices (map first edges))))
+		    (if (= (length vertices) (length vertices-prime))
+			(choose vertices)
+			(loop vertices-prime
+			      ;; Update the graph to contain only edges that
+			      ;; leave vertices in vertices-prime which is
+			      ;; the new vertices.
+			      (remove-if-not
+			       (lambda (edge)
+				(memp vertex=? (second edge) vertices-prime))
+			       edges)))))))
+	    (loop (removep vertex=? vertex vertices)
+		  vertices1
+		  (cons vertex vertices2)
+		  ;; We are removing vertex from vertices so remove all edges
+		  ;; entering or leaving vertex.
+		  (remove-if (lambda (edge)
+			      (or (vertex=? (first edge) vertex)
+				  (vertex=? (second edge) vertex)))
+			     edges)))
+	   (loop (set-differencep vertex=? vertices vertices-prime)
+		 (append vertices-prime vertices1)
+		 vertices2
+		 ;; We are removing vertices-prime from vertices so remove all
+		 ;; edges leaving vertices-prime. Since vertices-prime=
+		 ;; (set-differenceq vertices (map second edges)) there
+		 ;; can be no edges entering vertices-prime.
+		 (remove-if
+		  (lambda (edge) (memp vertex=? (first edge) vertices-prime))
+		  edges)))))))
 
 (define (all-unary-ad s descend?)
  ;; This is called redundantly thrice, once in all-unary-ad-widener-instances,
@@ -8475,13 +8486,19 @@
 	'()))
    *expressions*)))
 
+(define (abstract-values-before v)
+ (cond ((union? v) (get-union-values v))
+       ((scalar-value? v) '())
+       (else (aggregate-value-values v))))
+
 (define (all-sorted-unary-ad s descend?)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
  ;; here I am: Need better choice function.
- (feedback-cached-topological-sort component? first (all-unary-ad s descend?)))
+ (feedback-topological-sort
+  abstract-value=? abstract-values-before first (all-unary-ad s descend?)))
 
 (define (all-binary-ad s descend? f? f f-inverse aggregates-match?)
  ;; This is called redundantly thrice, once in all-binary-ad-widener-instances,
@@ -8519,14 +8536,17 @@
    *expressions*)))
 
 (define (all-sorted-binary-ad
-	 s descend? f? f f-inverse aggregates-match? before?)
+	 s descend? f? f f-inverse aggregates-match? before)
  ;; This is called redundantly twice, once to generate declarations and once to
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
- ;; here I am: Need better choice function.
- (feedback-cached-topological-sort
-  before? first (all-binary-ad s descend? f? f f-inverse aggregates-match?)))
+ (feedback-topological-sort
+  abstract-value=?
+  before
+  ;; here I am: Need better choice function.
+  first
+  (all-binary-ad s descend? f? f f-inverse aggregates-match?)))
 
 (define (binary-ad-argument-and-result-abstract-values g-value vs)
  ;; here I am: The result of g-value might violate syntactic constraints.
@@ -8580,8 +8600,9 @@
 	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))))
 
 (define (all-nested-abstract-values widener-instances)
- (feedback-cached-topological-sort
-  component?
+ (feedback-topological-sort
+  abstract-value=?
+  abstract-values-before
   (lambda (vs)
    (let ((v (find-if backpropagator? vs)))
     (assert v)
@@ -8902,12 +8923,15 @@
   (all-binary-ad s descend? f? f f-inverse aggregates-match?)))
 
 (define (all-widener-instances)
- (feedback-cached-topological-sort
-  (lambda (widener-instance1 widener-instance2)
-   (or (component? (widener-instance-v1 widener-instance1)
-		   (widener-instance-v1 widener-instance2))
-       (component? (widener-instance-v2 widener-instance1)
-		   (widener-instance-v2 widener-instance2))))
+ ;; This topological sort is needed so that all INLINE definitions come before
+ ;; their uses as required by gcc.
+ (feedback-topological-sort
+  widener-instance=?
+  (lambda (widener-instance)
+   (cross-product
+    make-widener-instance
+    (abstract-values-before (widener-instance-v1 widener-instance))
+    (abstract-values-before (widener-instance-v2 widener-instance))))
   ;; here I am: Need better choice function.
   first
   (union-widener-instances
@@ -9102,112 +9126,82 @@
        '()))
   *expressions*))
 
-(define (calls-if-procedure? e v2 vs)
- (assert (= (length vs) (length (free-variables e))))
- (or
-  (and
-   (application? e)
-   (or (and (some (lambda (u1)
-		   (and (primitive-procedure? u1)
-			(eq? (primitive-procedure-name u1) 'if-procedure)))
-		  (union-members
-		   (abstract-eval1
-		    (application-callee e)
-		    (restrict-environment vs e application-callee))))
-	    (abstract-value=?
-	     (abstract-eval1 (application-argument e)
-			     (restrict-environment vs e application-argument))
-	     v2))
-       (calls-if-procedure? (application-callee e)
-			    v2
-			    (restrict-environment vs e application-callee))
-       (calls-if-procedure? (application-argument e)
-			    v2
-			    (restrict-environment vs e application-argument))))
-  (and (letrec-expression? e)
-       (calls-if-procedure?
-	(letrec-expression-body e)
-	v2
-	(map widen-abstract-value (letrec-nested-environment vs e))))
-  (and
-   (cons-expression? e)
-   (or
-    (calls-if-procedure? (cons-expression-car e)
-			 v2
-			 (restrict-environment vs e cons-expression-car))
-    (calls-if-procedure? (cons-expression-cdr e)
-			 v2
-			 (restrict-environment vs e cons-expression-cdr))))))
+(define (if-instance=? if-instance1 if-instance2)
+ (abstract-value=? (if-instance-v if-instance1) (if-instance-v if-instance2)))
 
-(define (calls? e v1 v2 vs)
- (assert (= (length vs) (length (free-variables e))))
- (or (and (application? e)
-	  (or (and (some (lambda (u1) (abstract-value=? u1 v1))
-			 (union-members
-			  (abstract-eval1
-			   (application-callee e)
-			   (restrict-environment vs e application-callee))))
-		   (abstract-value=?
-		    (abstract-eval1
-		     (application-argument e)
-		     (restrict-environment vs e application-argument))
-		    v2))
-	      (calls? (application-callee e)
-		      v1
-		      v2
-		      (restrict-environment vs e application-callee))
-	      (calls? (application-argument e)
-		      v1
-		      v2
-		      (restrict-environment vs e application-argument))))
-     (and (letrec-expression? e)
-	  (calls? (letrec-expression-body e)
-		  v1
-		  v2
-		  (map widen-abstract-value (letrec-nested-environment vs e))))
-     (and (cons-expression? e)
-	  (or (calls? (cons-expression-car e)
-		      v1
-		      v2
-		      (restrict-environment vs e cons-expression-car))
-	      (calls? (cons-expression-cdr e)
-		      v1
-		      v2
-		      (restrict-environment vs e cons-expression-cdr))))))
+(define (if-and-function-instance=? instance1 instance2)
+ (or (and (if-instance? instance1)
+	  (if-instance? instance2)
+	  (if-instance=? instance1 instance2))
+     (and (function-instance? instance1)
+	  (function-instance? instance2)
+	  (function-instance=? instance1 instance2))))
+
+(define (union-if-and-function-instances instances1 instances2)
+ (unionp if-and-function-instance=? instances1 instances2))
 
 (define (all-instances1-instances2 function-instances)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
- (feedback-cached-topological-sort
-  (lambda (instance1 instance2)
-   (or (and (function-instance? instance1)
-	    (if-instance? instance2)
-	    (or (abstract-value=?
-		 (function-instance-v1 instance1)
-		 (vlad-car (vlad-cdr (if-instance-v instance2))))
-		(abstract-value=?
-		 (function-instance-v1 instance1)
-		 (vlad-cdr (vlad-cdr (if-instance-v instance2))))))
-       (and (if-instance? instance1)
-	    (function-instance? instance2)
-	    (some (lambda (vs)
-		   (calls-if-procedure?
-		    (closure-body (function-instance-v1 instance2))
-		    (if-instance-v instance1)
-		    (map widen-abstract-value vs)))
-		  (construct-abstract-environments
-		   (function-instance-v1 instance2)
-		   (function-instance-v2 instance2))))
-       (and (function-instance? instance1)
-	    (function-instance? instance2)
-	    (some (lambda (vs)
-		   (calls? (closure-body (function-instance-v1 instance2))
-			   (function-instance-v1 instance1)
-			   (function-instance-v2 instance1)
-			   (map widen-abstract-value vs)))
-		  (construct-abstract-environments
-		   (function-instance-v1 instance2)
-		   (function-instance-v2 instance2))))))
+ (feedback-topological-sort
+  if-and-function-instance=?
+  (lambda (instance)
+   (cond
+    ((if-instance? instance)
+     (list
+      (make-function-instance (vlad-car (vlad-cdr (if-instance-v instance)))
+			      (vlad-empty-list))
+      (make-function-instance (vlad-cdr (vlad-cdr (if-instance-v instance)))
+			      (vlad-empty-list))))
+    ((function-instance? instance)
+     (map-reduce
+      union-if-and-function-instances
+      '()
+      (lambda (vs)
+       (let loop ((e (closure-body (function-instance-v1 instance)))
+		  (vs (map widen-abstract-value vs)))
+	(assert (= (length vs) (length (free-variables e))))
+	(cond
+	 ((application? e)
+	  (let ((v1 (abstract-eval1
+		     (application-callee e)
+		     (restrict-environment vs e application-callee)))
+		(v2 (abstract-eval1
+		     (application-argument e)
+		     (restrict-environment vs e application-argument))))
+	   (union-if-and-function-instances
+	    (map-reduce
+	     union-if-and-function-instances
+	     '()
+	     (lambda (u1)
+	      (cond ((and (primitive-procedure? u1)
+			  (eq? (primitive-procedure-name u1) 'if-procedure))
+		     (assert (and (vlad-pair? v2)
+				  (vlad-pair? (vlad-cdr v2))
+				  (closure? (vlad-car (vlad-cdr v2)))
+				  (closure? (vlad-cdr (vlad-cdr v2)))))
+		     (list (make-if-instance v2)))
+		    ((closure? u1) (list (make-function-instance u1 v2)))
+		    (else '())))
+	     (union-members v1))
+	    (union-if-and-function-instances
+	     (loop (application-callee e)
+		   (restrict-environment vs e application-callee))
+	     (loop (application-argument e)
+		   (restrict-environment vs e application-argument))))))
+	 ((letrec-expression? e)
+	  (loop (letrec-expression-body e)
+		(map widen-abstract-value (letrec-nested-environment vs e))))
+	 ((cons-expression? e)
+	  (union-if-and-function-instances
+	   (loop (cons-expression-car e)
+		 (restrict-environment vs e cons-expression-car))
+	   (loop (cons-expression-cdr e)
+		 (restrict-environment vs e cons-expression-cdr))))
+	 (else '()))))
+      (construct-abstract-environments (function-instance-v1 instance)
+				       (function-instance-v2 instance))))
+    (else (internal-error))))
   (lambda (instances)
    (let ((instance
 	  (or (find-if
@@ -9626,11 +9620,11 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-declarations
-	 s descend? f? f f-inverse g-value aggregates-match? before? code)
+	 s descend? f? f f-inverse g-value aggregates-match? before code)
  ;; here I am: The results of f, f-inverse, and g-value might violate the
  ;;            syntactic constraints.
  (let ((vs1a-vs2a (all-sorted-binary-ad
-		   s descend? f? f f-inverse aggregates-match? before?)))
+		   s descend? f? f f-inverse aggregates-match? before)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-declaration
@@ -10283,12 +10277,12 @@
        (append (first vs1a-vs2a) (second vs1a-vs2a)))))
 
 (define (generate-binary-ad-definitions
-	 s descend? f? f f-inverse g-value aggregates-match? before? code
+	 s descend? f? f f-inverse g-value aggregates-match? before code
 	 generate)
  ;; here I am: The results of f, f-inverse, and g-value might violate the
  ;;            syntactic constraints.
  (let ((vs1a-vs2a (all-sorted-binary-ad
-		   s descend? f? f f-inverse aggregates-match? before?)))
+		   s descend? f? f f-inverse aggregates-match? before)))
   ;; abstraction
   (map (lambda (v)
 	(c:specifier-function-definition
@@ -10468,30 +10462,25 @@
     (else
      (c:panic (tangent v) "Argument to tangent is a non-forward value"))))))
 
-(define (bundle-before? v1 v2)
- (or
-  (and (union? v2)
-       (some (lambda (u2) (abstract-value=? v1 u2)) (get-union-values v2)))
-  (and
-   (vlad-pair? v2)
-   (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
-    (or (and (union? v2a)
-	     (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
-		   (get-union-values v2a)))
-	(and (not (union? v2a))
-	     (union? v2b)
-	     (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
-		   (get-union-values v2b)))
-	(and (not (union? v2a))
-	     (perturbation-tagged-value? v2b)
-	     (union? (unperturb v2b))
-	     (some (lambda (u2b)
-		    (abstract-value=? v1 (vlad-cons v2a (perturb u2b))))
-		   (get-union-values (unperturb v2b))))
-	(and (bundle-aggregates-match? v2a v2b)
-	     (some (lambda (v3)
-		    (abstract-value=? v1 (vlad-cons (primal v3) (tangent v3))))
-		   (aggregate-value-values (bundle v2a v2b)))))))))
+(define (bundle-before v)
+ (cond
+  ((union? v) (get-union-values v))
+  ((vlad-pair? v)
+   (cond ((union? (vlad-car v))
+	  (map (lambda (u) (vlad-cons u (vlad-cdr v)))
+	       (get-union-values (vlad-car v))))
+	 ((union? (vlad-cdr v))
+	  (map (lambda (u) (vlad-cons (vlad-car v) u))
+	       (get-union-values (vlad-cdr v))))
+	 ((bundle-aggregates-match? (vlad-car v) (vlad-cdr v))
+	  (map (lambda (v) (vlad-cons (primal v) (tangent v)))
+	       (aggregate-value-values (bundle (vlad-car v) (vlad-cdr v)))))
+	 ((and (perturbation-tagged-value? (vlad-cdr v))
+	       (union? (unperturb (vlad-cdr v))))
+	  (map (lambda (u) (vlad-cons (vlad-car v) (perturb u)))
+	       (get-union-values (unperturb (vlad-cdr v)))))
+	 (else '())))
+  (else '())))
 
 (define (generate-bundle-definitions xs widener-instances)
  (generate-binary-ad-definitions
@@ -10502,7 +10491,7 @@
 	(not (sensitivity-tagged-value? v))
 	(not (reverse-tagged-value? v))))
   perturbation-tagged-value? perturb unperturb bundle-value
-  bundle-aggregates-match? bundle-before? "bundle"
+  bundle-aggregates-match? bundle-before "bundle"
   (lambda (v)
    (cond
     ((union? v)
@@ -10716,30 +10705,27 @@
     (else (c:panic (unsensitize v)
 		   "Argument to unsensitize is a non-sensitivity value"))))))
 
-(define (plus-before? v1 v2)
- (or
-  (and (union? v2)
-       (some (lambda (u2) (abstract-value=? v1 u2)) (get-union-values v2)))
-  (and
-   (vlad-pair? v2)
-   (let ((v2a (vlad-car v2)) (v2b (vlad-cdr v2)))
-    (or (and (union? v2a)
-	     (some (lambda (u2a) (abstract-value=? v1 (vlad-cons u2a v2b)))
-		   (get-union-values v2a)))
-	(and (not (union? v2a))
-	     (union? v2b)
-	     (some (lambda (u2b) (abstract-value=? v1 (vlad-cons v2a u2b)))
-		   (get-union-values v2b)))
-	(and (plus-aggregates-match? v2a v2b)
-	     (some (lambda (v3a v3b) (abstract-value=? v1 (vlad-cons v3a v3b)))
-		   (aggregate-value-values v2a)
-		   (aggregate-value-values v2b))))))))
+(define (plus-before v)
+ (cond ((union? v) (get-union-values v))
+       ((vlad-pair? v)
+	(cond ((union? (vlad-car v))
+	       (map (lambda (u) (vlad-cons u (vlad-cdr v)))
+		    (get-union-values (vlad-car v))))
+	      ((union? (vlad-cdr v))
+	       (map (lambda (u) (vlad-cons (vlad-car v) u))
+		    (get-union-values (vlad-cdr v))))
+	      ((plus-aggregates-match? (vlad-car v) (vlad-cdr v))
+	       (map vlad-cons
+		    (aggregate-value-values (vlad-car v))
+		    (aggregate-value-values (vlad-cdr v))))
+	      (else '())))
+       (else '())))
 
 (define (generate-plus-definitions xs widener-instances)
  (generate-binary-ad-definitions
   'plus
   (lambda (v) #t) (lambda (v) #f)
-  identity identity plus-value plus-aggregates-match? plus-before? "plus"
+  identity identity plus-value plus-aggregates-match? plus-before "plus"
   (lambda (v)
    (cond
     ((union? v)
@@ -11134,7 +11120,7 @@
 		   (not (sensitivity-tagged-value? v))
 		   (not (reverse-tagged-value? v))))
 	     perturbation-tagged-value? perturb unperturb bundle-value
-	     bundle-aggregates-match? bundle-before? "bundle"))
+	     bundle-aggregates-match? bundle-before "bundle"))
    (time-it (generate-unary-ad-declarations
 	     'sensitize
 	     (lambda (v)
@@ -11150,7 +11136,7 @@
 	     unsensitize "unsensitize"))
    (time-it (generate-binary-ad-declarations
 	     'plus (lambda (v) #t) (lambda (v) #f) identity identity plus-value
-	     plus-aggregates-match? plus-before? "plus"))
+	     plus-aggregates-match? plus-before "plus"))
    (time-it (generate-unary-ad-declarations
 	     '*j
 	     (lambda (v)
