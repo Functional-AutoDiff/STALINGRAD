@@ -9,80 +9,80 @@ cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-FF.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/series-FF&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/nr-sqrt-FF.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/nr-sqrt-FF&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/saddle-FF-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/saddle-FF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/particle-FF-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-FF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-FR.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/series-FR&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/nr-sqrt-FR.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/nr-sqrt-FR&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/saddle-FR-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/saddle-FR-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/particle-FR-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-FR-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-RF.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/series-RF&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/nr-sqrt-RF.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/nr-sqrt-RF&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/saddle-RF-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/saddle-RF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/particle-RF-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-RF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-RR.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/series-RR&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/nr-sqrt-RR.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/nr-sqrt-RR&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/saddle-RR-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/saddle-RR-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/particle-RR-stalingrad1000.text time\
   /aux/qobi/popl2009/stalingrad\
-  -compile -verbose 1000 -backpropagator-depth-limit 1\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-RR-stalingrad1000&
