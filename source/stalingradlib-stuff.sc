@@ -7293,14 +7293,16 @@
       append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
     ((abstract-value=?
       ;; This can widen when the constant expression value violates the
-      ;; syntactic constraints (presumably tagged pair depth limit).
+      ;; syntactic constraints (presumably tagged pair depth limit). This would
+      ;; correspond to the call A to c:widen in generate-destructure.
       (widen-abstract-value
        (concrete-value->abstract-value (constant-expression-value p)))
       v)
      '(()))
     ((abstract-value-nondisjoint?
       ;; This can widen when the constant expression value violates the
-      ;; syntactic constraints (presumably tagged pair depth limit).
+      ;; syntactic constraints (presumably tagged pair depth limit). This would
+      ;; correspond to the call A to c:widen in generate-destructure.
       (widen-abstract-value
        (concrete-value->abstract-value (constant-expression-value p)))
       v)
@@ -7475,6 +7477,7 @@
 	     (expression-environment-bindings e))
    (for-each
     (lambda (b)
+     ;; This corresponds to call B to c:widen in generate-expression.
      (let ((v (widen-abstract-value
 	       ;; Need to refresh my memory as to why this union is needed.
 	       (abstract-value-union
@@ -7498,6 +7501,7 @@
   ((letrec-expression? e)
    (for-each
     (lambda (b)
+     ;; This corresponds to call C to c:widen in generate-expression.
      (let ((v (widen-abstract-value
 	       ;; See the above note.
 	       (abstract-value-union
@@ -7529,7 +7533,8 @@
 	  (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2))
 	;; This can widen when the tagged pair created violates the syntactic
 	;; constraints (presumably tagged pair depth limit or some width
-	;; limit).
+	;; limit). This corresponds to call D to c:widen in
+	;; generate-expression.
 	(let ((v (widen-abstract-value
 		  ;; See the above note.
 		  (abstract-value-union
@@ -7562,7 +7567,8 @@
 	  v2))
 	;; This can widen when the tagged pair created violates the syntactic
 	;; constraints (presumably tagged pair depth limit or some width
-	;; limit).
+	;; limit). This corresponds to call D to c:widen in
+	;; generate-expression.
 	(let ((v (widen-abstract-value
 		  ;; See the above note.
 		  (abstract-value-union
@@ -7660,6 +7666,7 @@
 	     (map widen-abstract-value vs)
 	     ;; This can widen when the constant expression value violates the
 	     ;; syntactic constraints (presumably tagged pair depth limit).
+	     ;; This corresponds to call E to c:widen in generate-expression.
 	     (widen-abstract-value
 	      (concrete-value->abstract-value (constant-expression-value e))))
 	    (expression-environment-bindings e)))
@@ -7668,6 +7675,8 @@
      (set-expression-environment-bindings!
       e
       (let ((vs (map widen-abstract-value vs)))
+       ;; There does not need to be a corresponding call F to c:widen in
+       ;; generate-expression.
        (cons (make-environment-binding vs (first vs))
 	     (expression-environment-bindings e))))
      (for-each enqueue! (expression-parents e)))
@@ -7678,8 +7687,9 @@
 	     (map widen-abstract-value vs)
 	     ;; This can widen when the closure created violates the syntactic
 	     ;; constraints (presumably closure depth limit or backpropagator
-	     ;; depth limit).
-	     ;; Note that we don't widen vs before creating the closure.
+	     ;; depth limit). Note that we don't widen vs before creating the
+	     ;; closure. This corresponds to call G to c:widen in
+	     ;; generate-expression.
 	     (widen-abstract-value (new-nonrecursive-closure vs e)))
 	    (expression-environment-bindings e)))
      (for-each enqueue! (expression-parents e)))
@@ -8960,65 +8970,75 @@
 		    (application-argument e)
 		    (restrict-environment
 		     (environment-binding-values b) e application-argument))))
-	  (cond
-	   ((union? v1)
-	    (map-reduce union-widener-instances
-			'()
-			(lambda (u1)
-			 (all-subwidener-instances
-			  (abstract-apply u1 v2) (abstract-apply v1 v2)))
-			(get-union-values v1)))
-	   ((closure? v1) '())
-	   ((and (primitive-procedure? v1)
-		 (eq? (primitive-procedure-name v1) 'if-procedure))
-	    (assert (and (vlad-pair? v2)
-			 (vlad-pair? (vlad-cdr v2))
-			 (closure? (vlad-car (vlad-cdr v2)))
-			 (closure? (vlad-cdr (vlad-cdr v2)))))
-	    (let* ((v3 (vlad-car v2))
-		   (v4 (vlad-cdr v2))
-		   (v5 (vlad-car v4))
-		   (v6 (vlad-cdr v4))
-		   (v7 (cond ((and (some vlad-false? (union-members v3))
-				   (some (lambda (u) (not (vlad-false? u)))
-					 (union-members v3)))
-			      ;; here I am: The result might violate the
-			      ;;            syntactic constraints.
-			      (abstract-value-union
-			       (abstract-apply v5 (vlad-empty-list))
-			       (abstract-apply v6 (vlad-empty-list))))
-			     ((some vlad-false? (union-members v3))
-			      (abstract-apply v6 (vlad-empty-list)))
-			     ((some (lambda (u) (not (vlad-false? u)))
-				    (union-members v3))
-			      (abstract-apply v5 (vlad-empty-list)))
-			     (else (internal-error)))))
-	     (if (and (not (void? v7))
-		      (some vlad-false? (union-members v3))
-		      (some (lambda (u) (not (vlad-false? u)))
-			    (union-members v3)))
-		 (union-widener-instances
-		  (all-subwidener-instances
-		   (abstract-apply v5 (vlad-empty-list)) v7)
-		  (all-subwidener-instances
-		   (abstract-apply v6 (vlad-empty-list)) v7))
-		 '())))
-	   (else '()))))
+	  (union-widener-instances
+	   (all-subwidener-instances
+	    (abstract-apply v1 v2)
+	    (environment-binding-value b))
+	   (cond
+	    ((union? v1)
+	     (map-reduce union-widener-instances
+			 '()
+			 (lambda (u1)
+			  (all-subwidener-instances
+			   (abstract-apply u1 v2) (abstract-apply v1 v2)))
+			 (get-union-values v1)))
+	    ((closure? v1) '())
+	    ((and (primitive-procedure? v1)
+		  (eq? (primitive-procedure-name v1) 'if-procedure))
+	     (assert (and (vlad-pair? v2)
+			  (vlad-pair? (vlad-cdr v2))
+			  (closure? (vlad-car (vlad-cdr v2)))
+			  (closure? (vlad-cdr (vlad-cdr v2)))))
+	     (let* ((v3 (vlad-car v2))
+		    (v4 (vlad-cdr v2))
+		    (v5 (vlad-car v4))
+		    (v6 (vlad-cdr v4))
+		    (v7 (cond ((and (some vlad-false? (union-members v3))
+				    (some (lambda (u) (not (vlad-false? u)))
+					  (union-members v3)))
+			       ;; here I am: The result might violate the
+			       ;;            syntactic constraints.
+			       (abstract-value-union
+				(abstract-apply v5 (vlad-empty-list))
+				(abstract-apply v6 (vlad-empty-list))))
+			      ((some vlad-false? (union-members v3))
+			       (abstract-apply v6 (vlad-empty-list)))
+			      ((some (lambda (u) (not (vlad-false? u)))
+				     (union-members v3))
+			       (abstract-apply v5 (vlad-empty-list)))
+			      (else (internal-error)))))
+	      (if (and (not (void? v7))
+		       (some vlad-false? (union-members v3))
+		       (some (lambda (u) (not (vlad-false? u)))
+			     (union-members v3)))
+		  (union-widener-instances
+		   (all-subwidener-instances
+		    (abstract-apply v5 (vlad-empty-list)) v7)
+		   (all-subwidener-instances
+		    (abstract-apply v6 (vlad-empty-list)) v7))
+		  '())))
+	    (else '())))))
 	((letrec-expression? e)
-	 (map-reduce
-	  union-widener-instances
-	  '()
-	  (lambda (x)
-	   (let ((v (new-recursive-closure
-		     (letrec-restrict-environment
-		      (environment-binding-values b) e)
-		     (list->vector (letrec-expression-procedure-variables e))
-		     (list->vector (letrec-expression-lambda-expressions e))
-		     (positionp variable=?
-				x
-				(letrec-expression-procedure-variables e)))))
-	    (all-subwidener-instances v (widen-abstract-value v))))
-	  (letrec-expression-procedure-variables e)))
+	 (union-widener-instances
+	  (all-subwidener-instances
+	   (abstract-eval1
+	    (letrec-expression-body e)
+	    (letrec-nested-environment (environment-binding-values b) e))
+	   (environment-binding-value b))
+	  (map-reduce
+	   union-widener-instances
+	   '()
+	   (lambda (x)
+	    (let ((v (new-recursive-closure
+		      (letrec-restrict-environment
+		       (environment-binding-values b) e)
+		      (list->vector (letrec-expression-procedure-variables e))
+		      (list->vector (letrec-expression-lambda-expressions e))
+		      (positionp variable=?
+				 x
+				 (letrec-expression-procedure-variables e)))))
+	     (all-subwidener-instances v (widen-abstract-value v))))
+	   (letrec-expression-procedure-variables e))))
 	((cons-expression? e)
 	 (all-subwidener-instances
 	  (new-tagged-pair
@@ -9685,7 +9705,9 @@
   ((constant-expression? p)
    ;; needs work: To generate run-time equivalence check when the constant
    ;;             expression parameter and/or argument contain abstract
-   ;;             booleans or abstract reals.
+   ;;             booleans or abstract reals. When we do so, we need to call
+   ;;             c:widen appropriately. These would correspond to the calls A
+   ;;             to widen-abstract-value in abstract-destructure.
    (unless (abstract-value-nondisjoint?
 	    (concrete-value->abstract-value (constant-expression-value p))
 	    v)
@@ -9798,17 +9820,19 @@
    ;; value is an inexact real and *imprecise-inexacts?* is true. It also is
    ;; necessary for the case where the constant expression value is widened
    ;; because it violates the syntactic constraints (presumably tagged pair
-   ;; depth limit).
-   ;; here I am: May need to create wideners for this.
+   ;; depth limit). This corresponds to call E to widen-abstract-value in
+   ;; abstract-eval-prime!.
    (c:widen
     (constant-expression-value e) (abstract-eval1 e vs) '() widener-instances))
   ((variable-access-expression? e)
+   ;; There does not need to be a call to c:widen to correspond to call F to
+   ;; widen-abstract-value in abstract-eval-prime!.
    (generate-reference v0 (variable-access-expression-variable e) xs2 xs xs1))
   ((lambda-expression? e)
    ;; This c:widen is necessary for the case where the closure created violates
    ;; the syntactic constraints (presumably closure depth limit or
-   ;; backpropagator depth limit).
-   ;; here I am: May need to create wideners for this.
+   ;; backpropagator depth limit). This corresponds to call G to
+   ;; widen-abstract-value in abstract-eval-prime!.
    (c:widen
     (new-nonrecursive-closure vs e)
     (abstract-eval1 e vs)
@@ -9825,118 +9849,128 @@
 	 (v2 (abstract-eval1
 	      (application-argument e)
 	      (restrict-environment vs e application-argument))))
-    (cond
-     ((union? v1)
-      (c:let
-       v1
-       "y"
-       (generate-expression (application-callee e)
-			    (restrict-environment vs e application-callee)
-			    v0
-			    xs
-			    xs2
-			    bs
-			    xs1
-			    function-instances
-			    widener-instances)
-       (c:dispatch
+    ;; This corresponds to call B to widen-abstract-value in abstract-eval!.
+    (c:widen
+     (abstract-apply v1 v2)
+     (abstract-eval1 e vs)
+     (cond
+      ((union? v1)
+       (c:let
 	v1
 	"y"
-	(map (lambda (code1 u1)
-	      (c:widen
-	       (abstract-apply u1 v2)
-	       (abstract-apply v1 v2)
-	       (cond
-		((primitive-procedure? u1)
-		 (c:call ((primitive-procedure-generator u1) v2)
-			 (if (void? v2)
-			     '()
-			     (generate-expression
-			      (application-argument e)
-			      (restrict-environment vs e application-argument)
-			      v0
-			      xs
-			      xs2
-			      bs
-			      xs1
-			      function-instances
-			      widener-instances))))
-		((closure? u1)
-		 (c:call (c:function-name u1 v2 function-instances)
-			 ;; widen?
-			 (if (void? u1) '() (c:union v1 "y" code1))
-			 ;; widen?
-			 (if (void? v2)
-			     '()
-			     (generate-expression
-			      (application-argument e)
-			      (restrict-environment vs e application-argument)
-			      v0
-			      xs
-			      xs2
-			      bs
-			      xs1
-			      function-instances
-			      widener-instances))))
-		(else
-		 (c:panic (abstract-apply u1 v2) "Target is not a procedure")))
-	       widener-instances))
-	     (generate-slot-names v1 xs)
-	     (get-union-values v1)))))
-     ((primitive-procedure? v1)
-      (c:call ((primitive-procedure-generator v1) v2)
-	      (if (void? v2)
-		  '()
-		  (generate-expression
-		   (application-argument e)
-		   (restrict-environment vs e application-argument)
-		   v0
-		   xs
-		   xs2
-		   bs
-		   xs1
-		   function-instances
-		   widener-instances))))
-     ((closure? v1)
-      (c:call (c:function-name v1 v2 function-instances)
-	      ;; widen?
-	      (if (void? v1)
-		  '()
-		  (generate-expression
-		   (application-callee e)
-		   (restrict-environment vs e application-callee)
-		   v0
-		   xs
-		   xs2
-		   bs
-		   xs1
-		   function-instances
-		   widener-instances))
-	      ;; widen?
-	      (if (void? v2)
-		  '()
-		  (generate-expression
-		   (application-argument e)
-		   (restrict-environment vs e application-argument)
-		   v0
-		   xs
-		   xs2
-		   bs
-		   xs1
-		   function-instances
-		   widener-instances))))
-     (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))))
+	(generate-expression (application-callee e)
+			     (restrict-environment vs e application-callee)
+			     v0
+			     xs
+			     xs2
+			     bs
+			     xs1
+			     function-instances
+			     widener-instances)
+	(c:dispatch
+	 v1
+	 "y"
+	 (map (lambda (code1 u1)
+	       (c:widen
+		(abstract-apply u1 v2)
+		(abstract-apply v1 v2)
+		(cond
+		 ((primitive-procedure? u1)
+		  (c:call ((primitive-procedure-generator u1) v2)
+			  (if (void? v2)
+			      '()
+			      (generate-expression
+			       (application-argument e)
+			       (restrict-environment vs e application-argument)
+			       v0
+			       xs
+			       xs2
+			       bs
+			       xs1
+			       function-instances
+			       widener-instances))))
+		 ((closure? u1)
+		  (c:call (c:function-name u1 v2 function-instances)
+			  ;; here I am: widen?
+			  (if (void? u1) '() (c:union v1 "y" code1))
+			  ;; here I am: widen?
+			  (if (void? v2)
+			      '()
+			      (generate-expression
+			       (application-argument e)
+			       (restrict-environment vs e application-argument)
+			       v0
+			       xs
+			       xs2
+			       bs
+			       xs1
+			       function-instances
+			       widener-instances))))
+		 (else (c:panic
+			(abstract-apply u1 v2) "Target is not a procedure")))
+		widener-instances))
+	      (generate-slot-names v1 xs)
+	      (get-union-values v1)))))
+      ((primitive-procedure? v1)
+       (c:call ((primitive-procedure-generator v1) v2)
+	       (if (void? v2)
+		   '()
+		   (generate-expression
+		    (application-argument e)
+		    (restrict-environment vs e application-argument)
+		    v0
+		    xs
+		    xs2
+		    bs
+		    xs1
+		    function-instances
+		    widener-instances))))
+      ((closure? v1)
+       (c:call (c:function-name v1 v2 function-instances)
+	       ;; here I am: widen?
+	       (if (void? v1)
+		   '()
+		   (generate-expression
+		    (application-callee e)
+		    (restrict-environment vs e application-callee)
+		    v0
+		    xs
+		    xs2
+		    bs
+		    xs1
+		    function-instances
+		    widener-instances))
+	       ;; here I am: widen?
+	       (if (void? v2)
+		   '()
+		   (generate-expression
+		    (application-argument e)
+		    (restrict-environment vs e application-argument)
+		    v0
+		    xs
+		    xs2
+		    bs
+		    xs1
+		    function-instances
+		    widener-instances))))
+      (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))
+     widener-instances)))
   ((letrec-expression? e)
-   (generate-expression
-    (letrec-expression-body e)
-    (map widen-abstract-value (letrec-nested-environment vs e))
-    v0
-    xs
-    xs2
-    bs
-    xs1
-    function-instances
-    widener-instances))
+   ;; This corresponds to call C to widen-abstract-value in abstract-eval!.
+   (c:widen (abstract-eval1 (letrec-expression-body e)
+			    (letrec-nested-environment vs e))
+	    (abstract-eval1 e vs)
+	    (generate-expression
+	     (letrec-expression-body e)
+	     (map widen-abstract-value (letrec-nested-environment vs e))
+	     v0
+	     xs
+	     xs2
+	     bs
+	     xs1
+	     function-instances
+	     widener-instances)
+	    widener-instances))
   ((cons-expression? e)
    (let ((v1 (abstract-eval1 (cons-expression-car e)
 			     (restrict-environment vs e cons-expression-car)))
@@ -9944,8 +9978,8 @@
 			     (restrict-environment vs e cons-expression-cdr))))
     ;; This c:widen is necessary for the case where the tagged pair created
     ;; violates the syntactic constraints (presumably tagged pair depth limit)
-    ;; or where the flow analysis widened due to imprecision.
-    ;; here I am: May need to create wideners for this.
+    ;; or where the flow analysis widened due to imprecision. This corresponds
+    ;; to calls D to widen-abstract-value in abstract-eval!.
     (c:widen
      (new-tagged-pair (cons-expression-tags e) v1 v2)
      (abstract-eval1 e vs)
@@ -10014,7 +10048,6 @@
 	    ;; This c:widen is necessary for the case where the closure created
 	    ;; violates the syntactic constraints (presumably closure depth
 	    ;; limit or backpropagator depth limit).
-	    ;; here I am: May need to create wideners for this.
 	    (c:widen
 	     v
 	     v0
@@ -10953,23 +10986,23 @@
 	     v6
 	     v5
 	     (c:call (c:function-name v3 (vlad-empty-list) function-instances)
-		     ;; widen?
+		     ;; here I am: widen?
 		     (if (void? v3) '() (c:slot v2 (c:slot v "x" "d") "a")))
 	     widener-instances)
 	    (c:widen
 	     v7
 	     v5
 	     (c:call (c:function-name v4 (vlad-empty-list) function-instances)
-		     ;; widen?
+		     ;; here I am: widen?
 		     (if (void? v4) '() (c:slot v2 (c:slot v "x" "d") "d")))
 	     widener-instances))))
 	 ((some vlad-false? (union-members v1))
 	  (c:call (c:function-name v4 (vlad-empty-list) function-instances)
-		  ;; widen?
+		  ;; here I am: widen?
 		  (if (void? v4) '() (c:slot v2 (c:slot v "x" "d") "d"))))
 	 ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
 	  (c:call (c:function-name v3 (vlad-empty-list) function-instances)
-		  ;; widen?
+		  ;; here I am: widen?
 		  (if (void? v3) '() (c:slot v2 (c:slot v "x" "d") "a"))))
 	 (else (internal-error)))))))
     ((function-instance? instance)
