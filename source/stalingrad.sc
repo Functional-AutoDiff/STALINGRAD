@@ -72,10 +72,12 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
-		 (at-most-one ("c" disable-run-cc?))
-		 (at-most-one ("k" keep-c?))
 		 (at-most-one
 		  ("cc" cc? (cc "C-compiler" string-argument "gcc")))
+		 (at-most-one ("c" disable-run-cc?))
+		 (at-most-one ("k" keep-c?))
+		 (any-number
+		  ("copt" copt? (copts "C-compiler-options" string-argument)))
 		 (at-most-one ("metered" metered?))
 		 (at-most-one ("trace-primitive-procedures"
 			       trace-primitive-procedures?))
@@ -188,6 +190,12 @@
   (compile-time-error "Can't specify -k without -compile"))
  (when (and cc? (not compile?))
   (compile-time-error "Can't specify -cc without -compile"))
+ (when (and copt? (not compile?))
+  (compile-time-error "Can't specify -copt without -compile"))
+ (when (and copt? disable-run-cc?)
+  (compile-time-error "Can't specify -copt with -c"))
+ (when (and cc? disable-run-cc?)
+  (compile-time-error "Can't specify -cc with -c"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
  (set! *assert?* (not no-assert?))
@@ -277,12 +285,16 @@
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
 	   (generate-file (generate e 'needs-work bs) pathname)
-	   ;; needs work: -copt
 	   (unless disable-run-cc?
-	    (system (format #f "~a -o ~a -Wall ~a -lm -lgc"
-			    cc
-			    (strip-extension pathname)
-			    (replace-extension pathname "c"))))
+	    (system (reduce (lambda (s1 s2) (string-append s1 " " s2))
+			    `(,cc
+			      "-o"
+			      ,(strip-extension pathname)
+			      ,(replace-extension pathname "c")
+			      ,@(reverse copts)
+			      "-lm"
+			      "-lgc")
+			    "")))
 	   (unless (or disable-run-cc? keep-c?)
 	    (rm (replace-extension pathname "c"))))
 	  (else
