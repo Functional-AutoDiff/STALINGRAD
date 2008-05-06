@@ -1,0 +1,65 @@
+;;; -*- scheme -*-
+
+(include "math")
+
+;;; Representation for weights:
+;;;  list with one element for each layer following the input;
+;;;  each such list has one element for each unit in that layer;
+;;;  which consists of a bias, followed by the weights for each
+;;;  unit in the previous layer.
+
+(define (sum-activities activities ws-unit)
+  ((reduce + (car ws-unit))
+   (map2 * (cdr ws-unit) activities)))
+
+(define (sum-layer activities ws-layer)
+  (map (lambda (ws-unit) (sum-activities activities ws-unit))
+       ws-layer))
+
+(define (forward-pass ws-layers in)
+  (if (null? ws-layers)
+      in
+      (forward-pass (cdr ws-layers)
+		    (map sigmoid (sum-layer in (car ws-layers))))))
+
+(define (sigmoid x) (/ 1 (+ 1 (exp (- 0 x)))))
+
+;;; error: (define foo 'bar)
+
+(define (xor-ws) '(((-1 2 2) (-6 4 4)) ((-5 10 -10))))
+
+;;; Should be:
+;;;  ((0.08824035437794886)
+;;;   (0.7537208761298554)
+;;;   (0.7537208761298554)
+;;;   (0.01362366627163038))
+
+(define (xor-data) '(((0 0) (0))
+		     ((0 1) (1))
+		     ((1 0) (1))
+		     ((1 1) (0))))
+
+(define (test-xor)
+  (map (lambda (in)
+ 	 (forward-pass (xor-ws) in))
+       '((0 0) (0 1) (1 0) (1 1))))
+
+(define (error-on-dataset ws-layers dataset)
+  ((reduce + 0)
+   (map (lambda (pattern)
+	  (let ((in (car pattern))
+		(target (cadr pattern)))
+	    (let ((actual (forward-pass ws-layers in)))
+	      (let ((err (v- actual target)))
+		(/ (dot err err) 2)))))
+	dataset)))
+
+(define (cadr x) (car (cdr x)))
+
+;;; Should be:
+;;;  0.06463938906595941
+
+(error-on-dataset (xor-ws) (xor-data))
+
+((gradient (lambda (w) (error-on-dataset w (xor-data))))
+ (xor-ws))
