@@ -1,4 +1,9 @@
 ;;; -*- scheme -*-
+;;; CVS version control block - do not edit manually
+;;;  $RCSfile$
+;;;  $Revision$
+;;;  $Date$
+;;;  $Source$
 
 (include "math")
 
@@ -28,38 +33,68 @@
 
 (define (xor-ws) '(((-1 2 2) (-6 4 4)) ((-5 10 -10))))
 
+(define (xor-data)
+  (map-real '(((0 0) (0))
+	      ((0 1) (1))
+	      ((1 0) (1))
+	      ((1 1) (0)))))
+
+(define (map-real x)
+  (cond ((real? x) (real x))
+	((pair? x) (cons (map-real (car x))
+			 (map-real (cdr x))))
+	(else x)))
+
+(define (test-on-dataset ws-layers dataset)
+  (map (lambda (in)
+	 (forward-pass ws-layers in))
+       (map car dataset)))
+
+(define (test-xor)
+  (test-on-dataset (xor-ws) (xor-data)))
+
+(define (error-on-dataset ws-layers dataset)
+  ((reduce + 0)
+   (map (lambda ((list in target))
+	  (let ((err (v- (forward-pass ws-layers in) target)))
+	    (* 0.5 (dot err err))))
+	dataset)))
+
 ;;; Should be:
 ;;;  ((0.08824035437794886)
 ;;;   (0.7537208761298554)
 ;;;   (0.7537208761298554)
 ;;;   (0.01362366627163038))
 
-(define (xor-data) '(((0 0) (0))
-		     ((0 1) (1))
-		     ((1 0) (1))
-		     ((1 1) (0))))
-
-(define (test-xor)
-  (map (lambda (in)
- 	 (forward-pass (xor-ws) in))
-       '((0 0) (0 1) (1 0) (1 1))))
-
-(define (error-on-dataset ws-layers dataset)
-  ((reduce + 0)
-   (map (lambda (pattern)
-	  (let ((in (car pattern))
-		(target (cadr pattern)))
-	    (let ((actual (forward-pass ws-layers in)))
-	      (let ((err (v- actual target)))
-		(/ (dot err err) 2)))))
-	dataset)))
-
-(define (cadr x) (car (cdr x)))
+(test-xor)
 
 ;;; Should be:
 ;;;  0.06463938906595941
 
 (error-on-dataset (xor-ws) (xor-data))
 
-((gradient (lambda (w) (error-on-dataset w (xor-data))))
- (xor-ws))
+;; (*j (lambda (w) (error-on-dataset w (xor-data))))
+
+;; ((gradient (lambda (w) (error-on-dataset w (xor-data))))
+;;  (xor-ws))
+
+;;; test case, zero-dimensional-input one-layer backprop
+
+(define (dataset-0d) '((() (0.8))))
+
+(define (forward-0d w)
+  (forward-pass (list (list (list w))) '()))
+
+(forward-0d 0)
+
+(define (error-0d w)
+  (error-on-dataset (list (list (list w)))
+		    (dataset-0d)))
+
+(error-0d (real 0))
+
+((derivative-using-j* error-0d)
+ (real 0))
+
+((derivative-using-*j error-0d)
+ (real 0))
