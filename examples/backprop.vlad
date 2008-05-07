@@ -50,11 +50,32 @@
 (define (test-xor)
   (test-on-dataset (xor-ws) (xor-data)))
 
-(define (error-on-dataset ws-layers dataset)
+(define ((error-on-dataset dataset) ws-layers)
   ((reduce + 0)
    (map (lambda ((list in target))
 	  (* 0.5 (magnitude-squared (v- ((forward-pass ws-layers) in) target))))
 	dataset)))
+
+;;; test case, zero-dimensional-input one-layer backprop
+
+(define (forward-0d w)
+  ((forward-pass (list (list (list w)))) '()))
+
+;;; Should be: (0.5)
+
+; (forward-0d 0)
+
+(define (error-0d w)
+  ((error-on-dataset '((() (0.8))))
+   (list (list (list w)))))
+
+; (error-0d 0)
+
+; ((derivative-using-j* error-0d) 0)
+
+; ((derivative-using-*j error-0d) 0)
+
+;;; test xor
 
 ;;; Should be:
 ;;;  ((0.08824035437794886)
@@ -62,38 +83,73 @@
 ;;;   (0.7537208761298554)
 ;;;   (0.01362366627163038))
 
-(test-xor)
+; (test-xor)
 
 ;;; Should be:
 ;;;  0.06463938906595941
 
-(error-on-dataset (xor-ws) (xor-data))
+; ((error-on-dataset (xor-data)) (xor-ws))
 
-;; (*j (lambda (w) (error-on-dataset w (xor-data))))
+; ((gradient (error-on-dataset (xor-data))) (xor-ws))
 
-;; ((gradient (lambda (w) (error-on-dataset w (xor-data))))
-;;  (xor-ws))
+;;; Scaled structure subtraction
 
-;;; test case, zero-dimensional-input one-layer backprop
+(define (s-k* x k y)
+  (cond ((real? x) (- x (* k y)))
+	((pair? x) (cons (s-k* (car x) k (car y))
+			 (s-k* (cdr x) k (cdr y))))
+	(else x)))
 
-(define (dataset-0d) '((() (0.8))))
+;;; Vanilla gradient optimization.
+;;; Gradient minimize f starting at w0 for n iterations via
+;;; w(t+1) = w(t) - eta * grad_w f.
+;;; Returns list of all w's.
 
-(define (forward-0d w)
-  ((forward-pass (list (list (list w)))) '()))
+(define (vanilla f w0 n eta)
+  (if (zero? n)
+      (list w0)
+      (cons w0
+	    (vanilla f
+		     (s-k* w0 eta ((gradient f) w0))
+		     (- n 1)
+		     eta))))
 
-(forward-0d 0)
+;;; Test case: maximize cos 
 
-(define (error-0d w)
-  (error-on-dataset (list (list (list w)))
-		    (dataset-0d)))
+(vanilla (lambda (x) (- 0 (cos x)))
+	 0.5
+	 50
+	 0.3)
 
-(error-0d (real 0))
+(map cos
+     (vanilla (lambda (x) (- 0 (cos x)))
+	      0.5
+	      50
+	      0.3))
 
-((derivative-using-j* error-0d)
- (real 0))
+;;; Correct Daniel Websters's spelling error
 
-((derivative-using-*j error-0d)
- 0)
+(define (sensitise x) (sensitize x))
+(define (unsensitise x) (unsensitize x))
 
-((derivative-using-*j error-0d)
- (real 0))
+;;; double-vanilla returns a list of successive values of w and f(w)
+
+(define (double-vanilla f w0 n eta)
+  (let (((cons fw f-reverse) ((*j f) (*j w0))))
+    (let ((df-dw (cdr (unsensitise (f-reverse (sensitise 1))))))
+      (cons (list w0 fw)		; XXX (unreversify fw)
+	    (if (zero? n)
+		'()
+ 		(double-vanilla f
+ 				(s-k* w0 eta df-dw)
+ 				(- n 1)
+ 				eta))))))
+
+(double-vanilla (lambda (x) (- 0 (cos x)))
+		0.5
+		50
+		0.3)
+
+;;; Local Variables:
+;;; compile-command: "SCMAXHEAP=1000 ../bin/stalingrad-i686 backprop"
+;;; End:
