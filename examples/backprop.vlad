@@ -137,7 +137,7 @@
 (define (double-vanilla f w0 n eta)
   (let (((cons fw f-reverse) ((*j f) (*j w0))))
     (let ((df-dw (cdr (unsensitise (f-reverse (sensitise 1))))))
-      (cons (list w0 fw)		; XXX (unreversify fw)
+      (cons (list w0 (*j-inverse fw))
 	    (if (zero? n)
 		'()
  		(double-vanilla f
