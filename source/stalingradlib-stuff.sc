@@ -8217,84 +8217,21 @@
 	((scalar-value? v) (k #t cs))
 	(else (every-cps loop (aggregate-value-values v) (cons v cs) k)))))
 
-(define (all-variables-in-abstract-value v vs n k)
- ;; This is written in CPS so as not to break structure sharing.
- (cond ((memq v vs) (k n vs))
-       ((union? v)
-	(let loop ((us (get-union-values v)) (vs (cons v vs)) (n n))
-	 (if (null? us)
-	     (k n vs)
-	     (all-variables-in-abstract-value
-	      (first us) vs n (lambda (n vs) (loop (rest us) vs n))))))
-       ((scalar-value? v) (k n vs))
-       (else
-	(let loop ((vs1 (aggregate-value-values v)) (vs (cons v vs)) (n n))
-	 (if (null? vs1)
-	     (cond
-	      ((nonrecursive-closure? v)
-	       (all-variables-in-expression
-		(nonrecursive-closure-lambda-expression v) vs n k))
-	      ((recursive-closure? v)
-	       (let loop ((es (recursive-closure-lambda-expressions v))
-			  (vs vs)
-			  (n (union-variables
-			      (recursive-closure-procedure-variables v) n)))
-		(if (null? es)
-		    (k n vs)
-		    (all-variables-in-expression
-		     (first es) vs n (lambda (n vs) (loop (rest es) vs n))))))
-	      (else (k n vs)))
-	     (all-variables-in-abstract-value
-	      (first vs1) vs n (lambda (n vs) (loop (rest vs1) vs n))))))))
-
-(define (all-variables-in-expression e vs n k)
- ;; This is written in CPS so as not to break structure sharing.
- (cond ((constant-expression? e)
-	(all-variables-in-abstract-value (constant-expression-value e) vs n k))
-       ((variable-access-expression? e)
-	(k (adjoinp variable=? (variable-access-expression-variable e) n) vs))
-       ((lambda-expression? e)
-	(all-variables-in-expression
-	 (lambda-expression-parameter e)
-	 vs
-	 n
-	 (lambda (n vs)
-	  (all-variables-in-expression (lambda-expression-body e) vs n k))))
-       ((application? e)
-	(all-variables-in-expression
-	 (application-callee e)
-	 vs
-	 n
-	 (lambda (n vs)
-	  (all-variables-in-expression (application-argument e) vs n k))))
-       ((letrec-expression? e)
-	(let loop ((es (letrec-expression-lambda-expressions e))
-		   (vs vs)
-		   (n (union-variables
-		       (letrec-expression-procedure-variables e) n)))
-	 (if (null? es)
-	     (all-variables-in-expression (letrec-expression-body e) vs n k)
-	     (all-variables-in-expression
-	      (first es) vs n (lambda (n vs) (loop (rest es) vs n))))))
-       ((cons-expression? e)
-	(all-variables-in-expression
-	 (cons-expression-car e)
-	 vs
-	 n
-	 (lambda (n vs)
-	  (all-variables-in-expression (cons-expression-cdr e) vs n k))))
-       (else (internal-error))))
-
 (define (all-variables)
- ;; This is written in CPS so as not to break structure sharing.
- (let loop ((es *expressions*) (vs '()) (n '()))
-  (if (null? es)
-      n
-      (all-variables-in-expression
-       (first es)
-       vs
-       n
-       (lambda (n vs) (loop (rest es) vs n))))))
+ ;; This works because all expressions are interned.
+ (map-reduce
+  union-variables
+  '()
+  (lambda (e)
+   (cond ((constant-expression? e) '())
+	 ((variable-access-expression? e)
+	  (list (variable-access-expression-variable e)))
+	 ((lambda-expression? e) '())
+	 ((application? e) '())
+	 ((letrec-expression? e) (letrec-expression-procedure-variables e))
+	 ((cons-expression? e) '())
+	 (else (internal-error))))
+  *expressions*))
 
 (define (union-abstract-values vs1 vs2) (unionp abstract-value=? vs1 vs2))
 
