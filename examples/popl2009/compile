@@ -27,6 +27,11 @@ cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-FF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/nsaddle-FF.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
+  /aux/qobi/popl2009/nsaddle-FF&
+/aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-FR.text time\
   /aux/qobi/popl2009/stalingrad\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
@@ -46,6 +51,11 @@ cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
   /aux/qobi/popl2009/stalingrad\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-FR-stalingrad1000&
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/nsaddle-FR.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
+  /aux/qobi/popl2009/nsaddle-FR&
 /aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-RF.text time\
   /aux/qobi/popl2009/stalingrad\
@@ -67,6 +77,11 @@ cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-RF-stalingrad1000&
 /aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/nsaddle-RF.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
+  /aux/qobi/popl2009/nsaddle-RF&
+/aux/qobi/popl2009/unbuff\
   >/aux/qobi/popl2009/series-RR.text time\
   /aux/qobi/popl2009/stalingrad\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
@@ -86,3 +101,8 @@ cp -i ~/bin/x86_64-Linux-2.6.18-5-amd64/{stalingrad,unbuff}\
   /aux/qobi/popl2009/stalingrad\
   -compile -c -verbose 1000 -backpropagator-depth-limit 1\
   /aux/qobi/popl2009/particle-RR-stalingrad1000&
+/aux/qobi/popl2009/unbuff\
+  >/aux/qobi/popl2009/nsaddle-RR.text time\
+  /aux/qobi/popl2009/stalingrad\
+  -compile -c -verbose 1000 -backpropagator-depth-limit 1\
+  /aux/qobi/popl2009/nsaddle-RR&
