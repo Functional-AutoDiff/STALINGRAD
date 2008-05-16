@@ -4724,8 +4724,7 @@
       (found? (k (cdr found?) cs))
       ((union? v)
        (if (union-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (union-zero-cache v) cs))
+	   (k (union-zero-cache v) cs)
 	   (let ((v0 (make-union 'unfilled
 				 #f
 				 #f
@@ -4755,8 +4754,7 @@
       ((primitive-procedure? v) (k v cs))
       ((nonrecursive-closure? v)
        (if (nonrecursive-closure-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (nonrecursive-closure-zero-cache v) cs))
+	   (k (nonrecursive-closure-zero-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u0 (make-nonrecursive-closure
 		      'unfilled
@@ -4784,8 +4782,7 @@
 		      (k u0 cs))))))
       ((recursive-closure? v)
        (if (recursive-closure-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (recursive-closure-zero-cache v) cs))
+	   (k (recursive-closure-zero-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u0 (make-recursive-closure
 		      'unfilled
@@ -4815,8 +4812,7 @@
 		      (k u0 cs))))))
       ((perturbation-tagged-value? v)
        (if (perturbation-tagged-value-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (perturbation-tagged-value-zero-cache v) cs))
+	   (k (perturbation-tagged-value-zero-cache v) cs)
 	   (let ((u0 (make-perturbation-tagged-value 'unfilled
 						     #f
 						     #f
@@ -4840,8 +4836,7 @@
 		   (k u0 cs))))))
       ((bundle? v)
        (if (bundle-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (bundle-zero-cache v) cs))
+	   (k (bundle-zero-cache v) cs)
 	   (let ((u0 (make-bundle 'unfilled
 				  'unfilled
 				  #f
@@ -4869,8 +4864,7 @@
 			  (k u0 cs))))))))
       ((sensitivity-tagged-value? v)
        (if (sensitivity-tagged-value-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (sensitivity-tagged-value-zero-cache v) cs))
+	   (k (sensitivity-tagged-value-zero-cache v) cs)
 	   (let ((u0 (make-sensitivity-tagged-value 'unfilled
 						    #f
 						    #f
@@ -4894,8 +4888,7 @@
 		   (k u0 cs))))))
       ((reverse-tagged-value? v)
        (if (reverse-tagged-value-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (reverse-tagged-value-zero-cache v) cs))
+	   (k (reverse-tagged-value-zero-cache v) cs)
 	   (let ((u0 (make-reverse-tagged-value 'unfilled
 						#f
 						#f
@@ -4919,8 +4912,7 @@
 		   (k u0 cs))))))
       ((tagged-pair? v)
        (if (tagged-pair-zero-cache v)
-	   (begin (format #t "zero hit~%")
-		  (k (tagged-pair-zero-cache v) cs))
+	   (k (tagged-pair-zero-cache v) cs)
 	   (let ((u0 (make-tagged-pair (tagged-pair-tags v)
 				       'unfilled
 				       'unfilled
@@ -5091,8 +5083,7 @@
       (found? (k (cdr found?) cs))
       ((union? v)
        (if (union-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (union-perturb-cache v) cs))
+	   (k (union-perturb-cache v) cs)
 	   (let ((v-perturbation (make-union 'unfilled
 					     #f
 					     #f
@@ -5132,8 +5123,7 @@
 	(k u-perturbation (cons (cons v u-perturbation) cs))))
       ((nonrecursive-closure? v)
        (if (nonrecursive-closure-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (nonrecursive-closure-perturb-cache v) cs))
+	   (k (nonrecursive-closure-perturb-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u-perturbation (make-nonrecursive-closure
 				  'unfilled
@@ -5163,8 +5153,7 @@
 		      (k u-perturbation cs))))))
       ((recursive-closure? v)
        (if (recursive-closure-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (recursive-closure-perturb-cache v) cs))
+	   (k (recursive-closure-perturb-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u-perturbation
 		  (make-recursive-closure
@@ -5198,32 +5187,27 @@
 	      (k u-perturbation cs))))))
       ((perturbation-tagged-value? v)
        (if (perturbation-tagged-value-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (perturbation-tagged-value-perturb-cache v) cs))
+	   (k (perturbation-tagged-value-perturb-cache v) cs)
 	   (let ((u-perturbation (create-perturbation-tagged-value v)))
 	    (k u-perturbation (cons (cons v u-perturbation) cs)))))
       ((bundle? v)
        (if (bundle-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (bundle-perturb-cache v) cs))
+	   (k (bundle-perturb-cache v) cs)
 	   (let ((u-perturbation (create-perturbation-tagged-value v)))
 	    (k u-perturbation (cons (cons v u-perturbation) cs)))))
       ((sensitivity-tagged-value? v)
        (if (sensitivity-tagged-value-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (sensitivity-tagged-value-perturb-cache v) cs))
+	   (k (sensitivity-tagged-value-perturb-cache v) cs)
 	   (let ((u-perturbation (create-perturbation-tagged-value v)))
 	    (k u-perturbation (cons (cons v u-perturbation) cs)))))
       ((reverse-tagged-value? v)
        (if (reverse-tagged-value-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (reverse-tagged-value-perturb-cache v) cs))
+	   (k (reverse-tagged-value-perturb-cache v) cs)
 	   (let ((u-perturbation (create-perturbation-tagged-value v)))
 	    (k u-perturbation (cons (cons v u-perturbation) cs)))))
       ((tagged-pair? v)
        (if (tagged-pair-perturb-cache v)
-	   (begin (format #t "perturb hit~%")
-		  (k (tagged-pair-perturb-cache v) cs))
+	   (k (tagged-pair-perturb-cache v) cs)
 	   (let ((u-perturbation
 		  (make-tagged-pair
 		   (add-tag 'perturbation (tagged-pair-tags v))
@@ -5332,8 +5316,7 @@
       (found? (k (cdr found?) cs))
       ((union? v-perturbation)
        (if (union-unperturb-cache v-perturbation)
-	   (begin (format #t "unperturb hit~%")
-		  (k (union-unperturb-cache v-perturbation) cs))
+	   (k (union-unperturb-cache v-perturbation) cs)
 	   (let ((v (make-union 'unfilled
 				#f
 				#f
@@ -5379,7 +5362,6 @@
       ((nonrecursive-closure? v-perturbation)
        (cond
 	((nonrecursive-closure-unperturb-cache v-perturbation)
-	 (format #t "unperturb hit~%")
 	 (k (nonrecursive-closure-unperturb-cache v-perturbation) cs))
 	((tagged? 'perturbation (nonrecursive-closure-tags v-perturbation))
 	 ;; See the note in abstract-environment=?.
@@ -5416,7 +5398,6 @@
       ((recursive-closure? v-perturbation)
        (cond
 	((recursive-closure-unperturb-cache v-perturbation)
-	 (format #t "unperturb hit~%")
 	 (k (recursive-closure-unperturb-cache v-perturbation) cs))
 	((tagged? 'perturbation (recursive-closure-tags v-perturbation))
 	 ;; See the note in abstract-environment=?.
@@ -5456,32 +5437,26 @@
 	       (k u (cons (cons v-perturbation u) cs))))))
       ((perturbation-tagged-value? v-perturbation)
        (if (perturbation-tagged-value-unperturb-cache v-perturbation)
-	   (begin
-	    (format #t "unperturb hit~%")
-	    (k (perturbation-tagged-value-unperturb-cache v-perturbation) cs))
+	   (k (perturbation-tagged-value-unperturb-cache v-perturbation) cs)
 	   (let ((u (get-perturbation-tagged-value-primal v-perturbation)))
 	    (k u (cons (cons v-perturbation u) cs)))))
       ((bundle? v-perturbation)
        (if (bundle-unperturb-cache v-perturbation)
-	   (begin (format #t "unperturb hit~%")
-		  (k (bundle-unperturb-cache v-perturbation) cs))
+	   (k (bundle-unperturb-cache v-perturbation) cs)
 	   (let ((u (ad-error
 		     "Argument to unperturb ~a a non-perturbation value"
 		     v-perturbation)))
 	    (k u (cons (cons v-perturbation u) cs)))))
       ((sensitivity-tagged-value? v-perturbation)
        (if (sensitivity-tagged-value-unperturb-cache v-perturbation)
-	   (begin
-	    (format #t "unperturb hit~%")
-	    (k (sensitivity-tagged-value-unperturb-cache v-perturbation) cs))
+	   (k (sensitivity-tagged-value-unperturb-cache v-perturbation) cs)
 	   (let ((u (ad-error
 		     "Argument to unperturb ~a a non-perturbation value"
 		     v-perturbation)))
 	    (k u (cons (cons v-perturbation u) cs)))))
       ((reverse-tagged-value? v-perturbation)
        (if (reverse-tagged-value-unperturb-cache v-perturbation)
-	   (begin (format #t "unperturb hit~%")
-		  (k (reverse-tagged-value-unperturb-cache v-perturbation) cs))
+	   (k (reverse-tagged-value-unperturb-cache v-perturbation) cs)
 	   (let ((u (ad-error
 		     "Argument to unperturb ~a a non-perturbation value"
 		     v-perturbation)))
@@ -5489,7 +5464,6 @@
       ((tagged-pair? v-perturbation)
        (cond
 	((tagged-pair-unperturb-cache v-perturbation)
-	 (format #t "unperturb hit~%")
 	 (k (tagged-pair-unperturb-cache v-perturbation) cs))
 	((tagged? 'perturbation (tagged-pair-tags v-perturbation))
 	 (let ((u (make-tagged-pair
@@ -5589,8 +5563,7 @@
       (found? (k (cdr found?) cs))
       ((union? v-forward)
        (if (union-primal-cache v-forward)
-	   (begin (format #t "primal hit~%")
-		  (k (union-primal-cache v-forward) cs))
+	   (k (union-primal-cache v-forward) cs)
 	   (let ((v (make-union 'unfilled
 				#f
 				#f
@@ -5649,7 +5622,6 @@
 	     ((nonrecursive-closure? v-forward)
 	      (cond
 	       ((nonrecursive-closure-primal-cache v-forward)
-		(format #t "primal hit~%")
 		(k (nonrecursive-closure-primal-cache v-forward) cs))
 	       ((tagged? 'forward (nonrecursive-closure-tags v-forward))
 		;; See the note in abstract-environment=?.
@@ -5686,7 +5658,6 @@
 	     ((recursive-closure? v-forward)
 	      (cond
 	       ((recursive-closure-primal-cache v-forward)
-		(format #t "primal hit~%")
 		(k (recursive-closure-primal-cache v-forward) cs))
 	       ((tagged? 'forward (recursive-closure-tags v-forward))
 		;; See the note in abstract-environment=?.
@@ -5726,32 +5697,26 @@
 		 (k u (cons (cons v-forward u) cs))))))
 	     ((perturbation-tagged-value? v-forward)
 	      (if (perturbation-tagged-value-primal-cache v-forward)
-		  (begin
-		   (format #t "primal hit~%")
-		   (k (perturbation-tagged-value-primal-cache v-forward) cs))
+		  (k (perturbation-tagged-value-primal-cache v-forward) cs)
 		  (let ((u (ad-error
 			    "Argument to primal ~a a non-forward value"
 			    v-forward)))
 		   (k u (cons (cons v-forward u) cs)))))
 	     ((bundle? v-forward)
 	      (if (bundle-primal-cache v-forward)
-		  (begin (format #t "primal hit~%")
-			 (k (bundle-primal-cache v-forward) cs))
+		  (k (bundle-primal-cache v-forward) cs)
 		  (let ((u (get-bundle-primal v-forward)))
 		   (k u (cons (cons v-forward u) cs)))))
 	     ((sensitivity-tagged-value? v-forward)
 	      (if (sensitivity-tagged-value-primal-cache v-forward)
-		  (begin
-		   (format #t "primal hit~%")
-		   (k (sensitivity-tagged-value-primal-cache v-forward) cs))
+		  (k (sensitivity-tagged-value-primal-cache v-forward) cs)
 		  (let ((u (ad-error
 			    "Argument to primal ~a a non-forward value"
 			    v-forward)))
 		   (k u (cons (cons v-forward u) cs)))))
 	     ((reverse-tagged-value? v-forward)
 	      (if (reverse-tagged-value-primal-cache v-forward)
-		  (begin (format #t "primal hit~%")
-			 (k (reverse-tagged-value-primal-cache v-forward) cs))
+		  (k (reverse-tagged-value-primal-cache v-forward) cs)
 		  (let ((u (ad-error
 			    "Argument to primal ~a a non-forward value"
 			    v-forward)))
@@ -5759,7 +5724,6 @@
 	     ((tagged-pair? v-forward)
 	      (cond
 	       ((tagged-pair-primal-cache v-forward)
-		(format #t "primal hit~%")
 		(k (tagged-pair-primal-cache v-forward) cs))
 	       ((tagged? 'forward (tagged-pair-tags v-forward))
 		(let ((u (make-tagged-pair
@@ -5868,8 +5832,7 @@
       (found? (k (cdr found?) cs))
       ((union? v-forward)
        (if (union-tangent-cache v-forward)
-	   (begin (format #t "tangent hit~%")
-		  (k (union-tangent-cache v-forward) cs))
+	   (k (union-tangent-cache v-forward) cs)
 	   (let ((v-perturbation (make-union 'unfilled
 					     #f
 					     #f
@@ -5933,7 +5896,6 @@
 	     ((nonrecursive-closure? v-forward)
 	      (cond
 	       ((nonrecursive-closure-tangent-cache v-forward)
-		(format #t "tangent hit~%")
 		(k (nonrecursive-closure-tangent-cache v-forward) cs))
 	       ((tagged? 'forward (nonrecursive-closure-tags v-forward))
 		;; See the note in abstract-environment=?.
@@ -5975,7 +5937,6 @@
 	     ((recursive-closure? v-forward)
 	      (cond
 	       ((recursive-closure-tangent-cache v-forward)
-		(format #t "tangent hit~%")
 		(k (recursive-closure-tangent-cache v-forward) cs))
 	       ((tagged? 'forward (recursive-closure-tags v-forward))
 		;; See the note in abstract-environment=?.
@@ -6021,9 +5982,7 @@
 		    (cons (cons v-forward u-perturbation) cs))))))
 	     ((perturbation-tagged-value? v-forward)
 	      (if (perturbation-tagged-value-tangent-cache v-forward)
-		  (begin
-		   (format #t "tangent hit~%")
-		   (k (perturbation-tagged-value-tangent-cache v-forward) cs))
+		  (k (perturbation-tagged-value-tangent-cache v-forward) cs)
 		  (let ((u-perturbation
 			 (ad-error "Argument to tangent ~a a non-forward value"
 				   v-forward)))
@@ -6031,16 +5990,13 @@
 		      (cons (cons v-forward u-perturbation) cs)))))
 	     ((bundle? v-forward)
 	      (if (bundle-tangent-cache v-forward)
-		  (begin (format #t "tangent hit~%")
-			 (k (bundle-tangent-cache v-forward) cs))
+		  (k (bundle-tangent-cache v-forward) cs)
 		  (let ((u-perturbation (get-bundle-tangent v-forward)))
 		   (k u-perturbation
 		      (cons (cons v-forward u-perturbation) cs)))))
 	     ((sensitivity-tagged-value? v-forward)
 	      (if (sensitivity-tagged-value-tangent-cache v-forward)
-		  (begin
-		   (format #t "tangent hit~%")
-		   (k (sensitivity-tagged-value-tangent-cache v-forward) cs))
+		  (k (sensitivity-tagged-value-tangent-cache v-forward) cs)
 		  (let ((u-perturbation
 			 (ad-error "Argument to tangent ~a a non-forward value"
 				   v-forward)))
@@ -6048,8 +6004,7 @@
 		      (cons (cons v-forward u-perturbation) cs)))))
 	     ((reverse-tagged-value? v-forward)
 	      (if (reverse-tagged-value-tangent-cache v-forward)
-		  (begin (format #t "tangent hit~%")
-			 (k (reverse-tagged-value-tangent-cache v-forward) cs))
+		  (k (reverse-tagged-value-tangent-cache v-forward) cs)
 		  (let ((u-perturbation
 			 (ad-error "Argument to tangent ~a a non-forward value"
 				   v-forward)))
@@ -6058,7 +6013,6 @@
 	     ((tagged-pair? v-forward)
 	      (cond
 	       ((tagged-pair-tangent-cache v-forward)
-		(format #t "tangent hit~%")
 		(k (tagged-pair-tangent-cache v-forward) cs))
 	       ((tagged? 'forward (tagged-pair-tags v-forward))
 		(let ((u-perturbation
@@ -6760,8 +6714,7 @@
       (found? (k (cdr found?) cs))
       ((union? v)
        (if (union-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (union-sensitize-cache v) cs))
+	   (k (union-sensitize-cache v) cs)
 	   (let ((v-sensitivity (make-union 'unfilled
 					    #f
 					    #f
@@ -6801,8 +6754,7 @@
 	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
       ((nonrecursive-closure? v)
        (if (nonrecursive-closure-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (nonrecursive-closure-sensitize-cache v) cs))
+	   (k (nonrecursive-closure-sensitize-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u-sensitivity (make-nonrecursive-closure
 				 'unfilled
@@ -6832,8 +6784,7 @@
 	      (k u-sensitivity cs))))))
       ((recursive-closure? v)
        (if (recursive-closure-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (recursive-closure-sensitize-cache v) cs))
+	   (k (recursive-closure-sensitize-cache v) cs)
 	   ;; See the note in abstract-environment=?.
 	   (let ((u-sensitivity
 		  (make-recursive-closure
@@ -6867,32 +6818,27 @@
 	      (k u-sensitivity cs))))))
       ((perturbation-tagged-value? v)
        (if (perturbation-tagged-value-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (perturbation-tagged-value-sensitize-cache v) cs))
+	   (k (perturbation-tagged-value-sensitize-cache v) cs)
 	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((bundle? v)
        (if (bundle-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (bundle-sensitize-cache v) cs))
+	   (k (bundle-sensitize-cache v) cs)
 	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((sensitivity-tagged-value? v)
        (if (sensitivity-tagged-value-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (sensitivity-tagged-value-sensitize-cache v) cs))
+	   (k (sensitivity-tagged-value-sensitize-cache v) cs)
 	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((reverse-tagged-value? v)
        (if (reverse-tagged-value-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (reverse-tagged-value-sensitize-cache v) cs))
+	   (k (reverse-tagged-value-sensitize-cache v) cs)
 	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((tagged-pair? v)
        (if (tagged-pair-sensitize-cache v)
-	   (begin (format #t "sensitize hit~%")
-		  (k (tagged-pair-sensitize-cache v) cs))
+	   (k (tagged-pair-sensitize-cache v) cs)
 	   (let ((u-sensitivity
 		  (make-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
 				    'unfilled
@@ -7053,8 +6999,7 @@
       (found? (k (cdr found?) cs))
       ((union? v-sensitivity)
        (if (union-unsensitize-cache v-sensitivity)
-	   (begin (format #t "unsensitize hit~%")
-		  (k (union-unsensitize-cache v-sensitivity) cs))
+	   (k (union-unsensitize-cache v-sensitivity) cs)
 	   (let ((v (make-union 'unfilled
 				#f
 				#f
@@ -7100,7 +7045,6 @@
       ((nonrecursive-closure? v-sensitivity)
        (cond
 	((nonrecursive-closure-unsensitize-cache v-sensitivity)
-	 (format #t "unsensitize hit~%")
 	 (k (nonrecursive-closure-unsensitize-cache v-sensitivity) cs))
 	((tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
 	 ;; See the note in abstract-environment=?.
@@ -7137,7 +7081,6 @@
       ((recursive-closure? v-sensitivity)
        (cond
 	((recursive-closure-unsensitize-cache v-sensitivity)
-	 (format #t "unsensitize hit~%")
 	 (k (recursive-closure-unsensitize-cache v-sensitivity) cs))
 	((tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
 	 ;; See the note in abstract-environment=?.
@@ -7178,33 +7121,26 @@
 	  (k u (cons (cons v-sensitivity u) cs))))))
       ((perturbation-tagged-value? v-sensitivity)
        (if (perturbation-tagged-value-unsensitize-cache v-sensitivity)
-	   (begin
-	    (format #t "unsensitize hit~%")
-	    (k (perturbation-tagged-value-unsensitize-cache v-sensitivity) cs))
+	   (k (perturbation-tagged-value-unsensitize-cache v-sensitivity) cs)
 	   (let ((u (ad-error
 		     "Argument to unsensitize ~a a non-sensitivity value"
 		     v-sensitivity)))
 	    (k u (cons (cons v-sensitivity u) cs)))))
       ((bundle? v-sensitivity)
        (if (bundle-unsensitize-cache v-sensitivity)
-	   (begin (format #t "unsensitize hit~%")
-		  (k (bundle-unsensitize-cache v-sensitivity) cs))
+	   (k (bundle-unsensitize-cache v-sensitivity) cs)
 	   (let ((u (ad-error
 		     "Argument to unsensitize ~a a non-sensitivity value"
 		     v-sensitivity)))
 	    (k u (cons (cons v-sensitivity u) cs)))))
       ((sensitivity-tagged-value? v-sensitivity)
        (if (sensitivity-tagged-value-unsensitize-cache v-sensitivity)
-	   (begin
-	    (format #t "unsensitize hit~%")
-	    (k (sensitivity-tagged-value-unsensitize-cache v-sensitivity) cs))
+	   (k (sensitivity-tagged-value-unsensitize-cache v-sensitivity) cs)
 	   (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
 	    (k u (cons (cons v-sensitivity u) cs)))))
       ((reverse-tagged-value? v-sensitivity)
        (if (reverse-tagged-value-unsensitize-cache v-sensitivity)
-	   (begin
-	    (format #t "unsensitize hit~%")
-	    (k (reverse-tagged-value-unsensitize-cache v-sensitivity) cs))
+	   (k (reverse-tagged-value-unsensitize-cache v-sensitivity) cs)
 	   (let ((u (ad-error
 		     "Argument to unsensitize ~a a non-sensitivity value"
 		     v-sensitivity)))
@@ -7212,7 +7148,6 @@
       ((tagged-pair? v-sensitivity)
        (cond
 	((tagged-pair-unsensitize-cache v-sensitivity)
-	 (format #t "unsensitize hit~%")
 	 (k (tagged-pair-unsensitize-cache v-sensitivity) cs))
 	((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
 	 (let ((u (make-tagged-pair
@@ -7516,8 +7451,7 @@
       (found? (k (cdr found?) cs))
       ((union? v)
        (if (union-*j-cache v)
-	   (begin (format #t "*j hit~%")
-		  (k (union-*j-cache v) cs))
+	   (k (union-*j-cache v) cs)
 	   (let ((v-reverse (make-union 'unfilled
 					#f
 					#f
@@ -7566,8 +7500,7 @@
 	     ((primitive-procedure? v) (internal-error))
 	     ((nonrecursive-closure? v)
 	      (if (nonrecursive-closure-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (nonrecursive-closure-*j-cache v) cs))
+		  (k (nonrecursive-closure-*j-cache v) cs)
 		  ;; See the note in abstract-environment=?.
 		  (let ((u-reverse
 			 (make-nonrecursive-closure
@@ -7598,8 +7531,7 @@
 		     (k u-reverse cs))))))
 	     ((recursive-closure? v)
 	      (if (recursive-closure-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (recursive-closure-*j-cache v) cs))
+		  (k (recursive-closure-*j-cache v) cs)
 		  ;; See the note in abstract-environment=?.
 		  (let ((u-reverse
 			 (make-recursive-closure
@@ -7644,32 +7576,27 @@
 		     (k u-reverse cs))))))
 	     ((perturbation-tagged-value? v)
 	      (if (perturbation-tagged-value-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (perturbation-tagged-value-*j-cache v) cs))
+		  (k (perturbation-tagged-value-*j-cache v) cs)
 		  (let ((u-reverse (create-reverse-tagged-value v)))
 		   (k u-reverse (cons (cons v u-reverse) cs)))))
 	     ((bundle? v)
 	      (if (bundle-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (bundle-*j-cache v) cs))
+		  (k (bundle-*j-cache v) cs)
 		  (let ((u-reverse (create-reverse-tagged-value v)))
 		   (k u-reverse (cons (cons v u-reverse) cs)))))
 	     ((sensitivity-tagged-value? v)
 	      (if (sensitivity-tagged-value-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (sensitivity-tagged-value-*j-cache v) cs))
+		  (k (sensitivity-tagged-value-*j-cache v) cs)
 		  (let ((u-reverse (create-reverse-tagged-value v)))
 		   (k u-reverse (cons (cons v u-reverse) cs)))))
 	     ((reverse-tagged-value? v)
 	      (if (reverse-tagged-value-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (reverse-tagged-value-*j-cache v) cs))
+		  (k (reverse-tagged-value-*j-cache v) cs)
 		  (let ((u-reverse (create-reverse-tagged-value v)))
 		   (k u-reverse (cons (cons v u-reverse) cs)))))
 	     ((tagged-pair? v)
 	      (if (tagged-pair-*j-cache v)
-		  (begin (format #t "*j hit~%")
-			 (k (tagged-pair-*j-cache v) cs))
+		  (k (tagged-pair-*j-cache v) cs)
 		  (let ((u-reverse
 			 (make-tagged-pair
 			  (add-tag 'reverse (tagged-pair-tags v))
@@ -7770,8 +7697,7 @@
       (found? (k (cdr found?) cs))
       ((union? v-reverse)
        (if (union-*j-inverse-cache v-reverse)
-	   (begin (format #t "*j-inverse hit~%")
-		  (k (union-*j-inverse-cache v-reverse) cs))
+	   (k (union-*j-inverse-cache v-reverse) cs)
 	   (let ((v (make-union 'unfilled
 				#f
 				#f
@@ -7835,7 +7761,6 @@
 	     ((nonrecursive-closure? v-reverse)
 	      (cond
 	       ((nonrecursive-closure-*j-inverse-cache v-reverse)
-		(format #t "*j-inverse hit~%")
 		(k (nonrecursive-closure-*j-inverse-cache v-reverse) cs))
 	       ((tagged? 'reverse (nonrecursive-closure-tags v-reverse))
 		;; See the note in abstract-environment=?.
@@ -7873,7 +7798,6 @@
 	     ((recursive-closure? v-reverse)
 	      (cond
 	       ((recursive-closure-*j-inverse-cache v-reverse)
-		(format #t "*j-inverse hit~%")
 		(k (recursive-closure-*j-inverse-cache v-reverse) cs))
 	       ((tagged? 'reverse (recursive-closure-tags v-reverse))
 		;; See the note in abstract-environment=?.
@@ -7914,43 +7838,33 @@
 		 (k u (cons (cons v-reverse u) cs))))))
 	     ((perturbation-tagged-value? v-reverse)
 	      (if (perturbation-tagged-value-*j-inverse-cache v-reverse)
-		  (begin
-		   (format #t "*j-inverse hit~%")
-		   (k (perturbation-tagged-value-*j-inverse-cache v-reverse)
-		      cs))
+		  (k (perturbation-tagged-value-*j-inverse-cache v-reverse) cs)
 		  (let ((u (ad-error
 			    "Argument to *j-inverse ~a a non-reverse value"
 			    v-reverse)))
 		   (k u (cons (cons v-reverse u) cs)))))
 	     ((bundle? v-reverse)
 	      (if (bundle-*j-inverse-cache v-reverse)
-		  (begin (format #t "*j-inverse hit~%")
-			 (k (bundle-*j-inverse-cache v-reverse) cs))
+		  (k (bundle-*j-inverse-cache v-reverse) cs)
 		  (let ((u (ad-error
 			    "Argument to *j-inverse ~a a non-reverse value"
 			    v-reverse)))
 		   (k u (cons (cons v-reverse u) cs)))))
 	     ((sensitivity-tagged-value? v-reverse)
 	      (if (sensitivity-tagged-value-*j-inverse-cache v-reverse)
-		  (begin
-		   (format #t "*j-inverse hit~%")
-		   (k (sensitivity-tagged-value-*j-inverse-cache v-reverse)
-		      cs))
+		  (k (sensitivity-tagged-value-*j-inverse-cache v-reverse) cs)
 		  (let ((u (ad-error
 			    "Argument to *j-inverse ~a a non-reverse value"
 			    v-reverse)))
 		   (k u (cons (cons v-reverse u) cs)))))
 	     ((reverse-tagged-value? v-reverse)
 	      (if (reverse-tagged-value-*j-inverse-cache v-reverse)
-		  (begin
-		   (format #t "*j-inverse hit~%")
-		   (k (reverse-tagged-value-*j-inverse-cache v-reverse) cs))
+		  (k (reverse-tagged-value-*j-inverse-cache v-reverse) cs)
 		  (let ((u (get-reverse-tagged-value-primal v-reverse)))
 		   (k u (cons (cons v-reverse u) cs)))))
 	     ((tagged-pair? v-reverse)
 	      (cond
 	       ((tagged-pair-*j-inverse-cache v-reverse)
-		(format #t "*j-inverse hit~%")
 		(k (tagged-pair-*j-inverse-cache v-reverse) cs))
 	       ((tagged? 'reverse (tagged-pair-tags v-reverse))
 		(let ((u (make-tagged-pair
