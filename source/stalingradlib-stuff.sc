@@ -6684,173 +6684,221 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   14
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
-   (cond
-    ((and (nonrecursive-closure? v) (nonrecursive-closure-sensitize-cache v))
-     (nonrecursive-closure-sensitize-cache v))
-    ((and (recursive-closure? v) (recursive-closure-sensitize-cache v))
-     (recursive-closure-sensitize-cache v))
-    ((and (perturbation-tagged-value? v)
-	  (perturbation-tagged-value-sensitize-cache v))
-     (perturbation-tagged-value-sensitize-cache v))
-    ((and (bundle? v) (bundle-sensitize-cache v)) (bundle-sensitize-cache v))
-    ((and (sensitivity-tagged-value? v)
-	  (sensitivity-tagged-value-sensitize-cache v))
-     (sensitivity-tagged-value-sensitize-cache v))
-    ((and (reverse-tagged-value? v) (reverse-tagged-value-sensitize-cache v))
-     (reverse-tagged-value-sensitize-cache v))
-    ((and (tagged-pair? v) (tagged-pair-sensitize-cache v))
-     (tagged-pair-sensitize-cache v))
-    ((and (union? v) (union-sensitize-cache v)) (union-sensitize-cache v))
-    (else
-     (let ((v-sensitivity
-	    (canonize-and-maybe-intern-abstract-value
-	     (let loop ((v v) (cs '()) (k (lambda (v-sensitivity cs) v-sensitivity)))
-	      (let ((found? (assq v cs)))
-	       (cond
-		(found? (k (cdr found?) cs))
-		((union? v)
-		 (let ((v-sensitivity
-			(make-union
-			 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-		  (map-cps loop
-			   (union-members v)
-			   (cons (cons v v-sensitivity) cs)
-			   (lambda (us-sensitivity cs)
-			    (fill-union-values! v-sensitivity us-sensitivity)
-			    (k v-sensitivity cs)))))
-		((vlad-empty-list? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((vlad-true? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((vlad-false? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((vlad-real? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((primitive-procedure? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((nonrecursive-closure? v)
-		 ;; See the note in abstract-environment=?.
-		 (let ((u-sensitivity (make-nonrecursive-closure
-				       'unfilled
-				       (sensitivity-transform
-					(nonrecursive-closure-lambda-expression v))
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       'unfilled)))
-		  (map-cps
-		   loop
-		   (get-nonrecursive-closure-values v)
-		   (cons (cons v u-sensitivity) cs)
-		   (lambda (vs-sensitivity cs)
-		    (fill-nonrecursive-closure-values! u-sensitivity vs-sensitivity)
-		    (k u-sensitivity cs)))))
-		((recursive-closure? v)
-		 ;; See the note in abstract-environment=?.
-		 (let ((u-sensitivity
-			(make-recursive-closure
-			 'unfilled
-			 (map-vector sensitivityify
-				     (recursive-closure-procedure-variables v))
-			 (map-vector sensitivity-transform
-				     (recursive-closure-lambda-expressions v))
-			 (recursive-closure-index v)
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		  (map-cps loop
-			   (get-recursive-closure-values v)
-			   (cons (cons v u-sensitivity) cs)
-			   (lambda (vs-sensitivity cs)
-			    (fill-recursive-closure-values! u-sensitivity vs-sensitivity)
-			    (k u-sensitivity cs)))))
-		((perturbation-tagged-value? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((bundle? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((sensitivity-tagged-value? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((reverse-tagged-value? v)
-		 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-		  (k u-sensitivity (cons (cons v u-sensitivity) cs))))
-		((tagged-pair? v)
-		 (let ((u-sensitivity
-			(make-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
-					  'unfilled
-					  'unfilled
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  'unfilled)))
-		  (loop (get-tagged-pair-car v)
-			(cons (cons v u-sensitivity) cs)
-			(lambda (v-car-sensitivity cs)
-			 (loop (get-tagged-pair-cdr v)
-			       cs
-			       (lambda (v-cdr-sensitivity cs)
-				(fill-tagged-pair!
-				 u-sensitivity v-car-sensitivity v-cdr-sensitivity)
-				(k u-sensitivity cs)))))))
-		(else (internal-error))))))))
-      (when *memoized?*
-       (cond
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-sensitize-cache! v v-sensitivity))
-	((recursive-closure? v)
-	 (set-recursive-closure-sensitize-cache! v v-sensitivity))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-sensitize-cache! v v-sensitivity))
-	((bundle? v) (set-bundle-sensitize-cache! v v-sensitivity))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-sensitize-cache! v v-sensitivity))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-sensitize-cache! v v-sensitivity))
-	((tagged-pair? v) (set-tagged-pair-sensitize-cache! v v-sensitivity))
-	((union? v) (set-union-sensitize-cache! v v-sensitivity))))
-      v-sensitivity))))))
+  (let ((v-sensitivity
+	 (canonize-and-maybe-intern-abstract-value
+	  (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+		     (cs '())
+		     (k (lambda (v-sensitivity cs) v-sensitivity)))
+	   (let ((found? (assq v cs)))
+	    (cond
+	     (found? (k (cdr found?) cs))
+	     ((union? v)
+	      (if (union-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (union-sensitize-cache v) cs))
+		  (let ((v-sensitivity (make-union 'unfilled
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   'unfilled)))
+		   (map-cps loop
+			    (union-members v)
+			    (cons (cons v v-sensitivity) cs)
+			    (lambda (us-sensitivity cs)
+			     (fill-union-values! v-sensitivity us-sensitivity)
+			     (k v-sensitivity cs))))))
+	     ((vlad-empty-list? v)
+	      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	       (k u-sensitivity (cons (cons v u-sensitivity) cs))))
+	     ((vlad-true? v)
+	      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	       (k u-sensitivity (cons (cons v u-sensitivity) cs))))
+	     ((vlad-false? v)
+	      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	       (k u-sensitivity (cons (cons v u-sensitivity) cs))))
+	     ((vlad-real? v)
+	      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	       (k u-sensitivity (cons (cons v u-sensitivity) cs))))
+	     ((primitive-procedure? v)
+	      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	       (k u-sensitivity (cons (cons v u-sensitivity) cs))))
+	     ((nonrecursive-closure? v)
+	      (if (nonrecursive-closure-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (nonrecursive-closure-sensitize-cache v) cs))
+		  ;; See the note in abstract-environment=?.
+		  (let ((u-sensitivity
+			 (make-nonrecursive-closure
+			  'unfilled
+			  (sensitivity-transform
+			   (nonrecursive-closure-lambda-expression v))
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (map-cps loop
+			    (get-nonrecursive-closure-values v)
+			    (cons (cons v u-sensitivity) cs)
+			    (lambda (vs-sensitivity cs)
+			     (fill-nonrecursive-closure-values!
+			      u-sensitivity vs-sensitivity)
+			     (k u-sensitivity cs))))))
+	     ((recursive-closure? v)
+	      (if (recursive-closure-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (recursive-closure-sensitize-cache v) cs))
+		  ;; See the note in abstract-environment=?.
+		  (let ((u-sensitivity
+			 (make-recursive-closure
+			  'unfilled
+			  (map-vector
+			   sensitivityify
+			   (recursive-closure-procedure-variables v))
+			  (map-vector sensitivity-transform
+				      (recursive-closure-lambda-expressions v))
+			  (recursive-closure-index v)
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (map-cps loop
+			    (get-recursive-closure-values v)
+			    (cons (cons v u-sensitivity) cs)
+			    (lambda (vs-sensitivity cs)
+			     (fill-recursive-closure-values!
+			      u-sensitivity vs-sensitivity)
+			     (k u-sensitivity cs))))))
+	     ((perturbation-tagged-value? v)
+	      (if (perturbation-tagged-value-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (perturbation-tagged-value-sensitize-cache v) cs))
+		  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+		   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
+	     ((bundle? v)
+	      (if (bundle-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (bundle-sensitize-cache v))
+		  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+		   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
+	     ((sensitivity-tagged-value? v)
+	      (if (sensitivity-tagged-value-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (sensitivity-tagged-value-sensitize-cache v) cs))
+		  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+		   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
+	     ((reverse-tagged-value? v)
+	      (if (reverse-tagged-value-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (reverse-tagged-value-sensitize-cache v) cs))
+		  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+		   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
+	     ((tagged-pair? v)
+	      (if (tagged-pair-sensitize-cache v)
+		  (begin (format #t "sensitize hit~%")
+			 (k (tagged-pair-sensitize-cache v) cs))
+		  (let ((u-sensitivity
+			 (make-tagged-pair
+			  (add-tag 'sensitivity (tagged-pair-tags v))
+			  'unfilled
+			  'unfilled
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (loop
+		    (get-tagged-pair-car v)
+		    (cons (cons v u-sensitivity) cs)
+		    (lambda (v-car-sensitivity cs)
+		     (loop (get-tagged-pair-cdr v)
+			   cs
+			   (lambda (v-cdr-sensitivity cs)
+			    (fill-tagged-pair!
+			     u-sensitivity v-car-sensitivity v-cdr-sensitivity)
+			    (k u-sensitivity cs))))))))
+	     (else (internal-error))))))))
+   (when (and #f *memoized?*)
+    (cond
+     ((nonrecursive-closure? v)
+      (assert
+       (or (not (nonrecursive-closure-sensitize-cache v))
+	   (eq? (nonrecursive-closure-sensitize-cache v) v-sensitivity)))
+      (set-nonrecursive-closure-sensitize-cache! v v-sensitivity))
+     ((recursive-closure? v)
+      (assert (or (not (recursive-closure-sensitize-cache v))
+		  (eq? (recursive-closure-sensitize-cache v) v-sensitivity)))
+      (set-recursive-closure-sensitize-cache! v v-sensitivity))
+     ((perturbation-tagged-value? v)
+      (assert
+       (or (not (perturbation-tagged-value-sensitize-cache v))
+	   (eq? (perturbation-tagged-value-sensitize-cache v) v-sensitivity)))
+      (set-perturbation-tagged-value-sensitize-cache! v v-sensitivity))
+     ((bundle? v)
+      (assert (or (not (bundle-sensitize-cache v))
+		  (eq? (bundle-sensitize-cache v) v-sensitivity)))
+      (set-bundle-sensitize-cache! v v-sensitivity))
+     ((sensitivity-tagged-value? v)
+      (assert
+       (or (not (sensitivity-tagged-value-sensitize-cache v))
+	   (eq? (sensitivity-tagged-value-sensitize-cache v) v-sensitivity)))
+      (set-sensitivity-tagged-value-sensitize-cache! v v-sensitivity))
+     ((reverse-tagged-value? v)
+      (assert
+       (or (not (reverse-tagged-value-sensitize-cache v))
+	   (eq? (reverse-tagged-value-sensitize-cache v) v-sensitivity)))
+      (set-reverse-tagged-value-sensitize-cache! v v-sensitivity))
+     ((tagged-pair? v)
+      (assert (or (not (tagged-pair-sensitize-cache v))
+		  (eq? (tagged-pair-sensitize-cache v) v-sensitivity)))
+      (set-tagged-pair-sensitize-cache! v v-sensitivity))
+     ((union? v)
+      (assert (or (not (union-sensitize-cache v))
+		  (eq? (union-sensitize-cache v) v-sensitivity)))
+      (set-union-sensitize-cache! v v-sensitivity))))
+   v-sensitivity)))
 
 (define (unsensitize? v-sensitivity)
  ;; This is written in CPS so as not to break structure sharing.
@@ -6909,206 +6957,268 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   16
-  (let ((v-sensitivity
-	 (canonize-and-maybe-intern-abstract-value v-sensitivity)))
-   (cond
-    ((and (nonrecursive-closure? v-sensitivity)
-	  (nonrecursive-closure-unsensitize-cache v-sensitivity))
-     (nonrecursive-closure-unsensitize-cache v-sensitivity))
-    ((and (recursive-closure? v-sensitivity)
-	  (recursive-closure-unsensitize-cache v-sensitivity))
-     (recursive-closure-unsensitize-cache v-sensitivity))
-    ((and (perturbation-tagged-value? v-sensitivity)
-	  (perturbation-tagged-value-unsensitize-cache v-sensitivity))
-     (perturbation-tagged-value-unsensitize-cache v-sensitivity))
-    ((and (bundle? v-sensitivity)
-	  (bundle-unsensitize-cache v-sensitivity))
-     (bundle-unsensitize-cache v-sensitivity))
-    ((and (sensitivity-tagged-value? v-sensitivity)
-	  (sensitivity-tagged-value-unsensitize-cache v-sensitivity))
-     (sensitivity-tagged-value-unsensitize-cache v-sensitivity))
-    ((and (reverse-tagged-value? v-sensitivity)
-	  (reverse-tagged-value-unsensitize-cache v-sensitivity))
-     (reverse-tagged-value-unsensitize-cache v-sensitivity))
-    ((and (tagged-pair? v-sensitivity)
-	  (tagged-pair-unsensitize-cache v-sensitivity))
-     (tagged-pair-unsensitize-cache v-sensitivity))
-    ((and (union? v-sensitivity) (union-unsensitize-cache v-sensitivity))
-     (union-unsensitize-cache v-sensitivity))
-    (else
-     (let ((v
-	    (canonize-and-maybe-intern-abstract-value
-	     (let loop ((v-sensitivity v-sensitivity) (cs '()) (k (lambda (v cs) v)))
-	      (let ((found? (assq v-sensitivity cs)))
-	       (cond
-		(found? (k (cdr found?) cs))
-		((union? v-sensitivity)
-		 (let ((v
-			(make-union
-			 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-		  (map-cps loop
-			   (union-members v-sensitivity)
-			   (cons (cons v-sensitivity v) cs)
-			   (lambda (us cs)
-			    (fill-union-values! v us)
-			    (k v cs)))))
-		((vlad-empty-list? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((vlad-true? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((vlad-false? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((vlad-real? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((primitive-procedure? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((nonrecursive-closure? v-sensitivity)
-		 (if (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
-		     ;; See the note in abstract-environment=?.
-		     (let ((u (make-nonrecursive-closure
-			       'unfilled
-			       (sensitivity-transform-inverse
-				(nonrecursive-closure-lambda-expression v-sensitivity))
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       'unfilled)))
-		      (map-cps loop
-			       (get-nonrecursive-closure-values v-sensitivity)
-			       (cons (cons v-sensitivity u) cs)
-			       (lambda (vs cs)
-				(fill-nonrecursive-closure-values! u vs)
-				(k u cs))))
-		     (let ((u (ad-error
-			       "Argument to unsensitize ~a a non-sensitivity value"
-			       v-sensitivity)))
-		      (k u (cons (cons v-sensitivity u) cs)))))
-		((recursive-closure? v-sensitivity)
-		 (if (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
-		     ;; See the note in abstract-environment=?.
-		     (let ((u (make-recursive-closure
-			       'unfilled
-			       (map-vector
-				unsensitivityify
-				(recursive-closure-procedure-variables v-sensitivity))
-			       (map-vector
-				sensitivity-transform-inverse
-				(recursive-closure-lambda-expressions v-sensitivity))
-			       (recursive-closure-index v-sensitivity)
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       'unfilled)))
-		      (map-cps loop
-			       (get-recursive-closure-values v-sensitivity)
-			       (cons (cons v-sensitivity u) cs)
-			       (lambda (vs cs)
-				(fill-recursive-closure-values! u vs)
-				(k u cs))))
-		     (let ((u (ad-error
-			       "Argument to unsensitize ~a a non-sensitivity value"
-			       v-sensitivity)))
-		      (k u (cons (cons v-sensitivity u) cs)))))
-		((perturbation-tagged-value? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((bundle? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((sensitivity-tagged-value? v-sensitivity)
-		 (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((reverse-tagged-value? v-sensitivity)
-		 (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-				    v-sensitivity)))
-		  (k u (cons (cons v-sensitivity u) cs))))
-		((tagged-pair? v-sensitivity)
-		 (if (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-		     (let ((u (make-tagged-pair
-			       (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
-			       'unfilled
-			       'unfilled
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       #f
-			       'unfilled)))
-		      (loop (get-tagged-pair-car v-sensitivity)
-			    (cons (cons v-sensitivity u) cs)
-			    (lambda (v-car cs)
-			     (loop (get-tagged-pair-cdr v-sensitivity)
-				   cs
-				   (lambda (v-cdr cs)
-				    (fill-tagged-pair! u v-car v-cdr)
-				    (k u cs))))))
-		     (let ((u (ad-error
-			       "Argument to unsensitize ~a a non-sensitivity value"
-			       v-sensitivity)))
-		      (k u (cons (cons v-sensitivity u) cs)))))
-		(else (internal-error))))))))
-      (when *memoized?*
-       (cond
-	((nonrecursive-closure? v-sensitivity)
-	 (set-nonrecursive-closure-unsensitize-cache! v-sensitivity v))
-	((recursive-closure? v-sensitivity)
-	 (set-recursive-closure-unsensitize-cache! v-sensitivity v))
-	((perturbation-tagged-value? v-sensitivity)
-	 (set-perturbation-tagged-value-unsensitize-cache! v-sensitivity v))
-	((bundle? v-sensitivity)
-	 (set-bundle-unsensitize-cache! v-sensitivity v))
-	((sensitivity-tagged-value? v-sensitivity)
-	 (set-sensitivity-tagged-value-unsensitize-cache! v-sensitivity v))
-	((reverse-tagged-value? v-sensitivity)
-	 (set-reverse-tagged-value-unsensitize-cache! v-sensitivity v))
-	((tagged-pair? v-sensitivity)
-	 (set-tagged-pair-unsensitize-cache! v-sensitivity v))
-	((union? v-sensitivity)
-	 (set-union-unsensitize-cache! v-sensitivity v))))
-      v))))))
+  (let ((v
+	 (canonize-and-maybe-intern-abstract-value
+	  (let loop ((v-sensitivity
+		      (canonize-and-maybe-intern-abstract-value
+		       v-sensitivity))
+		     (cs '())
+		     (k (lambda (v cs) v)))
+	   (let ((found? (assq v-sensitivity cs)))
+	    (cond
+	     (found? (k (cdr found?) cs))
+	     ((union? v-sensitivity)
+	      (if (union-unsensitize-cache v-sensitivity)
+		  (begin (format #t "unsensitize hit~%")
+			 (union-unsensitize-cache v-sensitivity))
+		  (let ((v (make-union 'unfilled
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       'unfilled)))
+		   (map-cps loop
+			    (union-members v-sensitivity)
+			    (cons (cons v-sensitivity v) cs)
+			    (lambda (us cs)
+			     (fill-union-values! v us)
+			     (k v cs))))))
+	     ((vlad-empty-list? v-sensitivity)
+	      (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))
+	     ((vlad-true? v-sensitivity)
+	      (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))
+	     ((vlad-false? v-sensitivity)
+	      (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))
+	     ((vlad-real? v-sensitivity)
+	      (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))
+	     ((primitive-procedure? v-sensitivity)
+	      (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))
+	     ((nonrecursive-closure? v-sensitivity)
+	      (cond
+	       ((nonrecursive-closure-unsensitize-cache v-sensitivity)
+		(format #t "unsensitize hit~%")
+		(k (nonrecursive-closure-unsensitize-cache v-sensitivity) cs))
+	       ((tagged? 'sensitivity
+			 (nonrecursive-closure-tags v-sensitivity))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-nonrecursive-closure
+			  'unfilled
+			  (sensitivity-transform-inverse
+			   (nonrecursive-closure-lambda-expression
+			    v-sensitivity))
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-nonrecursive-closure-values v-sensitivity)
+			  (cons (cons v-sensitivity u) cs)
+			  (lambda (vs cs)
+			   (fill-nonrecursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		 (k u (cons (cons v-sensitivity u) cs))))))
+	     ((recursive-closure? v-sensitivity)
+	      (cond
+	       ((recursive-closure-unsensitize-cache v-sensitivity)
+		(format #t "unsensitize hit~%")
+		(k (recursive-closure-unsensitize-cache v-sensitivity) cs))
+	       ((tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-recursive-closure
+			  'unfilled
+			  (map-vector unsensitivityify
+				      (recursive-closure-procedure-variables
+				       v-sensitivity))
+			  (map-vector sensitivity-transform-inverse
+				      (recursive-closure-lambda-expressions
+				       v-sensitivity))
+			  (recursive-closure-index v-sensitivity)
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-recursive-closure-values v-sensitivity)
+			  (cons (cons v-sensitivity u) cs)
+			  (lambda (vs cs)
+			   (fill-recursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		 (k u (cons (cons v-sensitivity u) cs))))))
+	     ((perturbation-tagged-value? v-sensitivity)
+	      (if (perturbation-tagged-value-unsensitize-cache v-sensitivity)
+		  (begin (format #t "unsensitize hit~%")
+			 (k (perturbation-tagged-value-unsensitize-cache
+			     v-sensitivity)
+			    cs))
+		  (let ((u
+			 (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		   (k u (cons (cons v-sensitivity u) cs)))))
+	     ((bundle? v-sensitivity)
+	      (if (bundle-unsensitize-cache v-sensitivity)
+		  (begin (format #t "unsensitize hit~%")
+			 (k (bundle-unsensitize-cache v-sensitivity) cs))
+		  (let ((u
+			 (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		   (k u (cons (cons v-sensitivity u) cs)))))
+	     ((sensitivity-tagged-value? v-sensitivity)
+	      (if (sensitivity-tagged-value-unsensitize-cache v-sensitivity)
+		  (begin (format #t "unsensitize hit~%")
+			 (k (sensitivity-tagged-value-unsensitize-cache
+			     v-sensitivity)
+			    cs))
+		  (let ((u
+			 (get-sensitivity-tagged-value-primal v-sensitivity)))
+		   (k u (cons (cons v-sensitivity u) cs)))))
+	     ((reverse-tagged-value? v-sensitivity)
+	      (if (reverse-tagged-value-unsensitize-cache v-sensitivity)
+		  (begin
+		   (format #t "unsensitize hit~%")
+		   (k (reverse-tagged-value-unsensitize-cache v-sensitivity)
+		      cs))
+		  (let ((u
+			 (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		   (k u (cons (cons v-sensitivity u) cs)))))
+	     ((tagged-pair? v-sensitivity)
+	      (cond
+	       ((tagged-pair-unsensitize-cache v-sensitivity)
+		(format #t "unsensitize hit~%")
+		(k (tagged-pair-unsensitize-cache v-sensitivity) cs))
+	       ((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
+		(let ((u (make-tagged-pair
+			  (remove-tag 'sensitivity
+				      (tagged-pair-tags v-sensitivity))
+			  'unfilled
+			  'unfilled
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (loop (get-tagged-pair-car v-sensitivity)
+		       (cons (cons v-sensitivity u) cs)
+		       (lambda (v-car cs)
+			(loop (get-tagged-pair-cdr v-sensitivity)
+			      cs
+			      (lambda (v-cdr cs)
+			       (fill-tagged-pair! u v-car v-cdr)
+			       (k u cs)))))))
+	       (else
+		(let ((u (ad-error
+			  "Argument to unsensitize ~a a non-sensitivity value"
+			  v-sensitivity)))
+		 (k u (cons (cons v-sensitivity u) cs))))))
+	     (else (internal-error))))))))
+   (when (and #f *memoized?*)
+    (cond
+     ((nonrecursive-closure? v-sensitivity)
+      (assert
+       (or (not (nonrecursive-closure-unsensitize-cache v-sensitivity))
+	   (eq? (nonrecursive-closure-unsensitize-cache v-sensitivity) v)))
+      (set-nonrecursive-closure-unsensitize-cache! v-sensitivity v))
+     ((recursive-closure? v-sensitivity)
+      (assert (or (not (recursive-closure-unsensitize-cache v-sensitivity))
+		  (eq? (recursive-closure-unsensitize-cache v-sensitivity) v)))
+      (set-recursive-closure-unsensitize-cache! v-sensitivity v))
+     ((perturbation-tagged-value? v-sensitivity)
+      (assert
+       (or (not (perturbation-tagged-value-unsensitize-cache v-sensitivity))
+	   (eq? (perturbation-tagged-value-unsensitize-cache v-sensitivity)
+		v)))
+      (set-perturbation-tagged-value-unsensitize-cache! v-sensitivity v))
+     ((bundle? v-sensitivity)
+      (assert (or (not (bundle-unsensitize-cache v-sensitivity))
+		  (eq? (bundle-unsensitize-cache v-sensitivity) v)))
+      (set-bundle-unsensitize-cache! v-sensitivity v))
+     ((sensitivity-tagged-value? v-sensitivity)
+      (assert
+       (or (not (sensitivity-tagged-value-unsensitize-cache v-sensitivity))
+	   (eq? (sensitivity-tagged-value-unsensitize-cache v-sensitivity) v)))
+      (set-sensitivity-tagged-value-unsensitize-cache! v-sensitivity v))
+     ((reverse-tagged-value? v-sensitivity)
+      (assert
+       (or (not (reverse-tagged-value-unsensitize-cache v-sensitivity))
+	   (eq? (reverse-tagged-value-unsensitize-cache v-sensitivity) v)))
+      (set-reverse-tagged-value-unsensitize-cache! v-sensitivity v))
+     ((tagged-pair? v-sensitivity)
+      (assert (or (not (tagged-pair-unsensitize-cache v-sensitivity))
+		  (eq? (tagged-pair-unsensitize-cache v-sensitivity) v)))
+      (set-tagged-pair-unsensitize-cache! v-sensitivity v))
+     ((union? v-sensitivity)
+      (assert (or (not (union-unsensitize-cache v-sensitivity))
+		  (eq? (union-unsensitize-cache v-sensitivity) v)))
+      (set-union-unsensitize-cache! v-sensitivity v))))
+   v)))
 
 (define (plus v1 v2)
  ;; This is written in CPS so as not to break structure sharing.
@@ -7327,400 +7437,510 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   18
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
-   (cond
-    ((and (nonrecursive-closure? v) (nonrecursive-closure-*j-cache v))
-     (nonrecursive-closure-*j-cache v))
-    ((and (recursive-closure? v) (recursive-closure-*j-cache v))
-     (recursive-closure-*j-cache v))
-    ((and (perturbation-tagged-value? v)
-	  (perturbation-tagged-value-*j-cache v))
-     (perturbation-tagged-value-*j-cache v))
-    ((and (bundle? v) (bundle-*j-cache v)) (bundle-*j-cache v))
-    ((and (sensitivity-tagged-value? v) (sensitivity-tagged-value-*j-cache v))
-     (sensitivity-tagged-value-*j-cache v))
-    ((and (reverse-tagged-value? v) (reverse-tagged-value-*j-cache v))
-     (reverse-tagged-value-*j-cache v))
-    ((and (tagged-pair? v) (tagged-pair-*j-cache v)) (tagged-pair-*j-cache v))
-    ((and (union? v) (union-*j-cache v)) (union-*j-cache v))
-    (else
-     (let ((v-reverse
-	    (canonize-and-maybe-intern-abstract-value
-	     (let loop ((v v) (cs '()) (k (lambda (v-reverse cs) v-reverse)))
-	      (let ((found? (assq v cs)))
-	       (cond
-		(found? (k (cdr found?) cs))
-		((union? v)
-		 (let ((v-reverse
-			(make-union
-			 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-		  (map-cps loop
-			   (union-members v)
-			   (cons (cons v v-reverse) cs)
-			   (lambda (us-reverse cs)
-			    (fill-union-values! v-reverse us-reverse)
-			    (k v-reverse cs)))))
-		(else
-		 (let ((b (find-if
-			   ;; This is safe because the arguments will never have
-			   ;; unfilled values.
-			   (lambda (b) (deep-abstract-value=? v (value-binding-value b)))
-			   *value-bindings*)))
-		  (if b
-		      (let ((u-reverse
-			     (primitive-procedure-reverse (value-binding-value b))))
-		       (k u-reverse (cons (cons v u-reverse) cs)))
-		      (cond
-		       ((vlad-empty-list? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((vlad-true? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((vlad-false? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((vlad-real? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((primitive-procedure? v) (internal-error))
-		       ((nonrecursive-closure? v)
-			;; See the note in abstract-environment=?.
-			(let ((u-reverse (make-nonrecursive-closure
-					  'unfilled
-					  (reverse-transform
-					   (nonrecursive-closure-lambda-expression v))
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  #f
-					  'unfilled)))
-			 (map-cps
-			  loop
-			  (get-nonrecursive-closure-values v)
-			  (cons (cons v u-reverse) cs)
-			  (lambda (vs-reverse cs)
-			   (fill-nonrecursive-closure-values! u-reverse vs-reverse)
-			   (k u-reverse cs)))))
-		       ((recursive-closure? v)
-			;; See the note in abstract-environment=?.
-			(let ((u-reverse
-			       (make-recursive-closure
-				'unfilled
-				(map-vector reverseify
-					    (recursive-closure-procedure-variables v))
-				(map-n-vector
-				 (lambda (i)
-				  (reverse-transform-internal
-				   (vector-ref (recursive-closure-lambda-expressions v) i)
-				   (vector->list
-				    (recursive-closure-procedure-variables v))
-				   (vector->list (recursive-closure-lambda-expressions v))
-				   i))
-				 (vector-length (recursive-closure-lambda-expressions v)))
-				(recursive-closure-index v)
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-			 (map-cps loop
-				  (get-recursive-closure-values v)
-				  (cons (cons v u-reverse) cs)
-				  (lambda (vs-reverse cs)
-				   (fill-recursive-closure-values! u-reverse vs-reverse)
-				   (k u-reverse cs)))))
-		       ((perturbation-tagged-value? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((bundle? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((sensitivity-tagged-value? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((reverse-tagged-value? v)
-			(let ((u-reverse (create-reverse-tagged-value v)))
-			 (k u-reverse (cons (cons v u-reverse) cs))))
-		       ((tagged-pair? v)
-			(let ((u-reverse
-			       (make-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
-						 'unfilled
-						 'unfilled
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 #f
-						 'unfilled)))
-			 (loop (get-tagged-pair-car v)
-			       (cons (cons v u-reverse) cs)
-			       (lambda (v-car-reverse cs)
-				(loop (get-tagged-pair-cdr v)
-				      cs
-				      (lambda (v-cdr-reverse cs)
-				       (fill-tagged-pair!
-					u-reverse v-car-reverse v-cdr-reverse)
-				       (k u-reverse cs)))))))
-		       (else (internal-error))))))))))))
-      (when *memoized?*
-       (cond
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-*j-cache! v v-reverse))
-	((recursive-closure? v) (set-recursive-closure-*j-cache! v v-reverse))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-*j-cache! v v-reverse))
-	((bundle? v) (set-bundle-*j-cache! v v-reverse))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-*j-cache! v v-reverse))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-*j-cache! v v-reverse))
-	((tagged-pair? v) (set-tagged-pair-*j-cache! v v-reverse))
-	((union? v) (set-union-*j-cache! v v-reverse))))
-      v-reverse))))))
+  (let ((v-reverse
+	 (canonize-and-maybe-intern-abstract-value
+	  (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+		     (cs '())
+		     (k (lambda (v-reverse cs) v-reverse)))
+	   (let ((found? (assq v cs)))
+	    (cond
+	     (found? (k (cdr found?) cs))
+	     ((union? v)
+	      (if (union-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (union-*j-cache v) cs))
+		  (let ((v-reverse (make-union 'unfilled
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       'unfilled)))
+		   (map-cps loop
+			    (union-members v)
+			    (cons (cons v v-reverse) cs)
+			    (lambda (us-reverse cs)
+			     (fill-union-values! v-reverse us-reverse)
+			     (k v-reverse cs))))))
+	     (else
+	      (let ((b (find-if
+			;; This is safe because the arguments will never have
+			;; unfilled values.
+			(lambda (b)
+			 (deep-abstract-value=? v (value-binding-value b)))
+			*value-bindings*)))
+	       (if b
+		   (let ((u-reverse (primitive-procedure-reverse
+				     (value-binding-value b))))
+		    (k u-reverse (cons (cons v u-reverse) cs)))
+		   (cond
+		    ((vlad-empty-list? v)
+		     (let ((u-reverse (create-reverse-tagged-value v)))
+		      (k u-reverse (cons (cons v u-reverse) cs))))
+		    ((vlad-true? v)
+		     (let ((u-reverse (create-reverse-tagged-value v)))
+		      (k u-reverse (cons (cons v u-reverse) cs))))
+		    ((vlad-false? v)
+		     (let ((u-reverse (create-reverse-tagged-value v)))
+		      (k u-reverse (cons (cons v u-reverse) cs))))
+		    ((vlad-real? v)
+		     (let ((u-reverse (create-reverse-tagged-value v)))
+		      (k u-reverse (cons (cons v u-reverse) cs))))
+		    ((primitive-procedure? v) (internal-error))
+		    ((nonrecursive-closure? v)
+		     (if (nonrecursive-closure-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (nonrecursive-closure-*j-cache v) cs))
+			 ;; See the note in abstract-environment=?.
+			 (let ((u-reverse
+				(make-nonrecursive-closure
+				 'unfilled
+				 (reverse-transform
+				  (nonrecursive-closure-lambda-expression v))
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			  (map-cps loop
+				   (get-nonrecursive-closure-values v)
+				   (cons (cons v u-reverse) cs)
+				   (lambda (vs-reverse cs)
+				    (fill-nonrecursive-closure-values!
+				     u-reverse vs-reverse)
+				    (k u-reverse cs))))))
+		    ((recursive-closure? v)
+		     (if (recursive-closure-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (recursive-closure-*j-cache v) cs))
+			 ;; See the note in abstract-environment=?.
+			 (let ((u-reverse
+				(make-recursive-closure
+				 'unfilled
+				 (map-vector
+				  reverseify
+				  (recursive-closure-procedure-variables v))
+				 (map-n-vector
+				  (lambda (i)
+				   (reverse-transform-internal
+				    (vector-ref
+				     (recursive-closure-lambda-expressions v)
+				     i)
+				    (vector->list
+				     (recursive-closure-procedure-variables v))
+				    (vector->list
+				     (recursive-closure-lambda-expressions v))
+				    i))
+				  (vector-length
+				   (recursive-closure-lambda-expressions v)))
+				 (recursive-closure-index v)
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			  (map-cps loop
+				   (get-recursive-closure-values v)
+				   (cons (cons v u-reverse) cs)
+				   (lambda (vs-reverse cs)
+				    (fill-recursive-closure-values!
+				     u-reverse vs-reverse)
+				    (k u-reverse cs))))))
+		    ((perturbation-tagged-value? v)
+		     (if (perturbation-tagged-value-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (perturbation-tagged-value-*j-cache v) cs))
+			 (let ((u-reverse (create-reverse-tagged-value v)))
+			  (k u-reverse (cons (cons v u-reverse) cs)))))
+		    ((bundle? v)
+		     (if (bundle-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (bundle-*j-cache v) cs))
+			 (let ((u-reverse (create-reverse-tagged-value v)))
+			  (k u-reverse (cons (cons v u-reverse) cs)))))
+		    ((sensitivity-tagged-value? v)
+		     (if (sensitivity-tagged-value-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(sensitivity-tagged-value-*j-cache v))
+			 (let ((u-reverse (create-reverse-tagged-value v)))
+			  (k u-reverse (cons (cons v u-reverse) cs)))))
+		    ((reverse-tagged-value? v)
+		     (if (reverse-tagged-value-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (reverse-tagged-value-*j-cache v) cs))
+			 (let ((u-reverse (create-reverse-tagged-value v)))
+			  (k u-reverse (cons (cons v u-reverse) cs)))))
+		    ((tagged-pair? v)
+		     (if (tagged-pair-*j-cache v)
+			 (begin (format #t "*j hit~%")
+				(k (tagged-pair-*j-cache v) cs))
+			 (let ((u-reverse
+				(make-tagged-pair
+				 (add-tag 'reverse (tagged-pair-tags v))
+				 'unfilled
+				 'unfilled
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			  (loop (get-tagged-pair-car v)
+				(cons (cons v u-reverse) cs)
+				(lambda (v-car-reverse cs)
+				 (loop (get-tagged-pair-cdr v)
+				       cs
+				       (lambda (v-cdr-reverse cs)
+					(fill-tagged-pair!
+					 u-reverse v-car-reverse v-cdr-reverse)
+					(k u-reverse cs))))))))
+		    (else (internal-error))))))))))))
+   (when (and #f *memoized?*)
+    (cond ((nonrecursive-closure? v)
+	   (assert (or (not (nonrecursive-closure-*j-cache v))
+		       (eq? (nonrecursive-closure-*j-cache v) v-reverse)))
+	   (set-nonrecursive-closure-*j-cache! v v-reverse))
+	  ((recursive-closure? v)
+	   (assert (or (not (recursive-closure-*j-cache v))
+		       (eq? (recursive-closure-*j-cache v) v-reverse)))
+	   (set-recursive-closure-*j-cache! v v-reverse))
+	  ((perturbation-tagged-value? v)
+	   (assert (or (not (perturbation-tagged-value-*j-cache v))
+		       (eq? (perturbation-tagged-value-*j-cache v) v-reverse)))
+	   (set-perturbation-tagged-value-*j-cache! v v-reverse))
+	  ((bundle? v)
+	   (assert (or (not (bundle-*j-cache v))
+		       (eq? (bundle-*j-cache v) v-reverse)))
+	   (set-bundle-*j-cache! v v-reverse))
+	  ((sensitivity-tagged-value? v)
+	   (assert (or (not (sensitivity-tagged-value-*j-cache v))
+		       (eq? (sensitivity-tagged-value-*j-cache v) v-reverse)))
+	   (set-sensitivity-tagged-value-*j-cache! v v-reverse))
+	  ((reverse-tagged-value? v)
+	   (assert (or (not (reverse-tagged-value-*j-cache v))
+		       (eq? (reverse-tagged-value-*j-cache v) v-reverse)))
+	   (set-reverse-tagged-value-*j-cache! v v-reverse))
+	  ((tagged-pair? v)
+	   (assert (or (not (tagged-pair-*j-cache v))
+		       (eq? (tagged-pair-*j-cache v) v-reverse)))
+	   (set-tagged-pair-*j-cache! v v-reverse))
+	  ((union? v)
+	   (assert (or (not (union-*j-cache v))
+		       (eq? (union-*j-cache v) v-reverse)))
+	   (set-union-*j-cache! v v-reverse))))
+   v-reverse)))
 
 (define (*j-inverse v-reverse)
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   19
-  (let ((v-reverse
-	 (canonize-and-maybe-intern-abstract-value v-reverse)))
-   (cond
-    ((and (nonrecursive-closure? v-reverse)
-	  (nonrecursive-closure-*j-inverse-cache v-reverse))
-     (nonrecursive-closure-*j-inverse-cache v-reverse))
-    ((and (recursive-closure? v-reverse)
-	  (recursive-closure-*j-inverse-cache v-reverse))
-     (recursive-closure-*j-inverse-cache v-reverse))
-    ((and (perturbation-tagged-value? v-reverse)
-	  (perturbation-tagged-value-*j-inverse-cache v-reverse))
-     (perturbation-tagged-value-*j-inverse-cache v-reverse))
-    ((and (bundle? v-reverse) (bundle-*j-inverse-cache v-reverse))
-     (bundle-*j-inverse-cache v-reverse))
-    ((and (sensitivity-tagged-value? v-reverse)
-	  (sensitivity-tagged-value-*j-inverse-cache v-reverse))
-     (sensitivity-tagged-value-*j-inverse-cache v-reverse))
-    ((and (reverse-tagged-value? v-reverse)
-	  (reverse-tagged-value-*j-inverse-cache v-reverse))
-     (reverse-tagged-value-*j-inverse-cache v-reverse))
-    ((and (tagged-pair? v-reverse) (tagged-pair-*j-inverse-cache v-reverse))
-     (tagged-pair-*j-inverse-cache v-reverse))
-    ((and (union? v-reverse) (union-*j-inverse-cache v-reverse))
-     (union-*j-inverse-cache v-reverse))
-    (else
-     (let ((v
-	    (canonize-and-maybe-intern-abstract-value
-	     (let loop ((v-reverse v-reverse) (cs '()) (k (lambda (v cs) v)))
-	      (let ((found? (assq v-reverse cs)))
-	       (cond
-		(found? (k (cdr found?) cs))
-		((union? v-reverse)
-		 (let ((v
-			(make-union
-			 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-		  (map-cps loop
-			   (union-members v-reverse)
-			   (cons (cons v-reverse v) cs)
-			   (lambda (us cs)
-			    (fill-union-values! v us)
-			    (k v cs)))))
-		(else
-		 (let ((b (find-if
-			   (lambda (b)
-			    ;; This is safe because the arguments will never have
-			    ;; unfilled values.
-			    (deep-abstract-value=?
-			     v-reverse
-			     (primitive-procedure-reverse (value-binding-value b))))
-			   *value-bindings*)))
-		  (if b
-		      (let ((u (value-binding-value b)))
-		       (k u (cons (cons v-reverse u) cs)))
-		      (cond
-		       ((vlad-empty-list? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((vlad-true? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((vlad-false? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((vlad-real? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((primitive-procedure? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((nonrecursive-closure? v-reverse)
-			(if (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
-			    ;; See the note in abstract-environment=?.
-			    (let ((u (make-nonrecursive-closure
-				      'unfilled
-				      (reverse-transform-inverse
-				       (nonrecursive-closure-lambda-expression
-					v-reverse))
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      'unfilled)))
-			     (map-cps loop
-				      (get-nonrecursive-closure-values v-reverse)
-				      (cons (cons v-reverse u) cs)
-				      (lambda (vs cs)
-				       (fill-nonrecursive-closure-values! u vs)
-				       (k u cs))))
-			    (let ((u (ad-error
-				      "Argument to *j-inverse ~a a non-reverse value"
-				      v-reverse)))
-			     (k u (cons (cons v-reverse u) cs)))))
-		       ((recursive-closure? v-reverse)
-			(if (tagged? 'reverse (recursive-closure-tags v-reverse))
-			    ;; See the note in abstract-environment=?.
-			    (let ((u (make-recursive-closure
-				      'unfilled
-				      (map-vector
-				       unreverseify
-				       (recursive-closure-procedure-variables v-reverse))
-				      (map-vector
-				       reverse-transform-inverse
-				       (recursive-closure-lambda-expressions v-reverse))
-				      (recursive-closure-index v-reverse)
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      'unfilled)))
-			     (map-cps loop
-				      (get-recursive-closure-values v-reverse)
-				      (cons (cons v-reverse u) cs)
-				      (lambda (vs cs)
-				       (fill-recursive-closure-values! u vs)
-				       (k u cs))))
-			    (let ((u (ad-error
-				      "Argument to *j-inverse ~a a non-reverse value"
-				      v-reverse)))
-			     (k u (cons (cons v-reverse u) cs)))))
-		       ((perturbation-tagged-value? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((bundle? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((sensitivity-tagged-value? v-reverse)
-			(let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-					   v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((reverse-tagged-value? v-reverse)
-			(let ((u (get-reverse-tagged-value-primal v-reverse)))
-			 (k u (cons (cons v-reverse u) cs))))
-		       ((tagged-pair? v-reverse)
-			(if (tagged? 'reverse (tagged-pair-tags v-reverse))
-			    (let ((u (make-tagged-pair
-				      (remove-tag 'reverse (tagged-pair-tags v-reverse))
-				      'unfilled
-				      'unfilled
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      #f
-				      'unfilled)))
-			     (loop (get-tagged-pair-car v-reverse)
-				   (cons (cons v-reverse u) cs)
-				   (lambda (v-car cs)
-				    (loop (get-tagged-pair-cdr v-reverse)
-					  cs
-					  (lambda (v-cdr cs)
-					   (fill-tagged-pair! u v-car v-cdr)
-					   (k u cs))))))
-			    (let ((u (ad-error
-				      "Argument to *j-inverse ~a a non-reverse value"
-				      v-reverse)))
-			     (k u (cons (cons v-reverse u) cs)))))
-		       (else (internal-error))))))))))))
-      (when *memoized?*
-       (cond ((nonrecursive-closure? v-reverse)
-	      (set-nonrecursive-closure-*j-inverse-cache! v-reverse v))
-	     ((recursive-closure? v-reverse)
-	      (set-recursive-closure-*j-inverse-cache! v-reverse v))
-	     ((perturbation-tagged-value? v-reverse)
-	      (set-perturbation-tagged-value-*j-inverse-cache! v-reverse v))
-	     ((bundle? v-reverse) (set-bundle-*j-inverse-cache! v-reverse v))
-	     ((sensitivity-tagged-value? v-reverse)
-	      (set-sensitivity-tagged-value-*j-inverse-cache! v-reverse v))
-	     ((reverse-tagged-value? v-reverse)
-	      (set-reverse-tagged-value-*j-inverse-cache! v-reverse v))
-	     ((tagged-pair? v-reverse)
-	      (set-tagged-pair-*j-inverse-cache! v-reverse v))
-	     ((union? v-reverse) (set-union-*j-inverse-cache! v-reverse v))))
-      v))))))
+  (let ((v
+	 (canonize-and-maybe-intern-abstract-value
+	  (let loop ((v-reverse
+		      (canonize-and-maybe-intern-abstract-value v-reverse))
+		     (cs '())
+		     (k (lambda (v cs) v)))
+	   (let ((found? (assq v-reverse cs)))
+	    (cond
+	     (found? (k (cdr found?) cs))
+	     ((union? v-reverse)
+	      (if (union-*j-inverse-cache v-reverse)
+		  (begin (format #t "*j-inverse hit~%")
+			 (k (union-*j-inverse-cache v-reverse) cs))
+		  (let ((v (make-union 'unfilled
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       #f
+				       'unfilled)))
+		   (map-cps loop
+			    (union-members v-reverse)
+			    (cons (cons v-reverse v) cs)
+			    (lambda (us cs)
+			     (fill-union-values! v us)
+			     (k v cs))))))
+	     (else
+	      (let ((b (find-if
+			(lambda (b)
+			 ;; This is safe because the arguments will never have
+			 ;; unfilled values.
+			 (deep-abstract-value=?
+			  v-reverse
+			  (primitive-procedure-reverse
+			   (value-binding-value b))))
+			*value-bindings*)))
+	       (if b
+		   (let ((u (value-binding-value b)))
+		    (k u (cons (cons v-reverse u) cs)))
+		   (cond
+		    ((vlad-empty-list? v-reverse)
+		     (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))
+		    ((vlad-true? v-reverse)
+		     (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))
+		    ((vlad-false? v-reverse)
+		     (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))
+		    ((vlad-real? v-reverse)
+		     (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))
+		    ((primitive-procedure? v-reverse)
+		     (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))
+		    ((nonrecursive-closure? v-reverse)
+		     (cond
+		      ((nonrecursive-closure-*j-inverse-cache v-reverse)
+		       (format #t "*j-inverse hit~%")
+		       (k (nonrecursive-closure-*j-inverse-cache v-reverse)
+			  cs))
+		      ((tagged? 'reverse (nonrecursive-closure-tags v-reverse))
+		       ;; See the note in abstract-environment=?.
+		       (let ((u (make-nonrecursive-closure
+				 'unfilled
+				 (reverse-transform-inverse
+				  (nonrecursive-closure-lambda-expression
+				   v-reverse))
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			(map-cps loop
+				 (get-nonrecursive-closure-values v-reverse)
+				 (cons (cons v-reverse u) cs)
+				 (lambda (vs cs)
+				  (fill-nonrecursive-closure-values! u vs)
+				  (k u cs)))))
+		      (else
+		       (let ((u
+			      (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+			(k u (cons (cons v-reverse u) cs))))))
+		    ((recursive-closure? v-reverse)
+		     (cond
+		      ((recursive-closure-*j-inverse-cache v-reverse)
+		       (format #t "*j-inverse hit~%")
+		       (k (recursive-closure-*j-inverse-cache v-reverse) cs))
+		      ((tagged? 'reverse (recursive-closure-tags v-reverse))
+		       ;; See the note in abstract-environment=?.
+		       (let ((u (make-recursive-closure
+				 'unfilled
+				 (map-vector
+				  unreverseify
+				  (recursive-closure-procedure-variables
+				   v-reverse))
+				 (map-vector
+				  reverse-transform-inverse
+				  (recursive-closure-lambda-expressions
+				   v-reverse))
+				 (recursive-closure-index v-reverse)
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			(map-cps loop
+				 (get-recursive-closure-values v-reverse)
+				 (cons (cons v-reverse u) cs)
+				 (lambda (vs cs)
+				  (fill-recursive-closure-values! u vs)
+				  (k u cs)))))
+		      (else
+		       (let ((u
+			      (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+			(k u (cons (cons v-reverse u) cs))))))
+		    ((perturbation-tagged-value? v-reverse)
+		     (if (perturbation-tagged-value-*j-inverse-cache v-reverse)
+			 (begin (format #t "*j-inverse hit~%")
+				(k (perturbation-tagged-value-*j-inverse-cache
+				    v-reverse)
+				   cs))
+			 (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+					    v-reverse)))
+			  (k u (cons (cons v-reverse u) cs)))))
+		    ((bundle? v-reverse)
+		     (if (bundle-*j-inverse-cache v-reverse)
+			 (begin (format #t "*j-inverse hit~%")
+				(k (bundle-*j-inverse-cache v-reverse) cs))
+			 (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+					    v-reverse)))
+			  (k u (cons (cons v-reverse u) cs)))))
+		    ((sensitivity-tagged-value? v-reverse)
+		     (if (sensitivity-tagged-value-*j-inverse-cache v-reverse)
+			 (begin (format #t "*j-inverse hit~%")
+				(sensitivity-tagged-value-*j-inverse-cache
+				 v-reverse))
+			 (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+					    v-reverse)))
+			  (k u (cons (cons v-reverse u) cs)))))
+		    ((reverse-tagged-value? v-reverse)
+		     (if (reverse-tagged-value-*j-inverse-cache v-reverse)
+			 (begin
+			  (format #t "*j-inverse hit~%")
+			  (k (reverse-tagged-value-*j-inverse-cache v-reverse)
+			     cs))
+			 (let ((u (get-reverse-tagged-value-primal v-reverse)))
+			  (k u (cons (cons v-reverse u) cs)))))
+		    ((tagged-pair? v-reverse)
+		     (cond
+		      ((tagged-pair-*j-inverse-cache v-reverse)
+		       (format #t "*j-inverse hit~%")
+		       (k (tagged-pair-*j-inverse-cache v-reverse) cs))
+		      ((tagged? 'reverse (tagged-pair-tags v-reverse))
+		       (let ((u (make-tagged-pair
+				 (remove-tag 'reverse
+					     (tagged-pair-tags v-reverse))
+				 'unfilled
+				 'unfilled
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+			(loop (get-tagged-pair-car v-reverse)
+			      (cons (cons v-reverse u) cs)
+			      (lambda (v-car cs)
+			       (loop (get-tagged-pair-cdr v-reverse)
+				     cs
+				     (lambda (v-cdr cs)
+				      (fill-tagged-pair! u v-car v-cdr)
+				      (k u cs)))))))
+		      (else
+		       (let ((u
+			      (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+			(k u (cons (cons v-reverse u) cs))))))
+		    (else (internal-error))))))))))))
+   (when (and #f *memoized?*)
+    (cond
+     ((nonrecursive-closure? v-reverse)
+      (assert (or (not (nonrecursive-closure-*j-inverse-cache v-reverse))
+		  (eq? (nonrecursive-closure-*j-inverse-cache v-reverse) v)))
+      (set-nonrecursive-closure-*j-inverse-cache! v-reverse v))
+     ((recursive-closure? v-reverse)
+      (assert (or (not (recursive-closure-*j-inverse-cache v-reverse))
+		  (eq? (recursive-closure-*j-inverse-cache v-reverse) v)))
+      (set-recursive-closure-*j-inverse-cache! v-reverse v))
+     ((perturbation-tagged-value? v-reverse)
+      (assert
+       (or (not (perturbation-tagged-value-*j-inverse-cache v-reverse))
+	   (eq? (perturbation-tagged-value-*j-inverse-cache v-reverse) v)))
+      (set-perturbation-tagged-value-*j-inverse-cache! v-reverse v))
+     ((bundle? v-reverse)
+      (assert (or (not (bundle-*j-inverse-cache v-reverse))
+		  (eq? (bundle-*j-inverse-cache v-reverse) v)))
+      (set-bundle-*j-inverse-cache! v-reverse v))
+     ((sensitivity-tagged-value? v-reverse)
+      (assert
+       (or (not (sensitivity-tagged-value-*j-inverse-cache v-reverse))
+	   (eq? (sensitivity-tagged-value-*j-inverse-cache v-reverse) v)))
+      (set-sensitivity-tagged-value-*j-inverse-cache! v-reverse v))
+     ((reverse-tagged-value? v-reverse)
+      (assert (or (not (reverse-tagged-value-*j-inverse-cache v-reverse))
+		  (eq? (reverse-tagged-value-*j-inverse-cache v-reverse) v)))
+      (set-reverse-tagged-value-*j-inverse-cache! v-reverse v))
+     ((tagged-pair? v-reverse)
+      (assert (or (not (tagged-pair-*j-inverse-cache v-reverse))
+		  (eq? (tagged-pair-*j-inverse-cache v-reverse) v)))
+      (set-tagged-pair-*j-inverse-cache! v-reverse v))
+     ((union? v-reverse)
+      (assert (or (not (union-*j-inverse-cache v-reverse))
+		  (eq? (union-*j-inverse-cache v-reverse) v)))
+      (set-union-*j-inverse-cache! v-reverse v))))
+   v)))
 
 ;;; Pretty printer
 
