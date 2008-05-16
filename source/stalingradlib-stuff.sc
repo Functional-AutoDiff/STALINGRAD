@@ -5034,7 +5034,58 @@
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-perturbation cs)
-		  (canonize-and-maybe-intern-abstract-value v-perturbation))))
+		  (let ((v-perturbation
+			 (canonize-and-maybe-intern-abstract-value
+			  v-perturbation)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v)
+		      (assert (or (not (nonrecursive-closure-perturb-cache v))
+				  (eq? (nonrecursive-closure-perturb-cache v)
+				       v-perturbation)))
+		      (set-nonrecursive-closure-perturb-cache!
+		       v v-perturbation))
+		     ((recursive-closure? v)
+		      (assert (or (not (recursive-closure-perturb-cache v))
+				  (eq? (recursive-closure-perturb-cache v)
+				       v-perturbation)))
+		      (set-recursive-closure-perturb-cache! v v-perturbation))
+		     ((perturbation-tagged-value? v)
+		      (assert
+		       (or (not (perturbation-tagged-value-perturb-cache v))
+			   (eq? (perturbation-tagged-value-perturb-cache v)
+				v-perturbation)))
+		      (set-perturbation-tagged-value-perturb-cache!
+		       v v-perturbation))
+		     ((bundle? v)
+		      (assert
+		       (or (not (bundle-perturb-cache v))
+			   (eq? (bundle-perturb-cache v) v-perturbation)))
+		      (set-bundle-perturb-cache! v v-perturbation))
+		     ((sensitivity-tagged-value? v)
+		      (assert
+		       (or (not (sensitivity-tagged-value-perturb-cache v))
+			   (eq? (sensitivity-tagged-value-perturb-cache v)
+				v-perturbation)))
+		      (set-sensitivity-tagged-value-perturb-cache!
+		       v v-perturbation))
+		     ((reverse-tagged-value? v)
+		      (assert (or (not (reverse-tagged-value-perturb-cache v))
+				  (eq? (reverse-tagged-value-perturb-cache v)
+				       v-perturbation)))
+		      (set-reverse-tagged-value-perturb-cache!
+		       v v-perturbation))
+		     ((tagged-pair? v)
+		      (assert
+		       (or (not (tagged-pair-perturb-cache v))
+			   (eq? (tagged-pair-perturb-cache v) v-perturbation)))
+		      (set-tagged-pair-perturb-cache! v v-perturbation))
+		     ((union? v)
+		      (assert
+		       (or (not (union-perturb-cache v))
+			   (eq? (union-perturb-cache v) v-perturbation)))
+		      (set-union-perturb-cache! v v-perturbation))))
+		   v-perturbation))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5213,7 +5264,69 @@
 	 (canonize-and-maybe-intern-abstract-value v-perturbation)))
    (let loop ((v-perturbation v-perturbation)
 	      (cs '())
-	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
+	      (k (lambda (v cs)
+		  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v-perturbation)
+		      (assert (or (not (nonrecursive-closure-unperturb-cache
+					v-perturbation))
+				  (eq? (nonrecursive-closure-unperturb-cache
+					v-perturbation)
+				       v)))
+		      (set-nonrecursive-closure-unperturb-cache!
+		       v-perturbation v))
+		     ((recursive-closure? v-perturbation)
+		      (assert (or (not (recursive-closure-unperturb-cache
+					v-perturbation))
+				  (eq? (recursive-closure-unperturb-cache
+					v-perturbation)
+				       v)))
+		      (set-recursive-closure-unperturb-cache!
+		       v-perturbation v))
+		     ((perturbation-tagged-value? v-perturbation)
+		      (assert
+		       (or (not (perturbation-tagged-value-unperturb-cache
+				 v-perturbation))
+			   (eq? (perturbation-tagged-value-unperturb-cache
+				 v-perturbation)
+				v)))
+		      (set-perturbation-tagged-value-unperturb-cache!
+		       v-perturbation v))
+		     ((bundle? v-perturbation)
+		      (assert (or (not (bundle-unperturb-cache v-perturbation))
+				  (eq? (bundle-unperturb-cache v-perturbation)
+				       v)))
+		      (set-bundle-unperturb-cache! v-perturbation v))
+		     ((sensitivity-tagged-value? v-perturbation)
+		      (assert
+		       (or (not (sensitivity-tagged-value-unperturb-cache
+				 v-perturbation))
+			   (eq? (sensitivity-tagged-value-unperturb-cache
+				 v-perturbation)
+				v)))
+		      (set-sensitivity-tagged-value-unperturb-cache!
+		       v-perturbation v))
+		     ((reverse-tagged-value? v-perturbation)
+		      (assert (or (not (reverse-tagged-value-unperturb-cache
+					v-perturbation))
+				  (eq? (reverse-tagged-value-unperturb-cache
+					v-perturbation)
+				       v)))
+		      (set-reverse-tagged-value-unperturb-cache!
+		       v-perturbation v))
+		     ((tagged-pair? v-perturbation)
+		      (assert
+		       (or (not (tagged-pair-unperturb-cache v-perturbation))
+			   (eq? (tagged-pair-unperturb-cache v-perturbation)
+				v)))
+		      (set-tagged-pair-unperturb-cache! v-perturbation v))
+		     ((union? v-perturbation)
+		      (assert
+		       (or (not (union-unperturb-cache v-perturbation))
+			   (eq? (union-unperturb-cache v-perturbation) v)))
+		      (set-union-unperturb-cache! v-perturbation v))))
+		   v))))
     (let ((found? (assq v-perturbation cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5420,7 +5533,57 @@
   (let ((v-forward (canonize-and-maybe-intern-abstract-value v-forward)))
    (let loop ((v-forward v-forward)
 	      (cs '())
-	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
+	      (k (lambda (v cs)
+		  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v-forward)
+		      (assert
+		       (or (not (nonrecursive-closure-primal-cache v-forward))
+			   (eq? (nonrecursive-closure-primal-cache v-forward)
+				v)))
+		      (set-nonrecursive-closure-primal-cache! v-forward v))
+		     ((recursive-closure? v-forward)
+		      (assert
+		       (or (not (recursive-closure-primal-cache v-forward))
+			   (eq? (recursive-closure-primal-cache v-forward) v)))
+		      (set-recursive-closure-primal-cache! v-forward v))
+		     ((perturbation-tagged-value? v-forward)
+		      (assert (or (not (perturbation-tagged-value-primal-cache
+					v-forward))
+				  (eq? (perturbation-tagged-value-primal-cache
+					v-forward)
+				       v)))
+		      (set-perturbation-tagged-value-primal-cache!
+		       v-forward v))
+		     ((bundle? v-forward)
+		      (assert (or (not (bundle-primal-cache v-forward))
+				  (eq? (bundle-primal-cache v-forward) v)))
+		      (set-bundle-primal-cache! v-forward v))
+		     ((sensitivity-tagged-value? v-forward)
+		      (assert (or (not (sensitivity-tagged-value-primal-cache
+					v-forward))
+				  (eq? (sensitivity-tagged-value-primal-cache
+					v-forward)
+				       v)))
+		      (set-sensitivity-tagged-value-primal-cache! v-forward v))
+		     ((reverse-tagged-value? v-forward)
+		      (assert (or (not (reverse-tagged-value-primal-cache
+					v-forward))
+				  (eq? (reverse-tagged-value-primal-cache
+					v-forward)
+				       v)))
+		      (set-reverse-tagged-value-primal-cache! v-forward v))
+		     ((tagged-pair? v-forward)
+		      (assert
+		       (or (not (tagged-pair-primal-cache v-forward))
+			   (eq? (tagged-pair-primal-cache v-forward) v)))
+		      (set-tagged-pair-primal-cache! v-forward v))
+		     ((union? v-forward)
+		      (assert (or (not (union-primal-cache v-forward))
+				  (eq? (union-primal-cache v-forward) v)))
+		      (set-union-primal-cache! v-forward v))))
+		   v))))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5640,7 +5803,66 @@
    (let loop ((v-forward v-forward)
 	      (cs '())
 	      (k (lambda (v-perturbation cs)
-		  (canonize-and-maybe-intern-abstract-value v-perturbation))))
+		  (let ((v-perturbation
+			 (canonize-and-maybe-intern-abstract-value
+			  v-perturbation)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v-forward)
+		      (assert
+		       (or (not (nonrecursive-closure-tangent-cache v-forward))
+			   (eq? (nonrecursive-closure-tangent-cache v-forward)
+				v-perturbation)))
+		      (set-nonrecursive-closure-tangent-cache!
+		       v-forward v-perturbation))
+		     ((recursive-closure? v-forward)
+		      (assert
+		       (or (not (recursive-closure-tangent-cache v-forward))
+			   (eq? (recursive-closure-tangent-cache v-forward)
+				v-perturbation)))
+		      (set-recursive-closure-tangent-cache!
+		       v-forward v-perturbation))
+		     ((perturbation-tagged-value? v-forward)
+		      (assert (or (not (perturbation-tagged-value-tangent-cache
+					v-forward))
+				  (eq? (perturbation-tagged-value-tangent-cache
+					v-forward)
+				       v-perturbation)))
+		      (set-perturbation-tagged-value-tangent-cache!
+		       v-forward v-perturbation))
+		     ((bundle? v-forward)
+		      (assert (or (not (bundle-tangent-cache v-forward))
+				  (eq? (bundle-tangent-cache v-forward)
+				       v-perturbation)))
+		      (set-bundle-tangent-cache! v-forward v-perturbation))
+		     ((sensitivity-tagged-value? v-forward)
+		      (assert (or (not (sensitivity-tagged-value-tangent-cache
+					v-forward))
+				  (eq? (sensitivity-tagged-value-tangent-cache
+					v-forward)
+				       v-perturbation)))
+		      (set-sensitivity-tagged-value-tangent-cache!
+		       v-forward v-perturbation))
+		     ((reverse-tagged-value? v-forward)
+		      (assert (or (not (reverse-tagged-value-tangent-cache
+					v-forward))
+				  (eq? (reverse-tagged-value-tangent-cache
+					v-forward)
+				       v-perturbation)))
+		      (set-reverse-tagged-value-tangent-cache!
+		       v-forward v-perturbation))
+		     ((tagged-pair? v-forward)
+		      (assert (or (not (tagged-pair-tangent-cache v-forward))
+				  (eq? (tagged-pair-tangent-cache v-forward)
+				       v-perturbation)))
+		      (set-tagged-pair-tangent-cache!
+		       v-forward v-perturbation))
+		     ((union? v-forward)
+		      (assert (or (not (union-tangent-cache v-forward))
+				  (eq? (union-tangent-cache v-forward)
+				       v-perturbation)))
+		      (set-union-tangent-cache! v-forward v-perturbation))))
+		   v-perturbation))))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
