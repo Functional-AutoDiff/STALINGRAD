@@ -189,8 +189,12 @@
 ;; space.  And which would also simplify s-k* above.
 ;; (Similar issues would arise in any general optimisation routine.)
 
+;; $ stalingrad-i386 -compile -backpropagator-depth-limit 1 -copt -O3 -copt -march=k8 -copt -mfpmath=sse -copt -fomit-frame-pointer -copt --param -copt sra-field-structure-ratio=0 FILE.vlad
+
+;; $ stalingrad-amd64 -compile -backpropagator-depth-limit 1 -copt -O3 -copt --param -copt sra-field-structure-ratio=0 FILE.vlad
+
 ;;; Local Variables:
-;;; compile-command: "SCMAXHEAP=1000 ../bin/stalingrad-i686 backprop"
+;;; compile-command: "SCMAXHEAP=1000 ../bin/stalingrad backprop"
 ;;; scheme-body-indent: 1
 ;;; eval: (put 'when 'scheme-indent-function 1)
 ;;; eval: (put 'unless 'scheme-indent-function 1)
