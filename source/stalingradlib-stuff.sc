@@ -6861,11 +6861,10 @@
 		       (lambda (v-cdr cs)
 			(fill-tagged-pair! u v-car v-cdr)
 			(k u cs)))))))
-	(else
-	 (let ((u (ad-error
-		   "Argument to unsensitize ~a a non-sensitivity value"
-		   v-sensitivity)))
-	  (k u (cons (cons v-sensitivity u) cs))))))
+	(else (let ((u (ad-error
+			"Argument to unsensitize ~a a non-sensitivity value"
+			v-sensitivity)))
+	       (k u (cons (cons v-sensitivity u) cs))))))
       (else (internal-error))))))))
 
 (define (plus v1 v2)
@@ -7086,20 +7085,38 @@
  (time-it-bucket
   18
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v v) (cs '()) (k (lambda (v-reverse cs) v-reverse)))
+   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+	      (cs '())
+	      (k (lambda (v-reverse cs) v-reverse)))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v)
-       (let ((v-reverse
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v)
-		 (cons (cons v v-reverse) cs)
-		 (lambda (us-reverse cs)
-		  (fill-union-values! v-reverse us-reverse)
-		  (k v-reverse cs)))))
+       (if (union-*j-cache v)
+	   (begin (format #t "*j hit~%")
+		  (k (union-*j-cache v) cs))
+	   (let ((v-reverse (make-union 'unfilled
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					#f
+					'unfilled)))
+	    (map-cps loop
+		     (union-members v)
+		     (cons (cons v v-reverse) cs)
+		     (lambda (us-reverse cs)
+		      (fill-union-values! v-reverse us-reverse)
+		      (k v-reverse cs))))))
       (else
        (let ((b (find-if
 		 ;; This is safe because the arguments will never have
@@ -7125,11 +7142,158 @@
 	       (k u-reverse (cons (cons v u-reverse) cs))))
 	     ((primitive-procedure? v) (internal-error))
 	     ((nonrecursive-closure? v)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-reverse (make-nonrecursive-closure
-				'unfilled
-				(reverse-transform
-				 (nonrecursive-closure-lambda-expression v))
+	      (if (nonrecursive-closure-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (nonrecursive-closure-*j-cache v) cs))
+		  ;; See the note in abstract-environment=?.
+		  (let ((u-reverse
+			 (make-nonrecursive-closure
+			  'unfilled
+			  (reverse-transform
+			   (nonrecursive-closure-lambda-expression v))
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (map-cps
+		    loop
+		    (get-nonrecursive-closure-values v)
+		    (cons (cons v u-reverse) cs)
+		    (lambda (vs-reverse cs)
+		     (fill-nonrecursive-closure-values! u-reverse vs-reverse)
+		     (k u-reverse cs))))))
+	     ((recursive-closure? v)
+	      (if (recursive-closure-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (recursive-closure-*j-cache v) cs))
+		  ;; See the note in abstract-environment=?.
+		  (let ((u-reverse
+			 (make-recursive-closure
+			  'unfilled
+			  (map-vector
+			   reverseify
+			   (recursive-closure-procedure-variables v))
+			  (map-n-vector
+			   (lambda (i)
+			    (reverse-transform-internal
+			     (vector-ref
+			      (recursive-closure-lambda-expressions v) i)
+			     (vector->list
+			      (recursive-closure-procedure-variables v))
+			     (vector->list
+			      (recursive-closure-lambda-expressions v))
+			     i))
+			   (vector-length
+			    (recursive-closure-lambda-expressions v)))
+			  (recursive-closure-index v)
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (map-cps
+		    loop
+		    (get-recursive-closure-values v)
+		    (cons (cons v u-reverse) cs)
+		    (lambda (vs-reverse cs)
+		     (fill-recursive-closure-values! u-reverse vs-reverse)
+		     (k u-reverse cs))))))
+	     ((perturbation-tagged-value? v)
+	      (if (perturbation-tagged-value-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (perturbation-tagged-value-*j-cache v) cs))
+		  (let ((u-reverse (create-reverse-tagged-value v)))
+		   (k u-reverse (cons (cons v u-reverse) cs)))))
+	     ((bundle? v)
+	      (if (bundle-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (bundle-*j-cache v) cs))
+		  (let ((u-reverse (create-reverse-tagged-value v)))
+		   (k u-reverse (cons (cons v u-reverse) cs)))))
+	     ((sensitivity-tagged-value? v)
+	      (if (sensitivity-tagged-value-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (sensitivity-tagged-value-*j-cache v) cs))
+		  (let ((u-reverse (create-reverse-tagged-value v)))
+		   (k u-reverse (cons (cons v u-reverse) cs)))))
+	     ((reverse-tagged-value? v)
+	      (if (reverse-tagged-value-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (reverse-tagged-value-*j-cache v) cs))
+		  (let ((u-reverse (create-reverse-tagged-value v)))
+		   (k u-reverse (cons (cons v u-reverse) cs)))))
+	     ((tagged-pair? v)
+	      (if (tagged-pair-*j-cache v)
+		  (begin (format #t "*j hit~%")
+			 (k (tagged-pair-*j-cache v) cs))
+		  (let ((u-reverse
+			 (make-tagged-pair
+			  (add-tag 'reverse (tagged-pair-tags v))
+			  'unfilled
+			  'unfilled
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		   (loop (get-tagged-pair-car v)
+			 (cons (cons v u-reverse) cs)
+			 (lambda (v-car-reverse cs)
+			  (loop (get-tagged-pair-cdr v)
+				cs
+				(lambda (v-cdr-reverse cs)
+				 (fill-tagged-pair!
+				  u-reverse v-car-reverse v-cdr-reverse)
+				 (k u-reverse cs))))))))
+	     (else (internal-error))))))))))))
+
+(define (*j-inverse v-reverse)
+ ;; This is written in CPS so as not to break structure sharing.
+ (time-it-bucket
+  19
+  (canonize-and-maybe-intern-abstract-value
+   (let loop ((v-reverse (canonize-and-maybe-intern-abstract-value v-reverse))
+	      (cs '())
+	      (k (lambda (v cs) v)))
+    (let ((found? (assq v-reverse cs)))
+     (cond
+      (found? (k (cdr found?) cs))
+      ((union? v-reverse)
+       (if (union-*j-inverse-cache v-reverse)
+	   (begin (format #t "*j-inverse hit~%")
+		  (k (union-*j-inverse-cache v-reverse) cs))
+	   (let ((v (make-union 'unfilled
 				#f
 				#f
 				#f
@@ -7145,113 +7309,12 @@
 				#f
 				#f
 				'unfilled)))
-	       (map-cps
-		loop
-		(get-nonrecursive-closure-values v)
-		(cons (cons v u-reverse) cs)
-		(lambda (vs-reverse cs)
-		 (fill-nonrecursive-closure-values! u-reverse vs-reverse)
-		 (k u-reverse cs)))))
-	     ((recursive-closure? v)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-reverse
-		     (make-recursive-closure
-		      'unfilled
-		      (map-vector reverseify
-				  (recursive-closure-procedure-variables v))
-		      (map-n-vector
-		       (lambda (i)
-			(reverse-transform-internal
-			 (vector-ref (recursive-closure-lambda-expressions v) i)
-			 (vector->list
-			  (recursive-closure-procedure-variables v))
-			 (vector->list (recursive-closure-lambda-expressions v))
-			 i))
-		       (vector-length (recursive-closure-lambda-expressions v)))
-		      (recursive-closure-index v)
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled)))
-	       (map-cps loop
-			(get-recursive-closure-values v)
-			(cons (cons v u-reverse) cs)
-			(lambda (vs-reverse cs)
-			 (fill-recursive-closure-values! u-reverse vs-reverse)
-			 (k u-reverse cs)))))
-	     ((perturbation-tagged-value? v)
-	      (let ((u-reverse (create-reverse-tagged-value v)))
-	       (k u-reverse (cons (cons v u-reverse) cs))))
-	     ((bundle? v)
-	      (let ((u-reverse (create-reverse-tagged-value v)))
-	       (k u-reverse (cons (cons v u-reverse) cs))))
-	     ((sensitivity-tagged-value? v)
-	      (let ((u-reverse (create-reverse-tagged-value v)))
-	       (k u-reverse (cons (cons v u-reverse) cs))))
-	     ((reverse-tagged-value? v)
-	      (let ((u-reverse (create-reverse-tagged-value v)))
-	       (k u-reverse (cons (cons v u-reverse) cs))))
-	     ((tagged-pair? v)
-	      (let ((u-reverse
-		     (make-tagged-pair (add-tag 'reverse (tagged-pair-tags v))
-				       'unfilled
-				       'unfilled
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       #f
-				       'unfilled)))
-	       (loop (get-tagged-pair-car v)
-		     (cons (cons v u-reverse) cs)
-		     (lambda (v-car-reverse cs)
-		      (loop (get-tagged-pair-cdr v)
-			    cs
-			    (lambda (v-cdr-reverse cs)
-			     (fill-tagged-pair!
-			      u-reverse v-car-reverse v-cdr-reverse)
-			     (k u-reverse cs)))))))
-	     (else (internal-error))))))))))))
-
-(define (*j-inverse v-reverse)
- ;; This is written in CPS so as not to break structure sharing.
- (time-it-bucket
-  19
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-reverse v-reverse) (cs '()) (k (lambda (v cs) v)))
-    (let ((found? (assq v-reverse cs)))
-     (cond
-      (found? (k (cdr found?) cs))
-      ((union? v-reverse)
-       (let ((v
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v-reverse)
-		 (cons (cons v-reverse v) cs)
-		 (lambda (us cs)
-		  (fill-union-values! v us)
-		  (k v cs)))))
+	    (map-cps loop
+		     (union-members v-reverse)
+		     (cons (cons v-reverse v) cs)
+		     (lambda (us cs)
+		      (fill-union-values! v us)
+		      (k v cs))))))
       (else
        (let ((b (find-if
 		 (lambda (b)
@@ -7266,143 +7329,182 @@
 	     (k u (cons (cons v-reverse u) cs)))
 	    (cond
 	     ((vlad-empty-list? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
+	      (let ((u (ad-error
+			"Argument to *j-inverse ~a a non-reverse value"
+			v-reverse)))
 	       (k u (cons (cons v-reverse u) cs))))
 	     ((vlad-true? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
+	      (let ((u (ad-error
+			"Argument to *j-inverse ~a a non-reverse value"
+			v-reverse)))
 	       (k u (cons (cons v-reverse u) cs))))
 	     ((vlad-false? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
+	      (let ((u (ad-error
+			"Argument to *j-inverse ~a a non-reverse value"
+			v-reverse)))
 	       (k u (cons (cons v-reverse u) cs))))
 	     ((vlad-real? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
+	      (let ((u (ad-error
+			"Argument to *j-inverse ~a a non-reverse value"
+			v-reverse)))
 	       (k u (cons (cons v-reverse u) cs))))
 	     ((primitive-procedure? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
+	      (let ((u (ad-error
+			"Argument to *j-inverse ~a a non-reverse value"
+			v-reverse)))
 	       (k u (cons (cons v-reverse u) cs))))
 	     ((nonrecursive-closure? v-reverse)
-	      (if (tagged? 'reverse (nonrecursive-closure-tags v-reverse))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u (make-nonrecursive-closure
-			    'unfilled
-			    (reverse-transform-inverse
-			     (nonrecursive-closure-lambda-expression
-			      v-reverse))
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-		   (map-cps loop
-			    (get-nonrecursive-closure-values v-reverse)
-			    (cons (cons v-reverse u) cs)
-			    (lambda (vs cs)
-			     (fill-nonrecursive-closure-values! u vs)
-			     (k u cs))))
-		  (let ((u (ad-error
-			    "Argument to *j-inverse ~a a non-reverse value"
-			    v-reverse)))
-		   (k u (cons (cons v-reverse u) cs)))))
+	      (cond
+	       ((nonrecursive-closure-*j-inverse-cache v-reverse)
+		(format #t "*j-inverse hit~%")
+		(k (nonrecursive-closure-*j-inverse-cache v-reverse) cs))
+	       ((tagged? 'reverse (nonrecursive-closure-tags v-reverse))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-nonrecursive-closure
+			  'unfilled
+			  (reverse-transform-inverse
+			   (nonrecursive-closure-lambda-expression
+			    v-reverse))
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-nonrecursive-closure-values v-reverse)
+			  (cons (cons v-reverse u) cs)
+			  (lambda (vs cs)
+			   (fill-nonrecursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error
+			  "Argument to *j-inverse ~a a non-reverse value"
+			  v-reverse)))
+		 (k u (cons (cons v-reverse u) cs))))))
 	     ((recursive-closure? v-reverse)
-	      (if (tagged? 'reverse (recursive-closure-tags v-reverse))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u (make-recursive-closure
-			    'unfilled
-			    (map-vector
-			     unreverseify
-			     (recursive-closure-procedure-variables v-reverse))
-			    (map-vector
-			     reverse-transform-inverse
-			     (recursive-closure-lambda-expressions v-reverse))
-			    (recursive-closure-index v-reverse)
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-		   (map-cps loop
-			    (get-recursive-closure-values v-reverse)
-			    (cons (cons v-reverse u) cs)
-			    (lambda (vs cs)
-			     (fill-recursive-closure-values! u vs)
-			     (k u cs))))
-		  (let ((u (ad-error
-			    "Argument to *j-inverse ~a a non-reverse value"
-			    v-reverse)))
-		   (k u (cons (cons v-reverse u) cs)))))
+	      (cond
+	       ((recursive-closure-*j-inverse-cache v-reverse)
+		(format #t "*j-inverse hit~%")
+		(k (recursive-closure-*j-inverse-cache v-reverse) cs))
+	       ((tagged? 'reverse (recursive-closure-tags v-reverse))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-recursive-closure
+			  'unfilled
+			  (map-vector
+			   unreverseify
+			   (recursive-closure-procedure-variables v-reverse))
+			  (map-vector
+			   reverse-transform-inverse
+			   (recursive-closure-lambda-expressions v-reverse))
+			  (recursive-closure-index v-reverse)
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-recursive-closure-values v-reverse)
+			  (cons (cons v-reverse u) cs)
+			  (lambda (vs cs)
+			   (fill-recursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error
+			  "Argument to *j-inverse ~a a non-reverse value"
+			  v-reverse)))
+		 (k u (cons (cons v-reverse u) cs))))))
 	     ((perturbation-tagged-value? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
-	       (k u (cons (cons v-reverse u) cs))))
-	     ((bundle? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
-	       (k u (cons (cons v-reverse u) cs))))
-	     ((sensitivity-tagged-value? v-reverse)
-	      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				 v-reverse)))
-	       (k u (cons (cons v-reverse u) cs))))
-	     ((reverse-tagged-value? v-reverse)
-	      (let ((u (get-reverse-tagged-value-primal v-reverse)))
-	       (k u (cons (cons v-reverse u) cs))))
-	     ((tagged-pair? v-reverse)
-	      (if (tagged? 'reverse (tagged-pair-tags v-reverse))
-		  (let ((u (make-tagged-pair
-			    (remove-tag 'reverse (tagged-pair-tags v-reverse))
-			    'unfilled
-			    'unfilled
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-		   (loop (get-tagged-pair-car v-reverse)
-			 (cons (cons v-reverse u) cs)
-			 (lambda (v-car cs)
-			  (loop (get-tagged-pair-cdr v-reverse)
-				cs
-				(lambda (v-cdr cs)
-				 (fill-tagged-pair! u v-car v-cdr)
-				 (k u cs))))))
+	      (if (perturbation-tagged-value-*j-inverse-cache v-reverse)
+		  (begin
+		   (format #t "*j-inverse hit~%")
+		   (k (perturbation-tagged-value-*j-inverse-cache v-reverse)
+		      cs))
 		  (let ((u (ad-error
 			    "Argument to *j-inverse ~a a non-reverse value"
 			    v-reverse)))
 		   (k u (cons (cons v-reverse u) cs)))))
+	     ((bundle? v-reverse)
+	      (if (bundle-*j-inverse-cache v-reverse)
+		  (begin (format #t "*j-inverse hit~%")
+			 (k (bundle-*j-inverse-cache v-reverse) cs))
+		  (let ((u (ad-error
+			    "Argument to *j-inverse ~a a non-reverse value"
+			    v-reverse)))
+		   (k u (cons (cons v-reverse u) cs)))))
+	     ((sensitivity-tagged-value? v-reverse)
+	      (if (sensitivity-tagged-value-*j-inverse-cache v-reverse)
+		  (begin
+		   (format #t "*j-inverse hit~%")
+		   (k (sensitivity-tagged-value-*j-inverse-cache v-reverse)
+		      cs))
+		  (let ((u (ad-error
+			    "Argument to *j-inverse ~a a non-reverse value"
+			    v-reverse)))
+		   (k u (cons (cons v-reverse u) cs)))))
+	     ((reverse-tagged-value? v-reverse)
+	      (if (reverse-tagged-value-*j-inverse-cache v-reverse)
+		  (begin
+		   (format #t "*j-inverse hit~%")
+		   (k (reverse-tagged-value-*j-inverse-cache v-reverse) cs))
+		  (let ((u (get-reverse-tagged-value-primal v-reverse)))
+		   (k u (cons (cons v-reverse u) cs)))))
+	     ((tagged-pair? v-reverse)
+	      (cond
+	       ((tagged-pair-*j-inverse-cache v-reverse)
+		(format #t "*j-inverse hit~%")
+		(k (tagged-pair-*j-inverse-cache v-reverse) cs))
+	       ((tagged? 'reverse (tagged-pair-tags v-reverse))
+		(let ((u (make-tagged-pair
+			  (remove-tag 'reverse (tagged-pair-tags v-reverse))
+			  'unfilled
+			  'unfilled
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (loop (get-tagged-pair-car v-reverse)
+		       (cons (cons v-reverse u) cs)
+		       (lambda (v-car cs)
+			(loop (get-tagged-pair-cdr v-reverse)
+			      cs
+			      (lambda (v-cdr cs)
+			       (fill-tagged-pair! u v-car v-cdr)
+			       (k u cs)))))))
+	       (else (let ((u (ad-error
+			       "Argument to *j-inverse ~a a non-reverse value"
+			       v-reverse)))
+		      (k u (cons (cons v-reverse u) cs))))))
 	     (else (internal-error))))))))))))
 
 ;;; Pretty printer
