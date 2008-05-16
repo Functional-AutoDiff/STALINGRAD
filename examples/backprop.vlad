@@ -13,6 +13,8 @@
 ;;;  which consists of a bias, followed by the weights for each
 ;;;  unit in the previous layer.
 
+;;;; Basic MLP
+
 (define ((sum-activities activities) (cons bias ws))
   ((reduce + bias)
    (map2 * ws activities)))
@@ -28,27 +30,9 @@
 
 (define (sigmoid x) (/ 1 (+ 1 (exp (- 0 x)))))
 
-(define (xor-ws)
-  (map-real '(((-1 2 2) (-6 4 4)) ((-5 10 -10)))))
-
-(define (xor-data)
-  '(((0 0) (0))
-    ((0 1) (1))
-    ((1 0) (1))
-    ((1 1) (0))))
-
-(define (map-real x)
-  (cond ((real? x) (real x))
-	((pair? x) (cons (map-real (car x))
-			 (map-real (cdr x))))
-	(else x)))
-
 (define (test-on-dataset ws-layers dataset)
   (map (forward-pass ws-layers)
        (map car dataset)))
-
-(define (test-xor)
-  (test-on-dataset (xor-ws) (xor-data)))
 
 (define ((error-on-dataset dataset) ws-layers)
   ((reduce + 0)
@@ -56,41 +40,8 @@
 	  (* 0.5 (magnitude-squared (v- ((forward-pass ws-layers) in) target))))
 	dataset)))
 
-;;; test case, zero-dimensional-input one-layer backprop
-
-(define (forward-0d w)
-  ((forward-pass (list (list (list w)))) '()))
-
-;;; Should be: (0.5)
-
-; (forward-0d 0)
-
-(define (error-0d w)
-  ((error-on-dataset '((() (0.8))))
-   (list (list (list w)))))
-
-; (error-0d 0)
-
-; ((derivative-using-j* error-0d) 0)
-
-; ((derivative-using-*j error-0d) 0)
-
-;;; test xor
-
-;;; Should be:
-;;;  ((0.08824035437794886)
-;;;   (0.7537208761298554)
-;;;   (0.7537208761298554)
-;;;   (0.01362366627163038))
-
-; (test-xor)
-
-;;; Should be:
-;;;  0.06463938906595941
-
-; ((error-on-dataset (xor-data)) (xor-ws))
-
-; ((gradient (error-on-dataset (xor-data))) (xor-ws))
+;;;; Optimization of the sort used with MLPs and backpropagation,
+;;;; often called "vanilla backprop"
 
 ;;; Scaled structure subtraction
 
@@ -114,29 +65,16 @@
 		     (- n 1)
 		     eta))))
 
-;;; Test case: maximize cos 
-
-(vanilla (lambda (x) (- 0 (cos x)))
-	 0.5
-	 50
-	 0.3)
-
-(map cos
-     (vanilla (lambda (x) (- 0 (cos x)))
-	      0.5
-	      50
-	      0.3))
-
 ;;; Correct Daniel Websters's spelling error
 
 (define (sensitise x) (sensitize x))
 (define (unsensitise x) (unsensitize x))
 
-;;; double-vanilla returns a list of successive values of w and f(w)
+;;; double-vanilla returns a list of successive values of f(w) and w
 
 (define (double-vanilla f w0 n eta)
   (let (((cons fw f-reverse) ((*j f) (*j w0))))
-    (cons (list w0 (*j-inverse fw))
+    (cons (list (*j-inverse fw) w0)
 	  (if (zero? n)
 	      '()
 	      (double-vanilla f
@@ -147,11 +85,115 @@
 			      (- n 1)
 			      eta)))))
 
-(double-vanilla (lambda (x) (- 0 (cos x)))
-		0.5
-		50
-		0.3)
+;;;; Test case: maximize cos 
+
+; (vanilla (lambda (x) (- 0 (cos x)))
+; 	 0.5
+; 	 50
+; 	 0.3)
+
+; (map cos
+;      (vanilla (lambda (x) (- 0 (cos x)))
+; 	      0.5
+; 	      50
+; 	      0.3))
+
+; (double-vanilla (lambda (x) (- 0 (cos x)))
+; 		0.5
+; 		50
+; 		0.3)
+
+;;;; Allow compiler to grok structure of sexpr but not the numbers at
+;;;; the leaves
+
+(define (map-real x)
+  (cond ((real? x) (real x))
+	((pair? x) (cons (map-real (car x))
+			 (map-real (cdr x))))
+	(else x)))
+
+;;;; MLP test case: zero-dimensional-input one-layer backprop
+
+(define (forward-0d w)
+  ((forward-pass (list (list (list w)))) '()))
+
+;;; Should be: (0.5)
+
+; (forward-0d 0)
+
+(define (error-0d w)
+  ((error-on-dataset '((() (0.8))))
+   (list (list (list w)))))
+
+; (error-0d 0)
+
+; ((derivative-using-j* error-0d) 0)
+
+; ((derivative-using-*j error-0d) 0)
+
+;;;; XOR network
+
+(define (xor-ws)
+  (map-real '(((-1 2 2) (-6 4 4))
+	      ((-5 10 -10)))))
+
+(define (xor-ws0)
+  (map-real '(((0 -0.284227 1.16054) (0 0.617194 1.30467))
+	      ((0 -0.084395 0.648461)))))
+
+(define (xor-data)
+  '(((0 0) (0))
+    ((0 1) (1))
+    ((1 0) (1))
+    ((1 1) (0))))
+
+(define (test-xor)
+  (test-on-dataset (xor-ws) (xor-data)))
+
+;;; test xor
+
+;;; Should be:
+;;;  ((0.08824035437794886)
+;;;   (0.7537208761298554)
+;;;   (0.7537208761298554)
+;;;   (0.01362366627163038))
+
+; (test-xor)
+
+;;; Should be:
+;;;  0.06463938906595941
+
+; ((error-on-dataset (xor-data)) (xor-ws))
+
+;;; Should be:
+;;; (((-0.1657244395587947 -0.08979989068062638 -0.08979989068062638)
+;;;   (0.09562986451016781 0.04780637571007405 0.04780637571007405))
+;;;  ((-0.08414911327439863 -0.06475808026951081 -0.010720092948419)))
+
+; ((gradient (error-on-dataset (xor-data))) (xor-ws))
+
+(let ((dv (double-vanilla (error-on-dataset (xor-data))
+			  (xor-ws0)
+			  10
+			  0.3)))
+  (list dv (map car dv)))
+
+;;; NOTES
+
+;; not implemented: read-real
+;; not implemented: (define X Y)
+
+;; Incompletenesses in VLAD: using the PLUS procedure, we treat
+;; the tangent and cotangent spaces as vector spaces.  Except we
+;; don't have scalar multiplication, which is part of being a vector
+;; space.  And which would also simplify s-k* above.
+;; (Similar issues would arise in any general optimisation routine.)
 
 ;;; Local Variables:
 ;;; compile-command: "SCMAXHEAP=1000 ../bin/stalingrad-i686 backprop"
+;;; scheme-body-indent: 1
+;;; eval: (put 'when 'scheme-indent-function 1)
+;;; eval: (put 'unless 'scheme-indent-function 1)
+;;; eval: (put 'syntax-rules 'scheme-indent-function 1)
+;;; eval: (put 'eval-when 'scheme-indent-function 1)
 ;;; End:
