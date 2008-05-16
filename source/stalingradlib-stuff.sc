@@ -6966,15 +6966,12 @@
 ;;; abstract value, an aggregate abstract value that has no children, or an up.
 ;;; Each abstract value is a slot or a member of the preceeding abstract value.
 
-(define (depth match? type? path)
- (map-reduce max
-	     0
-	     length
-	     (transitive-equivalence-classesp
-	      match? (remove-if-not type? (remove-if union? path)))))
-
 (define (path-of-greatest-depth match? type? v)
  ;; This is written in CPS so as not to break structure sharing.
+ ;; We now adopt a more efficient representation of paths. A path is a set of
+ ;; sets of abstract values. Each abstract values satisfies type? and each set
+ ;; of abstract values is an equivalence class by match?. The depth is thus the
+ ;; cardinality of the largest equivalence class.
  (let outer ((v v)
 	     (cs '())
 	     (path '())
@@ -6986,7 +6983,7 @@
    (cond
     (found?
      (if (> depth-of-path (cdr found?))
-	 (if (memq v path)
+	 (if (some (lambda (class) (memq v class)) path)
 	     (k (if (or (eq? longest-path #f)
 			(> depth-of-path depth-of-longest-path))
 		    path
@@ -7007,45 +7004,49 @@
 	 (k longest-path depth-of-longest-path cs)))
     ((union? v)
      ;; This assumes that unions never contribute to depth.
-     (let ((path (cons v path)))
-      (let inner ((us (get-union-values v))
-		  (cs (cons (cons v depth-of-path) cs))
-		  (longest-path
-		   (if (or (eq? longest-path #f)
-			   (> depth-of-path depth-of-longest-path))
-		       path
-		       longest-path))
-		  (depth-of-longest-path
-		   (if (or (eq? longest-path #f)
-			   (> depth-of-path depth-of-longest-path))
-		       depth-of-path
-		       depth-of-longest-path)))
-       (if (null? us)
-	   (k longest-path depth-of-longest-path cs)
-	   (outer
-	    (first us)
-	    cs
-	    path
-	    depth-of-path
-	    longest-path
-	    depth-of-longest-path
-	    (lambda (longest-path depth-of-longest-path cs)
-	     (inner (rest us) cs longest-path depth-of-longest-path)))))))
+     (let inner ((us (get-union-values v))
+		 (cs (cons (cons v depth-of-path) cs))
+		 (longest-path
+		  (if (or (eq? longest-path #f)
+			  (> depth-of-path depth-of-longest-path))
+		      path
+		      longest-path))
+		 (depth-of-longest-path
+		  (if (or (eq? longest-path #f)
+			  (> depth-of-path depth-of-longest-path))
+		      depth-of-path
+		      depth-of-longest-path)))
+      (if (null? us)
+	  (k longest-path depth-of-longest-path cs)
+	  (outer
+	   (first us)
+	   cs
+	   path
+	   depth-of-path
+	   longest-path
+	   depth-of-longest-path
+	   (lambda (longest-path depth-of-longest-path cs)
+	    (inner (rest us) cs longest-path depth-of-longest-path))))))
     ((scalar-value? v)
      ;; This assumes that scalars never contribute to depth.
-     (let ((path (cons v path)))
-      (k (if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
-	     path
-	     longest-path)
-	 (if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
-	     depth-of-path
-	     depth-of-longest-path)
-	 (cons (cons v depth-of-path) cs))))
+     (k (if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
+	    path
+	    longest-path)
+	(if (or (eq? longest-path #f) (> depth-of-path depth-of-longest-path))
+	    depth-of-path
+	    depth-of-longest-path)
+	(cons (cons v depth-of-path) cs)))
     (else
-     (let* ((path (cons v path))
-	    (depth-of-path
-	     ;; This assumes that only values of type? contribute to depth.
-	     (if (type? v) (depth match? type? path) depth-of-path)))
+     ;; This assumes that only values of type? contribute to depth.
+     (let* ((path (if (type? v)
+		      (let loop ((path path))
+		       (cond ((null? path) (list (list v)))
+			     ;; This assumes that match? is transitive.
+			     ((match? v (first (first path)))
+			      (cons (cons v (first path)) (rest path)))
+			     (else (cons (first path) (loop (rest path))))))
+		      path))
+	    (depth-of-path (map-reduce max 0 length path)))
       (let inner ((vs (aggregate-value-values v))
 		  (cs (cons (cons v depth-of-path) cs))
 		  (longest-path
@@ -7073,21 +7074,16 @@
 (define (path-of-depth-greater-than-limit limit match? type? v)
  (let ((longest-path (path-of-greatest-depth match? type? v)))
   (if (and (not (eq? longest-path #f))
-	   (> (depth match? type? longest-path) limit))
+	   (> (map-reduce max 0 length longest-path) limit))
       longest-path
       #f)))
 
-(define (pick-values-to-coalesce-for-depth-limit match? type? path)
- (let* ((classes (transitive-equivalence-classesp
-		  match? (remove-if-not type? (remove-if union? path))))
-	(k (map-reduce max 0 length classes))
-	(positions
-	 (sort (map (lambda (u) (positionq u path))
-		    (find-if (lambda (us) (= (length us) k)) classes))
-	       >
-	       identity)))
-  (list (list-ref path (second positions))
-	(list-ref path (first positions)))))
+(define (pick-values-to-coalesce-for-depth-limit path)
+ (let* ((k (map-reduce max 0 length path))
+	;; We arbitrarily pick the first class.
+	(class (find-if (lambda (class) (= (length class) k)) path)))
+  ;; We arbitrarily pick the first two members of the class.
+  (list (first class) (second class))))
 
 (define (limit-depth limit match? type? v)
  (if (or (eq? limit #f)
@@ -7096,16 +7092,19 @@
 	      (every (lambda (vs) (<= (length vs) limit))
 		     (transitive-equivalence-classesp match? vs)))))
      v
-     (let loop ((v v))
-      (let ((path (path-of-depth-greater-than-limit limit match? type? v)))
-       (if (eq? path #f)
-	   v
-	   (let* ((u1-u2
-		   (pick-values-to-coalesce-for-depth-limit match? type? path))
-		  (v-prime
-		   (merge-subabstract-values v (first u1-u2) (second u1-u2))))
-	    (assert (abstract-value-subset? v v-prime))
-	    (loop v-prime)))))))
+     (begin
+      (format #t "entering~%")
+      (let loop ((v v))
+       (let ((path (path-of-depth-greater-than-limit limit match? type? v)))
+	(if (eq? path #f)
+	    (begin
+	     (format #t "leaving~%")
+	     v)
+	    (let* ((u1-u2 (pick-values-to-coalesce-for-depth-limit path))
+		   (v-prime
+		    (merge-subabstract-values v (first u1-u2) (second u1-u2))))
+	     (assert (abstract-value-subset? v v-prime))
+	     (loop v-prime))))))))
 
 ;;; Syntactic Constraints
 
