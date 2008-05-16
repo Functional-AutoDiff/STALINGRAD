@@ -91,7 +91,7 @@
  ;; belongs in QobiScheme
  (lambda (form expander)
   (expander
-   (if #f				;debugging
+   (if #t				;debugging
        `(time-bucket ,(second form) (lambda () ,(third form)))
        (third form))
    expander)))
@@ -4675,10 +4675,50 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   8
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+   (let loop ((v v)
 	      (cs '())
-	      (k (lambda (v0 cs) v0)))
+	      (k (lambda (v0 cs)
+		  (let ((v0 (canonize-and-maybe-intern-abstract-value v0)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v)
+		      (assert
+		       (or (not (nonrecursive-closure-zero-cache v))
+			   (eq? (nonrecursive-closure-zero-cache v) v0)))
+		      (set-nonrecursive-closure-zero-cache! v v0))
+		     ((recursive-closure? v)
+		      (assert (or (not (recursive-closure-zero-cache v))
+				  (eq? (recursive-closure-zero-cache v) v0)))
+		      (set-recursive-closure-zero-cache! v v0))
+		     ((perturbation-tagged-value? v)
+		      (assert
+		       (or (not (perturbation-tagged-value-zero-cache v))
+			   (eq? (perturbation-tagged-value-zero-cache v) v0)))
+		      (set-perturbation-tagged-value-zero-cache! v v0))
+		     ((bundle? v)
+		      (assert (or (not (bundle-zero-cache v))
+				  (eq? (bundle-zero-cache v) v0)))
+		      (set-bundle-zero-cache! v v0))
+		     ((sensitivity-tagged-value? v)
+		      (assert
+		       (or (not (sensitivity-tagged-value-zero-cache v))
+			   (eq? (sensitivity-tagged-value-zero-cache v) v0)))
+		      (set-sensitivity-tagged-value-zero-cache! v v0))
+		     ((reverse-tagged-value? v)
+		      (assert
+		       (or (not (reverse-tagged-value-zero-cache v))
+			   (eq? (reverse-tagged-value-zero-cache v) v0)))
+		      (set-reverse-tagged-value-zero-cache! v v0))
+		     ((tagged-pair? v)
+		      (assert (or (not (tagged-pair-zero-cache v))
+				  (eq? (tagged-pair-zero-cache v) v0)))
+		      (set-tagged-pair-zero-cache! v v0))
+		     ((union? v)
+		      (assert (or (not (union-zero-cache v))
+				  (eq? (union-zero-cache v) v0)))
+		      (set-union-zero-cache! v v0))))
+		   v0))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -4990,10 +5030,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   9
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+   (let loop ((v v)
 	      (cs '())
-	      (k (lambda (v-perturbation cs) v-perturbation)))
+	      (k (lambda (v-perturbation cs)
+		  (canonize-and-maybe-intern-abstract-value v-perturbation))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5168,11 +5209,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   10
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-perturbation
-	       (canonize-and-maybe-intern-abstract-value v-perturbation))
+  (let ((v-perturbation
+	 (canonize-and-maybe-intern-abstract-value v-perturbation)))
+   (let loop ((v-perturbation v-perturbation)
 	      (cs '())
-	      (k (lambda (v cs) v)))
+	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
     (let ((found? (assq v-perturbation cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5376,10 +5417,10 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   11
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-forward (canonize-and-maybe-intern-abstract-value v-forward))
+  (let ((v-forward (canonize-and-maybe-intern-abstract-value v-forward)))
+   (let loop ((v-forward v-forward)
 	      (cs '())
-	      (k (lambda (v cs) v)))
+	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5595,10 +5636,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   12
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-forward (canonize-and-maybe-intern-abstract-value v-forward))
+  (let ((v-forward (canonize-and-maybe-intern-abstract-value v-forward)))
+   (let loop ((v-forward v-forward)
 	      (cs '())
-	      (k (lambda (v-perturbation cs) v-perturbation)))
+	      (k (lambda (v-perturbation cs)
+		  (canonize-and-maybe-intern-abstract-value v-perturbation))))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -6433,10 +6475,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   14
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+   (let loop ((v v)
 	      (cs '())
-	      (k (lambda (v-sensitivity cs) v-sensitivity)))
+	      (k (lambda (v-sensitivity cs)
+		  (canonize-and-maybe-intern-abstract-value v-sensitivity))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -6662,11 +6705,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   16
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-sensitivity
-	       (canonize-and-maybe-intern-abstract-value v-sensitivity))
+  (let ((v-sensitivity
+	 (canonize-and-maybe-intern-abstract-value v-sensitivity)))
+   (let loop ((v-sensitivity v-sensitivity)
 	      (cs '())
-	      (k (lambda (v cs) v)))
+	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
     (let ((found? (assq v-sensitivity cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -7084,10 +7127,11 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   18
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+   (let loop ((v v)
 	      (cs '())
-	      (k (lambda (v-reverse cs) v-reverse)))
+	      (k (lambda (v-reverse cs)
+		  (canonize-and-maybe-intern-abstract-value v-reverse))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -7282,10 +7326,10 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   19
-  (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-reverse (canonize-and-maybe-intern-abstract-value v-reverse))
+  (let ((v-reverse (canonize-and-maybe-intern-abstract-value v-reverse)))
+   (let loop ((v-reverse v-reverse)
 	      (cs '())
-	      (k (lambda (v cs) v)))
+	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
     (let ((found? (assq v-reverse cs)))
      (cond
       (found? (k (cdr found?) cs))
