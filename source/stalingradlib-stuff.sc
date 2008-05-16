@@ -6701,7 +6701,60 @@
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-sensitivity cs)
-		  (canonize-and-maybe-intern-abstract-value v-sensitivity))))
+		  (let ((v-sensitivity
+			 (canonize-and-maybe-intern-abstract-value
+			  v-sensitivity)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v)
+		      (assert
+		       (or (not (nonrecursive-closure-sensitize-cache v))
+			   (eq? (nonrecursive-closure-sensitize-cache v)
+				v-sensitivity)))
+		      (set-nonrecursive-closure-sensitize-cache!
+		       v v-sensitivity))
+		     ((recursive-closure? v)
+		      (assert (or (not (recursive-closure-sensitize-cache v))
+				  (eq? (recursive-closure-sensitize-cache v)
+				       v-sensitivity)))
+		      (set-recursive-closure-sensitize-cache! v v-sensitivity))
+		     ((perturbation-tagged-value? v)
+		      (assert
+		       (or (not (perturbation-tagged-value-sensitize-cache v))
+			   (eq? (perturbation-tagged-value-sensitize-cache v)
+				v-sensitivity)))
+		      (set-perturbation-tagged-value-sensitize-cache!
+		       v v-sensitivity))
+		     ((bundle? v)
+		      (assert
+		       (or (not (bundle-sensitize-cache v))
+			   (eq? (bundle-sensitize-cache v) v-sensitivity)))
+		      (set-bundle-sensitize-cache! v v-sensitivity))
+		     ((sensitivity-tagged-value? v)
+		      (assert
+		       (or (not (sensitivity-tagged-value-sensitize-cache v))
+			   (eq? (sensitivity-tagged-value-sensitize-cache v)
+				v-sensitivity)))
+		      (set-sensitivity-tagged-value-sensitize-cache!
+		       v v-sensitivity))
+		     ((reverse-tagged-value? v)
+		      (assert
+		       (or (not (reverse-tagged-value-sensitize-cache v))
+			   (eq? (reverse-tagged-value-sensitize-cache v)
+				v-sensitivity)))
+		      (set-reverse-tagged-value-sensitize-cache!
+		       v v-sensitivity))
+		     ((tagged-pair? v)
+		      (assert (or (not (tagged-pair-sensitize-cache v))
+				  (eq? (tagged-pair-sensitize-cache v)
+				       v-sensitivity)))
+		      (set-tagged-pair-sensitize-cache! v v-sensitivity))
+		     ((union? v)
+		      (assert
+		       (or (not (union-sensitize-cache v))
+			   (eq? (union-sensitize-cache v) v-sensitivity)))
+		      (set-union-sensitize-cache! v v-sensitivity))))
+		   v-sensitivity))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -6931,7 +6984,70 @@
 	 (canonize-and-maybe-intern-abstract-value v-sensitivity)))
    (let loop ((v-sensitivity v-sensitivity)
 	      (cs '())
-	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
+	      (k (lambda (v cs)
+		  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v-sensitivity)
+		      (assert (or (not (nonrecursive-closure-unsensitize-cache
+					v-sensitivity))
+				  (eq? (nonrecursive-closure-unsensitize-cache
+					v-sensitivity)
+				       v)))
+		      (set-nonrecursive-closure-unsensitize-cache!
+		       v-sensitivity v))
+		     ((recursive-closure? v-sensitivity)
+		      (assert (or (not (recursive-closure-unsensitize-cache
+					v-sensitivity))
+				  (eq? (recursive-closure-unsensitize-cache
+					v-sensitivity)
+				       v)))
+		      (set-recursive-closure-unsensitize-cache!
+		       v-sensitivity v))
+		     ((perturbation-tagged-value? v-sensitivity)
+		      (assert
+		       (or (not (perturbation-tagged-value-unsensitize-cache
+				 v-sensitivity))
+			   (eq? (perturbation-tagged-value-unsensitize-cache
+				 v-sensitivity)
+				v)))
+		      (set-perturbation-tagged-value-unsensitize-cache!
+		       v-sensitivity v))
+		     ((bundle? v-sensitivity)
+		      (assert
+		       (or (not (bundle-unsensitize-cache v-sensitivity))
+			   (eq? (bundle-unsensitize-cache v-sensitivity) v)))
+		      (set-bundle-unsensitize-cache! v-sensitivity v))
+		     ((sensitivity-tagged-value? v-sensitivity)
+		      (assert
+		       (or (not (sensitivity-tagged-value-unsensitize-cache
+				 v-sensitivity))
+			   (eq? (sensitivity-tagged-value-unsensitize-cache
+				 v-sensitivity)
+				v)))
+		      (set-sensitivity-tagged-value-unsensitize-cache!
+		       v-sensitivity v))
+		     ((reverse-tagged-value? v-sensitivity)
+		      (assert (or (not (reverse-tagged-value-unsensitize-cache
+					v-sensitivity))
+				  (eq? (reverse-tagged-value-unsensitize-cache
+					v-sensitivity)
+				       v)))
+		      (set-reverse-tagged-value-unsensitize-cache!
+		       v-sensitivity v))
+		     ((tagged-pair? v-sensitivity)
+		      (assert (or (not (tagged-pair-unsensitize-cache
+					v-sensitivity))
+				  (eq? (tagged-pair-unsensitize-cache
+					v-sensitivity)
+				       v)))
+		      (set-tagged-pair-unsensitize-cache! v-sensitivity v))
+		     ((union? v-sensitivity)
+		      (assert
+		       (or (not (union-unsensitize-cache v-sensitivity))
+			   (eq? (union-unsensitize-cache v-sensitivity) v)))
+		      (set-union-unsensitize-cache! v-sensitivity v))))
+		   v))))
     (let ((found? (assq v-sensitivity cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -7353,7 +7469,9 @@
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-reverse cs)
-		  (canonize-and-maybe-intern-abstract-value v-reverse))))
+		  (let ((v-reverse
+			 (canonize-and-maybe-intern-abstract-value v-reverse)))
+		   v-reverse))))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -7551,7 +7669,9 @@
   (let ((v-reverse (canonize-and-maybe-intern-abstract-value v-reverse)))
    (let loop ((v-reverse v-reverse)
 	      (cs '())
-	      (k (lambda (v cs) (canonize-and-maybe-intern-abstract-value v))))
+	      (k (lambda (v cs)
+		  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+		   v))))
     (let ((found? (assq v-reverse cs)))
      (cond
       (found? (k (cdr found?) cs))
