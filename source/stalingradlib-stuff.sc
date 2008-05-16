@@ -7471,6 +7471,45 @@
 	      (k (lambda (v-reverse cs)
 		  (let ((v-reverse
 			 (canonize-and-maybe-intern-abstract-value v-reverse)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v)
+		      (assert
+		       (or (not (nonrecursive-closure-*j-cache v))
+			   (eq? (nonrecursive-closure-*j-cache v) v-reverse)))
+		      (set-nonrecursive-closure-*j-cache! v v-reverse))
+		     ((recursive-closure? v)
+		      (assert
+		       (or (not (recursive-closure-*j-cache v))
+			   (eq? (recursive-closure-*j-cache v) v-reverse)))
+		      (set-recursive-closure-*j-cache! v v-reverse))
+		     ((perturbation-tagged-value? v)
+		      (assert (or (not (perturbation-tagged-value-*j-cache v))
+				  (eq? (perturbation-tagged-value-*j-cache v)
+				       v-reverse)))
+		      (set-perturbation-tagged-value-*j-cache! v v-reverse))
+		     ((bundle? v)
+		      (assert (or (not (bundle-*j-cache v))
+				  (eq? (bundle-*j-cache v) v-reverse)))
+		      (set-bundle-*j-cache! v v-reverse))
+		     ((sensitivity-tagged-value? v)
+		      (assert (or (not (sensitivity-tagged-value-*j-cache v))
+				  (eq? (sensitivity-tagged-value-*j-cache v)
+				       v-reverse)))
+		      (set-sensitivity-tagged-value-*j-cache! v v-reverse))
+		     ((reverse-tagged-value? v)
+		      (assert
+		       (or (not (reverse-tagged-value-*j-cache v))
+			   (eq? (reverse-tagged-value-*j-cache v) v-reverse)))
+		      (set-reverse-tagged-value-*j-cache! v v-reverse))
+		     ((tagged-pair? v)
+		      (assert (or (not (tagged-pair-*j-cache v))
+				  (eq? (tagged-pair-*j-cache v) v-reverse)))
+		      (set-tagged-pair-*j-cache! v v-reverse))
+		     ((union? v)
+		      (assert (or (not (union-*j-cache v))
+				  (eq? (union-*j-cache v) v-reverse)))
+		      (set-union-*j-cache! v v-reverse))))
 		   v-reverse))))
     (let ((found? (assq v cs)))
      (cond
@@ -7671,6 +7710,60 @@
 	      (cs '())
 	      (k (lambda (v cs)
 		  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+		   (when *memoized?*
+		    (cond
+		     ((nonrecursive-closure? v-reverse)
+		      (assert (or (not (nonrecursive-closure-*j-inverse-cache
+					v-reverse))
+				  (eq? (nonrecursive-closure-*j-inverse-cache
+					v-reverse)
+				       v)))
+		      (set-nonrecursive-closure-*j-inverse-cache! v-reverse v))
+		     ((recursive-closure? v-reverse)
+		      (assert (or (not (recursive-closure-*j-inverse-cache
+					v-reverse))
+				  (eq? (recursive-closure-*j-inverse-cache
+					v-reverse)
+				       v)))
+		      (set-recursive-closure-*j-inverse-cache! v-reverse v))
+		     ((perturbation-tagged-value? v-reverse)
+		      (assert
+		       (or (not (perturbation-tagged-value-*j-inverse-cache
+				 v-reverse))
+			   (eq? (perturbation-tagged-value-*j-inverse-cache
+				 v-reverse)
+				v)))
+		      (set-perturbation-tagged-value-*j-inverse-cache!
+		       v-reverse v))
+		     ((bundle? v-reverse)
+		      (assert (or (not (bundle-*j-inverse-cache v-reverse))
+				  (eq? (bundle-*j-inverse-cache v-reverse) v)))
+		      (set-bundle-*j-inverse-cache! v-reverse v))
+		     ((sensitivity-tagged-value? v-reverse)
+		      (assert
+		       (or (not (sensitivity-tagged-value-*j-inverse-cache
+				 v-reverse))
+			   (eq? (sensitivity-tagged-value-*j-inverse-cache
+				 v-reverse)
+				v)))
+		      (set-sensitivity-tagged-value-*j-inverse-cache!
+		       v-reverse v))
+		     ((reverse-tagged-value? v-reverse)
+		      (assert (or (not (reverse-tagged-value-*j-inverse-cache
+					v-reverse))
+				  (eq? (reverse-tagged-value-*j-inverse-cache
+					v-reverse)
+				       v)))
+		      (set-reverse-tagged-value-*j-inverse-cache! v-reverse v))
+		     ((tagged-pair? v-reverse)
+		      (assert
+		       (or (not (tagged-pair-*j-inverse-cache v-reverse))
+			   (eq? (tagged-pair-*j-inverse-cache v-reverse) v)))
+		      (set-tagged-pair-*j-inverse-cache! v-reverse v))
+		     ((union? v-reverse)
+		      (assert (or (not (union-*j-inverse-cache v-reverse))
+				  (eq? (union-*j-inverse-cache v-reverse) v)))
+		      (set-union-*j-inverse-cache! v-reverse v))))
 		   v))))
     (let ((found? (assq v-reverse cs)))
      (cond
