@@ -357,6 +357,14 @@ error_no_error:
 #i686-Linux-2.6.18-5-k7       $(INSTALLLIBA)/scxl.a\
 #i686-Linux-2.6.18-5-k7       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#i686-Linux-2.6.18-6-k7 CC = gcc
+#i686-Linux-2.6.18-6-k7 CFLAGS = -O2 -DLINUX
+#i686-Linux-2.6.18-6-k7 SCCFLAGS = -O2
+#i686-Linux-2.6.18-6-k7 SCCLDFLAGS =
+#i686-Linux-2.6.18-6-k7 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#i686-Linux-2.6.18-6-k7       $(INSTALLLIBA)/scxl.a\
+#i686-Linux-2.6.18-6-k7       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 #x86_64-Linux-2.6.18-4-amd64 CC = gcc
 #x86_64-Linux-2.6.18-4-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
 #x86_64-Linux-2.6.18-4-amd64 SCCFLAGS = -O2
@@ -372,6 +380,14 @@ error_no_error:
 #x86_64-Linux-2.6.18-5-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #x86_64-Linux-2.6.18-5-amd64       $(INSTALLLIBA)/scxl.a\
 #x86_64-Linux-2.6.18-5-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
+#x86_64-Linux-2.6.18-6-amd64 CC = gcc
+#x86_64-Linux-2.6.18-6-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
+#x86_64-Linux-2.6.18-6-amd64 SCCFLAGS = -O2
+#x86_64-Linux-2.6.18-6-amd64 SCCLDFLAGS =
+#x86_64-Linux-2.6.18-6-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#x86_64-Linux-2.6.18-6-amd64       $(INSTALLLIBA)/scxl.a\
+#x86_64-Linux-2.6.18-6-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
 #armv6l-Linux-2.6.21-omap1 CC = gcc
 #armv6l-Linux-2.6.21-omap1 CFLAGS = -O2 -DLINUX
