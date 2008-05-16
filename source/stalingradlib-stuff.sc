@@ -6434,20 +6434,38 @@
  (time-it-bucket
   14
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v v) (cs '()) (k (lambda (v-sensitivity cs) v-sensitivity)))
+   (let loop ((v (canonize-and-maybe-intern-abstract-value v))
+	      (cs '())
+	      (k (lambda (v-sensitivity cs) v-sensitivity)))
     (let ((found? (assq v cs)))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v)
-       (let ((v-sensitivity
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v)
-		 (cons (cons v v-sensitivity) cs)
-		 (lambda (us-sensitivity cs)
-		  (fill-union-values! v-sensitivity us-sensitivity)
-		  (k v-sensitivity cs)))))
+       (if (union-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (union-sensitize-cache v) cs))
+	   (let ((v-sensitivity (make-union 'unfilled
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    #f
+					    'unfilled)))
+	    (map-cps loop
+		     (union-members v)
+		     (cons (cons v v-sensitivity) cs)
+		     (lambda (us-sensitivity cs)
+		      (fill-union-values! v-sensitivity us-sensitivity)
+		      (k v-sensitivity cs))))))
       ((vlad-empty-list? v)
        (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
@@ -6464,105 +6482,127 @@
        (let ((u-sensitivity (create-sensitivity-tagged-value v)))
 	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
       ((nonrecursive-closure? v)
-       ;; See the note in abstract-environment=?.
-       (let ((u-sensitivity (make-nonrecursive-closure
-			     'unfilled
-			     (sensitivity-transform
-			      (nonrecursive-closure-lambda-expression v))
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     #f
-			     'unfilled)))
-	(map-cps
-	 loop
-	 (get-nonrecursive-closure-values v)
-	 (cons (cons v u-sensitivity) cs)
-	 (lambda (vs-sensitivity cs)
-	  (fill-nonrecursive-closure-values! u-sensitivity vs-sensitivity)
-	  (k u-sensitivity cs)))))
+       (if (nonrecursive-closure-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (nonrecursive-closure-sensitize-cache v) cs))
+	   ;; See the note in abstract-environment=?.
+	   (let ((u-sensitivity (make-nonrecursive-closure
+				 'unfilled
+				 (sensitivity-transform
+				  (nonrecursive-closure-lambda-expression v))
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+	    (map-cps
+	     loop
+	     (get-nonrecursive-closure-values v)
+	     (cons (cons v u-sensitivity) cs)
+	     (lambda (vs-sensitivity cs)
+	      (fill-nonrecursive-closure-values! u-sensitivity vs-sensitivity)
+	      (k u-sensitivity cs))))))
       ((recursive-closure? v)
-       ;; See the note in abstract-environment=?.
-       (let ((u-sensitivity
-	      (make-recursive-closure
-	       'unfilled
-	       (map-vector sensitivityify
-			   (recursive-closure-procedure-variables v))
-	       (map-vector sensitivity-transform
-			   (recursive-closure-lambda-expressions v))
-	       (recursive-closure-index v)
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       #f
-	       'unfilled)))
-	(map-cps loop
-		 (get-recursive-closure-values v)
-		 (cons (cons v u-sensitivity) cs)
-		 (lambda (vs-sensitivity cs)
-		  (fill-recursive-closure-values! u-sensitivity vs-sensitivity)
-		  (k u-sensitivity cs)))))
+       (if (recursive-closure-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (recursive-closure-sensitize-cache v) cs))
+	   ;; See the note in abstract-environment=?.
+	   (let ((u-sensitivity
+		  (make-recursive-closure
+		   'unfilled
+		   (map-vector sensitivityify
+			       (recursive-closure-procedure-variables v))
+		   (map-vector sensitivity-transform
+			       (recursive-closure-lambda-expressions v))
+		   (recursive-closure-index v)
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   'unfilled)))
+	    (map-cps
+	     loop
+	     (get-recursive-closure-values v)
+	     (cons (cons v u-sensitivity) cs)
+	     (lambda (vs-sensitivity cs)
+	      (fill-recursive-closure-values! u-sensitivity vs-sensitivity)
+	      (k u-sensitivity cs))))))
       ((perturbation-tagged-value? v)
-       (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
+       (if (perturbation-tagged-value-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (perturbation-tagged-value-sensitize-cache v) cs))
+	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((bundle? v)
-       (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
+       (if (bundle-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (bundle-sensitize-cache v) cs))
+	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((sensitivity-tagged-value? v)
-       (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
+       (if (sensitivity-tagged-value-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (sensitivity-tagged-value-sensitize-cache v) cs))
+	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((reverse-tagged-value? v)
-       (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	(k u-sensitivity (cons (cons v u-sensitivity) cs))))
+       (if (reverse-tagged-value-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (reverse-tagged-value-sensitize-cache v) cs))
+	   (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	    (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
       ((tagged-pair? v)
-       (let ((u-sensitivity
-	      (make-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
-				'unfilled
-				'unfilled
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	(loop (get-tagged-pair-car v)
-	      (cons (cons v u-sensitivity) cs)
-	      (lambda (v-car-sensitivity cs)
-	       (loop (get-tagged-pair-cdr v)
-		     cs
-		     (lambda (v-cdr-sensitivity cs)
-		      (fill-tagged-pair!
-		       u-sensitivity v-car-sensitivity v-cdr-sensitivity)
-		      (k u-sensitivity cs)))))))
+       (if (tagged-pair-sensitize-cache v)
+	   (begin (format #t "sensitize hit~%")
+		  (k (tagged-pair-sensitize-cache v) cs))
+	   (let ((u-sensitivity
+		  (make-tagged-pair (add-tag 'sensitivity (tagged-pair-tags v))
+				    'unfilled
+				    'unfilled
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    #f
+				    'unfilled)))
+	    (loop (get-tagged-pair-car v)
+		  (cons (cons v u-sensitivity) cs)
+		  (lambda (v-car-sensitivity cs)
+		   (loop (get-tagged-pair-cdr v)
+			 cs
+			 (lambda (v-cdr-sensitivity cs)
+			  (fill-tagged-pair!
+			   u-sensitivity v-car-sensitivity v-cdr-sensitivity)
+			  (k u-sensitivity cs))))))))
       (else (internal-error))))))))
 
 (define (unsensitize? v-sensitivity)
@@ -6623,20 +6663,39 @@
  (time-it-bucket
   16
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-sensitivity v-sensitivity) (cs '()) (k (lambda (v cs) v)))
+   (let loop ((v-sensitivity
+	       (canonize-and-maybe-intern-abstract-value v-sensitivity))
+	      (cs '())
+	      (k (lambda (v cs) v)))
     (let ((found? (assq v-sensitivity cs)))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v-sensitivity)
-       (let ((v
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v-sensitivity)
-		 (cons (cons v-sensitivity v) cs)
-		 (lambda (us cs)
-		  (fill-union-values! v us)
-		  (k v cs)))))
+       (if (union-unsensitize-cache v-sensitivity)
+	   (begin (format #t "unsensitize hit~%")
+		  (k (union-unsensitize-cache v-sensitivity) cs))
+	   (let ((v (make-union 'unfilled
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				'unfilled)))
+	    (map-cps loop
+		     (union-members v-sensitivity)
+		     (cons (cons v-sensitivity v) cs)
+		     (lambda (us cs)
+		      (fill-union-values! v us)
+		      (k v cs))))))
       ((vlad-empty-list? v-sensitivity)
        (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
 			  v-sensitivity)))
@@ -6658,122 +6717,155 @@
 			  v-sensitivity)))
 	(k u (cons (cons v-sensitivity u) cs))))
       ((nonrecursive-closure? v-sensitivity)
-       (if (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
-	   ;; See the note in abstract-environment=?.
-	   (let ((u (make-nonrecursive-closure
-		     'unfilled
-		     (sensitivity-transform-inverse
-		      (nonrecursive-closure-lambda-expression v-sensitivity))
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     'unfilled)))
-	    (map-cps loop
-		     (get-nonrecursive-closure-values v-sensitivity)
-		     (cons (cons v-sensitivity u) cs)
-		     (lambda (vs cs)
-		      (fill-nonrecursive-closure-values! u vs)
-		      (k u cs))))
-	   (let ((u (ad-error
-		     "Argument to unsensitize ~a a non-sensitivity value"
-		     v-sensitivity)))
-	    (k u (cons (cons v-sensitivity u) cs)))))
+       (cond
+	((nonrecursive-closure-unsensitize-cache v-sensitivity)
+	 (format #t "unsensitize hit~%")
+	 (k (nonrecursive-closure-unsensitize-cache v-sensitivity) cs))
+	((tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
+	 ;; See the note in abstract-environment=?.
+	 (let ((u (make-nonrecursive-closure
+		   'unfilled
+		   (sensitivity-transform-inverse
+		    (nonrecursive-closure-lambda-expression v-sensitivity))
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   'unfilled)))
+	  (map-cps loop
+		   (get-nonrecursive-closure-values v-sensitivity)
+		   (cons (cons v-sensitivity u) cs)
+		   (lambda (vs cs)
+		    (fill-nonrecursive-closure-values! u vs)
+		    (k u cs)))))
+	(else
+	 (let ((u (ad-error
+		   "Argument to unsensitize ~a a non-sensitivity value"
+		   v-sensitivity)))
+	  (k u (cons (cons v-sensitivity u) cs))))))
       ((recursive-closure? v-sensitivity)
-       (if (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
-	   ;; See the note in abstract-environment=?.
-	   (let ((u (make-recursive-closure
-		     'unfilled
-		     (map-vector
-		      unsensitivityify
-		      (recursive-closure-procedure-variables v-sensitivity))
-		     (map-vector
-		      sensitivity-transform-inverse
-		      (recursive-closure-lambda-expressions v-sensitivity))
-		     (recursive-closure-index v-sensitivity)
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     'unfilled)))
-	    (map-cps loop
-		     (get-recursive-closure-values v-sensitivity)
-		     (cons (cons v-sensitivity u) cs)
-		     (lambda (vs cs)
-		      (fill-recursive-closure-values! u vs)
-		      (k u cs))))
-	   (let ((u (ad-error
-		     "Argument to unsensitize ~a a non-sensitivity value"
-		     v-sensitivity)))
-	    (k u (cons (cons v-sensitivity u) cs)))))
+       (cond
+	((recursive-closure-unsensitize-cache v-sensitivity)
+	 (format #t "unsensitize hit~%")
+	 (k (recursive-closure-unsensitize-cache v-sensitivity) cs))
+	((tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
+	 ;; See the note in abstract-environment=?.
+	 (let ((u (make-recursive-closure
+		   'unfilled
+		   (map-vector
+		    unsensitivityify
+		    (recursive-closure-procedure-variables v-sensitivity))
+		   (map-vector
+		    sensitivity-transform-inverse
+		    (recursive-closure-lambda-expressions v-sensitivity))
+		   (recursive-closure-index v-sensitivity)
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   'unfilled)))
+	  (map-cps loop
+		   (get-recursive-closure-values v-sensitivity)
+		   (cons (cons v-sensitivity u) cs)
+		   (lambda (vs cs)
+		    (fill-recursive-closure-values! u vs)
+		    (k u cs)))))
+	(else
+	 (let ((u (ad-error
+		   "Argument to unsensitize ~a a non-sensitivity value"
+		   v-sensitivity)))
+	  (k u (cons (cons v-sensitivity u) cs))))))
       ((perturbation-tagged-value? v-sensitivity)
-       (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-			  v-sensitivity)))
-	(k u (cons (cons v-sensitivity u) cs))))
-      ((bundle? v-sensitivity)
-       (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-			  v-sensitivity)))
-	(k u (cons (cons v-sensitivity u) cs))))
-      ((sensitivity-tagged-value? v-sensitivity)
-       (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
-	(k u (cons (cons v-sensitivity u) cs))))
-      ((reverse-tagged-value? v-sensitivity)
-       (let ((u (ad-error "Argument to unsensitize ~a a non-sensitivity value"
-			  v-sensitivity)))
-	(k u (cons (cons v-sensitivity u) cs))))
-      ((tagged-pair? v-sensitivity)
-       (if (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-	   (let ((u (make-tagged-pair
-		     (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
-		     'unfilled
-		     'unfilled
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     #f
-		     'unfilled)))
-	    (loop (get-tagged-pair-car v-sensitivity)
-		  (cons (cons v-sensitivity u) cs)
-		  (lambda (v-car cs)
-		   (loop (get-tagged-pair-cdr v-sensitivity)
-			 cs
-			 (lambda (v-cdr cs)
-			  (fill-tagged-pair! u v-car v-cdr)
-			  (k u cs))))))
+       (if (perturbation-tagged-value-unsensitize-cache v-sensitivity)
+	   (begin
+	    (format #t "unsensitize hit~%")
+	    (k (perturbation-tagged-value-unsensitize-cache v-sensitivity) cs))
 	   (let ((u (ad-error
 		     "Argument to unsensitize ~a a non-sensitivity value"
 		     v-sensitivity)))
 	    (k u (cons (cons v-sensitivity u) cs)))))
+      ((bundle? v-sensitivity)
+       (if (bundle-unsensitize-cache v-sensitivity)
+	   (begin (format #t "unsensitize hit~%")
+		  (k (bundle-unsensitize-cache v-sensitivity) cs))
+	   (let ((u (ad-error
+		     "Argument to unsensitize ~a a non-sensitivity value"
+		     v-sensitivity)))
+	    (k u (cons (cons v-sensitivity u) cs)))))
+      ((sensitivity-tagged-value? v-sensitivity)
+       (if (sensitivity-tagged-value-unsensitize-cache v-sensitivity)
+	   (begin
+	    (format #t "unsensitize hit~%")
+	    (k (sensitivity-tagged-value-unsensitize-cache v-sensitivity) cs))
+	   (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
+	    (k u (cons (cons v-sensitivity u) cs)))))
+      ((reverse-tagged-value? v-sensitivity)
+       (if (reverse-tagged-value-unsensitize-cache v-sensitivity)
+	   (begin
+	    (format #t "unsensitize hit~%")
+	    (k (reverse-tagged-value-unsensitize-cache v-sensitivity) cs))
+	   (let ((u (ad-error
+		     "Argument to unsensitize ~a a non-sensitivity value"
+		     v-sensitivity)))
+	    (k u (cons (cons v-sensitivity u) cs)))))
+      ((tagged-pair? v-sensitivity)
+       (cond
+	((tagged-pair-unsensitize-cache v-sensitivity)
+	 (format #t "unsensitize hit~%")
+	 (k (tagged-pair-unsensitize-cache v-sensitivity) cs))
+	((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
+	 (let ((u (make-tagged-pair
+		   (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
+		   'unfilled
+		   'unfilled
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   #f
+		   'unfilled)))
+	  (loop (get-tagged-pair-car v-sensitivity)
+		(cons (cons v-sensitivity u) cs)
+		(lambda (v-car cs)
+		 (loop (get-tagged-pair-cdr v-sensitivity)
+		       cs
+		       (lambda (v-cdr cs)
+			(fill-tagged-pair! u v-car v-cdr)
+			(k u cs)))))))
+	(else
+	 (let ((u (ad-error
+		   "Argument to unsensitize ~a a non-sensitivity value"
+		   v-sensitivity)))
+	  (k u (cons (cons v-sensitivity u) cs))))))
       (else (internal-error))))))))
 
 (define (plus v1 v2)
