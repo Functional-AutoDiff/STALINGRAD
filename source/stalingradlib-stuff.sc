@@ -82,7 +82,7 @@
 		     string
 		     (substring string 0 60))))
    (expander
-    (if #f				;debugging
+    (if #t				;debugging
 	`(time ,(format #f "~~a ~a~~%" string) (lambda () ,(second form)))
 	(second form))
     expander))))
@@ -4675,7 +4675,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   8
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+  (let ((v (if #f			;debugging
+	       (canonize-and-maybe-intern-abstract-value v)
+	       v)))
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v0 cs)
@@ -5022,7 +5024,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   9
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+  (let ((v (if #f			;debugging
+	       (canonize-and-maybe-intern-abstract-value v)
+	       v)))
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-perturbation cs)
@@ -5245,7 +5249,9 @@
  (time-it-bucket
   10
   (let ((v-perturbation
-	 (canonize-and-maybe-intern-abstract-value v-perturbation)))
+	 (if #f				;debugging
+	     (canonize-and-maybe-intern-abstract-value v-perturbation)
+	     v-perturbation)))
    (let loop ((v-perturbation v-perturbation)
 	      (cs '())
 	      (k (lambda (v cs)
@@ -5504,7 +5510,10 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   11
-  (let ((v-forward (canonize-and-maybe-intern-abstract-value v-forward)))
+  (let ((v-forward
+	 (if #f				;debugging
+	     (canonize-and-maybe-intern-abstract-value v-forward)
+	     v-forward)))
    (let loop ((v-forward v-forward)
 	      (cs '())
 	      (k (lambda (v cs)
@@ -5763,7 +5772,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   12
-  (let ((v-forward (canonize-and-maybe-intern-abstract-value v-forward)))
+  (let ((v-forward (if #f		;debugging
+		       (canonize-and-maybe-intern-abstract-value v-forward)
+		       v-forward)))
    (let loop ((v-forward v-forward)
 	      (cs '())
 	      (k (lambda (v-perturbation cs)
@@ -6651,7 +6662,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   14
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+  (let ((v (if #f			;debugging
+	       (canonize-and-maybe-intern-abstract-value v)
+	       v)))
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-sensitivity cs)
@@ -6927,7 +6940,9 @@
  (time-it-bucket
   16
   (let ((v-sensitivity
-	 (canonize-and-maybe-intern-abstract-value v-sensitivity)))
+	 (if #f				;debugging
+	     (canonize-and-maybe-intern-abstract-value v-sensitivity)
+	     v-sensitivity)))
    (let loop ((v-sensitivity v-sensitivity)
 	      (cs '())
 	      (k (lambda (v cs)
@@ -7400,7 +7415,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   18
-  (let ((v (canonize-and-maybe-intern-abstract-value v)))
+  (let ((v (if #f			;debugging
+	       (canonize-and-maybe-intern-abstract-value v)
+	       v)))
    (let loop ((v v)
 	      (cs '())
 	      (k (lambda (v-reverse cs)
@@ -7632,7 +7649,9 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   19
-  (let ((v-reverse (canonize-and-maybe-intern-abstract-value v-reverse)))
+  (let ((v-reverse (if #f		;debugging
+		       (canonize-and-maybe-intern-abstract-value v-reverse)
+		       v-reverse)))
    (let loop ((v-reverse v-reverse)
 	      (cs '())
 	      (k (lambda (v cs)
