@@ -5169,7 +5169,10 @@
  (time-it-bucket
   10
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-perturbation v-perturbation) (cs '()) (k (lambda (v cs) v)))
+   (let loop ((v-perturbation
+	       (canonize-and-maybe-intern-abstract-value v-perturbation))
+	      (cs '())
+	      (k (lambda (v cs) v)))
     (let ((found? (assq v-perturbation cs)))
      (cond
       (found? (k (cdr found?) cs))
@@ -5374,20 +5377,38 @@
  (time-it-bucket
   11
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-forward v-forward) (cs '()) (k (lambda (v cs) v)))
+   (let loop ((v-forward (canonize-and-maybe-intern-abstract-value v-forward))
+	      (cs '())
+	      (k (lambda (v cs) v)))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v-forward)
-       (let ((v
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v-forward)
-		 (cons (cons v-forward v) cs)
-		 (lambda (us cs)
-		  (fill-union-values! v us)
-		  (k v cs)))))
+       (if (union-primal-cache v-forward)
+	   (begin (format #t "primal hit~%")
+		  (k (union-primal-cache v-forward) cs))
+	   (let ((v (make-union 'unfilled
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				'unfilled)))
+	    (map-cps loop
+		     (union-members v-forward)
+		     (cons (cons v-forward v) cs)
+		     (lambda (us cs)
+		      (fill-union-values! v us)
+		      (k v cs))))))
       (else
        (let ((b (find-if
 		 (lambda (b)
@@ -5422,119 +5443,152 @@
 				 v-forward)))
 	       (k u (cons (cons v-forward u) cs))))
 	     ((nonrecursive-closure? v-forward)
-	      (if (tagged? 'forward (nonrecursive-closure-tags v-forward))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u (make-nonrecursive-closure
-			    'unfilled
-			    (forward-transform-inverse
-			     (nonrecursive-closure-lambda-expression
-			      v-forward))
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-		   (map-cps loop
-			    (get-nonrecursive-closure-values v-forward)
-			    (cons (cons v-forward u) cs)
-			    (lambda (vs cs)
-			     (fill-nonrecursive-closure-values! u vs)
-			     (k u cs))))
-		  (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				     v-forward)))
-		   (k u (cons (cons v-forward u) cs)))))
+	      (cond
+	       ((nonrecursive-closure-primal-cache v-forward)
+		(format #t "primal hit~%")
+		(k (nonrecursive-closure-primal-cache v-forward) cs))
+	       ((tagged? 'forward (nonrecursive-closure-tags v-forward))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-nonrecursive-closure
+			  'unfilled
+			  (forward-transform-inverse
+			   (nonrecursive-closure-lambda-expression
+			    v-forward))
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-nonrecursive-closure-values v-forward)
+			  (cons (cons v-forward u) cs)
+			  (lambda (vs cs)
+			   (fill-nonrecursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error "Argument to primal ~a a non-forward value"
+				   v-forward)))
+		 (k u (cons (cons v-forward u) cs))))))
 	     ((recursive-closure? v-forward)
-	      (if (tagged? 'forward (recursive-closure-tags v-forward))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u (make-recursive-closure
-			    'unfilled
-			    (map-vector
-			     unforwardify
-			     (recursive-closure-procedure-variables v-forward))
-			    (map-vector
-			     forward-transform-inverse
-			     (recursive-closure-lambda-expressions v-forward))
-			    (recursive-closure-index v-forward)
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-		   (map-cps loop
-			    (get-recursive-closure-values v-forward)
-			    (cons (cons v-forward u) cs)
-			    (lambda (vs cs)
-			     (fill-recursive-closure-values! u vs)
-			     (k u cs))))
-		  (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				     v-forward)))
-		   (k u (cons (cons v-forward u) cs)))))
+	      (cond
+	       ((recursive-closure-primal-cache v-forward)
+		(format #t "primal hit~%")
+		(k (recursive-closure-primal-cache v-forward) cs))
+	       ((tagged? 'forward (recursive-closure-tags v-forward))
+		;; See the note in abstract-environment=?.
+		(let ((u (make-recursive-closure
+			  'unfilled
+			  (map-vector
+			   unforwardify
+			   (recursive-closure-procedure-variables v-forward))
+			  (map-vector
+			   forward-transform-inverse
+			   (recursive-closure-lambda-expressions v-forward))
+			  (recursive-closure-index v-forward)
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (map-cps loop
+			  (get-recursive-closure-values v-forward)
+			  (cons (cons v-forward u) cs)
+			  (lambda (vs cs)
+			   (fill-recursive-closure-values! u vs)
+			   (k u cs)))))
+	       (else
+		(let ((u (ad-error "Argument to primal ~a a non-forward value"
+				   v-forward)))
+		 (k u (cons (cons v-forward u) cs))))))
 	     ((perturbation-tagged-value? v-forward)
-	      (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				 v-forward)))
-	       (k u (cons (cons v-forward u) cs))))
-	     ((bundle? v-forward)
-	      (let ((u (get-bundle-primal v-forward)))
-	       (k u (cons (cons v-forward u) cs))))
-	     ((sensitivity-tagged-value? v-forward)
-	      (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				 v-forward)))
-	       (k u (cons (cons v-forward u) cs))))
-	     ((reverse-tagged-value? v-forward)
-	      (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				 v-forward)))
-	       (k u (cons (cons v-forward u) cs))))
-	     ((tagged-pair? v-forward)
-	      (if (tagged? 'forward (tagged-pair-tags v-forward))
-		  (let ((u (make-tagged-pair
-			    (remove-tag 'forward (tagged-pair-tags v-forward))
-			    'unfilled
-			    'unfilled
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f 'unfilled)))
-		   (loop (get-tagged-pair-car v-forward)
-			 (cons (cons v-forward u) cs)
-			 (lambda (v-car cs)
-			  (loop (get-tagged-pair-cdr v-forward)
-				cs
-				(lambda (v-cdr cs)
-				 (fill-tagged-pair! u v-car v-cdr)
-				 (k u cs))))))
-		  (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				     v-forward)))
+	      (if (perturbation-tagged-value-primal-cache v-forward)
+		  (begin
+		   (format #t "primal hit~%")
+		   (k (perturbation-tagged-value-primal-cache v-forward) cs))
+		  (let ((u (ad-error
+			    "Argument to primal ~a a non-forward value"
+			    v-forward)))
 		   (k u (cons (cons v-forward u) cs)))))
+	     ((bundle? v-forward)
+	      (if (bundle-primal-cache v-forward)
+		  (begin (format #t "primal hit~%")
+			 (k (bundle-primal-cache v-forward) cs))
+		  (let ((u (get-bundle-primal v-forward)))
+		   (k u (cons (cons v-forward u) cs)))))
+	     ((sensitivity-tagged-value? v-forward)
+	      (if (sensitivity-tagged-value-primal-cache v-forward)
+		  (begin
+		   (format #t "primal hit~%")
+		   (k (sensitivity-tagged-value-primal-cache v-forward) cs))
+		  (let ((u (ad-error
+			    "Argument to primal ~a a non-forward value"
+			    v-forward)))
+		   (k u (cons (cons v-forward u) cs)))))
+	     ((reverse-tagged-value? v-forward)
+	      (if (reverse-tagged-value-primal-cache v-forward)
+		  (begin (format #t "primal hit~%")
+			 (k (reverse-tagged-value-primal-cache v-forward) cs))
+		  (let ((u (ad-error
+			    "Argument to primal ~a a non-forward value"
+			    v-forward)))
+		   (k u (cons (cons v-forward u) cs)))))
+	     ((tagged-pair? v-forward)
+	      (cond
+	       ((tagged-pair-primal-cache v-forward)
+		(format #t "primal hit~%")
+		(k (tagged-pair-primal-cache v-forward) cs))
+	       ((tagged? 'forward (tagged-pair-tags v-forward))
+		(let ((u (make-tagged-pair
+			  (remove-tag 'forward (tagged-pair-tags v-forward))
+			  'unfilled
+			  'unfilled
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  #f
+			  'unfilled)))
+		 (loop (get-tagged-pair-car v-forward)
+		       (cons (cons v-forward u) cs)
+		       (lambda (v-car cs)
+			(loop (get-tagged-pair-cdr v-forward)
+			      cs
+			      (lambda (v-cdr cs)
+			       (fill-tagged-pair! u v-car v-cdr)
+			       (k u cs)))))))
+	       (else
+		(let ((u (ad-error "Argument to primal ~a a non-forward value"
+				   v-forward)))
+		 (k u (cons (cons v-forward u) cs))))))
 	     (else (internal-error))))))))))))
 
 (define (tangent v-forward)
@@ -5542,22 +5596,38 @@
  (time-it-bucket
   12
   (canonize-and-maybe-intern-abstract-value
-   (let loop ((v-forward v-forward)
+   (let loop ((v-forward (canonize-and-maybe-intern-abstract-value v-forward))
 	      (cs '())
 	      (k (lambda (v-perturbation cs) v-perturbation)))
     (let ((found? (assq v-forward cs)))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v-forward)
-       (let ((v-perturbation
-	      (make-union
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-	(map-cps loop
-		 (union-members v-forward)
-		 (cons (cons v-forward v-perturbation) cs)
-		 (lambda (us-perturbation cs)
-		  (fill-union-values! v-perturbation us-perturbation)
-		  (k v-perturbation cs)))))
+       (if (union-tangent-cache v-forward)
+	   (begin (format #t "tangent hit~%")
+		  (k (union-tangent-cache v-forward) cs))
+	   (let ((v-perturbation (make-union 'unfilled
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     #f
+					     'unfilled)))
+	    (map-cps loop
+		     (union-members v-forward)
+		     (cons (cons v-forward v-perturbation) cs)
+		     (lambda (us-perturbation cs)
+		      (fill-union-values! v-perturbation us-perturbation)
+		      (k v-perturbation cs))))))
       (else
        (let ((b (find-if
 		 (lambda (b)
@@ -5597,141 +5667,174 @@
 			       v-forward)))
 	       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
 	     ((nonrecursive-closure? v-forward)
-	      (if (tagged? 'forward (nonrecursive-closure-tags v-forward))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u-perturbation
-			 (make-nonrecursive-closure
-			  'unfilled
-			  (perturbation-transform
-			   (forward-transform-inverse
-			    (nonrecursive-closure-lambda-expression
-			     v-forward)))
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  'unfilled)))
-		   (map-cps loop
-			    (get-nonrecursive-closure-values v-forward)
-			    (cons (cons v-forward u-perturbation) cs)
-			    (lambda (vs-perturbation cs)
-			     (fill-nonrecursive-closure-values!
-			      u-perturbation vs-perturbation)
-			     (k u-perturbation cs))))
-		  (let ((u-perturbation
-			 (ad-error "Argument to tangent ~a a non-forward value"
-				   v-forward)))
-		   (k u-perturbation
-		      (cons (cons v-forward u-perturbation) cs)))))
+	      (cond
+	       ((nonrecursive-closure-tangent-cache v-forward)
+		(format #t "tangent hit~%")
+		(k (nonrecursive-closure-tangent-cache v-forward) cs))
+	       ((tagged? 'forward (nonrecursive-closure-tags v-forward))
+		;; See the note in abstract-environment=?.
+		(let ((u-perturbation
+		       (make-nonrecursive-closure
+			'unfilled
+			(perturbation-transform
+			 (forward-transform-inverse
+			  (nonrecursive-closure-lambda-expression
+			   v-forward)))
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			'unfilled)))
+		 (map-cps loop
+			  (get-nonrecursive-closure-values v-forward)
+			  (cons (cons v-forward u-perturbation) cs)
+			  (lambda (vs-perturbation cs)
+			   (fill-nonrecursive-closure-values!
+			    u-perturbation vs-perturbation)
+			   (k u-perturbation cs)))))
+	       (else
+		(let ((u-perturbation
+		       (ad-error "Argument to tangent ~a a non-forward value"
+				 v-forward)))
+		 (k u-perturbation
+		    (cons (cons v-forward u-perturbation) cs))))))
 	     ((recursive-closure? v-forward)
-	      (if (tagged? 'forward (recursive-closure-tags v-forward))
-		  ;; See the note in abstract-environment=?.
-		  (let ((u-perturbation
-			 (make-recursive-closure
-			  'unfilled
-			  (map-vector
-			   (lambda (x) (perturbationify (unforwardify x)))
-			   (recursive-closure-procedure-variables v-forward))
-			  (map-vector
-			   (lambda (e)
-			    (perturbation-transform
-			     (forward-transform-inverse e)))
-			   (recursive-closure-lambda-expressions v-forward))
-			  (recursive-closure-index v-forward)
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  'unfilled)))
-		   (map-cps loop
-			    (get-recursive-closure-values v-forward)
-			    (cons (cons v-forward u-perturbation) cs)
-			    (lambda (vs-perturbation cs)
-			     (fill-recursive-closure-values!
-			      u-perturbation vs-perturbation)
-			     (k u-perturbation cs))))
-		  (let ((u-perturbation
-			 (ad-error "Argument to tangent ~a a non-forward value"
-				   v-forward)))
-		   (k u-perturbation
-		      (cons (cons v-forward u-perturbation) cs)))))
+	      (cond
+	       ((recursive-closure-tangent-cache v-forward)
+		(format #t "tangent hit~%")
+		(k (recursive-closure-tangent-cache v-forward) cs))
+	       ((tagged? 'forward (recursive-closure-tags v-forward))
+		;; See the note in abstract-environment=?.
+		(let ((u-perturbation
+		       (make-recursive-closure
+			'unfilled
+			(map-vector
+			 (lambda (x) (perturbationify (unforwardify x)))
+			 (recursive-closure-procedure-variables v-forward))
+			(map-vector
+			 (lambda (e)
+			  (perturbation-transform
+			   (forward-transform-inverse e)))
+			 (recursive-closure-lambda-expressions v-forward))
+			(recursive-closure-index v-forward)
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			'unfilled)))
+		 (map-cps loop
+			  (get-recursive-closure-values v-forward)
+			  (cons (cons v-forward u-perturbation) cs)
+			  (lambda (vs-perturbation cs)
+			   (fill-recursive-closure-values!
+			    u-perturbation vs-perturbation)
+			   (k u-perturbation cs)))))
+	       (else
+		(let ((u-perturbation
+		       (ad-error "Argument to tangent ~a a non-forward value"
+				 v-forward)))
+		 (k u-perturbation
+		    (cons (cons v-forward u-perturbation) cs))))))
 	     ((perturbation-tagged-value? v-forward)
-	      (let ((u-perturbation
-		     (ad-error "Argument to tangent ~a a non-forward value"
-			       v-forward)))
-	       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	     ((bundle? v-forward)
-	      (let ((u-perturbation (get-bundle-tangent v-forward)))
-	       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	     ((sensitivity-tagged-value? v-forward)
-	      (let ((u-perturbation
-		     (ad-error "Argument to tangent ~a a non-forward value"
-			       v-forward)))
-	       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	     ((reverse-tagged-value? v-forward)
-	      (let ((u-perturbation
-		     (ad-error "Argument to tangent ~a a non-forward value"
-			       v-forward)))
-	       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	     ((tagged-pair? v-forward)
-	      (if (tagged? 'forward (tagged-pair-tags v-forward))
-		  (let ((u-perturbation
-			 (make-tagged-pair
-			  (add-tag
-			   'perturbation
-			   (remove-tag 'forward (tagged-pair-tags v-forward)))
-			  'unfilled
-			  'unfilled
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  #f
-			  'unfilled)))
-		   (loop (get-tagged-pair-car v-forward)
-			 (cons (cons v-forward u-perturbation) cs)
-			 (lambda (v-car-perturbation cs)
-			  (loop (get-tagged-pair-cdr v-forward)
-				cs
-				(lambda (v-cdr-perturbation cs)
-				 (fill-tagged-pair! u-perturbation
-						    v-car-perturbation
-						    v-cdr-perturbation)
-				 (k u-perturbation cs))))))
+	      (if (perturbation-tagged-value-tangent-cache v-forward)
+		  (begin
+		   (format #t "tangent hit~%")
+		   (k (perturbation-tagged-value-tangent-cache v-forward) cs))
 		  (let ((u-perturbation
 			 (ad-error "Argument to tangent ~a a non-forward value"
 				   v-forward)))
 		   (k u-perturbation
 		      (cons (cons v-forward u-perturbation) cs)))))
+	     ((bundle? v-forward)
+	      (if (bundle-tangent-cache v-forward)
+		  (begin (format #t "tangent hit~%")
+			 (k (bundle-tangent-cache v-forward) cs))
+		  (let ((u-perturbation (get-bundle-tangent v-forward)))
+		   (k u-perturbation
+		      (cons (cons v-forward u-perturbation) cs)))))
+	     ((sensitivity-tagged-value? v-forward)
+	      (if (sensitivity-tagged-value-tangent-cache v-forward)
+		  (begin
+		   (format #t "tangent hit~%")
+		   (k (sensitivity-tagged-value-tangent-cache v-forward) cs))
+		  (let ((u-perturbation
+			 (ad-error "Argument to tangent ~a a non-forward value"
+				   v-forward)))
+		   (k u-perturbation
+		      (cons (cons v-forward u-perturbation) cs)))))
+	     ((reverse-tagged-value? v-forward)
+	      (if (reverse-tagged-value-tangent-cache v-forward)
+		  (begin (format #t "tangent hit~%")
+			 (k (reverse-tagged-value-tangent-cache v-forward) cs))
+		  (let ((u-perturbation
+			 (ad-error "Argument to tangent ~a a non-forward value"
+				   v-forward)))
+		   (k u-perturbation
+		      (cons (cons v-forward u-perturbation) cs)))))
+	     ((tagged-pair? v-forward)
+	      (cond
+	       ((tagged-pair-tangent-cache v-forward)
+		(format #t "tangent hit~%")
+		(k (tagged-pair-tangent-cache v-forward) cs))
+	       ((tagged? 'forward (tagged-pair-tags v-forward))
+		(let ((u-perturbation
+		       (make-tagged-pair
+			(add-tag
+			 'perturbation
+			 (remove-tag 'forward (tagged-pair-tags v-forward)))
+			'unfilled
+			'unfilled
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			#f
+			'unfilled)))
+		 (loop (get-tagged-pair-car v-forward)
+		       (cons (cons v-forward u-perturbation) cs)
+		       (lambda (v-car-perturbation cs)
+			(loop (get-tagged-pair-cdr v-forward)
+			      cs
+			      (lambda (v-cdr-perturbation cs)
+			       (fill-tagged-pair! u-perturbation
+						  v-car-perturbation
+						  v-cdr-perturbation)
+			       (k u-perturbation cs)))))))
+	       (else
+		(let ((u-perturbation
+		       (ad-error "Argument to tangent ~a a non-forward value"
+				 v-forward)))
+		 (k u-perturbation
+		    (cons (cons v-forward u-perturbation) cs))))))
 	     (else (internal-error))))))))))))
 
 (define (bundle v v-perturbation)
