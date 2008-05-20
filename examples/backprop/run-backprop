@@ -1,0 +1,25 @@
+#!/bin/tcsh -f
+time ./backprop <<EOF
+1
+EOF
+time ./backprop <<EOF
+10
+EOF
+time ./backprop <<EOF
+100
+EOF
+time ./backprop <<EOF
+1000
+EOF
+time ./backprop <<EOF
+10000
+EOF
+time ./backprop <<EOF
+100000
+EOF
+time ./backprop <<EOF
+1000000
+EOF
+time ./backprop <<EOF
+10000000
+EOF
