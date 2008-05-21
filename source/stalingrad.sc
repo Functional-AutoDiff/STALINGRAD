@@ -327,7 +327,7 @@
 		      (reverse *value-bindings*))))))
 	(loop (rest es) ds)))))
  ;; debugging
- (print-time-buckets))
+ (when #t (print-time-buckets)))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
 
