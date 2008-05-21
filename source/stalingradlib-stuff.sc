@@ -8443,13 +8443,34 @@
   ((variable-access-expression? e) (first vs))
   ((lambda-expression? e) (new-nonrecursive-closure vs e))
   ((application? e)
-   ;; This LET* is to specify the evaluation order.
-   (let* ((v1 (concrete-eval (application-callee e)
-			     (restrict-environment vs e application-callee)))
-	  (v2 (concrete-eval
-	       (application-argument e)
-	       (restrict-environment vs e application-argument))))
-    (concrete-apply v1 v2)))
+   (if (lambda-expression? (application-callee e))
+       ;; This handling of LET is an optimization. It affects the stack trace
+       ;; on error, tracing, and the tag-check error message.
+       (let ((v (concrete-eval
+		 (application-argument e)
+		 (restrict-environment vs e application-argument))))
+	(unless (prefix-tags? (lambda-expression-tags (application-callee e))
+			      (value-tags v))
+	 (run-time-error "Value has wrong type for let binder" v))
+	(let ((alist (concrete-destructure
+		      (lambda-expression-parameter (application-callee e)) v)))
+	 (concrete-eval
+	  (lambda-expression-body (application-callee e))
+	  (map
+	   (lambda (x)
+	    (let ((result (assp variable=? x alist)))
+	     (if result
+		 (cdr result)
+		 (list-ref vs (positionp variable=? x (free-variables e))))))
+	   (free-variables (lambda-expression-body (application-callee e)))))))
+       ;; This LET* is to specify the evaluation order.
+       (let* ((v1 (concrete-eval
+		   (application-callee e)
+		   (restrict-environment vs e application-callee)))
+	      (v2 (concrete-eval
+		   (application-argument e)
+		   (restrict-environment vs e application-argument))))
+	(concrete-apply v1 v2))))
   ((letrec-expression? e)
    (concrete-eval (letrec-expression-body e) (letrec-nested-environment vs e)))
   ((cons-expression? e)
@@ -9468,26 +9489,155 @@
 (define (abstract-eval! e)
  (cond
   ((application? e)
-   (for-each (lambda (b)
-	      (abstract-apply-prime!
-	       e
-	       (abstract-eval1
-		(application-callee e)
-		(restrict-environment
-		 (environment-binding-values b) e application-callee))
-	       (abstract-eval1
-		(application-argument e)
-		(restrict-environment
-		 (environment-binding-values b) e application-argument))))
-	     (expression-environment-bindings e))
-   (for-each
-    (lambda (b)
-     ;; This corresponds to call B to c:widen in generate-expression.
-     (let ((v (widen-abstract-value
-	       ;; Need to refresh my memory as to why this union is needed.
-	       (abstract-value-union
-		(environment-binding-value b)
-		(abstract-apply
+   (cond
+    ((lambda-expression? (application-callee e))
+     ;; This handling of LET is an optimization. See the note in concrete-eval.
+     (let ((e1 (lambda-expression-body (application-callee e))))
+      (for-each
+       (lambda (b)
+	(let ((v (abstract-eval1
+		  (application-argument e)
+		  (restrict-environment
+		   (environment-binding-values b) e application-argument))))
+	 (unless (empty-abstract-value? v)
+	  (cond
+	   ((every-value-tags
+	     (lambda (tags)
+	      (prefix-tags? (lambda-expression-tags (application-callee e))
+			    tags))
+	     v)
+	    ;; Multiple alist results from abstract-destructure imply that we
+	    ;; will do a dispatch as part of let to specialized bodies just as
+	    ;; we do for applications.
+	    (for-each
+	     (lambda (alist)
+	      (let ((vs (map (lambda (x)
+			      (let ((result (assp variable=? x alist)))
+			       (if result
+				   (cdr result)
+				   (list-ref
+				    (environment-binding-values b)
+				    (positionp
+				     variable=? x (free-variables e))))))
+			     (free-variables e1))))
+	       ;; See the note in abstract-eval-prime!
+	       ;; here I am: Can hoist this since it doesn't depend on alist
+	       ;;            or b. It only depends on alist being nonempty and
+	       ;;            v not being an empty abstract value.
+	       (unless (memp expression-eqv? e (expression-parents e1))
+		(set-expression-parents! e1 (cons e (expression-parents e1)))
+		(enqueue! e))
+	       (abstract-eval-prime! e1 vs)))
+	     (abstract-destructure
+	      (lambda-expression-parameter (application-callee e)) v)))
+	   ((some-value-tags
+	     (lambda (tags)
+	      (prefix-tags? (lambda-expression-tags (application-callee e))
+			    tags))
+	     v)
+	    (compile-time-warning
+	     "Value might have wrong type for let binder" v)
+	    ;; See the note above regarding alist.
+	    (for-each
+	     (lambda (alist)
+	      (let ((vs (map (lambda (x)
+			      (let ((result (assp variable=? x alist)))
+			       (if result
+				   (cdr result)
+				   (list-ref
+				    (environment-binding-values b)
+				    (positionp
+				     variable=? x (free-variables e))))))
+			     (free-variables e1))))
+	       ;; See the note in abstract-eval-prime!
+	       ;; here I am: Can hoist this since it doesn't depend on alist
+	       ;;            or b. It only depends on alist being nonempty and
+	       ;;            v not being an empty abstract value.
+	       (unless (memp expression-eqv? e (expression-parents e1))
+		(set-expression-parents! e1 (cons e (expression-parents e1)))
+		(enqueue! e))
+	       (abstract-eval-prime! e1 vs)))
+	     (abstract-destructure
+	      (lambda-expression-parameter (application-callee e)) v)))
+	   (else (compile-time-warning
+		  "Value might have wrong type for let binder" v))))))
+       (expression-environment-bindings e))
+      (for-each
+       (lambda (b)
+	(let* ((v (abstract-eval1
+		   (application-argument e)
+		   (restrict-environment
+		    (environment-binding-values b) e application-argument)))
+	       ;; This corresponds to call B-prime to c:widen in
+	       ;; generate-expression.
+	       (v (widen-abstract-value
+		   ;; Need to refresh my memory as to why this union is needed.
+		   (abstract-value-union
+		    (environment-binding-value b)
+		    (cond
+		     ((every-value-tags
+		       (lambda (tags)
+			(prefix-tags?
+			 (lambda-expression-tags (application-callee e)) tags))
+		       v)
+		      (unionize
+		       (map
+			;; See the note above regarding alist.
+			(lambda (alist)
+			 (abstract-eval1
+			  e1
+			  (map (lambda (x)
+				(let ((result (assp variable=? x alist)))
+				 (if result
+				     (cdr result)
+				     (list-ref
+				      (environment-binding-values b)
+				      (positionp
+				       variable=? x (free-variables e))))))
+			       (free-variables e1))))
+			(abstract-destructure
+			 (lambda-expression-parameter (application-callee e))
+			 v))))
+		     ((some-value-tags
+		       (lambda (tags)
+			(prefix-tags?
+			 (lambda-expression-tags (application-callee e)) tags))
+		       v)
+		      (compile-time-warning
+		       "Value might have wrong type for let binder" v)
+		      (unionize
+		       (map
+			;; See the note above regarding alist.
+			(lambda (alist)
+			 (abstract-eval1
+			  e1
+			  (map (lambda (x)
+				(let ((result (assp variable=? x alist)))
+				 (if result
+				     (cdr result)
+				     (list-ref
+				      (environment-binding-values b)
+				      (positionp
+				       variable=? x (free-variables e))))))
+			       (free-variables e1))))
+			(abstract-destructure
+			 (lambda-expression-parameter (application-callee e))
+			 v))))
+		     (else
+		      (compile-time-warning
+		       "Value might have wrong type for let binder" v)))))))
+	 ;; With the above union the old value will always be a subset of the
+	 ;; new value by a precise calculation but might not be given that the
+	 ;; subset calculation is imprecise. Need to document example where
+	 ;; this occurs.
+	 (unless (abstract-value-subset? v (environment-binding-value b))
+	  (set-environment-binding-value! b v)
+	  (for-each enqueue! (expression-parents e)))))
+       (expression-environment-bindings e))))
+    (else
+     (for-each (lambda (b)
+		(abstract-apply-prime!
+		 e
 		 (abstract-eval1
 		  (application-callee e)
 		  (restrict-environment
@@ -9495,14 +9645,33 @@
 		 (abstract-eval1
 		  (application-argument e)
 		  (restrict-environment
-		   (environment-binding-values b) e application-argument)))))))
-      ;; With the above union the old value will always be a subset of the new
-      ;; value by a precise calculation but might not be given that the subset
-      ;; calculation is imprecise. Need to document example where this occurs.
-      (unless (abstract-value-subset? v (environment-binding-value b))
-       (set-environment-binding-value! b v)
-       (for-each enqueue! (expression-parents e)))))
-    (expression-environment-bindings e)))
+		   (environment-binding-values b) e application-argument))))
+	       (expression-environment-bindings e))
+     (for-each
+      (lambda (b)
+       ;; This corresponds to call B to c:widen in generate-expression.
+       (let ((v (widen-abstract-value
+		 ;; Need to refresh my memory as to why this union is needed.
+		 (abstract-value-union
+		  (environment-binding-value b)
+		  (abstract-apply
+		   (abstract-eval1
+		    (application-callee e)
+		    (restrict-environment
+		     (environment-binding-values b) e application-callee))
+		   (abstract-eval1
+		    (application-argument e)
+		    (restrict-environment (environment-binding-values b)
+					  e
+					  application-argument)))))))
+	;; With the above union the old value will always be a subset of the
+	;; new value by a precise calculation but might not be given that the
+	;; subset calculation is imprecise. Need to document example where this
+	;; occurs.
+	(unless (abstract-value-subset? v (environment-binding-value b))
+	 (set-environment-binding-value! b v)
+	 (for-each enqueue! (expression-parents e)))))
+      (expression-environment-bindings e)))))
   ((letrec-expression? e)
    (for-each
     (lambda (b)
@@ -9699,28 +9868,49 @@
 	    (expression-environment-bindings e)))
      (for-each enqueue! (expression-parents e)))
     ((application? e)
-     (set-expression-environment-bindings!
-      e
-      (cons (make-environment-binding
-	     (map widen-abstract-value vs) (empty-abstract-value))
-	    (expression-environment-bindings e)))
-     ;; Can't give an error if parent already in list since could have done
-     ;; this for a different context.
-     (unless (memp
-	      expression-eqv? e (expression-parents (application-callee e)))
-      (set-expression-parents!
-       (application-callee e)
-       (cons e (expression-parents (application-callee e)))))
-     (unless (memp
-	      expression-eqv? e (expression-parents (application-argument e)))
-      (set-expression-parents!
-       (application-argument e)
-       (cons e (expression-parents (application-argument e)))))
-     (loop (application-callee e)
-	   (restrict-environment vs e application-callee))
-     (loop (application-argument e)
-	   (restrict-environment vs e application-argument))
-     (enqueue! e))
+     (cond
+      ((lambda-expression? (application-callee e))
+       ;; This handling of LET is an optimization.
+       (set-expression-environment-bindings!
+	e
+	(cons (make-environment-binding
+	       (map widen-abstract-value vs) (empty-abstract-value))
+	      (expression-environment-bindings e)))
+       ;; Can't give an error if parent already in list since could have done
+       ;; this for a different context.
+       (unless (memp expression-eqv?
+		     e
+		     (expression-parents (application-argument e)))
+	(set-expression-parents!
+	 (application-argument e)
+	 (cons e (expression-parents (application-argument e)))))
+       (loop (application-argument e)
+	     (restrict-environment vs e application-argument))
+       (enqueue! e))
+      (else
+       (set-expression-environment-bindings!
+	e
+	(cons (make-environment-binding
+	       (map widen-abstract-value vs) (empty-abstract-value))
+	      (expression-environment-bindings e)))
+       ;; Can't give an error if parent already in list since could have done
+       ;; this for a different context.
+       (unless (memp
+		expression-eqv? e (expression-parents (application-callee e)))
+	(set-expression-parents!
+	 (application-callee e)
+	 (cons e (expression-parents (application-callee e)))))
+       (unless (memp expression-eqv?
+		     e
+		     (expression-parents (application-argument e)))
+	(set-expression-parents!
+	 (application-argument e)
+	 (cons e (expression-parents (application-argument e)))))
+       (loop (application-callee e)
+	     (restrict-environment vs e application-callee))
+       (loop (application-argument e)
+	     (restrict-environment vs e application-argument))
+       (enqueue! e))))
     ((letrec-expression? e)
      (set-expression-environment-bindings!
       e
@@ -9728,8 +9918,9 @@
 	     (map widen-abstract-value vs) (empty-abstract-value))
 	    (expression-environment-bindings e)))
      ;; Ditto.
-     (unless (memp
-	      expression-eqv? e (expression-parents (letrec-expression-body e)))
+     (unless (memp expression-eqv?
+		   e
+		   (expression-parents (letrec-expression-body e)))
       (set-expression-parents!
        (letrec-expression-body e)
        (cons e (expression-parents (letrec-expression-body e)))))
@@ -10719,7 +10910,9 @@
   union-function-instances
   '()
   (lambda (e)
-   (if (application? e)
+   (if (and (application? e)
+	    ;; This handling of LET is an optimization.
+	    (not (lambda-expression? (application-callee e))))
        (map-reduce
 	union-function-instances
 	'()
@@ -10873,8 +11066,8 @@
 	    k))
     ((scalar-value? v2)
      (k (adjoinp widener-instance=? (make-widener-instance v1 v2) n) cs))
-    ;; This will only be done on conforming structures since the
-    ;; analysis is almost union free.
+    ;; This will only be done on conforming structures since the analysis is
+    ;; almost union free.
     (else (let inner ((vs1 (aggregate-value-values v1))
 		      (vs2 (aggregate-value-values v2))
 		      (cs (cons (cons v1 v2) cs))
@@ -10960,10 +11153,24 @@
  (feedback-topological-sort
   widener-instance=?
   (lambda (widener-instance)
-   (cross-product
-    make-widener-instance
-    (abstract-values-before (widener-instance-v1 widener-instance))
-    (abstract-values-before (widener-instance-v2 widener-instance))))
+   (cond
+    ;; See the note for this case in all-subwidener-instances.
+    ((union? (widener-instance-v1 widener-instance))
+     (map (lambda (u1)
+	   (make-widener-instance u1 (widener-instance-v2 widener-instance)))
+	  (get-union-values (widener-instance-v1 widener-instance))))
+    ;; See the notes for this case in all-subwidener-instances.
+    ((union? (widener-instance-v2 widener-instance))
+     (map (lambda (u2)
+	   (make-widener-instance (widener-instance-v1 widener-instance) u2))
+	  (get-union-values (widener-instance-v2 widener-instance))))
+    ((real? (widener-instance-v1 widener-instance)) '())
+    (else
+     ;; This will only be done on conforming structures since the analysis is
+     ;; almost union free.
+     (map make-widener-instance
+	  (aggregate-value-values (widener-instance-v1 widener-instance))
+	  (aggregate-value-values (widener-instance-v2 widener-instance))))))
   ;; here I am: Need better choice function.
   first
   (union-widener-instances
@@ -10984,62 +11191,124 @@
 	  (new-nonrecursive-closure (environment-binding-values b) e)
 	  (environment-binding-value b)))
 	((application? e)
-	 (let ((v1 (abstract-eval1
-		    (application-callee e)
-		    (restrict-environment
-		     (environment-binding-values b) e application-callee)))
-	       (v2 (abstract-eval1
-		    (application-argument e)
-		    (restrict-environment
-		     (environment-binding-values b) e application-argument))))
-	  (union-widener-instances
-	   (all-subwidener-instances
-	    (abstract-apply v1 v2)
-	    (environment-binding-value b))
-	   (cond
-	    ((union? v1)
-	     (map-reduce union-widener-instances
-			 '()
-			 (lambda (u1)
-			  (all-subwidener-instances
-			   (abstract-apply u1 v2) (abstract-apply v1 v2)))
-			 (get-union-values v1)))
-	    ((closure? v1) '())
-	    ((and (primitive-procedure? v1)
-		  (eq? (primitive-procedure-name v1) 'if-procedure))
-	     (assert (and (vlad-pair? v2)
-			  (vlad-pair? (vlad-cdr v2))
-			  (closure? (vlad-car (vlad-cdr v2)))
-			  (closure? (vlad-cdr (vlad-cdr v2)))))
-	     (let* ((v3 (vlad-car v2))
-		    (v4 (vlad-cdr v2))
-		    (v5 (vlad-car v4))
-		    (v6 (vlad-cdr v4))
-		    (v7 (cond ((and (some vlad-false? (union-members v3))
-				    (some (lambda (u) (not (vlad-false? u)))
-					  (union-members v3)))
-			       ;; here I am: The result might violate the
-			       ;;            syntactic constraints.
-			       (abstract-value-union
-				(abstract-apply v5 (vlad-empty-list))
-				(abstract-apply v6 (vlad-empty-list))))
-			      ((some vlad-false? (union-members v3))
-			       (abstract-apply v6 (vlad-empty-list)))
-			      ((some (lambda (u) (not (vlad-false? u)))
-				     (union-members v3))
-			       (abstract-apply v5 (vlad-empty-list)))
-			      (else (internal-error)))))
-	      (if (and (not (void? v7))
-		       (some vlad-false? (union-members v3))
-		       (some (lambda (u) (not (vlad-false? u)))
-			     (union-members v3)))
-		  (union-widener-instances
-		   (all-subwidener-instances
-		    (abstract-apply v5 (vlad-empty-list)) v7)
-		   (all-subwidener-instances
-		    (abstract-apply v6 (vlad-empty-list)) v7))
-		  '())))
-	    (else '())))))
+	 (if (lambda-expression? (application-callee e))
+	     ;; This handling of LET is an optimization.
+	     (let ((e1 (lambda-expression-body (application-callee e)))
+		   (v
+		    (abstract-eval1
+		     (application-argument e)
+		     (restrict-environment
+		      (environment-binding-values b) e application-argument))))
+
+	      (all-subwidener-instances
+	       (cond
+		((every-value-tags
+		  (lambda (tags)
+		   (prefix-tags?
+		    (lambda-expression-tags (application-callee e)) tags))
+		  v)
+		 (unionize
+		  (map
+		   ;; See the note about multiple alists in abstract-eval!.
+		   (lambda (alist)
+		    (abstract-eval1
+		     e1
+		     (map (lambda (x)
+			   (let ((result (assp variable=? x alist)))
+			    (if result
+				(cdr result)
+				(list-ref
+				 (environment-binding-values b)
+				 (positionp
+				  variable=? x (free-variables e))))))
+			  (free-variables e1))))
+		   (abstract-destructure
+		    (lambda-expression-parameter (application-callee e)) v))))
+		((some-value-tags
+		  (lambda (tags)
+		   (prefix-tags?
+		    (lambda-expression-tags (application-callee e)) tags))
+		  v)
+		 (compile-time-warning
+		  "Value might have wrong type for let binder" v)
+		 (unionize
+		  (map
+		   ;; See the note about multiple alists in abstract-eval!.
+		   (lambda (alist)
+		    (abstract-eval1
+		     e1
+		     (map (lambda (x)
+			   (let ((result (assp variable=? x alist)))
+			    (if result
+				(cdr result)
+				(list-ref
+				 (environment-binding-values b)
+				 (positionp
+				  variable=? x (free-variables e))))))
+			  (free-variables e1))))
+		   (abstract-destructure
+		    (lambda-expression-parameter (application-callee e)) v))))
+		(else (compile-time-warning
+		       "Value might have wrong type for let binder" v)))
+	       (environment-binding-value b)))
+	     (let ((v1 (abstract-eval1
+			(application-callee e)
+			(restrict-environment
+			 (environment-binding-values b) e application-callee)))
+		   (v2
+		    (abstract-eval1
+		     (application-argument e)
+		     (restrict-environment
+		      (environment-binding-values b) e application-argument))))
+	      (union-widener-instances
+	       (all-subwidener-instances
+		(abstract-apply v1 v2)
+		(environment-binding-value b))
+	       (cond
+		((union? v1)
+		 (map-reduce union-widener-instances
+			     '()
+			     (lambda (u1)
+			      (all-subwidener-instances
+			       (abstract-apply u1 v2) (abstract-apply v1 v2)))
+			     (get-union-values v1)))
+		((closure? v1) '())
+		((and (primitive-procedure? v1)
+		      (eq? (primitive-procedure-name v1) 'if-procedure))
+		 (assert (and (vlad-pair? v2)
+			      (vlad-pair? (vlad-cdr v2))
+			      (closure? (vlad-car (vlad-cdr v2)))
+			      (closure? (vlad-cdr (vlad-cdr v2)))))
+		 (let* ((v3 (vlad-car v2))
+			(v4 (vlad-cdr v2))
+			(v5 (vlad-car v4))
+			(v6 (vlad-cdr v4))
+			(v7 (cond
+			     ((and (some vlad-false? (union-members v3))
+				   (some (lambda (u) (not (vlad-false? u)))
+					 (union-members v3)))
+			      ;; here I am: The result might violate the
+			      ;;            syntactic constraints.
+			      (abstract-value-union
+			       (abstract-apply v5 (vlad-empty-list))
+			       (abstract-apply v6 (vlad-empty-list))))
+			     ((some vlad-false? (union-members v3))
+			      (abstract-apply v6 (vlad-empty-list)))
+			     ((some (lambda (u) (not (vlad-false? u)))
+				    (union-members v3))
+			      (abstract-apply v5 (vlad-empty-list)))
+			     (else (internal-error)))))
+		  (if (and (not (void? v7))
+			   (some vlad-false? (union-members v3))
+			   (some (lambda (u) (not (vlad-false? u)))
+				 (union-members v3)))
+		      (union-widener-instances
+		       (all-subwidener-instances
+			(abstract-apply v5 (vlad-empty-list)) v7)
+		       (all-subwidener-instances
+			(abstract-apply v6 (vlad-empty-list)) v7))
+		      '())))
+		(else '()))))))
 	((letrec-expression? e)
 	 (union-widener-instances
 	  (all-subwidener-instances
@@ -11205,32 +11474,59 @@
 	(assert (= (length vs) (length (free-variables e))))
 	(cond
 	 ((application? e)
-	  (let ((v1 (abstract-eval1
-		     (application-callee e)
-		     (restrict-environment vs e application-callee)))
-		(v2 (abstract-eval1
-		     (application-argument e)
-		     (restrict-environment vs e application-argument))))
-	   (union-if-and-function-instances
-	    (map-reduce
-	     union-if-and-function-instances
-	     '()
-	     (lambda (u1)
-	      (cond ((and (primitive-procedure? u1)
-			  (eq? (primitive-procedure-name u1) 'if-procedure))
-		     (assert (and (vlad-pair? v2)
-				  (vlad-pair? (vlad-cdr v2))
-				  (closure? (vlad-car (vlad-cdr v2)))
-				  (closure? (vlad-cdr (vlad-cdr v2)))))
-		     (list (make-if-instance v2)))
-		    ((closure? u1) (list (make-function-instance u1 v2)))
-		    (else '())))
-	     (union-members v1))
-	    (union-if-and-function-instances
-	     (loop (application-callee e)
-		   (restrict-environment vs e application-callee))
-	     (loop (application-argument e)
-		   (restrict-environment vs e application-argument))))))
+	  (if (lambda-expression? (application-callee e))
+	      ;; This handling of LET is an optimization.
+	      (let ((v (abstract-eval1
+			(application-argument e)
+			(restrict-environment vs e application-argument))))
+	       (union-if-and-function-instances
+		(map-reduce
+		 union-if-and-function-instances
+		 '()
+		 ;; See the note about multiple alists in abstract-eval!.
+		 (lambda (alist)
+		  (loop (lambda-expression-body (application-callee e))
+			(map
+			 (lambda (x)
+			  (let ((result (assp variable=? x alist)))
+			   (if result
+			       (cdr result)
+			       (list-ref
+				vs
+				(positionp variable=? x (free-variables e))))))
+			 (free-variables
+			  (lambda-expression-body (application-callee e))))))
+		 (abstract-destructure
+		  (lambda-expression-parameter (application-callee e)) v))
+		(loop (application-argument e)
+		      (restrict-environment vs e application-argument))))
+	      (let ((v1 (abstract-eval1
+			 (application-callee e)
+			 (restrict-environment vs e application-callee)))
+		    (v2 (abstract-eval1
+			 (application-argument e)
+			 (restrict-environment vs e application-argument))))
+	       (union-if-and-function-instances
+		(map-reduce
+		 union-if-and-function-instances
+		 '()
+		 (lambda (u1)
+		  (cond
+		   ((and (primitive-procedure? u1)
+			 (eq? (primitive-procedure-name u1) 'if-procedure))
+		    (assert (and (vlad-pair? v2)
+				 (vlad-pair? (vlad-cdr v2))
+				 (closure? (vlad-car (vlad-cdr v2)))
+				 (closure? (vlad-cdr (vlad-cdr v2)))))
+		    (list (make-if-instance v2)))
+		   ((closure? u1) (list (make-function-instance u1 v2)))
+		   (else '())))
+		 (union-members v1))
+		(union-if-and-function-instances
+		 (loop (application-callee e)
+		       (restrict-environment vs e application-callee))
+		 (loop (application-argument e)
+		       (restrict-environment vs e application-argument)))))))
 	 ((letrec-expression? e)
 	  (loop (letrec-expression-body e)
 		(map widen-abstract-value (letrec-nested-environment vs e))))
@@ -11749,6 +12045,7 @@
  ;;            expressions and to convert run-time-error to c:panic.
  (cond
   ((constant-expression? p)
+   (when (union? v) (unimplemented))
    ;; needs work: To generate run-time equivalence check when the constant
    ;;             expression parameter and/or argument contain abstract
    ;;             booleans or abstract reals. When we do so, we need to call
@@ -11776,6 +12073,7 @@
 	v (c:variable-name (variable-access-expression-variable p)) code)
        '()))
   ((lambda-expression? p)
+   (when (union? v) (unimplemented))
    (unless (and (nonrecursive-closure? v)
 		(dereferenced-expression-eqv?
 		 p (nonrecursive-closure-lambda-expression v)))
@@ -11793,6 +12091,7 @@
 	(nonrecursive-closure-variables v)
 	(get-nonrecursive-closure-values v)))
   ((letrec-expression? p)
+   (when (union? v) (unimplemented))
    (assert (and (variable-access-expression? (letrec-expression-body p))
 		(memp variable=?
 		      (variable-access-expression-variable
@@ -11827,6 +12126,7 @@
 	(recursive-closure-variables v)
 	(get-recursive-closure-values v)))
   ((cons-expression? p)
+   (when (union? v) (unimplemented))
    (unless (and (tagged-pair? v)
 		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
     (run-time-error
@@ -11884,33 +12184,139 @@
 		  vs))
     widener-instances))
   ((application? e)
-   ;; We don't check the "Argument has wrong type for target" condition.
-   (let ((v1 (abstract-eval1 (application-callee e)
-			     (restrict-environment vs e application-callee)))
-	 (v2 (abstract-eval1
-	      (application-argument e)
-	      (restrict-environment vs e application-argument))))
-    ;; This corresponds to call B to widen-abstract-value in abstract-eval!.
-    (c:widen
-     (abstract-apply v1 v2)
-     (abstract-eval1 e vs)
-     (cond
-      ((union? v1)
-       (c:let
-	v1
-	"y"
-	(generate-expression (application-callee e)
-			     (restrict-environment vs e application-callee)
-			     v0
-			     xs
-			     xs2
-			     bs
-			     function-instances
-			     widener-instances)
-	(c:dispatch
-	 v1
-	 "y"
-	 (map (lambda (code1 u1)
+   (if (lambda-expression? (application-callee e))
+       ;; This handling of LET is an optimization.
+       ;; We don't check the "Argument has wrong type for target" condition.
+       (let ((v (abstract-eval1
+		 (application-argument e)
+		 (restrict-environment vs e application-argument)))
+	     (e1 (lambda-expression-body (application-callee e))))
+	;; This corresponds to call B-prime to widen-abstract-value in
+	;; abstract-eval!.
+	(c:widen
+	 (cond
+	  ((every-value-tags
+	    (lambda (tags)
+	     (prefix-tags?
+	      (lambda-expression-tags (application-callee e)) tags))
+	    v)
+	   (unionize
+	    (map
+	     ;; See the note about multiple alists in abstract-eval!.
+	     (lambda (alist)
+	      (abstract-eval1
+	       e1
+	       (map (lambda (x)
+		     (let ((result (assp variable=? x alist)))
+		      (if result
+			  (cdr result)
+			  (list-ref
+			   vs (positionp variable=? x (free-variables e))))))
+		    (free-variables e1))))
+	     (abstract-destructure
+	      (lambda-expression-parameter (application-callee e)) v))))
+	  ((some-value-tags
+	    (lambda (tags)
+	     (prefix-tags?
+	      (lambda-expression-tags (application-callee e)) tags))
+	    v)
+	   (compile-time-warning
+	    "Value might have wrong type for let binder" v)
+	   (unionize
+	    (map
+	     ;; See the note about multiple alists in abstract-eval!.
+	     (lambda (alist)
+	      (abstract-eval1
+	       e1
+	       (map (lambda (x)
+		     (let ((result (assp variable=? x alist)))
+		      (if result
+			  (cdr result)
+			  (list-ref
+			   vs (positionp variable=? x (free-variables e))))))
+		    (free-variables e1))))
+	     (abstract-destructure
+	      (lambda-expression-parameter (application-callee e)) v))))
+	  (else (compile-time-warning
+		 "Value might have wrong type for let binder" v)))
+	 (abstract-eval1 e vs)
+	 (c:let
+	  v
+	  "z"
+	  ;; here I am: widen?
+	  (if (void? v)
+	      '()
+	      (generate-expression
+	       (application-argument e)
+	       (restrict-environment vs e application-argument)
+	       v0
+	       xs
+	       xs2
+	       bs
+	       function-instances
+	       widener-instances))
+	  ;; abstraction
+	  (list
+	   "("
+	   "{"
+	   ;; here I am: need to handle the possibility that destructuring
+	   ;;            might dispatch
+	   (generate-destructure
+	    (lambda-expression-parameter (application-callee e)) e1 v "z")
+	   (let ((alists
+		  (abstract-destructure
+		   (lambda-expression-parameter (application-callee e)) v)))
+	    (assert (= (length alists) 1))
+	    (let ((alist (first alists)))
+	     (generate-expression
+	      e1
+	      (map (lambda (x)
+		    (let ((result (assp variable=? x alist)))
+		     (if result
+			 (cdr result)
+			 (list-ref
+			  vs (positionp variable=? x (free-variables e))))))
+		   (free-variables e1))
+	      v0
+	      xs
+	      xs2
+	      bs
+	      function-instances
+	      widener-instances)))
+	   ";"
+	   "}"
+	   ")"))
+	 widener-instances))
+       ;; We don't check the "Argument has wrong type for target" condition.
+       (let ((v1 (abstract-eval1
+		  (application-callee e)
+		  (restrict-environment vs e application-callee)))
+	     (v2 (abstract-eval1
+		  (application-argument e)
+		  (restrict-environment vs e application-argument))))
+	;; This corresponds to call B to widen-abstract-value in
+	;; abstract-eval!.
+	(c:widen
+	 (abstract-apply v1 v2)
+	 (abstract-eval1 e vs)
+	 (cond
+	  ((union? v1)
+	   (c:let
+	    v1
+	    "y"
+	    (generate-expression (application-callee e)
+				 (restrict-environment vs e application-callee)
+				 v0
+				 xs
+				 xs2
+				 bs
+				 function-instances
+				 widener-instances)
+	    (c:dispatch
+	     v1
+	     "y"
+	     (map
+	      (lambda (code1 u1)
 	       (c:widen
 		(abstract-apply u1 v2)
 		(abstract-apply v1 v2)
@@ -11949,47 +12355,47 @@
 		widener-instances))
 	      (generate-slot-names v1)
 	      (get-union-values v1)))))
-      ((primitive-procedure? v1)
-       (c:call ((primitive-procedure-generator v1) v2)
-	       (if (void? v2)
-		   '()
-		   (generate-expression
-		    (application-argument e)
-		    (restrict-environment vs e application-argument)
-		    v0
-		    xs
-		    xs2
-		    bs
-		    function-instances
-		    widener-instances))))
-      ((closure? v1)
-       (c:call (c:function-name v1 v2 function-instances)
-	       ;; here I am: widen?
-	       (if (void? v1)
-		   '()
-		   (generate-expression
-		    (application-callee e)
-		    (restrict-environment vs e application-callee)
-		    v0
-		    xs
-		    xs2
-		    bs
-		    function-instances
-		    widener-instances))
-	       ;; here I am: widen?
-	       (if (void? v2)
-		   '()
-		   (generate-expression
-		    (application-argument e)
-		    (restrict-environment vs e application-argument)
-		    v0
-		    xs
-		    xs2
-		    bs
-		    function-instances
-		    widener-instances))))
-      (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))
-     widener-instances)))
+	  ((primitive-procedure? v1)
+	   (c:call ((primitive-procedure-generator v1) v2)
+		   (if (void? v2)
+		       '()
+		       (generate-expression
+			(application-argument e)
+			(restrict-environment vs e application-argument)
+			v0
+			xs
+			xs2
+			bs
+			function-instances
+			widener-instances))))
+	  ((closure? v1)
+	   (c:call (c:function-name v1 v2 function-instances)
+		   ;; here I am: widen?
+		   (if (void? v1)
+		       '()
+		       (generate-expression
+			(application-callee e)
+			(restrict-environment vs e application-callee)
+			v0
+			xs
+			xs2
+			bs
+			function-instances
+			widener-instances))
+		   ;; here I am: widen?
+		   (if (void? v2)
+		       '()
+		       (generate-expression
+			(application-argument e)
+			(restrict-environment vs e application-argument)
+			v0
+			xs
+			xs2
+			bs
+			function-instances
+			widener-instances))))
+	  (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))
+	 widener-instances))))
   ((letrec-expression? e)
    ;; This corresponds to call C to widen-abstract-value in abstract-eval!.
    (c:widen (abstract-eval1 (letrec-expression-body e)
@@ -12205,8 +12611,7 @@
 			     (get-union-values v2))))
 	   (c:call (c:unioner-name u2 v2)
 		   (if (void? u2) '() (c:widen v1 u2 "x" widener-instances)))))
-	 ;; This assumes that Scheme inexact numbers are printed as C
-	 ;; doubles.
+	 ;; This assumes that Scheme inexact numbers are printed as C doubles.
 	 ((real? v1) (exact->inexact v1))
 	 (else
 	  (c:call*
@@ -13057,11 +13462,13 @@
 			    (c:specifier-parameter v2 "x"))
      ;; abstraction
      (list
-      ;; here I am
+      ;; here I am: need to handle the possibility that destructuring might
+      ;;            dispatch
       (generate-destructure (closure-parameter v1) (closure-body v1) v2 "x")
       (generate-letrec-bindings
        (closure-body v1)
-       ;; here I am
+       ;; here I am: need to handle the possibility that destructuring might
+       ;;            dispatch
        (let ((vss (construct-abstract-environments v1 v2)))
 	(assert (= (length vss) 1))
 	(map widen-abstract-value (first vss)))
@@ -13074,7 +13481,8 @@
       (c:return
        (generate-expression
 	(closure-body v1)
-	;; here I am
+	;; here I am: need to handle the possibility that destructuring might
+	;;            dispatch
 	(let ((vss (construct-abstract-environments v1 v2)))
 	 (assert (= (length vss) 1))
 	 (map widen-abstract-value (first vss)))
