@@ -1,0 +1,76 @@
+;;; -*- scheme -*-
+
+(include "math.vlad")
+
+(define (bin-num) 8)
+
+(define (bin-min) -5)
+
+(define (bin-max) 5)
+
+(define (bin-delta)
+  (/ (- (bin-max) (bin-min))
+     (- (bin-num) 1)))
+
+(define (bin-xs)
+  (map (lambda (x)
+	 (+ (bin-min) (* x (bin-delta))))
+       (iota (bin-num))))
+
+(define (iota n)
+  (seq 0 n))
+
+(define (seq i n)
+  (if (= n 0)
+      '()
+      (cons i (seq (+ i 1) (- n 1)))))
+
+(define (normalize ys)
+  (let ((s ((reduce + 0) ys)))
+    (map (lambda (y) (/ y s)) ys)))
+
+(define (entropy ys)
+  ((reduce + 0) (map (lambda (y) (* y (log y))) ys)))
+
+(define (variance xs ys)
+  (- ((reduce + 0) (map2 * ys (map sqr xs)))
+     (sqr ((reduce + 0) (map2 * ys xs)))))
+
+(define (lam) 0.5)			; entropy-variance tradeoff
+
+(define (err xs ys)
+  (- (entropy ys)
+     (* (lam) (variance xs ys))))
+
+(define (uniform n)
+  (map (lambda (_) (/ 1 n)) (iota n)))
+
+;;;
+
+(define (real* x)
+  (cond ((real? x) (real x))
+	((pair? x) (cons (real* (car x))
+			 (real* (cdr x))))
+	(else x)))
+
+;;;
+
+(define (argmax-with-projector f projector x epsilon)
+  (root-with-projector (derivative f) projector x epsilon))
+
+(define (root-with-projector f projector x epsilon)
+ (let ((x-prime (projector (- x (/ (f x) ((derivative f) x))))))
+  (if (<= (abs (- x x-prime)) epsilon) x (root f projector x-prime epsilon))))
+
+;; (argmax-with-projector (lambda (ys) (err (bin-xs) ys))
+;; 		       normalize
+;; 		       (real* (uniform (bin-num)))
+;; 		       0.01)
+
+((gradient-using-j* (lambda (ys) (err (bin-xs) ys)))
+ (real* (uniform (bin-num))))
+
+;;; Local Variables:
+;;; compile-command: "SCMAXHEAP=1000 stalingrad gaussian"
+;;; scheme-body-indent: 1
+;;; End:
