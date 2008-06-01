@@ -1375,6 +1375,39 @@
 
 ;;; Zeros
 
+;;; Technically, we should give an error if one attempts to ask:
+;;;   vlad-empty-list?
+;;;   vlad-true?
+;;;   vlad-false?
+;;;   vlad-real?
+;;;   primitive-procedure?
+;;;   nonrecursive-closure?
+;;;   recursive-closure?
+;;;   perturbation-tagged-value?
+;;;   bundle?
+;;;   sensitivity-tagged-value?
+;;;   reverse-tagged-value?
+;;;   tagged-pair?
+;;; on an abstract zero since the answer is ambiguous. And this would force
+;;; one to check for abstract zeros before checking for all of the above kinds
+;;; of vlad values throughout. But since we would need to introduce a level
+;;; of indirection on the predicates created by define-structure we don't do
+;;; that for now.
+
+;;; An abstract zero has the same extension as:
+;;;   () u #t u #f u R u + u ... u
+;;;   <{x|->^1, ...},e1> u ...
+;;;   (perturbation ^1) u (bundle ^1 ^1) u (sensitivity ^1) u (reverse ^1) u
+;;;   (tagged-pair tags1 ^1 ^1) ...
+;;; for all primtives, all (transformed) lambda expressions, and all tag
+;;; stacks. While the extension of an abstract real is uncountable and could
+;;; never be the same as any other abstract value, the extension of an abstract
+;;; zero is countably infinite and could be the same as some other abstract
+;;; value. But one cannot determine this until one applies a closed-world
+;;; assumption after flow analysis enumerates all transformed lambda
+;;; expressions and all tag stacks that can occur. But the determination of
+;;; this by flow analysis is imprecise.
+
 (define (abstract-zero) 'zero)
 
 (define (abstract-zero? u)
@@ -1749,7 +1782,6 @@
 ;;; Bundles
 
 (define (some-bundlable? v v-perturbation)
- ;; abstract zero
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   0
@@ -1777,37 +1809,71 @@
 		     cs
 		     k))
 	  ((union? v-perturbation)
-	   (some-cps (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
-		     (union-members v-perturbation)
-		     cs
-		     k))
-	  ((or
-	    (and (vlad-empty-list? v)
-		 (perturbation-tagged-value? v-perturbation)
-		 (some vlad-empty-list?
-		       (union-members
-			(get-perturbation-tagged-value-primal v-perturbation))))
-	    (and (vlad-true? v)
-		 (perturbation-tagged-value? v-perturbation)
-		 (some vlad-true?
-		       (union-members
-			(get-perturbation-tagged-value-primal v-perturbation))))
-	    (and (vlad-false? v)
-		 (perturbation-tagged-value? v-perturbation)
-		 (some vlad-false?
-		       (union-members
-			(get-perturbation-tagged-value-primal v-perturbation))))
-	    (and (vlad-real? v)
-		 (perturbation-tagged-value? v-perturbation)
-		 (some vlad-real?
-		       (union-members
-			(get-perturbation-tagged-value-primal v-perturbation))))
-	    (and
-	     (primitive-procedure? v)
-	     (perturbation-tagged-value? v-perturbation)
-	     (some (lambda (u) (and (primitive-procedure? u) (eq? v u)))
-		   (union-members
-		    (get-perturbation-tagged-value-primal v-perturbation)))))
+	   (some-cps
+	    (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
+	    (union-members v-perturbation)
+	    cs
+	    k))
+	  ((or (and (vlad-empty-list? v)
+		    (or (abstract-zero? v-perturbation)
+			(and (perturbation-tagged-value? v-perturbation)
+			     (some (lambda (u)
+				    (or (vlad-empty-list? u)
+					(abstract-zero? u)))
+				   (union-members
+				    (get-perturbation-tagged-value-primal
+				     v-perturbation))))))
+	       (and (vlad-true? v)
+		    (or (abstract-zero? v-perturbation)
+			(and (perturbation-tagged-value? v-perturbation)
+			     (some (lambda (u)
+				    (or (vlad-true? u)
+					(abstract-zero? u)))
+				   (union-members
+				    (get-perturbation-tagged-value-primal
+				     v-perturbation))))))
+	       (and (vlad-false? v)
+		    (or (abstract-zero? v-perturbation)
+			(and (perturbation-tagged-value? v-perturbation)
+			     (some (lambda (u)
+				    (or (vlad-false? u)
+					(abstract-zero? u)))
+				   (union-members
+				    (get-perturbation-tagged-value-primal
+				     v-perturbation))))))
+	       (and (vlad-real? v)
+		    (or (abstract-zero? v-perturbation)
+			(and (perturbation-tagged-value? v-perturbation)
+			     (some (lambda (u)
+				    (or (vlad-real? u)
+					(abstract-zero? u)))
+				   (union-members
+				    (get-perturbation-tagged-value-primal
+				     v-perturbation))))))
+	       (and (primitive-procedure? v)
+		    (or (abstract-zero? v-perturbation)
+			(and (perturbation-tagged-value? v-perturbation)
+			     (some (lambda (u)
+				    (or (and (primitive-procedure? u)
+					     (eq? v u))
+					(abstract-zero? u)))
+				   (union-members
+				    (get-perturbation-tagged-value-primal
+				     v-perturbation))))))
+	       (and (abstract-zero? v)
+		    (or (abstract-zero? v-perturbation)
+			;; We assume that what is in the primal is legal. No
+			;; matter what is there, there is an element in the
+			;; extension of v which it is bundable with.
+			(perturbation-tagged-value? v-perturbation)))
+	       ;; We assume that the components are legal. No matter what
+	       ;; is there, there is an element in the extension of
+	       ;; v-perturbation which v is bundable with.
+	       (and (or (perturbation-tagged-value? v)
+			(bundle? v)
+			(sensitivity-tagged-value? v)
+			(reverse-tagged-value? v))
+		    (abstract-zero? v-perturbation)))
 	   (k #t cs))
 	  ((and (perturbation-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
@@ -1874,7 +1940,6 @@
 	  (else (k #f cs)))))))))
 
 (define (every-bundlable? v v-perturbation)
- ;; abstract zero
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   1
@@ -2001,6 +2066,10 @@
 		       (get-perturbation-tagged-value-primal v-perturbation))
 		      cs
 		      k))
+	  ;; Note that if either v or v-perturbation is or contains an abstract
+	  ;; zero then this must return false since the extension of an
+	  ;; abstract zero contains something that is not bundlable with
+	  ;; everything.
 	  (else (k #f cs)))))))))
 
 (define (create-bundle v v-perturbation)
@@ -2485,6 +2554,12 @@
 	 (cond
 	  ;; This is an optimization.
 	  ((eq? v1 v2) (k #t cs))
+	  ((abstract-zero? v1)
+	   ;; One cannot determine the subset relation between abstract zero
+	   ;; and anything other than abstract zero, which is why this check
+	   ;; comes after the above case, because the extension of an abstract
+	   ;; zero is not known without a closed-world assumption.
+	   (internal-error))
 	  ((union? v1)
 	   (every-cps
 	    (lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k))
@@ -2508,19 +2583,41 @@
 			(vlad-true? v1)
 			(vlad-false? v1)
 			(zero? v1)
-			(abstract-zero? v1))
+			(primitive-procedure? v1))
 		    (abstract-zero? v2)))
 	   (k #t cs))
-	  ((and (or (nonrecursive-closure? v1)
-		    (recursive-closure? v1)
-		    (perturbation-tagged-value? v1)
-		    (bundle? v1)
-		    (sensitivity-tagged-value? v1)
-		    (reverse-tagged-value? v1)
-		    (tagged-pair? v1))
-		(abstract-zero? v2))
-	   ;; An explicit zero is a subset of an abstract zero.
-	   (unimplemented "abstract zero"))
+	  ((and (nonrecursive-closure? v1) (abstract-zero? v2))
+	   (every-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		      (get-nonrecursive-closure-values v1)
+		      cs
+		      k))
+	  ((and (recursive-closure? v1) (abstract-zero? v2))
+	   (every-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		      (get-recursive-closure-values v1)
+		      cs
+		      k))
+	  ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-perturbation-tagged-value-primal v1) v2 cs k))
+	  ((and (bundle? v1) (abstract-zero? v2))
+	   (loop (get-bundle-primal v1)
+		 v2
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (get-bundle-tangent v1) v2 cs k)
+		      (k #f cs)))))
+	  ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-sensitivity-tagged-value-primal v1) v2 cs k))
+	  ((and (reverse-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-reverse-tagged-value-primal v1) v2 cs k))
+	  ((and (tagged-pair? v1) (abstract-zero? v2))
+	   (loop (get-tagged-pair-car v1)
+		 v2
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (get-tagged-pair-cdr v1) v2 cs k)
+		      (k #f cs)))))
 	  ((and (nonrecursive-closure? v1)
 		(nonrecursive-closure? v2)
 		(nonrecursive-closure-match? v1 v2))
@@ -2652,6 +2749,7 @@
 			(vlad-true? v1)
 			(vlad-false? v1)
 			(zero? v1)
+			(primitive-procedure? v1)
 			(abstract-zero? v1))
 		    (abstract-zero? v2))
 	       (and (abstract-zero? v1)
@@ -2659,26 +2757,77 @@
 			(vlad-true? v2)
 			(vlad-false? v2)
 			(zero? v2)
+			(primitive-procedure? v2)
 			(abstract-zero? v2))))
 	   (k #t cs))
-	  ((or (and (or (nonrecursive-closure? v1)
-			(recursive-closure? v1)
-			(perturbation-tagged-value? v1)
-			(bundle? v1)
-			(sensitivity-tagged-value? v1)
-			(reverse-tagged-value? v1)
-			(tagged-pair? v1))
-		    (abstract-zero? v2))
-	       (and (abstract-zero? v1)
-		    (or (nonrecursive-closure? v2)
-			(recursive-closure? v2)
-			(perturbation-tagged-value? v2)
-			(bundle? v2)
-			(sensitivity-tagged-value? v2)
-			(reverse-tagged-value? v2)
-			(tagged-pair? v2))))
-	   ;; An explicit zero is nondisjoint with an abstract zero.
-	   (unimplemented "abstract zero"))
+	  ((and (nonrecursive-closure? v1) (abstract-zero? v2))
+	   (every-cps (lambda (u1) (loop u1 v2 cs k))
+		      (get-nonrecursive-closure-values v1)
+		      vs
+		      cs
+		      k))
+	  ((and (abstract-zero? v1) (nonrecursive-closure? v1))
+	   (every-cps (lambda (u2) (loop v1 u2 cs k))
+		      (get-nonrecursive-closure-values v2)
+		      vs
+		      cs
+		      k))
+	  ((and (recursive-closure? v1) (abstract-zero? v2))
+	   (every-cps (lambda (u1) (loop u1 v2 cs k))
+		      (get-recursive-closure-values v1)
+		      vs
+		      cs
+		      k))
+	  ((and (abstract-zero? v1) (recursive-closure? v1))
+	   (every-cps (lambda (u2) (loop v1 u2 cs k))
+		      (get-recursive-closure-values v2)
+		      vs
+		      cs
+		      k))
+	  ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-perturbation-tagged-value-primal v1) v2 cs k))
+	  ((and (abstract-zero? v1) (perturbation-tagged-value? v2))
+	   (loop v1 (get-perturbation-tagged-value-primal v2) cs k))
+	  ((and (bundle? v1) (abstract-zero? v2))
+	   (loop (get-bundle-primal v1)
+		 v2
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (get-bundle-tangent v1) v2 cs k)
+		      (k #f cs)))))
+	  ((and (abstract-zero? v1) (bundle? v2))
+	   (loop v1
+		 (get-bundle-primal v2)
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop v1 (get-bundle-tangent v2) cs k)
+		      (k #f cs)))))
+	  ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-sensitivity-tagged-value-primal v1) v2 cs k))
+	  ((and (abstract-zero? v1) (sensitivity-tagged-value? v2))
+	   (loop v1 (get-sensitivity-tagged-value-primal v2) cs k))
+	  ((and (reverse-tagged-value? v1) (abstract-zero? v2))
+	   (loop (get-reverse-tagged-value-primal v1) v2 cs k))
+	  ((and (abstract-zero? v1) (reverse-tagged-value? v2))
+	   (loop v1 (get-reverse-tagged-value-primal v2) cs k))
+	  ((and (tagged-pair? v1) (abstract-zero? v2))
+	   (loop (get-tagged-pair-car v1)
+		 v2
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop (get-tagged-pair-cdr v1) v2 cs k)
+		      (k #f cs)))))
+	  ((and (abstract-zero? v1) (tagged-pair? v2))
+	   (loop v1
+		 (get-tagged-pair-car v2)
+		 cs
+		 (lambda (r? cs)
+		  (if r?
+		      (loop v1 (get-tagged-pair-cdr v2) cs k)
+		      (k #f cs)))))
 	  ((and (nonrecursive-closure? v1)
 		(nonrecursive-closure? v2)
 		(nonrecursive-closure-match? v1 v2))
@@ -2697,7 +2846,8 @@
 		       (get-recursive-closure-values v2)
 		       cs
 		       k))
-	  ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+	  ((and (perturbation-tagged-value? v1)
+		(perturbation-tagged-value? v2))
 	   (loop (get-perturbation-tagged-value-primal v1)
 		 (get-perturbation-tagged-value-primal v2)
 		 cs
