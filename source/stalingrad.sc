@@ -180,7 +180,7 @@
 		   tagged-pair-depth-limit?
 		   (tagged-pair-depth-limit "n" integer-argument 1)))
 		 (required (pathname "pathname" string-argument)))
- (initialize-time-buckets 36)		;debugging
+ (when #f (initialize-time-buckets 36))	;debugging
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
@@ -327,7 +327,7 @@
 		      (reverse *value-bindings*))))))
 	(loop (rest es) ds)))))
  ;; debugging
- (when #t (print-time-buckets)))
+ (when #f (print-time-buckets)))
 
 ;;; Tam V'Nishlam Shevah L'El Borei Olam
 
