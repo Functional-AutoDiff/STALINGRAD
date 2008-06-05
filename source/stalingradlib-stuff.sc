@@ -663,7 +663,8 @@
  (exit -1))
 
 (define (ad-warning message . vs)
- (apply (if *abstract?* compile-time-warning run-time-warning) message vs))
+ (when #f				;debugging
+  (apply (if *abstract?* compile-time-warning run-time-warning) message vs)))
 
 (define (ad-error message . vs)
  (if *abstract?*
@@ -674,23 +675,35 @@
 
 (define (empty-tags) '())
 
-(define (empty-tags? tags) (null? tags))
+(define (empty-tags? tags) (or (eq? tags 'unknown) (null? tags)))
 
 (define (add-tag tag tags) (cons tag tags))
 
-(define (tagged? tag tags) (and (not (null? tags)) (eq? (first tags) tag)))
+(define (tagged? tag tags)
+ (or (eq? tags 'unknown)
+     (and (not (empty-tags? tags)) (eq? (first tags) tag))))
 
 (define (remove-tag tag tags)
  (assert (tagged? tag tags))
- (rest tags))
+ (if (eq? tags 'unknown) tags (rest tags)))
 
 (define (prefix-tags? tags1 tags2)
- (or (null? tags1)
-     (and (not (null? tags2))
+ (or (eq? tags1 'unknown)
+     (eq? tags2 'unknown)
+     (empty-tags? tags1)
+     (and (not (empty-tags? tags1))
+	  (not (empty-tags? tags2))
 	  (eq? (first tags1) (first tags2))
 	  (prefix-tags? (rest tags1) (rest tags2)))))
 
-(define (equal-tags? tags1 tags2) (equal? tags1 tags2))
+(define (equal-tags? tags1 tags2)
+ (or (eq? tags1 'unknown)
+     (eq? tags2 'unknown)
+     (and (empty-tags? tags1) (empty-tags? tags2))
+     (and (not (empty-tags? tags1))
+	  (not (empty-tags? tags2))
+	  (eq? (first tags1) (first tags2))
+	  (equal-tags? (rest tags1) (rest tags2)))))
 
 ;;; Variables
 
@@ -2498,21 +2511,21 @@
 
 (define (value-tags u)
  (assert (not (union? u)))
- (cond
-  ((scalar-value? u) '())
-  ((nonrecursive-closure? u) (nonrecursive-closure-tags u))
-  ((recursive-closure? u) (recursive-closure-tags u))
-  ((perturbation-tagged-value? u)
-   (add-tag 'perturbation
-	    (value-tags (get-perturbation-tagged-value-primal u))))
-  ((bundle? u) (add-tag 'forward (value-tags (get-bundle-primal u))))
-  ((sensitivity-tagged-value? u)
-   (add-tag 'sensitivity
-	    (value-tags (get-sensitivity-tagged-value-primal u))))
-  ((reverse-tagged-value? u)
-   (add-tag 'reverse (value-tags (get-reverse-tagged-value-primal u))))
-  ((tagged-pair? u) (tagged-pair-tags u))
-  (else (internal-error))))
+ (cond ((abstract-zero? u) 'unknown)
+       ((scalar-value? u) '())
+       ((nonrecursive-closure? u) (nonrecursive-closure-tags u))
+       ((recursive-closure? u) (recursive-closure-tags u))
+       ((perturbation-tagged-value? u)
+	(add-tag 'perturbation
+		 (value-tags (get-perturbation-tagged-value-primal u))))
+       ((bundle? u) (add-tag 'forward (value-tags (get-bundle-primal u))))
+       ((sensitivity-tagged-value? u)
+	(add-tag 'sensitivity
+		 (value-tags (get-sensitivity-tagged-value-primal u))))
+       ((reverse-tagged-value? u)
+	(add-tag 'reverse (value-tags (get-reverse-tagged-value-primal u))))
+       ((tagged-pair? u) (tagged-pair-tags u))
+       (else (internal-error))))
 
 (define (some-value-tags p v)
  (let loop ((tags '()) (v v) (vs '()))
@@ -2520,6 +2533,9 @@
    ;; needs work: I'm not sure that this is sound.
    ((memq v vs) #t)
    ((union? v) (some (lambda (u) (loop tags u (cons v vs))) (union-members v)))
+   ((abstract-zero? v)
+    (let loop ((tags tags) (tags1 'unknown))
+     (if (null? tags) (p tags1) (loop (rest tags) (cons (first tags) tags1)))))
    ((scalar-value? v) (p (reverse tags)))
    ((nonrecursive-closure? v)
     (p (append (reverse tags) (nonrecursive-closure-tags v))))
@@ -2543,6 +2559,9 @@
    ((memq v vs) #f)
    ((union? v)
     (every (lambda (u) (loop tags u (cons v vs))) (union-members v)))
+   ((abstract-zero? v)
+    (let loop ((tags tags) (tags1 'unknown))
+     (if (null? tags) (p tags1) (loop (rest tags) (cons (first tags) tags1)))))
    ((scalar-value? v) (p (reverse tags)))
    ((nonrecursive-closure? v)
     (p (append (reverse tags) (nonrecursive-closure-tags v))))
@@ -2604,15 +2623,10 @@
 	  ((union? v1)
 	   (every-cps
 	    (lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k))
-	  ((abstract-zero? v1)
-	   ;; One cannot determine the subset relation between abstract zero
-	   ;; and anything other than abstract zero, which is why this check
-	   ;; comes after the above case, because the extension of an abstract
-	   ;; zero is not known without a closed-world assumption.
-	   (internal-error))
 	  ((union? v2)
 	   (some-cps
 	    (lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k))
+	  ((abstract-zero? v1) (k (abstract-zero? v2) cs))
 	  ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	       (and (vlad-true? v1) (vlad-true? v2))
 	       (and (vlad-false? v1) (vlad-false? v2))
@@ -8815,8 +8829,6 @@
   (thunk)
   (set-write-length! m)))
 
-(define (tag-check? v1 v2) (prefix-tags? (value-tags v1) (value-tags v2)))
-
 ;;; Environment Restriction/Construction
 
 (define (restrict-environment vs e f)
@@ -8969,7 +8981,7 @@
 (define (concrete-apply v1 v2)
  (when (abstract-zero? v1) (run-time-error "Target is an abstract zero" v1))
  (unless (vlad-procedure? v1) (run-time-error "Target is not a procedure" v1))
- (unless (tag-check? v1 v2)
+ (unless (prefix-tags? (value-tags v1) (value-tags v2))
   (run-time-error "Argument has wrong type for target" v1 v2))
  (set! *stack* (cons (list v1 v2) *stack*))
  (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
