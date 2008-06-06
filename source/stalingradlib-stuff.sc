@@ -422,6 +422,8 @@
 
 (define *imprecise-inexacts?* #f)
 
+(define *imprecise-zero?* #f)
+
 (define *warnings?* #f)
 
 (define *real-width-limit* #f)
@@ -599,35 +601,37 @@
 
 (define (run-time-warning message . vs)
  (assert (not *abstract?*))
- (when *error?*
-  (display "Nested warning: " stderr-port)
+ (when *warnings?*
+  (when *error?*
+   (display "Nested warning: " stderr-port)
+   (display message stderr-port)
+   (newline stderr-port)
+   (display "Error: " stderr-port)
+   (display *error* stderr-port)
+   (newline stderr-port)
+   (exit -1))
+  (set! *error* message)
+  (set! *error?* #t)
+  (unless *abstract?*
+   (format stderr-port "Stack trace~%")
+   (for-each (lambda (record)
+	      (display "Procedure: " stderr-port)
+	      ((if *pp?* pp write) (externalize (first record)) stderr-port)
+	      (newline stderr-port)
+	      (display "Argument: " stderr-port)
+	      ((if *pp?* pp write) (externalize (second record)) stderr-port)
+	      (newline stderr-port)
+	      (newline stderr-port))
+	     *stack*)
+   (newline stderr-port))
+  (for-each (lambda (v)
+	     ((if *pp?* pp write) (externalize v) stderr-port)
+	     (newline stderr-port))
+	    vs)
+  (display "Warning: " stderr-port)
   (display message stderr-port)
   (newline stderr-port)
-  (display "Error: " stderr-port)
-  (display *error* stderr-port)
-  (newline stderr-port)
-  (exit -1))
- (set! *error* message)
- (set! *error?* #t)
- (unless *abstract?*
-  (format stderr-port "Stack trace~%")
-  (for-each (lambda (record)
-	     (display "Procedure: " stderr-port)
-	     ((if *pp?* pp write) (externalize (first record)) stderr-port)
-	     (newline stderr-port)
-	     (display "Argument: " stderr-port)
-	     ((if *pp?* pp write) (externalize (second record)) stderr-port)
-	     (newline stderr-port)
-	     (newline stderr-port))
-	    *stack*)
-  (newline stderr-port))
- (for-each (lambda (v)
-	    ((if *pp?* pp write) (externalize v) stderr-port)
-	    (newline stderr-port))
-	   vs)
- (display "Warning: " stderr-port)
- (display message stderr-port)
- (newline stderr-port))
+  (set! *error?* #f)))
 
 (define (run-time-error message . vs)
  (assert (not *abstract?*))
@@ -663,8 +667,7 @@
  (exit -1))
 
 (define (ad-warning message . vs)
- (when #f				;debugging
-  (apply (if *abstract?* compile-time-warning run-time-warning) message vs)))
+ (apply (if *abstract?* compile-time-warning run-time-warning) message vs))
 
 (define (ad-error message . vs)
  (if *abstract?*
@@ -1473,6 +1476,21 @@
  (assert (not (union? u)))
  (eq? u 'abstract-zero))
 
+(define (tagged-abstract-zero? u)
+ (or (abstract-zero? u)
+     (and (perturbation-tagged-value? u)
+	  (tagged-abstract-zero?
+	   (perturbation-tagged-value-primal u)))
+     (and (bundle? u)
+	  (tagged-abstract-zero? (bundle-primal u))
+	  (tagged-abstract-zero? (bundle-tangent u)))
+     (and (sensitivity-tagged-value? u)
+	  (tagged-abstract-zero?
+	   (sensitivity-tagged-value-primal u)))
+     (and (reverse-tagged-value? u)
+	  (tagged-abstract-zero?
+	   (reverse-tagged-value-primal u)))))
+
 ;;; Reals
 
 ;;; This can't be real since there would be an ambiguity between an abstract
@@ -1925,11 +1943,11 @@
 		    (or (abstract-zero? v-perturbation)
 			;; We assume that what is in the primal is legal. No
 			;; matter what is there, there is an element in the
-			;; extension of v which it is bundable with.
+			;; extension of v which it is bundlable with.
 			(perturbation-tagged-value? v-perturbation)))
 	       ;; We assume that the components are legal. No matter what
 	       ;; is there, there is an element in the extension of
-	       ;; v-perturbation which v is bundable with.
+	       ;; v-perturbation which v is bundlable with.
 	       (and (or (perturbation-tagged-value? v)
 			(bundle? v)
 			(sensitivity-tagged-value? v)
@@ -1938,66 +1956,101 @@
 	   (k #t cs))
 	  ((and (perturbation-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (some-cps (lambda (u cs k)
-		      (if (perturbation-tagged-value? u)
-			  (loop (get-perturbation-tagged-value-primal v)
-				(create-perturbation-tagged-value
-				 (get-perturbation-tagged-value-primal u))
-				cs
-				k)
-			  (k #f cs)))
-		     (union-members
-		      (get-perturbation-tagged-value-primal v-perturbation))
+	   (some-cps
+	    (lambda (u-perturbation cs k)
+	     (cond
+	      ((perturbation-tagged-value? u-perturbation)
+	       (loop (get-perturbation-tagged-value-primal v)
+		     (create-perturbation-tagged-value
+		      (get-perturbation-tagged-value-primal u-perturbation))
 		     cs
 		     k))
+	      ((abstract-zero? u-perturbation)
+	       (loop (get-perturbation-tagged-value-primal v)
+		     (create-perturbation-tagged-value (abstract-zero))
+		     cs
+		     k))
+	      (else (k #f cs))))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
 	   (some-cps
-	    (lambda (u cs k)
-	     (if (bundle? u)
-		 (loop (get-bundle-primal v)
-		       (create-perturbation-tagged-value (get-bundle-primal u))
-		       cs
-		       (lambda (r? cs)
-			(if r?
-			    (loop (get-bundle-tangent v)
-				  (create-perturbation-tagged-value
-				   (get-bundle-tangent u))
-				  cs
-				  k)
-			    (k #f cs))))
-		 (k #f cs)))
+	    (lambda (u-perturbation cs k)
+	     (cond
+	      ((bundle? u-perturbation)
+	       (loop (get-bundle-primal v)
+		     (create-perturbation-tagged-value
+		      (get-bundle-primal u-perturbation))
+		     cs
+		     (lambda (r? cs)
+		      (if r?
+			  (loop (get-bundle-tangent v)
+				(create-perturbation-tagged-value
+				 (get-bundle-tangent u-perturbation))
+				cs
+				k)
+			  (k #f cs)))))
+	      ((abstract-zero? u-perturbation)
+	       (loop (get-bundle-primal v)
+		     (create-perturbation-tagged-value (abstract-zero))
+		     cs
+		     (lambda (r? cs)
+		      (if r?
+			  (loop (get-bundle-tangent v)
+				(create-perturbation-tagged-value
+				 (abstract-zero))
+				cs
+				k)
+			  (k #f cs)))))
+	      (else (k #f cs))))
 	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
 	  ((and (sensitivity-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (some-cps (lambda (u cs k)
-		      (if (sensitivity-tagged-value? u)
-			  (loop (get-sensitivity-tagged-value-primal v)
-				(create-perturbation-tagged-value
-				 (get-sensitivity-tagged-value-primal u))
-				cs
-				k)
-			  (k #f cs)))
-		     (union-members
-		      (get-perturbation-tagged-value-primal v-perturbation))
+	   (some-cps
+	    (lambda (u-perturbation cs k)
+	     (cond
+	      ((sensitivity-tagged-value? u-perturbation)
+	       (loop (get-sensitivity-tagged-value-primal v)
+		     (create-perturbation-tagged-value
+		      (get-sensitivity-tagged-value-primal u-perturbation))
 		     cs
 		     k))
+	      ((abstract-zero? u-perturbation)
+	       (loop (get-sensitivity-tagged-value-primal v)
+		     (create-perturbation-tagged-value (abstract-zero))
+		     cs
+		     k))
+	      (else (k #f cs))))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  ((and (reverse-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (some-cps (lambda (u cs k)
-		      (if (reverse-tagged-value? u)
-			  (loop (get-reverse-tagged-value-primal v)
-				(create-perturbation-tagged-value
-				 (get-reverse-tagged-value-primal u))
-				cs
-				k)
-			  (k #f cs)))
-		     (union-members
-		      (get-perturbation-tagged-value-primal v-perturbation))
+	   (some-cps
+	    (lambda (u-perturbation cs k)
+	     (cond
+	      ((reverse-tagged-value? u-perturbation)
+	       (loop (get-reverse-tagged-value-primal v)
+		     (create-perturbation-tagged-value
+		      (get-reverse-tagged-value-primal u-perturbation))
 		     cs
 		     k))
+	      ((abstract-zero? u-perturbation)
+	       (loop (get-reverse-tagged-value-primal v)
+		     (create-perturbation-tagged-value (abstract-zero))
+		     cs
+		     k))
+	      (else (k #f cs))))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  (else (k #f cs)))))))))
 
 (define (every-bundlable? v v-perturbation)
@@ -2067,30 +2120,32 @@
 	   (k #t cs))
 	  ((and (perturbation-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (every-cps (lambda (u cs k)
-		       (if (perturbation-tagged-value? u)
-			   (loop (get-perturbation-tagged-value-primal v)
-				 (create-perturbation-tagged-value
-				  (get-perturbation-tagged-value-primal u))
-				 cs
-				 k)
-			   (k #f cs)))
-		      (union-members
-		       (get-perturbation-tagged-value-primal v-perturbation))
-		      cs
-		      k))
+	   (every-cps
+	    (lambda (u-perturbation cs k)
+	     (if (perturbation-tagged-value? u-perturbation)
+		 (loop (get-perturbation-tagged-value-primal v)
+		       (create-perturbation-tagged-value
+			(get-perturbation-tagged-value-primal u-perturbation))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  ((and (bundle? v) (perturbation-tagged-value? v-perturbation))
 	   (every-cps
-	    (lambda (u cs k)
-	     (if (bundle? u)
+	    (lambda (u-perturbation cs k)
+	     (if (bundle? u-perturbation)
 		 (loop (get-bundle-primal v)
-		       (create-perturbation-tagged-value (get-bundle-primal u))
+		       (create-perturbation-tagged-value
+			(get-bundle-primal u-perturbation))
 		       cs
 		       (lambda (r? cs)
 			(if r?
 			    (loop (get-bundle-tangent v)
 				  (create-perturbation-tagged-value
-				   (get-bundle-tangent u))
+				   (get-bundle-tangent u-perturbation))
 				  cs
 				  k)
 			    (k #f cs))))
@@ -2101,32 +2156,34 @@
 	    k))
 	  ((and (sensitivity-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (every-cps (lambda (u cs k)
-		       (if (sensitivity-tagged-value? u)
-			   (loop (get-sensitivity-tagged-value-primal v)
-				 (create-perturbation-tagged-value
-				  (get-sensitivity-tagged-value-primal u))
-				 cs
-				 k)
-			   (k #f cs)))
-		      (union-members
-		       (get-perturbation-tagged-value-primal v-perturbation))
-		      cs
-		      k))
+	   (every-cps
+	    (lambda (u-perturbation cs k)
+	     (if (sensitivity-tagged-value? u-perturbation)
+		 (loop (get-sensitivity-tagged-value-primal v)
+		       (create-perturbation-tagged-value
+			(get-sensitivity-tagged-value-primal u-perturbation))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  ((and (reverse-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
-	   (every-cps (lambda (u cs k)
-		       (if (reverse-tagged-value? u)
-			   (loop (get-reverse-tagged-value-primal v)
-				 (create-perturbation-tagged-value
-				  (get-reverse-tagged-value-primal u))
-				 cs
-				 k)
-			   (k #f cs)))
-		      (union-members
-		       (get-perturbation-tagged-value-primal v-perturbation))
-		      cs
-		      k))
+	   (every-cps
+	    (lambda (u-perturbation cs k)
+	     (if (reverse-tagged-value? u-perturbation)
+		 (loop (get-reverse-tagged-value-primal v)
+		       (create-perturbation-tagged-value
+			(get-reverse-tagged-value-primal u-perturbation))
+		       cs
+		       k)
+		 (k #f cs)))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
 	  ;; Note that if either v or v-perturbation is or contains an abstract
 	  ;; zero then this must return false since the extension of an
 	  ;; abstract zero contains something that is not bundlable with
@@ -2518,6 +2575,9 @@
        ((perturbation-tagged-value? u)
 	(add-tag 'perturbation
 		 (value-tags (get-perturbation-tagged-value-primal u))))
+       ;; needs work: Because of abstract zeros one might be able to
+       ;;             get a more precise answer by traversing both the
+       ;;             primal and the tangent.
        ((bundle? u) (add-tag 'forward (value-tags (get-bundle-primal u))))
        ((sensitivity-tagged-value? u)
 	(add-tag 'sensitivity
@@ -4943,7 +5003,7 @@
 
 (define (zero v)
  (if
-  #t
+  *imprecise-zero?*
   (abstract-zero)
   ;; This is written in CPS so as not to break structure sharing.
   (time-it-bucket
@@ -6676,7 +6736,7 @@
 	     ((and (perturbation-tagged-value? v)
 		   (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
-	       (compile-time-warning
+	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
 	      (let ((u-forward (create-bundle v v-perturbation)))
 	       (k u-forward
@@ -6684,7 +6744,7 @@
 	     ;; ditto
 	     ((and (bundle? v) (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
-	       (compile-time-warning
+	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
 	      (let ((u-forward (create-bundle v v-perturbation)))
 	       (k u-forward
@@ -6693,7 +6753,7 @@
 	     ((and (sensitivity-tagged-value? v)
 		   (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
-	       (compile-time-warning
+	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
 	      (let ((u-forward (create-bundle v v-perturbation)))
 	       (k u-forward
@@ -6702,7 +6762,7 @@
 	     ((and (reverse-tagged-value? v)
 		   (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
-	       (compile-time-warning
+	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
 	      (let ((u-forward (create-bundle v v-perturbation)))
 	       (k u-forward
@@ -6818,8 +6878,28 @@
 			      u-forward v-car-forward v-cdr-forward)
 			     (k u-forward cs)))))))
 	     ;; here I am: Bundling an abstract zero with anything other than a
-	     ;;            closure or a tagged pair is not yet implemented.
-	     ((abstract-zero? v) (unimplemented))
+	     ;;            closure, a tagged pair, or an abstract zero is not
+	     ;;            yet implemented.
+	     ((abstract-zero? v)
+	      (unless (or (abstract-zero? v-perturbation)
+			  (and (perturbation-tagged-value? v-perturbation)
+			       (some abstract-zero?
+				     (union-members
+				      (get-perturbation-tagged-value-primal
+				       v-perturbation)))))
+	       ;; debugging
+	       (begin
+		(write (externalize v))
+		(newline)
+		(write (externalize v-perturbation))
+		(newline))
+	       (unimplemented))
+	      (unless (every-bundlable? v v-perturbation)
+	       (ad-warning
+		"Arguments to bundle might not conform" v v-perturbation))
+	      (let ((u-forward (create-bundle v (perturb v))))
+	       (k u-forward
+		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     (else
 	      (if *abstract?*
 		  (let ((u-forward (compile-time-warning
@@ -7052,8 +7132,9 @@
 			(lambda (x)
 			 (make-parameter-binding
 			  (sensitivity-access x)
-			  (make-sensitize
-			   (make-zero (make-*j-inverse (reverse-access x))))))
+			  (make-zero
+			   (make-sensitize
+			    (make-*j-inverse (reverse-access x))))))
 			(set-differencep
 			 variable=?
 			 (remove-duplicatesp
@@ -7761,12 +7842,6 @@
 		 (lambda (us cs)
 		  (fill-union-values! v us)
 		  (k v cs)))))
-      ((abstract-zero? v1)
-       (ad-warning "Arguments to plus might not conform" v1 v2)
-       (let ((u v2)) (k u (cons (cons (cons v1 v2) u) cs))))
-      ((abstract-zero? v2)
-       (ad-warning "Arguments to plus might not conform" v1 v2)
-       (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
       ((and (vlad-empty-list? v1) (vlad-empty-list? v2))
        (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
       ((and (vlad-true? v1) (vlad-true? v2))
@@ -7943,6 +8018,14 @@
 		     (lambda (v-cdr cs)
 		      (fill-tagged-pair! u v-car v-cdr)
 		      (k u cs)))))))
+      ((and (tagged-abstract-zero? v1)
+	    (equal-tags? (value-tags v1) (value-tags v2)))
+       (ad-warning "Arguments to plus might not conform" v1 v2)
+       (let ((u v2)) (k u (cons (cons (cons v1 v2) u) cs))))
+      ((and (tagged-abstract-zero? v2)
+	    (equal-tags? (value-tags v1) (value-tags v2)))
+       (ad-warning "Arguments to plus might not conform" v1 v2)
+       (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
       (else
        (if *abstract?*
 	   (let ((u (compile-time-warning
@@ -8861,10 +8944,19 @@
 (define (concrete-destructure p v)
  (cond
   ((constant-expression? p)
-   (unless (abstract-value=? (constant-expression-value p) v)
-    (run-time-error "Argument is not an equivalent value"
-		    (constant-expression-value p)
-		    v))
+   (if *imprecise-zero?*
+       (cond ((abstract-value=? (constant-expression-value p) v) #f)
+	     ((abstract-value-nondisjoint? (constant-expression-value p) v)
+	      (run-time-warning "Argument might not be an equivalent value"
+				(constant-expression-value p)
+				v))
+	     (else (run-time-error "Argument is not an equivalent value"
+				   (constant-expression-value p)
+				   v)))
+       (unless (abstract-value=? (constant-expression-value p) v)
+	(run-time-error "Argument is not an equivalent value"
+			(constant-expression-value p)
+			v)))
    '())
   ((variable-access-expression? p)
    (list (cons (variable-access-expression-variable p) v)))
@@ -8874,12 +8966,13 @@
 	  (dereferenced-expression-eqv?
 	   p (nonrecursive-closure-lambda-expression v)))
      (map cons (parameter-variables p) (get-nonrecursive-closure-values v)))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (run-time-warning
       (format #f "Argument might not be a matching nonrecursive closure for ~s"
 	      (externalize-expression p))
       v)
-     (map (lambda (x) (cons x (abstract-zero))) (parameter-variables p)))
+     (map (lambda (x) (cons x v)) (parameter-variables p)))
     (else (run-time-error
 	   (format #f "Argument is not a matching nonrecursive closure for ~s"
 		   (externalize-expression p))
@@ -8908,12 +9001,13 @@
 	   (vector->list (recursive-closure-lambda-expressions v))
 	   (letrec-expression-lambda-expressions p)))
      (map cons (parameter-variables p) (get-recursive-closure-values v)))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (run-time-warning
       (format #f "Argument might not be a matching recursive closure for ~s"
 	      (externalize-expression p))
       v)
-     (map (lambda (x) (cons x (abstract-zero))) (parameter-variables p)))
+     (map (lambda (x) (cons x v)) (parameter-variables p)))
     (else (run-time-error
 	   (format #f "Argument is not a matching recursive closure for ~s"
 		   (externalize-expression p))
@@ -8925,14 +9019,15 @@
      (append
       (concrete-destructure (cons-expression-car p) (get-tagged-pair-car v))
       (concrete-destructure (cons-expression-cdr p) (get-tagged-pair-cdr v))))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (run-time-warning
       (format #f
 	      "Argument might not be a matching tagged pair with tags ~s"
 	      (cons-expression-tags p))
       v)
-     (append (concrete-destructure (cons-expression-car p) (abstract-zero))
-	     (concrete-destructure (cons-expression-cdr p) (abstract-zero))))
+     (append (concrete-destructure (cons-expression-car p) v)
+	     (concrete-destructure (cons-expression-cdr p) v)))
     (else (run-time-error
 	   (format #f "Argument is not a matching tagged pair with tags ~s"
 		   (cons-expression-tags p))
@@ -9946,13 +10041,13 @@
 	   p (nonrecursive-closure-lambda-expression v)))
      (list
       (map cons (parameter-variables p) (get-nonrecursive-closure-values v))))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (compile-time-warning
       (format #f "Argument might not be a matching nonrecursive closure for ~s"
 	      (externalize-expression p))
       v)
-     (list
-      (map (lambda (x) (cons x (abstract-zero))) (parameter-variables p))))
+     (list (map (lambda (x) (cons x v)) (parameter-variables p))))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching nonrecursive closure for ~s"
@@ -9986,13 +10081,13 @@
 		 (letrec-expression-lambda-expressions p)))
      (list
       (map cons (parameter-variables p) (get-recursive-closure-values v))))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (compile-time-warning
       (format #f "Argument might not be a matching recursive closure for ~s"
 	      (externalize-expression p))
       v)
-     (list
-      (map (lambda (x) (cons x (abstract-zero))) (parameter-variables p))))
+     (list (map (lambda (x) (cons x v)) (parameter-variables p))))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching recursive closure for ~s"
@@ -10010,15 +10105,15 @@
       append
       (abstract-destructure (cons-expression-car p) (get-tagged-pair-car v))
       (abstract-destructure (cons-expression-cdr p) (get-tagged-pair-cdr v))))
-    ((abstract-zero? v)
+    ((and (tagged-abstract-zero? v)
+	  (equal-tags? (parameter-tags p) (value-tags v)))
      (compile-time-warning
       (format #f "Argument might not be a matching tagged pair with tags ~s"
 	      (cons-expression-tags p))
       v)
-     (cross-product
-      append
-      (abstract-destructure (cons-expression-car p) (abstract-zero))
-      (abstract-destructure (cons-expression-cdr p) (abstract-zero))))
+     (cross-product append
+		    (abstract-destructure (cons-expression-car p) v)
+		    (abstract-destructure (cons-expression-cdr p) v)))
     (else
      (compile-time-warning
       (format #f "Argument might not be a matching tagged pair with tags ~s"
@@ -13845,7 +13940,7 @@
 	  (aggregate-value-values (bundle v1 v2)))))
        ;; here I am: Bundling an abstract zero with anything other than a
        ;;            closure or a tagged pair is not yet implemented.
-       ((abstract-real? v1) (unimplemented))
+       ((abstract-zero? v1) (unimplemented))
        (else
 	(c:panic (bundle-value v) "Arguments to bundle do not conform")))))
     ;; This case can't happen since flow analysis should have yielded an
@@ -14002,15 +14097,6 @@
 	    widener-instances))
 	  (generate-slot-names v2)
 	  (get-union-values v2))))
-       ;; This case can't happen since flow analysis should have yielded an
-       ;; abstract zero, and hence void, result.
-       ((and (abstract-zero? v1) (abstract-zero? v2)) (internal-error))
-       ;; If v1 is void then v2 cannot be void as well as the result would be
-       ;; void.
-       ((abstract-zero? v1) (c:slot v "x" "d"))
-       ;; If v2 is void then v21 cannot be void as well as the result would be
-       ;; void.
-       ((abstract-zero? v2) (c:slot v "x" "a"))
        ((or
 	 (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	 (and (vlad-true? v1) (vlad-true? v2))
@@ -14061,6 +14147,22 @@
 	  (aggregate-value-values (plus v1 v2))
 	  (aggregate-value-values v1)
 	  (aggregate-value-values v2))))
+       ;; This case can't happen since flow analysis should have yielded an
+       ;; abstract zero, and hence void, result.
+       ((and (tagged-abstract-zero? v1)
+	     (tagged-abstract-zero? v2)
+	     (equal-tags? (value-tags v1) (value-tags v2)))
+	(internal-error))
+       ;; If v1 is void then v2 cannot be void as well as the result would be
+       ;; void.
+       ((and (tagged-abstract-zero? v1)
+	     (equal-tags? (value-tags v1) (value-tags v2)))
+	(c:slot v "x" "d"))
+       ;; If v2 is void then v1 cannot be void as well as the result would be
+       ;; void.
+       ((and (tagged-abstract-zero? v2)
+	     (equal-tags? (value-tags v1) (value-tags v2)))
+	(c:slot v "x" "a"))
        (else (c:panic (plus-value v) "Arguments to plus do not conform")))))
     ;; This case can't happen since flow analysis should have yielded an
     ;; abstract zero, and hence void, result.

@@ -102,6 +102,7 @@
 			       verbose?
 			       (verbose "n" integer-argument #f)))
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
+		 (at-most-one ("imprecise-zero" imprecise-zero?))
 		 (at-most-one ("no-warnings" no-warnings?))
 		 (at-most-one ("no-real-width-limit" no-real-width-limit?)
 			      ("real-width-limit"
@@ -216,6 +217,7 @@
  (set! *pp?* pp?)
  (set! *verbose* (if verbose? verbose #f))
  (set! *imprecise-inexacts?* imprecise-inexacts?)
+ (set! *imprecise-zero?* imprecise-zero?)
  (set! *warnings?* (not no-warnings?))
  (set! *real-width-limit* (if real-width-limit? real-width-limit #f))
  (set! *closure-width-limit* (if closure-width-limit? closure-width-limit #f))
