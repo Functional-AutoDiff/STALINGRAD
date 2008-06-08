@@ -354,6 +354,8 @@
 
 (define *abstract?* #f)
 
+(define *without-abstract?* #f)
+
 (define *variables* '())
 
 (define *backpropagator-variables* (vector #f))
@@ -519,10 +521,20 @@
 
 (define (without-abstract thunk)
  ;; needs work: To disable errors.
- (let ((abstract? *abstract?*))
+ (let ((abstract? *abstract?*)
+       (without-abstract? *without-abstract?*))
   (set! *abstract?* #f)
+  (set! *without-abstract?* #t)
   (let ((result (thunk)))
    (set! *abstract?* abstract?)
+   (set! *without-abstract?* without-abstract?)
+   result)))
+
+(define (without-warnings thunk)
+ (let ((warnings? *warnings?*))
+  (set! *warnings?* #f)
+  (let ((result (thunk)))
+   (set! *warnings?* warnings?)
    result)))
 
 (define (some-cps p l cs k)
@@ -590,10 +602,12 @@
 (define (compile-time-warning message . vs)
  (assert *abstract?*)
  (when *warnings?*
-  (for-each (lambda (v)
-	     ((if *pp?* pp write) (externalize v) stderr-port)
-	     (newline stderr-port))
-	    vs)
+  (without-warnings
+   (lambda ()
+    (for-each (lambda (v)
+	       ((if *pp?* pp write) (externalize v) stderr-port)
+	       (newline stderr-port))
+	      vs)))
   (display "Warning: " stderr-port)
   (display message stderr-port)
   (newline stderr-port))
@@ -612,22 +626,24 @@
    (exit -1))
   (set! *error* message)
   (set! *error?* #t)
-  (unless *abstract?*
-   (format stderr-port "Stack trace~%")
-   (for-each (lambda (record)
-	      (display "Procedure: " stderr-port)
-	      ((if *pp?* pp write) (externalize (first record)) stderr-port)
-	      (newline stderr-port)
-	      (display "Argument: " stderr-port)
-	      ((if *pp?* pp write) (externalize (second record)) stderr-port)
-	      (newline stderr-port)
-	      (newline stderr-port))
-	     *stack*)
-   (newline stderr-port))
-  (for-each (lambda (v)
-	     ((if *pp?* pp write) (externalize v) stderr-port)
-	     (newline stderr-port))
-	    vs)
+  (without-warnings
+   (lambda ()
+    (unless *without-abstract?*
+     (format stderr-port "Stack trace~%")
+     (for-each (lambda (record)
+		(display "Procedure: " stderr-port)
+		((if *pp?* pp write) (externalize (first record)) stderr-port)
+		(newline stderr-port)
+		(display "Argument: " stderr-port)
+		((if *pp?* pp write) (externalize (second record)) stderr-port)
+		(newline stderr-port)
+		(newline stderr-port))
+	       *stack*)
+     (newline stderr-port))
+    (for-each (lambda (v)
+	       ((if *pp?* pp write) (externalize v) stderr-port)
+	       (newline stderr-port))
+	      vs)))
   (display "Warning: " stderr-port)
   (display message stderr-port)
   (newline stderr-port)
@@ -645,22 +661,24 @@
   (exit -1))
  (set! *error* message)
  (set! *error?* #t)
- (unless *abstract?*
-  (format stderr-port "Stack trace~%")
-  (for-each (lambda (record)
-	     (display "Procedure: " stderr-port)
-	     ((if *pp?* pp write) (externalize (first record)) stderr-port)
-	     (newline stderr-port)
-	     (display "Argument: " stderr-port)
-	     ((if *pp?* pp write) (externalize (second record)) stderr-port)
-	     (newline stderr-port)
-	     (newline stderr-port))
-	    *stack*)
-  (newline stderr-port))
- (for-each (lambda (v)
-	    ((if *pp?* pp write) (externalize v) stderr-port)
-	    (newline stderr-port))
-	   vs)
+ (without-warnings
+  (lambda ()
+   (unless *abstract?*
+    (format stderr-port "Stack trace~%")
+    (for-each (lambda (record)
+	       (display "Procedure: " stderr-port)
+	       ((if *pp?* pp write) (externalize (first record)) stderr-port)
+	       (newline stderr-port)
+	       (display "Argument: " stderr-port)
+	       ((if *pp?* pp write) (externalize (second record)) stderr-port)
+	       (newline stderr-port)
+	       (newline stderr-port))
+	      *stack*)
+    (newline stderr-port))
+   (for-each (lambda (v)
+	      ((if *pp?* pp write) (externalize v) stderr-port)
+	      (newline stderr-port))
+	     vs)))
  (display "Error: " stderr-port)
  (display message stderr-port)
  (newline stderr-port)
@@ -1476,20 +1494,21 @@
  (assert (not (union? u)))
  (eq? u 'abstract-zero))
 
-(define (tagged-abstract-zero? u)
- (or (abstract-zero? u)
-     (and (perturbation-tagged-value? u)
-	  (tagged-abstract-zero?
-	   (perturbation-tagged-value-primal u)))
-     (and (bundle? u)
-	  (tagged-abstract-zero? (bundle-primal u))
-	  (tagged-abstract-zero? (bundle-tangent u)))
-     (and (sensitivity-tagged-value? u)
-	  (tagged-abstract-zero?
-	   (sensitivity-tagged-value-primal u)))
-     (and (reverse-tagged-value? u)
-	  (tagged-abstract-zero?
-	   (reverse-tagged-value-primal u)))))
+(define (tagged-abstract-zero? v)
+ (and (not (union? v))
+      (or (abstract-zero? v)
+	  (and (perturbation-tagged-value? v)
+	       (tagged-abstract-zero?
+		(perturbation-tagged-value-primal v)))
+	  (and (bundle? v)
+	       (tagged-abstract-zero? (bundle-primal v))
+	       (tagged-abstract-zero? (bundle-tangent v)))
+	  (and (sensitivity-tagged-value? v)
+	       (tagged-abstract-zero?
+		(sensitivity-tagged-value-primal v)))
+	  (and (reverse-tagged-value? v)
+	       (tagged-abstract-zero?
+		(reverse-tagged-value-primal v))))))
 
 ;;; Reals
 
@@ -1945,9 +1964,9 @@
 			;; matter what is there, there is an element in the
 			;; extension of v which it is bundlable with.
 			(perturbation-tagged-value? v-perturbation)))
-	       ;; We assume that the components are legal. No matter what
-	       ;; is there, there is an element in the extension of
-	       ;; v-perturbation which v is bundlable with.
+	       ;; We assume that the components are legal. No matter what is
+	       ;; there, there is an element in the extension of v-perturbation
+	       ;; which v is bundlable with.
 	       (and (or (perturbation-tagged-value? v)
 			(bundle? v)
 			(sensitivity-tagged-value? v)
@@ -2686,6 +2705,11 @@
 	  ((union? v2)
 	   (some-cps
 	    (lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k))
+	  ;; One cannot determine the subset relation between abstract zero
+	  ;; and anything other than abstract zero, because the extension of an
+	  ;; abstract zero is not known without a closed-world assumption. We
+	  ;; used to give an error in this case but we now need to return #f to
+	  ;; get certain examples to work.
 	  ((abstract-zero? v1) (k (abstract-zero? v2) cs))
 	  ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	       (and (vlad-true? v1) (vlad-true? v2))
@@ -2707,12 +2731,16 @@
 			(primitive-procedure? v1))
 		    (abstract-zero? v2)))
 	   (k #t cs))
-	  ((and (nonrecursive-closure? v1) (abstract-zero? v2))
+	  ((and (nonrecursive-closure? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u1 cs k) (loop u1 v2 cs k))
 		      (get-nonrecursive-closure-values v1)
 		      cs
 		      k))
-	  ((and (recursive-closure? v1) (abstract-zero? v2))
+	  ((and (recursive-closure? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u1 cs k) (loop u1 v2 cs k))
 		      (get-recursive-closure-values v1)
 		      cs
@@ -2731,7 +2759,9 @@
 	   (loop (get-sensitivity-tagged-value-primal v1) v2 cs k))
 	  ((and (reverse-tagged-value? v1) (abstract-zero? v2))
 	   (loop (get-reverse-tagged-value-primal v1) v2 cs k))
-	  ((and (tagged-pair? v1) (abstract-zero? v2))
+	  ((and (tagged-pair? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (loop (get-tagged-pair-car v1)
 		 v2
 		 cs
@@ -2757,7 +2787,8 @@
 		       (get-recursive-closure-values v2)
 		       cs
 		       k))
-	  ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+	  ((and (perturbation-tagged-value? v1)
+		(perturbation-tagged-value? v2))
 	   (loop (get-perturbation-tagged-value-primal v1)
 		 (get-perturbation-tagged-value-primal v2)
 		 cs
@@ -2881,22 +2912,30 @@
 			(primitive-procedure? v2)
 			(abstract-zero? v2))))
 	   (k #t cs))
-	  ((and (nonrecursive-closure? v1) (abstract-zero? v2))
+	  ((and (nonrecursive-closure? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u1) (loop u1 v2 cs k))
 		      (get-nonrecursive-closure-values v1)
 		      cs
 		      k))
-	  ((and (abstract-zero? v1) (nonrecursive-closure? v1))
+	  ((and (tagged-abstract-zero? v1)
+		(nonrecursive-closure? v1)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u2) (loop v1 u2 cs k))
 		      (get-nonrecursive-closure-values v2)
 		      cs
 		      k))
-	  ((and (recursive-closure? v1) (abstract-zero? v2))
+	  ((and (recursive-closure? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u1) (loop u1 v2 cs k))
 		      (get-recursive-closure-values v1)
 		      cs
 		      k))
-	  ((and (abstract-zero? v1) (recursive-closure? v1))
+	  ((and (tagged-abstract-zero? v1)
+		(recursive-closure? v1)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (every-cps (lambda (u2) (loop v1 u2 cs k))
 		      (get-recursive-closure-values v2)
 		      cs
@@ -2929,7 +2968,9 @@
 	   (loop (get-reverse-tagged-value-primal v1) v2 cs k))
 	  ((and (abstract-zero? v1) (reverse-tagged-value? v2))
 	   (loop v1 (get-reverse-tagged-value-primal v2) cs k))
-	  ((and (tagged-pair? v1) (abstract-zero? v2))
+	  ((and (tagged-pair? v1)
+		(tagged-abstract-zero? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (loop (get-tagged-pair-car v1)
 		 v2
 		 cs
@@ -2937,7 +2978,9 @@
 		  (if r?
 		      (loop (get-tagged-pair-cdr v1) v2 cs k)
 		      (k #f cs)))))
-	  ((and (abstract-zero? v1) (tagged-pair? v2))
+	  ((and (tagged-abstract-zero? v1)
+		(tagged-pair? v2)
+		(equal-tags? (value-tags v1) (value-tags v2)))
 	   (loop v1
 		 (get-tagged-pair-car v2)
 		 cs
@@ -6877,27 +6920,12 @@
 			     (fill-tagged-pair!
 			      u-forward v-car-forward v-cdr-forward)
 			     (k u-forward cs)))))))
-	     ;; here I am: Bundling an abstract zero with anything other than a
-	     ;;            closure, a tagged pair, or an abstract zero is not
-	     ;;            yet implemented.
-	     ((abstract-zero? v)
-	      (unless (or (abstract-zero? v-perturbation)
-			  (and (perturbation-tagged-value? v-perturbation)
-			       (some abstract-zero?
-				     (union-members
-				      (get-perturbation-tagged-value-primal
-				       v-perturbation)))))
-	       ;; debugging
-	       (begin
-		(write (externalize v))
-		(newline)
-		(write (externalize v-perturbation))
-		(newline))
-	       (unimplemented))
+	     ;; ditto
+	     ((and (abstract-zero? v) (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v (perturb v))))
+	      (let ((u-forward (create-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     (else
@@ -6926,7 +6954,10 @@
 
 (define (make-sensitize e) (new-application (added-variable 'sensitize) e))
 
-(define (make-zero e) (new-application (added-variable 'zero) e))
+(define (make-zero e)
+ (if #t					;debugging
+     (new-application (added-variable 'zero) e)
+     (new-application (added-variable 'zero) (added-variable 'zero))))
 
 (define (make-plus e1 e2)
  (new-application (added-variable 'plus) (create-cons-expression e1 e2)))
@@ -7505,8 +7536,17 @@
      ((vlad-false? v-sensitivity) (k #f cs))
      ((vlad-real? v-sensitivity) (k #f cs))
      ((primitive-procedure? v-sensitivity) (k #f cs))
-     ;; It is ambiguous whether an abstract zero is a sensitivity.
-     ((abstract-zero? v-sensitivity) (internal-error))
+     ;; It is ambiguous whether an abstract zero is a sensitivity. But we can't
+     ;; issue an error here because, inter alia, examples t20, t21, and t22
+     ;; break. Nonetheless, unsensitize? is only called in two places:
+     ;; externalize and backpropagator?. For the former, returning #t will
+     ;; allow externalizing an aggregate sensitivity value, like
+     ;; (tagged-pair (sensitivity) abstract-zero ...), that contains
+     ;; abstract-zero instead of (sensitivity abstract-zero) which otherwise
+     ;; would issue an error.  For the latter, returning #t
+     ;; will allow treating somethng as a backpropagator when it closes over
+     ;; abstract-zero instead of (sensitivity abstract-zero).
+     ((abstract-zero? v-sensitivity) (k #t cs))
      ((nonrecursive-closure? v-sensitivity)
       (if (and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
 	       (sensitivity-transform-inverse?
@@ -9180,6 +9220,7 @@
 (define (concrete-value->abstract-value v)
  ;; breaks structure sharing
  (cond
+  ((abstract-zero? v) v)
   ((scalar-value? v)
    (if (and *imprecise-inexacts?* (real? v) (inexact? v)) (abstract-real) v))
   ((nonrecursive-closure? v)
@@ -11007,7 +11048,8 @@
 	    (assert (and (not (eq? (tagged-pair-car v) 'unfilled))
 			 (not (eq? (tagged-pair-cdr v) 'unfilled))
 			 (memq v *tagged-pairs*)))))
-	  (assert (not (some empty-abstract-value? (aggregate-value-values v))))
+	  (assert
+	   (not (some empty-abstract-value? (aggregate-value-values v))))
 	  (let inner ((vs1 (aggregate-value-values v)) (vs (cons v vs)))
 	   (if (null? vs1)
 	       (k vs)
@@ -12682,7 +12724,6 @@
       (all-primitives s)))
 
 (define (generate-unary-ad-declaration v f code p?)
- (assert (not (some abstract-zero? (union-members v))))
  ;; here I am: The result of f might violate the syntactic constraints.
  (c:specifier-function-declaration
   ;; The call to f might issue "might" warnings and might return an empty
@@ -12704,8 +12745,8 @@
 
 (define (generate-binary-ad-declaration v g-value code p?)
  (c:specifier-function-declaration
-  ;; The call to g-value might issue "might" warnings and might return
-  ;; an empty abstract value.
+  ;; The call to g-value might issue "might" warnings and might return an empty
+  ;; abstract value.
   #t p? #f (g-value v)
   (c:function-declarator (c:builtin-name code v)
 			 (c:specifier-parameter v "x"))))
@@ -13445,9 +13486,9 @@
 	    (get-union-values v2))))
 	 ;; We don't generate a run-time warning here that the argument might
 	 ;; not be real. A compile-time warning should have been issued during
-	 ;; flow analysis. Further, this case can't happen since flow analysis
-	 ;; should have yielded a concrete result.
-	 ((and (abstract-zero? v1) (abstract-zero? v2)) (internal-error))
+	 ;; flow analysis. Furthermore, flow analysis should have yielded a
+	 ;; concrete, and hence void, result.
+	 ((and (abstract-zero? v1) (abstract-zero? v2)) 'error)
 	 ;; We don't generate a run-time warning here that the argument might
 	 ;; not be real. A compile-time warning should have been issued during
 	 ;; flow analysis.
@@ -13464,9 +13505,9 @@
 	 (else (c:panic v0 (format #f "Argument to ~a is invalid" code2))))))
       ;; We don't generate a run-time warning here that the argument might not
       ;; be real. A compile-time warning should have been issued during flow
-      ;; analysis. Further, this case can't happen since flow analysis should
-      ;; have yielded a concrete result.
-      ((abstract-zero? v) (internal-error))
+      ;; analysis. Furthermore, flow analysis should have yielded a concrete,
+      ;; and hence void, result.
+      ((abstract-zero? v) 'error)
       (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
   (all-primitives s)))
 
@@ -13490,15 +13531,14 @@
 			(get-union-values v))))
       ;; We don't generate a run-time warning here that the argument might not
       ;; be real. A compile-time warning should have been issued during flow
-      ;; analysis. Further, this case can't happen since flow analysis should
-      ;; have yielded a concrete result.
-      ((abstract-zero? v) (internal-error))
+      ;; analysis. Furthermore, flow analysis should have yielded a concrete,
+      ;; and hence void, result.
+      ((abstract-zero? v) 'error)
       ((vlad-real? v) (generate (if (void? v) v "x")))
       (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
   (all-primitives s)))
 
 (define (generate-unary-ad-definition v f code generate p?)
- (assert (not (some abstract-zero? (union-members v))))
  ;; here I am: The result of f might violate the syntactic constraints.
  (c:specifier-function-definition
   ;; The call to f might issue "might" warnings and might return an empty
@@ -13636,6 +13676,7 @@
 		     widener-instances))
 	   (generate-slot-names v)
 	   (get-union-values v))))
+    ((abstract-zero? v) 'error)
     ((perturbation-tagged-value? v) (c:slot v "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (unperturb v))
@@ -13667,6 +13708,7 @@
 		     widener-instances))
 	   (generate-slot-names v)
 	   (get-union-values v))))
+    ((abstract-zero? v) 'error)
     ((bundle? v) (c:slot v "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (primal v))
@@ -13697,6 +13739,7 @@
 		     widener-instances))
 	   (generate-slot-names v)
 	   (get-union-values v))))
+    ((abstract-zero? v) 'error)
     ((bundle? v) (c:slot v "x" "t"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (tangent v))
@@ -13831,11 +13874,20 @@
 		 ;; We don't generate a run-time warning here that the argument
 		 ;; might not be bundlable. A compile-time warning should have
 		 ;; been issued during flow analysis.
-		 (abstract-zero? v2)))
+		 (abstract-zero? v2)
+		 (and (perturbation-tagged-value? v2)
+		      (abstract-zero? (unperturb v2)))))
 	;; In all cases, the result will be void so this case should never
 	;; happen.
 	'error)
-       ((or (and (vlad-real? v1) (every-bundlable? v1 v2))
+       ((or (and (vlad-real? v1)
+		 (or (every-bundlable? v1 v2)
+		     ;; We don't generate a run-time warning here that the
+		     ;; argument might not be bundlable. A compile-time warning
+		     ;; should have been issued during flow analysis.
+		     (abstract-zero? v2)
+		     (and (perturbation-tagged-value? v2)
+			  (abstract-zero? (unperturb v2)))))
 	    ;; here I am: need to check conformance
 	    ;;            even when one or both arguments is void
 	    ;;            and even when one or both arguments is deep
@@ -13895,19 +13947,20 @@
 	 (c:constructor-name (bundle v1 v2))
 	 (map
 	  (lambda (code3a v3)
-	   (assert (void? (tangent v3)))
-	   (if (void? v3)
-	       '()
-	       (c:call
-		(c:builtin-name "bundle" (vlad-cons (primal v3) (tangent v3)))
-		(if (void? (vlad-cons (primal v3) (tangent v3)))
-		    '()
-		    (c:call
-		     (c:constructor-name (vlad-cons (primal v3) (tangent v3)))
-		     (if (void? (primal v3))
-			 '()
-			 (c:slot v1 (c:slot v "x" "a") code3a))
-		     '())))))
+	   (cond
+	    ((void? v3) '())
+	    (else
+	     (assert (void? (tangent v3)))
+	     (c:call
+	      (c:builtin-name "bundle" (vlad-cons (primal v3) (tangent v3)))
+	      (if (void? (vlad-cons (primal v3) (tangent v3)))
+		  '()
+		  (c:call
+		   (c:constructor-name (vlad-cons (primal v3) (tangent v3)))
+		   (if (void? (primal v3))
+		       '()
+		       (c:slot v1 (c:slot v "x" "a") code3a))
+		   '()))))))
 	  (generate-slot-names v1)
 	  (aggregate-value-values (bundle v1 v2)))))
        ((and
@@ -13923,29 +13976,36 @@
 	 (c:constructor-name (bundle v1 v2))
 	 (map
 	  (lambda (code3b v3)
-	   (assert (void? (primal v3)))
-	   (if (void? v3)
-	       '()
-	       (c:call
-		(c:builtin-name "bundle" (vlad-cons (primal v3) (tangent v3)))
-		(if (void? (vlad-cons (primal v3) (tangent v3)))
-		    '()
-		    (c:call
-		     (c:constructor-name (vlad-cons (primal v3) (tangent v3)))
-		     '()
-		     (if (void? (tangent v3))
-			 '()
-			 (c:slot v2 (c:slot v "x" "d") code3b)))))))
+	   (cond
+	    ((void? v3) '())
+	    (else
+	     (assert (void? (primal v3)))
+	     (c:call
+	      (c:builtin-name "bundle" (vlad-cons (primal v3) (tangent v3)))
+	      (if (void? (vlad-cons (primal v3) (tangent v3)))
+		  '()
+		  (c:call
+		   (c:constructor-name (vlad-cons (primal v3) (tangent v3)))
+		   '()
+		   (if (void? (tangent v3))
+		       '()
+		       (c:slot v2 (c:slot v "x" "d") code3b))))))))
 	  (generate-slot-names v2)
 	  (aggregate-value-values (bundle v1 v2)))))
-       ;; here I am: Bundling an abstract zero with anything other than a
-       ;;            closure or a tagged pair is not yet implemented.
-       ((abstract-zero? v1) (unimplemented))
+       ;; This case handles bundling an abstract zero with anything other than
+       ;; a closure or a tagged pair. We don't generate a run-time warning here
+       ;; that the argument might not be bundlable when it contains an abstract
+       ;; zero. A compile-time warning should have been issued during flow
+       ;; analysis.
+       ((abstract-zero? v1)
+	(c:call (c:constructor-name (bundle v1 v2))
+		'()
+		(if (void? v2) '() (c:slot v "x" "d"))))
        (else
 	(c:panic (bundle-value v) "Arguments to bundle do not conform")))))
-    ;; This case can't happen since flow analysis should have yielded an
-    ;; abstract zero, and hence void, result.
-    ((abstract-zero? v) (internal-error))
+    ;; Flow analysis should have yielded an abstract zero, and hence void,
+    ;; result.
+    ((abstract-zero? v) 'error)
     (else (c:panic (bundle-value v) "Arguments to bundle do not conform"))))))
 
 (define (generate-sensitize-definitions widener-instances)
@@ -14007,6 +14067,7 @@
 		     widener-instances))
 	   (generate-slot-names v)
 	   (get-union-values v))))
+    ((abstract-zero? v) 'error)
     ((sensitivity-tagged-value? v) (c:slot v "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (unsensitize v))
@@ -14147,12 +14208,12 @@
 	  (aggregate-value-values (plus v1 v2))
 	  (aggregate-value-values v1)
 	  (aggregate-value-values v2))))
-       ;; This case can't happen since flow analysis should have yielded an
-       ;; abstract zero, and hence void, result.
+       ;; Flow analysis should have yielded an abstract zero, and hence void,
+       ;; result.
        ((and (tagged-abstract-zero? v1)
 	     (tagged-abstract-zero? v2)
 	     (equal-tags? (value-tags v1) (value-tags v2)))
-	(internal-error))
+	'error)
        ;; If v1 is void then v2 cannot be void as well as the result would be
        ;; void.
        ((and (tagged-abstract-zero? v1)
@@ -14164,9 +14225,9 @@
 	     (equal-tags? (value-tags v1) (value-tags v2)))
 	(c:slot v "x" "a"))
        (else (c:panic (plus-value v) "Arguments to plus do not conform")))))
-    ;; This case can't happen since flow analysis should have yielded an
-    ;; abstract zero, and hence void, result.
-    ((abstract-zero? v) (internal-error))
+    ;; Flow analysis should have yielded an abstract zero, and hence void,
+    ;; result.
+    ((abstract-zero? v) 'error)
     (else (c:panic (plus-value v) "Arguments to plus do not conform"))))))
 
 (define (generate-*j-definitions widener-instances)
@@ -14228,6 +14289,7 @@
 		     widener-instances))
 	   (generate-slot-names v)
 	   (get-union-values v))))
+    ((abstract-zero? v) 'error)
     ((reverse-tagged-value? v) (c:slot v "x" "p"))
     ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
      (c:call* (c:constructor-name (*j-inverse v))
