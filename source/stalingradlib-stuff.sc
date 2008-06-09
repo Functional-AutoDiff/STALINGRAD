@@ -3049,8 +3049,8 @@
 	  (else (k #f cs)))))))))
 
 (define (abstract-value-unionable? v1 v2)
- ;; abstract zero: Can widen the union of two different zeros into an abstract
- ;;                zero.
+ ;; here I am: Can widen the union of two different zeros into an abstract
+ ;;            zero.
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   4
@@ -3140,11 +3140,36 @@
 			    cs
 			    k)
 		      (k #f cs)))))
+	  ;; These are unsound narrowing that are needed to make t20 and t21
+	  ;; work.
+	  ((or (and (abstract-zero? v1)
+		    (or (vlad-real? v2)
+			(perturbation-tagged-value? v2)
+			(bundle? v2)
+			(sensitivity-tagged-value? v2)
+			(reverse-tagged-value? v2)))
+	       (and (tagged-abstract-zero? v1)
+		    (or (nonrecursive-closure? v2)
+			(recursive-closure? v2)
+			(tagged-pair? v2))
+		    (equal-tags? (value-tags v1) (value-tags v2)))
+	       (and (or (vlad-real? v1)
+			(perturbation-tagged-value? v1)
+			(bundle? v1)
+			(sensitivity-tagged-value? v1)
+			(reverse-tagged-value? v1))
+		    (abstract-zero? v2))
+	       (and (or (nonrecursive-closure? v1)
+			(recursive-closure? v1)
+			(tagged-pair? v1))
+		    (tagged-abstract-zero? v2)
+		    (equal-tags? (value-tags v1) (value-tags v2))))
+	   (k #t cs))
 	  (else (k #f cs)))))))))
 
 (define (abstract-value-union-internal v1 v2)
- ;; abstract zero: Can widen the union of two different zeros into an abstract
- ;;                zero.
+ ;; here I am: Can widen the union of two different zeros into an abstract
+ ;;            zero.
  ;; This is written in CPS so as not to break structure sharing.
  ;; The output can be wider than the strict union since unions of transformed
  ;; booleans are transformed into transformed unions of booleans, widening in
@@ -3358,6 +3383,336 @@
 	     (lambda (v-car cs)
 	      (loop (get-tagged-pair-cdr v1)
 		    (get-tagged-pair-cdr v2)
+		    cs
+		    (lambda (v-cdr cs)
+		     (fill-tagged-pair! u v-car v-cdr)
+		     (k u cs)))))))
+     ;; The next sixteen cases below are unsound narrowing that are needed to
+     ;; make t20 and t21 work.
+     ((and (abstract-zero? v1) (vlad-real? v2))
+      ;; The case where v2 is a concrete zero should have been handled by the
+      ;; abstract-value-subset? case above.
+      (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
+     ((and (abstract-zero? v1) (perturbation-tagged-value? v2))
+      (let ((u (make-perturbation-tagged-value 'unfilled
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       'unfilled)))
+       (loop v1
+	     (get-perturbation-tagged-value-primal v2)
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-perturbation-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (abstract-zero? v1) (bundle? v2))
+      (let ((u (make-bundle 'unfilled
+			    'unfilled
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    'unfilled)))
+       (loop v1
+	     (get-bundle-primal v2)
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v-primal cs)
+	      (loop v1
+		    (get-bundle-tangent v2)
+		    cs
+		    (lambda (v-tangent cs)
+		     (fill-bundle! u v-primal v-tangent)
+		     (k u cs)))))))
+     ((and (abstract-zero? v1) (sensitivity-tagged-value? v2))
+      (let ((u
+	     (make-sensitivity-tagged-value
+	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (loop v1
+	     (get-sensitivity-tagged-value-primal v2)
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-sensitivity-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (abstract-zero? v1) (reverse-tagged-value? v2))
+      (let ((u
+	     (make-reverse-tagged-value
+	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (loop v1
+	     (get-reverse-tagged-value-primal v2)
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-reverse-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (tagged-abstract-zero? v1)
+	   (nonrecursive-closure? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      ;; See the note in abstract-environment=?.
+      (let ((u (make-nonrecursive-closure
+		'unfilled
+		(nonrecursive-closure-lambda-expression v2)
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		'unfilled)))
+       (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		(get-nonrecursive-closure-values v2)
+		(cons (cons (cons v1 v2) u) cs)
+		(lambda (vs cs)
+		 (fill-nonrecursive-closure-values! u vs)
+		 (k u cs)))))
+     ((and (tagged-abstract-zero? v1)
+	   (recursive-closure? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      ;; See the note in abstract-environment=?.
+      (let ((u (make-recursive-closure
+		'unfilled
+		(recursive-closure-procedure-variables v2)
+		(recursive-closure-lambda-expressions v2)
+		(recursive-closure-index v2)
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		'unfilled)))
+       (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		(get-recursive-closure-values v2)
+		(cons (cons (cons v1 v2) u) cs)
+		(lambda (vs cs)
+		 (fill-recursive-closure-values! u vs)
+		 (k u cs)))))
+     ((and (tagged-abstract-zero? v1)
+	   (tagged-pair? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      (let ((u (make-tagged-pair (tagged-pair-tags v2)
+				 'unfilled
+				 'unfilled
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+       (loop v1
+	     (get-tagged-pair-car v2)
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v-car cs)
+	      (loop v1
+		    (get-tagged-pair-cdr v2)
+		    cs
+		    (lambda (v-cdr cs)
+		     (fill-tagged-pair! u v-car v-cdr)
+		     (k u cs)))))))
+     ((and (vlad-real? v1) (abstract-zero? v2))
+      ;; The case where v2 is a concrete zero should have been handled by the
+      ;; abstract-value-subset? case above.
+      (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
+     ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
+      (let ((u (make-perturbation-tagged-value 'unfilled
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       #f
+					       'unfilled)))
+       (loop (get-perturbation-tagged-value-primal v1)
+	     v2
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-perturbation-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (bundle? v1) (abstract-zero? v2))
+      (let ((u (make-bundle 'unfilled
+			    'unfilled
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    'unfilled)))
+       (loop (get-bundle-primal v1)
+	     v2
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v-primal cs)
+	      (loop (get-bundle-tangent v1)
+		    v2
+		    cs
+		    (lambda (v-tangent cs)
+		     (fill-bundle! u v-primal v-tangent)
+		     (k u cs)))))))
+     ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
+      (let ((u
+	     (make-sensitivity-tagged-value
+	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (loop (get-sensitivity-tagged-value-primal v1)
+	     v2
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-sensitivity-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (reverse-tagged-value? v1) (abstract-zero? v2))
+      (let ((u
+	     (make-reverse-tagged-value
+	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (loop (get-reverse-tagged-value-primal v1)
+	     v2
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v cs)
+	      (fill-reverse-tagged-value-primal! u v)
+	      (k u cs)))))
+     ((and (nonrecursive-closure? v1)
+	   (tagged-abstract-zero? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      ;; See the note in abstract-environment=?.
+      (let ((u (make-nonrecursive-closure
+		'unfilled
+		(nonrecursive-closure-lambda-expression v1)
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		'unfilled)))
+       (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		(get-nonrecursive-closure-values v1)
+		(cons (cons (cons v1 v2) u) cs)
+		(lambda (vs cs)
+		 (fill-nonrecursive-closure-values! u vs)
+		 (k u cs)))))
+     ((and (recursive-closure? v1)
+	   (tagged-abstract-zero? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      ;; See the note in abstract-environment=?.
+      (let ((u (make-recursive-closure
+		'unfilled
+		(recursive-closure-procedure-variables v1)
+		(recursive-closure-lambda-expressions v1)
+		(recursive-closure-index v1)
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		#f
+		'unfilled)))
+       (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		(get-recursive-closure-values v1)
+		(cons (cons (cons v1 v2) u) cs)
+		(lambda (vs cs)
+		 (fill-recursive-closure-values! u vs)
+		 (k u cs)))))
+     ((and (tagged-pair? v1)
+	   (tagged-abstract-zero? v2)
+	   (equal-tags? (value-tags v1) (value-tags v2)))
+      (let ((u (make-tagged-pair (tagged-pair-tags v1)
+				 'unfilled
+				 'unfilled
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 #f
+				 'unfilled)))
+       (loop (get-tagged-pair-car v1)
+	     v2
+	     (cons (cons (cons v1 v2) u) cs)
+	     (lambda (v-car cs)
+	      (loop (get-tagged-pair-cdr v1)
+		    v2
 		    cs
 		    (lambda (v-cdr cs)
 		     (fill-tagged-pair! u v-car v-cdr)
@@ -11835,10 +12190,22 @@
 	    cs
 	    (adjoinp widener-instance=? (make-widener-instance v1 v2) n)
 	    k))
-    ((or (abstract-zero? v2) (scalar-value? v2))
+    ((or (tagged-abstract-zero? v2) (scalar-value? v2))
      (k (adjoinp widener-instance=? (make-widener-instance v1 v2) n) cs))
+    ;; This handles the unsound narrowing that is needed to make t20 and t21
+    ;; work.
+    ((tagged-abstract-zero? v1)
+     (let inner ((vs2 (aggregate-value-values v2))
+		 (cs (cons (cons v1 v2) cs))
+		 (n (adjoinp
+		     widener-instance=? (make-widener-instance v1 v2) n)))
+      (if (null? vs2)
+	  (k n cs)
+	  (outer
+	   v1 (first vs2) cs n (lambda (n cs) (inner (rest vs2) cs n))))))
     ;; This will only be done on conforming structures since the analysis is
     ;; almost union free.
+    ;; needs work: The above is no-longer true given (tagged) abstract zeros.
     (else
      (let inner ((vs1 (aggregate-value-values v1))
 		 (vs2 (aggregate-value-values v2))
@@ -11936,7 +12303,19 @@
      (map (lambda (u2)
 	   (make-widener-instance (widener-instance-v1 widener-instance) u2))
 	  (get-union-values (widener-instance-v2 widener-instance))))
-    ((real? (widener-instance-v1 widener-instance)) '())
+    ((or (tagged-abstract-zero? (widener-instance-v2 widener-instance))
+	 (scalar-value? (widener-instance-v2 widener-instance)))
+     '())
+    ;; This handles the unsound narrowing that is needed to make t20 and t21
+    ;; work.
+    ((tagged-abstract-zero? (widener-instance-v1 widener-instance))
+     (if (scalar-value? (widener-instance-v2 widener-instance))
+	 '()
+	 (map
+	  (lambda (u2)
+	   (make-widener-instance
+	    (widener-instance-v1 widener-instance) u2))
+	  (aggregate-value-values (widener-instance-v2 widener-instance)))))
     (else
      ;; This will only be done on conforming structures since the analysis is
      ;; almost union free.
@@ -13392,8 +13771,22 @@
 			     (get-union-values v2))))
 	   (c:call (c:unioner-name u2 v2)
 		   (if (void? u2) '() (c:widen v1 u2 "x" widener-instances)))))
-	 ;; This assumes that Scheme inexact numbers are printed as C doubles.
-	 ((real? v1) (exact->inexact v1))
+	 ((or (tagged-abstract-zero? v2) (scalar-value? v2))
+	  (cond ((void? v2) 'error)
+		;; This assumes that Scheme inexact numbers are printed as C
+		;; doubles.
+		((real? v1) (exact->inexact v1))
+		((tagged-abstract-zero? v1) "0.0")
+		(else (internal-error))))
+	 ;; This handles the unsound narrowing that is needed to make t20 and
+	 ;; t21 work.
+	 ((tagged-abstract-zero? v1)
+	  (c:call* (c:constructor-name v2)
+		   (map (lambda (v2a)
+			 (if (void? v2a)
+			     '()
+			     (c:widen v1 v2a 'error widener-instances)))
+			(aggregate-value-values v2))))
 	 (else
 	  (c:call*
 	   (c:constructor-name v2)
@@ -13493,15 +13886,26 @@
 	 ;; not be real. A compile-time warning should have been issued during
 	 ;; flow analysis.
 	 ((and (abstract-zero? v1) (vlad-real? v2))
-	  (generate "0.0" (if (void? v2) v2 (c:slot v "x" "d"))))
+	  (generate
+	   ;; This assumes that Scheme inexact numbers are printed as C
+	   ;; doubles.
+	   "0.0" (if (void? v2) (exact->inexact v2) (c:slot v "x" "d"))))
 	 ;; We don't generate a run-time warning here that the argument might
 	 ;; not be real. A compile-time warning should have been issued during
 	 ;; flow analysis.
 	 ((and (vlad-real? v1) (abstract-zero? v2))
-	  (generate (if (void? v1) v1 (c:slot v "x" "a")) "0.0"))
+	  (generate
+	   ;; This assumes that Scheme inexact numbers are printed as C
+	   ;; doubles.
+	   (if (void? v1) (exact->inexact v1) (c:slot v "x" "a")) "0.0"))
 	 ((and (vlad-real? v1) (vlad-real? v2))
-	  (generate (if (void? v1) v1 (c:slot v "x" "a"))
-		    (if (void? v2) v2 (c:slot v "x" "d"))))
+	  (generate
+	   ;; This assumes that Scheme inexact numbers are printed as C
+	   ;; doubles.
+	   (if (void? v1) (exact->inexact v1) (c:slot v "x" "a"))
+	   ;; This assumes that Scheme inexact numbers are printed as C
+	   ;; doubles.
+	   (if (void? v2) (exact->inexact v2) (c:slot v "x" "d"))))
 	 (else (c:panic v0 (format #f "Argument to ~a is invalid" code2))))))
       ;; We don't generate a run-time warning here that the argument might not
       ;; be real. A compile-time warning should have been issued during flow
@@ -13534,7 +13938,8 @@
       ;; analysis. Furthermore, flow analysis should have yielded a concrete,
       ;; and hence void, result.
       ((abstract-zero? v) 'error)
-      ((vlad-real? v) (generate (if (void? v) v "x")))
+      ;; This assumes that Scheme inexact numbers are printed as C doubles.
+      ((vlad-real? v) (generate (if (void? v) (exact->inexact v) "x")))
       (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
   (all-primitives s)))
 
