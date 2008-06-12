@@ -292,7 +292,6 @@ Compiler    Reverse n=4 781.340u 1.068s 13:09.79 0.000u 0.000s 0:00.00
 -1.77518325000878008
 -12.8862943611198908
 -------------------------------------------------------------------------------
--------------------------------------------------------------------------------
 Interpreter Forward n= 2   1.752u 0.016s  0:01.78
 Interpreter Forward n= 3   2.180u 0.004s  0:02.20
 Interpreter Forward n= 4   2.988u 0.000s  0:02.99
@@ -316,3 +315,24 @@ Compiler    Forward n= 4 226.434u 1.552s  3:50.25
 Compiler    Reverse n= 2 175.302u 0.392s  2:59.27
 Compiler    Reverse n= 3 390.556u 2.320s  6:34.49
 Compiler    Reverse n= 4 781.340u 1.068s 13:09.79
+-------------------------------------------------------------------------------
+With abstract zeros
+Interpreter Forward n= 2     1.616u 0.020s    0:01.65
+Interpreter Forward n= 3     2.164u 0.004s    0:02.17
+Interpreter Forward n= 4     3.036u 0.012s    0:03.05
+Interpreter Forward n=10    16.273u 0.016s    0:16.29
+Interpreter Forward n=20   102.130u 0.084s    1:42.96
+Interpreter Forward n=30   350.201u 0.976s    5:52.27
+Interpreter Forward n=40  1089.484u 0.676s   18:12.23
+-------------------------------------------------------------------------------
+Interpreter Reverse n= 2    10.388u 0.012s    0:10.41
+Interpreter Reverse n= 3    10.460u 0.048s    0:10.52
+Interpreter Reverse n= 4    10.616u 0.008s    0:10.64
+Interpreter Reverse n=10    11.880u 0.028s    0:11.91
+Interpreter Reverse n=20    14.656u 0.028s    0:14.69
+Interpreter Reverse n=30    20.373u 0.016s    0:20.39
+Interpreter Reverse n=40    30.805u 0.064s    0:30.89
+Interpreter Reverse n=100  460.508u 0.212s    7:41.06
+Interpreter Reverse n=200 7891.113u 7.440s 2:11:49.10
+Interpreter Reverse n=300
+Interpreter Reverse n=400

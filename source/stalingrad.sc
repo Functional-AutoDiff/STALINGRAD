@@ -255,7 +255,7 @@
  (set! *tagged-pair-depth-limit*
        (if tagged-pair-depth-limit? tagged-pair-depth-limit #f))
  (set! *memoized?* *flow-analysis?*)
- (initialize-basis!)
+ (without-abstract (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -325,7 +325,7 @@
 			 (format #t "~a ~s~%"
 				 (number->string-of-length
 				  (primitive-procedure-meter v) 7)
-				 (value-binding-variable b)))))
+				 (variable-name (value-binding-variable b))))))
 		      (reverse *value-bindings*))))))
 	(loop (rest es) ds)))))
  ;; debugging

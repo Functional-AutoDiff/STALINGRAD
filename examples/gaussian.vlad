@@ -1,6 +1,6 @@
 ;;; -*- scheme -*-
 
-(include "math.vlad")
+(include "math")
 
 (define (bin-num) 40)
 
