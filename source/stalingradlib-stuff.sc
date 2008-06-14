@@ -458,6 +458,8 @@
 
 (define *tagged-pair-depth-limit* #f)
 
+(define *almost-union-free?* #f)
+
 (define *memoized?* #f)
 
 (define *expensive-checks?* #f)
@@ -1781,9 +1783,7 @@
 		    (recursive-closure-lambda-expressions u1)
 		    (recursive-closure-lambda-expressions u2))))
 
-(define (closure? u)
- (assert (not (union? u)))
- (or (nonrecursive-closure? u) (recursive-closure? u)))
+(define (closure? u) (or (nonrecursive-closure? u) (recursive-closure? u)))
 
 (define (closure-match? u1 u2)
  (assert (and (closure? u1) (closure? u2)))
@@ -2450,7 +2450,6 @@
  (tagged-pair-cdr v))
 
 (define (vlad-pair? u)
- (assert (not (union? u)))
  (and (tagged-pair? u) (empty-tags? (tagged-pair-tags u))))
 
 (define (vlad-car u)
@@ -3064,118 +3063,120 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   4
-  (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
-   (let ((found?
-	  (find-if
-	   (lambda (c) (and (eq? (car (car c)) v1) (eq? (cdr (car c)) v2)))
-	   cs)))
-    (if found?
-	(k (cdr found?) cs)
-	;; needs work: What is the circular value?
-	(let* ((c (cons (cons v1 v2) #t))
-	       (cs (cons c cs))
-	       (k (lambda (r? cs)
-		   (set-cdr! c r?)
-		   (k r? cs))))
-	 (cond
-	  ;; This is an optimization.
-	  ((eq? v1 v2) (k #t cs))
-	  ((union? v1)
-	   (every-cps
-	    (lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k))
-	  ((union? v2)
-	   (every-cps
-	    (lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k))
-	  ((or (abstract-value-subset? v1 v2)
-	       (abstract-value-subset? v2 v1)
-	       (and (vlad-boolean? v1) (vlad-boolean? v2))
-	       (and (vlad-real? v1) (vlad-real? v2))
-	       (and (backpropagator? v1) (backpropagator? v2)))
-	   (k #t cs))
-	  ((and (nonrecursive-closure? v1)
-		(nonrecursive-closure? v2)
-		(nonrecursive-closure-match? v1 v2))
-	   ;; See the note in abstract-environment=?.
-	   (every2-cps loop
-		       (get-nonrecursive-closure-values v1)
-		       (get-nonrecursive-closure-values v2)
-		       cs
-		       k))
-	  ((and (recursive-closure? v1)
-		(recursive-closure? v2)
-		(recursive-closure-match? v1 v2))
-	   ;; See the note in abstract-environment=?.
-	   (every2-cps loop
-		       (get-recursive-closure-values v1)
-		       (get-recursive-closure-values v2)
-		       cs
-		       k))
-	  ((and (perturbation-tagged-value? v1)
-		(perturbation-tagged-value? v2))
-	   (loop (get-perturbation-tagged-value-primal v1)
-		 (get-perturbation-tagged-value-primal v2)
-		 cs
-		 k))
-	  ((and (bundle? v1) (bundle? v2))
-	   (loop (get-bundle-primal v1)
-		 (get-bundle-primal v2)
-		 cs
-		 (lambda (r? cs)
-		  (if r?
-		      (loop (get-bundle-tangent v1)
-			    (get-bundle-tangent v2)
-			    cs
-			    k)
-		      (k #f cs)))))
-	  ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
-	   (loop (get-sensitivity-tagged-value-primal v1)
-		 (get-sensitivity-tagged-value-primal v2)
-		 cs
-		 k))
-	  ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-	   (loop (get-reverse-tagged-value-primal v1)
-		 (get-reverse-tagged-value-primal v2)
-		 cs
-		 k))
-	  ((and (tagged-pair? v1)
-		(tagged-pair? v2)
-		(equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	   (loop (get-tagged-pair-car v1)
-		 (get-tagged-pair-car v2)
-		 cs
-		 (lambda (r? cs)
-		  (if r?
-		      (loop (get-tagged-pair-cdr v1)
-			    (get-tagged-pair-cdr v2)
-			    cs
-			    k)
-		      (k #f cs)))))
-	  ;; These are unsound narrowing that are needed to make t20 and t21
-	  ;; work.
-	  ((or (and (abstract-zero? v1)
-		    (or (vlad-real? v2)
-			(perturbation-tagged-value? v2)
-			(bundle? v2)
-			(sensitivity-tagged-value? v2)
-			(reverse-tagged-value? v2)))
-	       (and (tagged-abstract-zero? v1)
-		    (or (nonrecursive-closure? v2)
-			(recursive-closure? v2)
-			(tagged-pair? v2))
-		    (equal-tags? (value-tags v1) (value-tags v2)))
-	       (and (or (vlad-real? v1)
-			(perturbation-tagged-value? v1)
-			(bundle? v1)
-			(sensitivity-tagged-value? v1)
-			(reverse-tagged-value? v1))
-		    (abstract-zero? v2))
-	       (and (or (nonrecursive-closure? v1)
-			(recursive-closure? v1)
-			(tagged-pair? v1))
-		    (tagged-abstract-zero? v2)
-		    (equal-tags? (value-tags v1) (value-tags v2))))
-	   (k #t cs))
-	  (else (k #f cs)))))))))
+  (or (not *almost-union-free?*)
+      (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (r? cs) r?)))
+       (let ((found?
+	      (find-if
+	       (lambda (c) (and (eq? (car (car c)) v1) (eq? (cdr (car c)) v2)))
+	       cs)))
+	(if found?
+	    (k (cdr found?) cs)
+	    ;; needs work: What is the circular value?
+	    (let* ((c (cons (cons v1 v2) #t))
+		   (cs (cons c cs))
+		   (k (lambda (r? cs)
+		       (set-cdr! c r?)
+		       (k r? cs))))
+	     (cond
+	      ;; This is an optimization.
+	      ((eq? v1 v2) (k #t cs))
+	      ((union? v1)
+	       (every-cps
+		(lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k))
+	      ((union? v2)
+	       (every-cps
+		(lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k))
+	      ((or (abstract-value-subset? v1 v2)
+		   (abstract-value-subset? v2 v1)
+		   (and (vlad-boolean? v1) (vlad-boolean? v2))
+		   (and (vlad-real? v1) (vlad-real? v2))
+		   (and (backpropagator? v1) (backpropagator? v2)))
+	       (k #t cs))
+	      ((and (nonrecursive-closure? v1)
+		    (nonrecursive-closure? v2)
+		    (nonrecursive-closure-match? v1 v2))
+	       ;; See the note in abstract-environment=?.
+	       (every2-cps loop
+			   (get-nonrecursive-closure-values v1)
+			   (get-nonrecursive-closure-values v2)
+			   cs
+			   k))
+	      ((and (recursive-closure? v1)
+		    (recursive-closure? v2)
+		    (recursive-closure-match? v1 v2))
+	       ;; See the note in abstract-environment=?.
+	       (every2-cps loop
+			   (get-recursive-closure-values v1)
+			   (get-recursive-closure-values v2)
+			   cs
+			   k))
+	      ((and (perturbation-tagged-value? v1)
+		    (perturbation-tagged-value? v2))
+	       (loop (get-perturbation-tagged-value-primal v1)
+		     (get-perturbation-tagged-value-primal v2)
+		     cs
+		     k))
+	      ((and (bundle? v1) (bundle? v2))
+	       (loop (get-bundle-primal v1)
+		     (get-bundle-primal v2)
+		     cs
+		     (lambda (r? cs)
+		      (if r?
+			  (loop (get-bundle-tangent v1)
+				(get-bundle-tangent v2)
+				cs
+				k)
+			  (k #f cs)))))
+	      ((and (sensitivity-tagged-value? v1)
+		    (sensitivity-tagged-value? v2))
+	       (loop (get-sensitivity-tagged-value-primal v1)
+		     (get-sensitivity-tagged-value-primal v2)
+		     cs
+		     k))
+	      ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+	       (loop (get-reverse-tagged-value-primal v1)
+		     (get-reverse-tagged-value-primal v2)
+		     cs
+		     k))
+	      ((and (tagged-pair? v1)
+		    (tagged-pair? v2)
+		    (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+	       (loop (get-tagged-pair-car v1)
+		     (get-tagged-pair-car v2)
+		     cs
+		     (lambda (r? cs)
+		      (if r?
+			  (loop (get-tagged-pair-cdr v1)
+				(get-tagged-pair-cdr v2)
+				cs
+				k)
+			  (k #f cs)))))
+	      ;; These are unsound narrowing that are needed to make t20 and
+	      ;; t21 work.
+	      ((or (and (abstract-zero? v1)
+			(or (vlad-real? v2)
+			    (perturbation-tagged-value? v2)
+			    (bundle? v2)
+			    (sensitivity-tagged-value? v2)
+			    (reverse-tagged-value? v2)))
+		   (and (tagged-abstract-zero? v1)
+			(or (nonrecursive-closure? v2)
+			    (recursive-closure? v2)
+			    (tagged-pair? v2))
+			(equal-tags? (value-tags v1) (value-tags v2)))
+		   (and (or (vlad-real? v1)
+			    (perturbation-tagged-value? v1)
+			    (bundle? v1)
+			    (sensitivity-tagged-value? v1)
+			    (reverse-tagged-value? v1))
+			(abstract-zero? v2))
+		   (and (or (nonrecursive-closure? v1)
+			    (recursive-closure? v1)
+			    (tagged-pair? v1))
+			(tagged-abstract-zero? v2)
+			(equal-tags? (value-tags v1) (value-tags v2))))
+	       (k #t cs))
+	      (else (k #f cs))))))))))
 
 (define (abstract-value-union-internal v1 v2)
  ;; here I am: Can widen the union of two different zeros into an abstract
@@ -3186,550 +3187,636 @@
  ;; the process (for bundles).
  (time-it-bucket
   5
-  (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (v cs) v)))
-   (let ((found? (find-if (lambda (c)
-			   (and (eq? (car (car c)) v1) (eq? (cdr (car c)) v2)))
-			  cs)))
-    (cond
-     (found? (k (cdr found?) cs))
-     ((union? v1)
-      (unless (abstract-value-unionable? v1 v2)
-       (compile-time-error "Program is not almost union free: ~s ~s"
-			   (externalize v1)
-			   (externalize v2)))
-      (let* ((us (maximal-elements
-		  abstract-value-subset?
-		  (remove-duplicatesp
-		   deep-abstract-value=?
-		   (append (union-members v1) (union-members v2)))))
-	     (u (if (and (not (null? us)) (null? (rest us)))
-		    (first us)
-		    (create-union us))))
-       (k u (cons (cons (cons v1 v2) u) cs))))
-     ((union? v2)
-      (unless (abstract-value-unionable? v1 v2)
-       (compile-time-error "Program is not almost union free: ~s ~s"
-			   (externalize v1)
-			   (externalize v2)))
-      (let* ((us (maximal-elements
-		  abstract-value-subset?
-		  (remove-duplicatesp
-		   deep-abstract-value=? (cons v1 (union-members v2)))))
-	     (u (if (and (not (null? us)) (null? (rest us)))
-		    (first us)
-		    (create-union us))))
-       (k u (cons (cons (cons v1 v2) u) cs))))
-     ((abstract-value-subset? v1 v2)
-      (let ((u v2)) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((abstract-value-subset? v2 v1)
-      (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (vlad-boolean? v1) (vlad-boolean? v2))
-      (let ((u (abstract-boolean))) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (vlad-real? v1) (vlad-real? v2))
-      (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (nonrecursive-closure? v1)
-	   (nonrecursive-closure? v2)
-	   (nonrecursive-closure-match? v1 v2)
-	   (every abstract-value-unionable?
-		  (get-nonrecursive-closure-values v1)
-		  (get-nonrecursive-closure-values v2)))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-nonrecursive-closure
-		'unfilled
-		(nonrecursive-closure-lambda-expression v1)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map2-cps loop
-		 (get-nonrecursive-closure-values v1)
-		 (get-nonrecursive-closure-values v2)
-		 (cons (cons (cons v1 v2) u) cs)
-		 (lambda (vs cs)
-		  (fill-nonrecursive-closure-values! u vs)
-		  (k u cs)))))
-     ((and (backpropagator? v1) (backpropagator? v2))
-      (let ((u (if (deep-abstract-value=? v1 v2)
-		   v1
-		   (create-union (list v1 v2)))))
-       (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (recursive-closure? v1)
-	   (recursive-closure? v2)
-	   (recursive-closure-match? v1 v2))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-recursive-closure
-		'unfilled
-		(recursive-closure-procedure-variables v1)
-		(recursive-closure-lambda-expressions v1)
-		(recursive-closure-index v1)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map2-cps loop
-		 (get-recursive-closure-values v1)
-		 (get-recursive-closure-values v2)
-		 (cons (cons (cons v1 v2) u) cs)
-		 (lambda (vs cs)
-		  (fill-recursive-closure-values! u vs)
-		  (k u cs)))))
-     ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
-      (let ((u (make-perturbation-tagged-value 'unfilled
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       'unfilled)))
-       (loop (get-perturbation-tagged-value-primal v1)
-	     (get-perturbation-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-perturbation-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (bundle? v1) (bundle? v2))
-      (let ((u (make-bundle 'unfilled
-			    'unfilled
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-       (loop (get-bundle-primal v1)
-	     (get-bundle-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-primal cs)
-	      (loop (get-bundle-tangent v1)
-		    (get-bundle-tangent v2)
-		    cs
-		    (lambda (v-tangent cs)
-		     (fill-bundle! u v-primal v-tangent)
-		     (k u cs)))))))
-     ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
-      (let ((u
-	     (make-sensitivity-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop (get-sensitivity-tagged-value-primal v1)
-	     (get-sensitivity-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-sensitivity-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-      (let ((u
-	     (make-reverse-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop (get-reverse-tagged-value-primal v1)
-	     (get-reverse-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-reverse-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (tagged-pair? v1)
-	   (tagged-pair? v2)
-	   (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-      (let ((u (make-tagged-pair (tagged-pair-tags v1)
-				 'unfilled
-				 'unfilled
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 'unfilled)))
-       (loop (get-tagged-pair-car v1)
-	     (get-tagged-pair-car v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-car cs)
-	      (loop (get-tagged-pair-cdr v1)
-		    (get-tagged-pair-cdr v2)
-		    cs
-		    (lambda (v-cdr cs)
-		     (fill-tagged-pair! u v-car v-cdr)
-		     (k u cs)))))))
-     ;; The next sixteen cases below are unsound narrowing that are needed to
-     ;; make t20 and t21 work.
-     ((and (abstract-zero? v1) (vlad-real? v2))
-      ;; The case where v2 is a concrete zero should have been handled by the
-      ;; abstract-value-subset? case above.
-      (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (abstract-zero? v1) (perturbation-tagged-value? v2))
-      (let ((u (make-perturbation-tagged-value 'unfilled
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       'unfilled)))
-       (loop v1
-	     (get-perturbation-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-perturbation-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (abstract-zero? v1) (bundle? v2))
-      (let ((u (make-bundle 'unfilled
-			    'unfilled
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-       (loop v1
-	     (get-bundle-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-primal cs)
-	      (loop v1
-		    (get-bundle-tangent v2)
-		    cs
-		    (lambda (v-tangent cs)
-		     (fill-bundle! u v-primal v-tangent)
-		     (k u cs)))))))
-     ((and (abstract-zero? v1) (sensitivity-tagged-value? v2))
-      (let ((u
-	     (make-sensitivity-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop v1
-	     (get-sensitivity-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-sensitivity-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (abstract-zero? v1) (reverse-tagged-value? v2))
-      (let ((u
-	     (make-reverse-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop v1
-	     (get-reverse-tagged-value-primal v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-reverse-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (tagged-abstract-zero? v1)
-	   (nonrecursive-closure? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-nonrecursive-closure
-		'unfilled
-		(nonrecursive-closure-lambda-expression v2)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
-		(get-nonrecursive-closure-values v2)
-		(cons (cons (cons v1 v2) u) cs)
-		(lambda (vs cs)
-		 (fill-nonrecursive-closure-values! u vs)
-		 (k u cs)))))
-     ((and (tagged-abstract-zero? v1)
-	   (recursive-closure? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-recursive-closure
-		'unfilled
-		(recursive-closure-procedure-variables v2)
-		(recursive-closure-lambda-expressions v2)
-		(recursive-closure-index v2)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
-		(get-recursive-closure-values v2)
-		(cons (cons (cons v1 v2) u) cs)
-		(lambda (vs cs)
-		 (fill-recursive-closure-values! u vs)
-		 (k u cs)))))
-     ((and (tagged-abstract-zero? v1)
-	   (tagged-pair? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      (let ((u (make-tagged-pair (tagged-pair-tags v2)
-				 'unfilled
-				 'unfilled
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 'unfilled)))
-       (loop v1
-	     (get-tagged-pair-car v2)
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-car cs)
-	      (loop v1
-		    (get-tagged-pair-cdr v2)
-		    cs
-		    (lambda (v-cdr cs)
-		     (fill-tagged-pair! u v-car v-cdr)
-		     (k u cs)))))))
-     ((and (vlad-real? v1) (abstract-zero? v2))
-      ;; The case where v2 is a concrete zero should have been handled by the
-      ;; abstract-value-subset? case above.
-      (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
-     ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
-      (let ((u (make-perturbation-tagged-value 'unfilled
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       #f
-					       'unfilled)))
-       (loop (get-perturbation-tagged-value-primal v1)
-	     v2
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-perturbation-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (bundle? v1) (abstract-zero? v2))
-      (let ((u (make-bundle 'unfilled
-			    'unfilled
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    #f
-			    'unfilled)))
-       (loop (get-bundle-primal v1)
-	     v2
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-primal cs)
-	      (loop (get-bundle-tangent v1)
-		    v2
-		    cs
-		    (lambda (v-tangent cs)
-		     (fill-bundle! u v-primal v-tangent)
-		     (k u cs)))))))
-     ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
-      (let ((u
-	     (make-sensitivity-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop (get-sensitivity-tagged-value-primal v1)
-	     v2
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-sensitivity-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (reverse-tagged-value? v1) (abstract-zero? v2))
-      (let ((u
-	     (make-reverse-tagged-value
-	      'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
-       (loop (get-reverse-tagged-value-primal v1)
-	     v2
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v cs)
-	      (fill-reverse-tagged-value-primal! u v)
-	      (k u cs)))))
-     ((and (nonrecursive-closure? v1)
-	   (tagged-abstract-zero? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-nonrecursive-closure
-		'unfilled
-		(nonrecursive-closure-lambda-expression v1)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
-		(get-nonrecursive-closure-values v1)
-		(cons (cons (cons v1 v2) u) cs)
-		(lambda (vs cs)
-		 (fill-nonrecursive-closure-values! u vs)
-		 (k u cs)))))
-     ((and (recursive-closure? v1)
-	   (tagged-abstract-zero? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      ;; See the note in abstract-environment=?.
-      (let ((u (make-recursive-closure
-		'unfilled
-		(recursive-closure-procedure-variables v1)
-		(recursive-closure-lambda-expressions v1)
-		(recursive-closure-index v1)
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		#f
-		'unfilled)))
-       (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
-		(get-recursive-closure-values v1)
-		(cons (cons (cons v1 v2) u) cs)
-		(lambda (vs cs)
-		 (fill-recursive-closure-values! u vs)
-		 (k u cs)))))
-     ((and (tagged-pair? v1)
-	   (tagged-abstract-zero? v2)
-	   (equal-tags? (value-tags v1) (value-tags v2)))
-      (let ((u (make-tagged-pair (tagged-pair-tags v1)
-				 'unfilled
-				 'unfilled
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 #f
-				 'unfilled)))
-       (loop (get-tagged-pair-car v1)
-	     v2
-	     (cons (cons (cons v1 v2) u) cs)
-	     (lambda (v-car cs)
-	      (loop (get-tagged-pair-cdr v1)
-		    v2
-		    cs
-		    (lambda (v-cdr cs)
-		     (fill-tagged-pair! u v-car v-cdr)
-		     (k u cs)))))))
-     (else (compile-time-error "Program is not almost union free: ~s ~s"
+  (if *almost-union-free?*
+      (let loop ((v1 v1) (v2 v2) (cs '()) (k (lambda (v cs) v)))
+       (let ((found?
+	      (find-if (lambda (c)
+			(and (eq? (car (car c)) v1) (eq? (cdr (car c)) v2)))
+		       cs)))
+	(cond
+	 (found? (k (cdr found?) cs))
+	 ((union? v1)
+	  (unless (abstract-value-unionable? v1 v2)
+	   (compile-time-error "Program is not almost union free: ~s ~s"
 			       (externalize v1)
-			       (externalize v2))))))))
+			       (externalize v2)))
+	  (let* ((us (maximal-elements
+		      abstract-value-subset?
+		      (remove-duplicatesp
+		       deep-abstract-value=?
+		       (append (union-members v1) (union-members v2)))))
+		 (u (if (and (not (null? us)) (null? (rest us)))
+			(first us)
+			(create-union us))))
+	   (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((union? v2)
+	  (unless (abstract-value-unionable? v1 v2)
+	   (compile-time-error "Program is not almost union free: ~s ~s"
+			       (externalize v1)
+			       (externalize v2)))
+	  (let* ((us (maximal-elements
+		      abstract-value-subset?
+		      (remove-duplicatesp
+		       deep-abstract-value=? (cons v1 (union-members v2)))))
+		 (u (if (and (not (null? us)) (null? (rest us)))
+			(first us)
+			(create-union us))))
+	   (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((abstract-value-subset? v1 v2)
+	  (let ((u v2)) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((abstract-value-subset? v2 v1)
+	  (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (vlad-boolean? v1) (vlad-boolean? v2))
+	  (let ((u (abstract-boolean))) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (vlad-real? v1) (vlad-real? v2))
+	  (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (nonrecursive-closure? v1)
+	       (nonrecursive-closure? v2)
+	       (nonrecursive-closure-match? v1 v2)
+	       (every abstract-value-unionable?
+		      (get-nonrecursive-closure-values v1)
+		      (get-nonrecursive-closure-values v2)))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-nonrecursive-closure
+		    'unfilled
+		    (nonrecursive-closure-lambda-expression v1)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map2-cps loop
+		     (get-nonrecursive-closure-values v1)
+		     (get-nonrecursive-closure-values v2)
+		     (cons (cons (cons v1 v2) u) cs)
+		     (lambda (vs cs)
+		      (fill-nonrecursive-closure-values! u vs)
+		      (k u cs)))))
+	 ((and (backpropagator? v1) (backpropagator? v2))
+	  (let ((u (if (deep-abstract-value=? v1 v2)
+		       v1
+		       (create-union (list v1 v2)))))
+	   (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (recursive-closure? v1)
+	       (recursive-closure? v2)
+	       (recursive-closure-match? v1 v2))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-recursive-closure
+		    'unfilled
+		    (recursive-closure-procedure-variables v1)
+		    (recursive-closure-lambda-expressions v1)
+		    (recursive-closure-index v1)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map2-cps loop
+		     (get-recursive-closure-values v1)
+		     (get-recursive-closure-values v2)
+		     (cons (cons (cons v1 v2) u) cs)
+		     (lambda (vs cs)
+		      (fill-recursive-closure-values! u vs)
+		      (k u cs)))))
+	 ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+	  (let ((u (make-perturbation-tagged-value 'unfilled
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   'unfilled)))
+	   (loop (get-perturbation-tagged-value-primal v1)
+		 (get-perturbation-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-perturbation-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (bundle? v1) (bundle? v2))
+	  (let ((u (make-bundle 'unfilled
+				'unfilled
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				'unfilled)))
+	   (loop (get-bundle-primal v1)
+		 (get-bundle-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-primal cs)
+		  (loop (get-bundle-tangent v1)
+			(get-bundle-tangent v2)
+			cs
+			(lambda (v-tangent cs)
+			 (fill-bundle! u v-primal v-tangent)
+			 (k u cs)))))))
+	 ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+	  (let ((u (make-sensitivity-tagged-value 'unfilled
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  'unfilled)))
+	   (loop (get-sensitivity-tagged-value-primal v1)
+		 (get-sensitivity-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-sensitivity-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+	  (let ((u (make-reverse-tagged-value 'unfilled
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      'unfilled)))
+	   (loop (get-reverse-tagged-value-primal v1)
+		 (get-reverse-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-reverse-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (tagged-pair? v1)
+	       (tagged-pair? v2)
+	       (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+	  (let ((u (make-tagged-pair (tagged-pair-tags v1)
+				     'unfilled
+				     'unfilled
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     'unfilled)))
+	   (loop (get-tagged-pair-car v1)
+		 (get-tagged-pair-car v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-car cs)
+		  (loop (get-tagged-pair-cdr v1)
+			(get-tagged-pair-cdr v2)
+			cs
+			(lambda (v-cdr cs)
+			 (fill-tagged-pair! u v-car v-cdr)
+			 (k u cs)))))))
+	 ;; The next sixteen cases below are unsound narrowing that are needed
+	 ;; to make t20 and t21 work.
+	 ((and (abstract-zero? v1) (vlad-real? v2))
+	  ;; The case where v2 is a concrete zero should have been handled by
+	  ;; the abstract-value-subset? case above.
+	  (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (abstract-zero? v1) (perturbation-tagged-value? v2))
+	  (let ((u (make-perturbation-tagged-value 'unfilled
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   'unfilled)))
+	   (loop v1
+		 (get-perturbation-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-perturbation-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (abstract-zero? v1) (bundle? v2))
+	  (let ((u (make-bundle 'unfilled
+				'unfilled
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				'unfilled)))
+	   (loop v1
+		 (get-bundle-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-primal cs)
+		  (loop v1
+			(get-bundle-tangent v2)
+			cs
+			(lambda (v-tangent cs)
+			 (fill-bundle! u v-primal v-tangent)
+			 (k u cs)))))))
+	 ((and (abstract-zero? v1) (sensitivity-tagged-value? v2))
+	  (let ((u (make-sensitivity-tagged-value 'unfilled
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  'unfilled)))
+	   (loop v1
+		 (get-sensitivity-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-sensitivity-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (abstract-zero? v1) (reverse-tagged-value? v2))
+	  (let ((u (make-reverse-tagged-value 'unfilled
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      'unfilled)))
+	   (loop v1
+		 (get-reverse-tagged-value-primal v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-reverse-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (tagged-abstract-zero? v1)
+	       (nonrecursive-closure? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-nonrecursive-closure
+		    'unfilled
+		    (nonrecursive-closure-lambda-expression v2)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		    (get-nonrecursive-closure-values v2)
+		    (cons (cons (cons v1 v2) u) cs)
+		    (lambda (vs cs)
+		     (fill-nonrecursive-closure-values! u vs)
+		     (k u cs)))))
+	 ((and (tagged-abstract-zero? v1)
+	       (recursive-closure? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-recursive-closure
+		    'unfilled
+		    (recursive-closure-procedure-variables v2)
+		    (recursive-closure-lambda-expressions v2)
+		    (recursive-closure-index v2)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map-cps (lambda (u2 cs k) (loop v1 u2 cs k))
+		    (get-recursive-closure-values v2)
+		    (cons (cons (cons v1 v2) u) cs)
+		    (lambda (vs cs)
+		     (fill-recursive-closure-values! u vs)
+		     (k u cs)))))
+	 ((and (tagged-abstract-zero? v1)
+	       (tagged-pair? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  (let ((u (make-tagged-pair (tagged-pair-tags v2)
+				     'unfilled
+				     'unfilled
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     'unfilled)))
+	   (loop v1
+		 (get-tagged-pair-car v2)
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-car cs)
+		  (loop v1
+			(get-tagged-pair-cdr v2)
+			cs
+			(lambda (v-cdr cs)
+			 (fill-tagged-pair! u v-car v-cdr)
+			 (k u cs)))))))
+	 ((and (vlad-real? v1) (abstract-zero? v2))
+	  ;; The case where v2 is a concrete zero should have been handled by
+	  ;; the abstract-value-subset? case above.
+	  (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
+	  (let ((u (make-perturbation-tagged-value 'unfilled
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   #f
+						   'unfilled)))
+	   (loop (get-perturbation-tagged-value-primal v1)
+		 v2
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-perturbation-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (bundle? v1) (abstract-zero? v2))
+	  (let ((u (make-bundle 'unfilled
+				'unfilled
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				#f
+				'unfilled)))
+	   (loop (get-bundle-primal v1)
+		 v2
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-primal cs)
+		  (loop (get-bundle-tangent v1)
+			v2
+			cs
+			(lambda (v-tangent cs)
+			 (fill-bundle! u v-primal v-tangent)
+			 (k u cs)))))))
+	 ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
+	  (let ((u (make-sensitivity-tagged-value 'unfilled
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  #f
+						  'unfilled)))
+	   (loop (get-sensitivity-tagged-value-primal v1)
+		 v2
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-sensitivity-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (reverse-tagged-value? v1) (abstract-zero? v2))
+	  (let ((u (make-reverse-tagged-value 'unfilled
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      #f
+					      'unfilled)))
+	   (loop (get-reverse-tagged-value-primal v1)
+		 v2
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v cs)
+		  (fill-reverse-tagged-value-primal! u v)
+		  (k u cs)))))
+	 ((and (nonrecursive-closure? v1)
+	       (tagged-abstract-zero? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-nonrecursive-closure
+		    'unfilled
+		    (nonrecursive-closure-lambda-expression v1)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		    (get-nonrecursive-closure-values v1)
+		    (cons (cons (cons v1 v2) u) cs)
+		    (lambda (vs cs)
+		     (fill-nonrecursive-closure-values! u vs)
+		     (k u cs)))))
+	 ((and (recursive-closure? v1)
+	       (tagged-abstract-zero? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  ;; See the note in abstract-environment=?.
+	  (let ((u (make-recursive-closure
+		    'unfilled
+		    (recursive-closure-procedure-variables v1)
+		    (recursive-closure-lambda-expressions v1)
+		    (recursive-closure-index v1)
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    #f
+		    'unfilled)))
+	   (map-cps (lambda (u1 cs k) (loop u1 v2 cs k))
+		    (get-recursive-closure-values v1)
+		    (cons (cons (cons v1 v2) u) cs)
+		    (lambda (vs cs)
+		     (fill-recursive-closure-values! u vs)
+		     (k u cs)))))
+	 ((and (tagged-pair? v1)
+	       (tagged-abstract-zero? v2)
+	       (equal-tags? (value-tags v1) (value-tags v2)))
+	  (let ((u (make-tagged-pair (tagged-pair-tags v1)
+				     'unfilled
+				     'unfilled
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     #f
+				     'unfilled)))
+	   (loop (get-tagged-pair-car v1)
+		 v2
+		 (cons (cons (cons v1 v2) u) cs)
+		 (lambda (v-car cs)
+		  (loop (get-tagged-pair-cdr v1)
+			v2
+			cs
+			(lambda (v-cdr cs)
+			 (fill-tagged-pair! u v-car v-cdr)
+			 (k u cs)))))))
+	 (else (compile-time-error "Program is not almost union free: ~s ~s"
+				   (externalize v1)
+				   (externalize v2))))))
+      (cond ((abstract-value-subset? v1 v2) v2)
+	    ((abstract-value-subset? v2 v1) v1)
+	    (else (create-union
+		   (maximal-elements
+		    abstract-value-subset?
+		    (append (union-members v1) (union-members v2)))))))))
 
 (define (abstract-value-union v1 v2)
  (canonize-and-maybe-intern-abstract-value
@@ -3793,8 +3880,12 @@
 	   ;; triggers the same error later, since we require that every
 	   ;; abstract value be copied.
 	   (cond ((null? us) (k (empty-abstract-value) cs))
-		 ((null? (rest us))
-		  (loop (first us) (cons (cons v (first us)) cs) k))
+		 ;; This used to add (cons v (first us)) to the cs cache but
+		 ;; that caused a nested union bug in t22 without
+		 ;; -imprecise-inexact when doing -all-limits 1
+		 ;; -tagged-pair-depth-limit 3. I now believe that the
+		 ;; following is correct.
+		 ((null? (rest us)) (loop (first us) cs k))
 		 (else (let ((v-prime (make-union 'unfilled
 						  #t
 						  #f
@@ -3815,8 +3906,11 @@
 				 us
 				 (cons (cons v v-prime) cs)
 				 (lambda (us-prime cs)
-				  (assert (and (not (null? us-prime))
-					       (not (null? (rest us-prime)))))
+				  (assert
+				   (and (not (null? us-prime))
+					(not (null? (rest us-prime)))
+					(= (length us) (length us-prime))
+					(not (some union? us-prime))))
 				  (fill-union-values! v-prime us-prime)
 				  (k v-prime cs))))))))
 	 ((vlad-empty-list? v)
@@ -4518,13 +4612,6 @@
   (if *memoized?* (intern-abstract-value v) v)))
 
 ;;; Abstract Environment Equivalence
-
-(define (deep-abstract-environment=? vs1 vs2)
- ;; This assumes that the free variables in two alpha-equivalent expressions
- ;; are in the same order. Note that this is a weak notion of equivalence. A
- ;; stronger notion would attempt to find a correspondence between the free
- ;; variables that would allow them to be contextually alpha equivalent.
- (every deep-abstract-value=? vs1 vs2))
 
 (define (abstract-environment=? vs1 vs2)
  ;; This assumes that the free variables in two alpha-equivalent expressions
@@ -11959,9 +12046,11 @@
   abstract-value=?
   abstract-values-before
   (lambda (vs)
-   (let ((v (find-if backpropagator? vs)))
-    (assert v)
-    v))
+   (if *almost-union-free?*
+       (let ((v (find-if backpropagator? vs)))
+	(assert v)
+	v)
+       (first vs)))
   (adjoinp
    abstract-value=?
    ;; We are lazy and always generate this. This is needed to generate
