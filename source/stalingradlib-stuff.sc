@@ -178,7 +178,7 @@
 (define-structure nonrecursive-closure
  values
  lambda-expression
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
@@ -199,7 +199,7 @@
  procedure-variables			;vector
  lambda-expressions			;vector
  index
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
@@ -217,17 +217,16 @@
 
 (define-structure perturbation-tagged-value
  primal
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
- unperturb-cache
- primal-cache
- tangent-cache
+ primal-cache				;here I am: can eliminate
+ tangent-cache				;here I am: can eliminate
  sensitize-cache
- unsensitize-cache
+ unsensitize-cache			;here I am: can eliminate
  *j-cache
- *j-inverse-cache
+ *j-inverse-cache			;here I am: can eliminate
  widen
  c:index
  boxed?
@@ -236,17 +235,15 @@
 (define-structure bundle
  primal
  tangent
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
- unperturb-cache
- primal-cache
- tangent-cache
+ unperturb-cache			;here I am: can eliminate
  sensitize-cache
- unsensitize-cache
+ unsensitize-cache			;here I am: can eliminate
  *j-cache
- *j-inverse-cache
+ *j-inverse-cache			;here I am: can eliminate
  widen
  c:index
  boxed?
@@ -254,17 +251,16 @@
 
 (define-structure sensitivity-tagged-value
  primal
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
- unperturb-cache
- primal-cache
- tangent-cache
+ unperturb-cache			;here I am: can eliminate
+ primal-cache				;here I am: can eliminate
+ tangent-cache				;here I am: can eliminate
  sensitize-cache
- unsensitize-cache
  *j-cache
- *j-inverse-cache
+ *j-inverse-cache			;here I am: can eliminate
  widen
  c:index
  boxed?
@@ -272,17 +268,16 @@
 
 (define-structure reverse-tagged-value
  primal
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
- unperturb-cache
- primal-cache
- tangent-cache
+ unperturb-cache			;here I am: can eliminate
+ primal-cache				;here I am: can eliminate
+ tangent-cache				;here I am: can eliminate
  sensitize-cache
- unsensitize-cache
+ unsensitize-cache			;here I am: can eliminate
  *j-cache
- *j-inverse-cache
  widen
  c:index
  boxed?
@@ -292,7 +287,7 @@
  tags
  car
  cdr
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
@@ -310,7 +305,7 @@
 
 (define-structure union
  values
- canonical?
+ canonized?
  interned?
  zero-cache
  perturb-cache
@@ -366,7 +361,7 @@
 
 (define *queue* '())
 
-(define *frozen?* #f)
+(define *frozen?* #f)			;means cannot intern
 
 ;;; Can better index the following six.
 
@@ -460,7 +455,9 @@
 
 (define *almost-union-free?* #f)
 
-(define *memoized?* #f)
+(define *canonized?* #f)
+
+(define *interned?* #f)
 
 (define *expensive-checks?* #f)
 
@@ -1583,7 +1580,7 @@
 	    (free-variables e)
 	    vs)))
      (empty-abstract-value)
-     (if *memoized?*
+     (if *interned?*
 	 ;; We only index on e. We could build an index tree on the vs. By
 	 ;; indexing on e, there is an implicit expession-eqv?.
 	 (or (find-if (lambda (v0)
@@ -1683,7 +1680,7 @@
 	     (vector->list xs) (vector->list es))
 	    vs)))
      (empty-abstract-value)
-     (if *memoized?*
+     (if *interned?*
 	 ;; We only index on the first e. Since an e uniquely determines the
 	 ;; letrec, we don't need to index by or even check the other es or the
 	 ;; xs. We could index on i and build an index tree on the vs. By
@@ -1850,26 +1847,25 @@
  (if (empty-abstract-value? v)
      v
      (make-perturbation-tagged-value
-      v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+      v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 
 (define (new-perturbation-tagged-value v)
  (if (empty-abstract-value? v)
      v
-     (if *memoized?*
+     (if *interned?*
 	 (or (find-if
 	      (lambda (v0)
 	       (abstract-value=? v (get-perturbation-tagged-value-primal v0)))
 	      *perturbation-tagged-values*)
-	     (let ((v0
-		    (make-perturbation-tagged-value
-		     v #t #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	     (let ((v0 (make-perturbation-tagged-value
+			v #t #t #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	      (assert (not *frozen?*))
 	      (set! *perturbation-tagged-values*
 		    (cons v0 *perturbation-tagged-values*))
 	      (when *expensive-checks?* (check-abstract-value! v0))
 	      v0))
 	 (make-perturbation-tagged-value
-	  v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
+	  v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
 
 (define (fill-perturbation-tagged-value-primal! u v)
  ;; We can't do the full checks of new-perturbation-tagged-value at this point
@@ -2221,7 +2217,7 @@
 	 (and *abstract?* (not (some-bundlable? v v-perturbation))))
      (empty-abstract-value)
      (make-bundle
-      v v-perturbation #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+      v v-perturbation #t #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 
 (define (new-bundle v v-perturbation)
  (assert (or *abstract?* (some-bundlable? v v-perturbation)))
@@ -2229,7 +2225,7 @@
 	 (empty-abstract-value? v-perturbation)
 	 (and *abstract?* (not (some-bundlable? v v-perturbation))))
      (empty-abstract-value)
-     (if *memoized?*
+     (if *interned?*
 	 (or (find-if
 	      (lambda (v0)
 	       (and (abstract-value=? v (get-bundle-primal v0))
@@ -2249,30 +2245,13 @@
 				    #f
 				    #f
 				    #f
-				    #f
-				    #f
 				    'unfilled)))
 	      (assert (not *frozen?*))
 	      (set! *bundles* (cons v0 *bundles*))
 	      (when *expensive-checks?* (check-abstract-value! v0))
 	      v0))
-	 (make-bundle v
-		      v-perturbation
-		      #t
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled))))
+	 (make-bundle
+	  v v-perturbation #t #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
 
 (define (fill-bundle! u v v-perturbation)
  ;; We can't do the full checks of new-bundle at this point because there may
@@ -2299,26 +2278,25 @@
  (if (empty-abstract-value? v)
      v
      (make-sensitivity-tagged-value
-      v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+      v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 
 (define (new-sensitivity-tagged-value v)
  (if (empty-abstract-value? v)
      v
-     (if *memoized?*
+     (if *interned?*
 	 (or (find-if
 	      (lambda (v0)
 	       (abstract-value=? v (get-sensitivity-tagged-value-primal v0)))
 	      *sensitivity-tagged-values*)
-	     (let ((v0
-		    (make-sensitivity-tagged-value
-		     v #t #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	     (let ((v0 (make-sensitivity-tagged-value
+			v #t #t #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	      (assert (not *frozen?*))
 	      (set! *sensitivity-tagged-values*
 		    (cons v0 *sensitivity-tagged-values*))
 	      (when *expensive-checks?* (check-abstract-value! v0))
 	      v0))
 	 (make-sensitivity-tagged-value
-	  v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
+	  v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
 
 (define (fill-sensitivity-tagged-value-primal! u v)
  ;; We can't do the full checks of new-sensitivity-tagged-value at this point
@@ -2337,25 +2315,24 @@
  (if (empty-abstract-value? v)
      v
      (make-reverse-tagged-value
-      v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+      v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 
 (define (new-reverse-tagged-value v)
  (if (empty-abstract-value? v)
      v
-     (if *memoized?*
+     (if *interned?*
 	 (or (find-if
 	      (lambda (v0)
 	       (abstract-value=? v (get-reverse-tagged-value-primal v0)))
 	      *reverse-tagged-values*)
-	     (let ((v0
-		    (make-reverse-tagged-value
-		     v #t #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	     (let ((v0 (make-reverse-tagged-value
+			v #t #t #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	      (assert (not *frozen?*))
 	      (set! *reverse-tagged-values* (cons v0 *reverse-tagged-values*))
 	      (when *expensive-checks?* (check-abstract-value! v0))
 	      v0))
 	 (make-reverse-tagged-value
-	  v #t #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
+	  v #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))))
 
 (define (fill-reverse-tagged-value-primal! u v)
  ;; We can't do the full checks of new-reverse-tagged-value at this point
@@ -2399,7 +2376,7 @@
 	   (every-value-tags (lambda (tags) (not (prefix-tags? tags tags)))
 			     v2))))
      (empty-abstract-value)
-     (if *memoized?*
+     (if *interned?*
 	 (or (find-if (lambda (v0)
 		       (and (abstract-value=? v1 (get-tagged-pair-car v0))
 			    (abstract-value=? v2 (get-tagged-pair-cdr v0))
@@ -2479,7 +2456,7 @@
  (make-union vs #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled))
 
 (define (new-union vs)
- (if *memoized?*
+ (if *interned?*
      (or (find-if
 	  (lambda (v0) (set-equalp? abstract-value=? vs (get-union-values v0)))
 	  *unions*)
@@ -2842,7 +2819,7 @@
  (and (abstract-value-subset? v1 v2) (abstract-value-subset? v2 v1)))
 
 (define (abstract-value=? v1 v2)
- (if *memoized?*
+ (if *interned?*
      ;; This works because vlad-empty-list is (), vlad-true is #t, vlad-false
      ;; is #f, abstract-real is real, and all other non-concrete-real values
      ;; are structures. All of these are comparable with eq?.
@@ -3299,22 +3276,9 @@
 		      (fill-recursive-closure-values! u vs)
 		      (k u cs)))))
 	 ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
-	  (let ((u (make-perturbation-tagged-value 'unfilled
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   'unfilled)))
+	  (let ((u
+		 (make-perturbation-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-perturbation-tagged-value-primal v1)
 		 (get-perturbation-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3324,8 +3288,6 @@
 	 ((and (bundle? v1) (bundle? v2))
 	  (let ((u (make-bundle 'unfilled
 				'unfilled
-				#f
-				#f
 				#f
 				#f
 				#f
@@ -3350,22 +3312,9 @@
 			 (fill-bundle! u v-primal v-tangent)
 			 (k u cs)))))))
 	 ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
-	  (let ((u (make-sensitivity-tagged-value 'unfilled
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  'unfilled)))
+	  (let ((u
+		 (make-sensitivity-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-sensitivity-tagged-value-primal v1)
 		 (get-sensitivity-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3373,22 +3322,9 @@
 		  (fill-sensitivity-tagged-value-primal! u v)
 		  (k u cs)))))
 	 ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-	  (let ((u (make-reverse-tagged-value 'unfilled
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      'unfilled)))
+	  (let ((u
+		 (make-reverse-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-reverse-tagged-value-primal v1)
 		 (get-reverse-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3433,22 +3369,9 @@
 	  ;; the abstract-value-subset? case above.
 	  (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
 	 ((and (abstract-zero? v1) (perturbation-tagged-value? v2))
-	  (let ((u (make-perturbation-tagged-value 'unfilled
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   'unfilled)))
+	  (let ((u
+		 (make-perturbation-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop v1
 		 (get-perturbation-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3458,8 +3381,6 @@
 	 ((and (abstract-zero? v1) (bundle? v2))
 	  (let ((u (make-bundle 'unfilled
 				'unfilled
-				#f
-				#f
 				#f
 				#f
 				#f
@@ -3484,22 +3405,9 @@
 			 (fill-bundle! u v-primal v-tangent)
 			 (k u cs)))))))
 	 ((and (abstract-zero? v1) (sensitivity-tagged-value? v2))
-	  (let ((u (make-sensitivity-tagged-value 'unfilled
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  'unfilled)))
+	  (let ((u
+		 (make-sensitivity-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop v1
 		 (get-sensitivity-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3507,22 +3415,9 @@
 		  (fill-sensitivity-tagged-value-primal! u v)
 		  (k u cs)))))
 	 ((and (abstract-zero? v1) (reverse-tagged-value? v2))
-	  (let ((u (make-reverse-tagged-value 'unfilled
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      'unfilled)))
+	  (let ((u
+		 (make-reverse-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop v1
 		 (get-reverse-tagged-value-primal v2)
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3623,22 +3518,9 @@
 	  ;; the abstract-value-subset? case above.
 	  (let ((u (abstract-real))) (k u (cons (cons (cons v1 v2) u) cs))))
 	 ((and (perturbation-tagged-value? v1) (abstract-zero? v2))
-	  (let ((u (make-perturbation-tagged-value 'unfilled
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   #f
-						   'unfilled)))
+	  (let ((u
+		 (make-perturbation-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-perturbation-tagged-value-primal v1)
 		 v2
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3648,8 +3530,6 @@
 	 ((and (bundle? v1) (abstract-zero? v2))
 	  (let ((u (make-bundle 'unfilled
 				'unfilled
-				#f
-				#f
 				#f
 				#f
 				#f
@@ -3674,22 +3554,9 @@
 			 (fill-bundle! u v-primal v-tangent)
 			 (k u cs)))))))
 	 ((and (sensitivity-tagged-value? v1) (abstract-zero? v2))
-	  (let ((u (make-sensitivity-tagged-value 'unfilled
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  'unfilled)))
+	  (let ((u
+		 (make-sensitivity-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-sensitivity-tagged-value-primal v1)
 		 v2
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3697,22 +3564,9 @@
 		  (fill-sensitivity-tagged-value-primal! u v)
 		  (k u cs)))))
 	 ((and (reverse-tagged-value? v1) (abstract-zero? v2))
-	  (let ((u (make-reverse-tagged-value 'unfilled
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      #f
-					      'unfilled)))
+	  (let ((u
+		 (make-reverse-tagged-value
+		  'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (loop (get-reverse-tagged-value-primal v1)
 		 v2
 		 (cons (cons (cons v1 v2) u) cs)
@@ -3837,24 +3691,24 @@
  ;; It is necessary to use assp deep-abstract-value=? or else an error occurs
  ;; during nr-sqrt-RR where equivalent but non-eq recursive abstract values are
  ;; nested and then path-of-greatest-depth finds a path with equivalent but
- ;; non-eq values which when merged yield a value that agai has that path
+ ;; non-eq values which when merged yield a value that again has that path
  ;; causing an infinite loop.
  (time-it-bucket
   6
   (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
    (if (or (and (nonrecursive-closure? v)
-		(nonrecursive-closure-canonical? v))
+		(nonrecursive-closure-canonized? v))
 	   (and (recursive-closure? v)
-		(recursive-closure-canonical? v))
+		(recursive-closure-canonized? v))
 	   (and (perturbation-tagged-value? v)
-		(perturbation-tagged-value-canonical? v))
-	   (and (bundle? v) (bundle-canonical? v))
+		(perturbation-tagged-value-canonized? v))
+	   (and (bundle? v) (bundle-canonized? v))
 	   (and (sensitivity-tagged-value? v)
-		(sensitivity-tagged-value-canonical? v))
+		(sensitivity-tagged-value-canonized? v))
 	   (and (reverse-tagged-value? v)
-		(reverse-tagged-value-canonical? v))
-	   (and (tagged-pair? v) (tagged-pair-canonical? v))
-	   (and (union? v) (union-canonical? v)))
+		(reverse-tagged-value-canonized? v))
+	   (and (tagged-pair? v) (tagged-pair-canonized? v))
+	   (and (union? v) (union-canonized? v)))
        (k v cs)
        (let ((found? (assp deep-abstract-value=? v cs)))
 	(cond
@@ -4020,22 +3874,9 @@
 		     (fill-recursive-closure-values! u-prime vs-prime)
 		     (k u-prime cs)))))
 	 ((perturbation-tagged-value? v)
-	  (let ((u-prime (make-perturbation-tagged-value 'unfilled
-							 #t
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 #f
-							 'unfilled)))
+	  (let ((u-prime
+		 (make-perturbation-tagged-value
+		  'unfilled #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (assert (not (empty-abstract-value?
 			 (get-perturbation-tagged-value-primal v))))
 	   (loop (get-perturbation-tagged-value-primal v)
@@ -4047,8 +3888,6 @@
 	  (let ((u-prime (make-bundle 'unfilled
 				      'unfilled
 				      #t
-				      #f
-				      #f
 				      #f
 				      #f
 				      #f
@@ -4074,22 +3913,9 @@
 			 (fill-bundle! u-prime v-primal-prime v-tangent-prime)
 			 (k u-prime cs)))))))
 	 ((sensitivity-tagged-value? v)
-	  (let ((u-prime (make-sensitivity-tagged-value 'unfilled
-							#t
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							#f
-							'unfilled)))
+	  (let ((u-prime
+		 (make-sensitivity-tagged-value
+		  'unfilled #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (assert (not (empty-abstract-value?
 			 (get-sensitivity-tagged-value-primal v))))
 	   (loop (get-sensitivity-tagged-value-primal v)
@@ -4098,22 +3924,9 @@
 		  (fill-sensitivity-tagged-value-primal! u-prime v-prime)
 		  (k u-prime cs)))))
 	 ((reverse-tagged-value? v)
-	  (let ((u-prime (make-reverse-tagged-value 'unfilled
-						    #t
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    #f
-						    'unfilled)))
+	  (let ((u-prime
+		 (make-reverse-tagged-value
+		  'unfilled #t #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	   (assert
 	    (not (empty-abstract-value? (get-reverse-tagged-value-primal v))))
 	   (loop (get-reverse-tagged-value-primal v)
@@ -4409,7 +4222,6 @@
 							      #f
 							      #f
 							      #f
-							      #f
 							      'unfilled)))
 		(assert (not (empty-abstract-value?
 			      (get-perturbation-tagged-value-primal v))))
@@ -4435,8 +4247,6 @@
 	       (let ((u-prime (make-bundle 'unfilled
 					   'unfilled
 					   #t
-					   #f
-					   #f
 					   #f
 					   #f
 					   #f
@@ -4491,7 +4301,6 @@
 							     #f
 							     #f
 							     #f
-							     #f
 							     'unfilled)))
 		(assert (not (empty-abstract-value?
 			      (get-sensitivity-tagged-value-primal v))))
@@ -4516,7 +4325,6 @@
 	       (k u-prime (cons (cons v u-prime) cs))
 	       (let ((u-prime (make-reverse-tagged-value 'unfilled
 							 #t
-							 #f
 							 #f
 							 #f
 							 #f
@@ -4608,8 +4416,11 @@
 	 (else (internal-error))))))))
 
 (define (canonize-and-maybe-intern-abstract-value v)
- (let ((v (canonize-abstract-value v)))
-  (if *memoized?* (intern-abstract-value v) v)))
+ ;; Flow analysis needs both canonized and interned representations. The
+ ;; interpreter does not. I'm not sure whether interned representations must
+ ;; be canonized. For now, they need not be.
+ (let ((v (if *canonized?* (canonize-abstract-value v) v)))
+  (if *interned?* (intern-abstract-value v) v)))
 
 ;;; Abstract Environment Equivalence
 
@@ -5515,7 +5326,7 @@
 	      (cs '())
 	      (k (lambda (v0 cs)
 		  (let ((v0 (canonize-and-maybe-intern-abstract-value v0)))
-		   (when *memoized?*
+		   (when (or *canonized?* *interned?*)
 		    (cond
 		     ((nonrecursive-closure? v)
 		      (assert
@@ -5576,6 +5387,7 @@
 				 #f
 				 #f
 				 'unfilled)))
+	    (unless (or *canonized?* *interned?*) (set-union-zero-cache! v v0))
 	    (map-cps loop
 		     (union-members v)
 		     (cons (cons v v0) cs)
@@ -5609,6 +5421,8 @@
 		      #f
 		      #f
 		      'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-nonrecursive-closure-zero-cache! v u0))
 	    (map-cps loop
 		     (get-nonrecursive-closure-values v)
 		     (cons (cons v u0) cs)
@@ -5639,6 +5453,8 @@
 		      #f
 		      #f
 		      'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-recursive-closure-zero-cache! v u0))
 	    (map-cps loop
 		     (get-recursive-closure-values v)
 		     (cons (cons v u0) cs)
@@ -5662,8 +5478,9 @@
 						     #f
 						     #f
 						     #f
-						     #f
 						     'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-perturbation-tagged-value-zero-cache! v u0))
 	    (loop (get-perturbation-tagged-value-primal v)
 		  (cons (cons v u0) cs)
 		  (lambda (v0 cs)
@@ -5686,9 +5503,9 @@
 				  #f
 				  #f
 				  #f
-				  #f
-				  #f
 				  'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-bundle-zero-cache! v u0))
 	    (loop (get-bundle-primal v)
 		  (cons (cons v u0) cs)
 		  (lambda (v0-primal cs)
@@ -5714,8 +5531,9 @@
 						    #f
 						    #f
 						    #f
-						    #f
 						    'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-sensitivity-tagged-value-zero-cache! v u0))
 	    (loop (get-sensitivity-tagged-value-primal v)
 		  (cons (cons v u0) cs)
 		  (lambda (v0 cs)
@@ -5738,8 +5556,9 @@
 						#f
 						#f
 						#f
-						#f
 						'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-reverse-tagged-value-zero-cache! v u0))
 	    (loop (get-reverse-tagged-value-primal v)
 		  (cons (cons v u0) cs)
 		  (lambda (v0 cs)
@@ -5766,6 +5585,8 @@
 				       #f
 				       #f
 				       'unfilled)))
+	    (unless (or *canonized?* *interned?*)
+	     (set-tagged-pair-zero-cache! v u0))
 	    (loop (get-tagged-pair-car v)
 		  (cons (cons v u0) cs)
 		  (lambda (v0-car cs)
@@ -5865,7 +5686,7 @@
 		 (let ((v-perturbation
 			(canonize-and-maybe-intern-abstract-value
 			 v-perturbation)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v)
 		     (assert (or (not (nonrecursive-closure-perturb-cache v))
@@ -5925,7 +5746,7 @@
 					    #f
 					    #f
 					    #f
-					    #f
+					    v
 					    #f
 					    #f
 					    #f
@@ -5936,6 +5757,8 @@
 					    #f
 					    #f
 					    'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-perturb-cache! v v-perturbation))
 	   (map-cps loop
 		    (union-members v)
 		    (cons (cons v v-perturbation) cs)
@@ -5943,22 +5766,22 @@
 		     (fill-union-values! v-perturbation us-perturbation)
 		     (k v-perturbation cs))))))
      ((vlad-empty-list? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((vlad-true? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((vlad-false? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((vlad-real? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((primitive-procedure? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((abstract-zero? v)
-      (let ((u-perturbation (create-perturbation-tagged-value v)))
+      (let ((u-perturbation (new-perturbation-tagged-value v)))
        (k u-perturbation (cons (cons v u-perturbation) cs))))
      ((nonrecursive-closure? v)
       (if (nonrecursive-closure-perturb-cache v)
@@ -5972,7 +5795,7 @@
 				 #f
 				 #f
 				 #f
-				 #f
+				 v
 				 #f
 				 #f
 				 #f
@@ -5983,6 +5806,8 @@
 				 #f
 				 #f
 				 'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-nonrecursive-closure-perturb-cache! v u-perturbation))
 	   (map-cps loop
 		    (get-nonrecursive-closure-values v)
 		    (cons (cons v u-perturbation) cs)
@@ -6006,7 +5831,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v
 		  #f
 		  #f
 		  #f
@@ -6017,6 +5842,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-recursive-closure-perturb-cache! v u-perturbation))
 	   (map-cps
 	    loop
 	    (get-recursive-closure-values v)
@@ -6027,22 +5854,26 @@
      ((perturbation-tagged-value? v)
       (if (perturbation-tagged-value-perturb-cache v)
 	  (k (perturbation-tagged-value-perturb-cache v) cs)
-	  (let ((u-perturbation (create-perturbation-tagged-value v)))
+	  (let ((u-perturbation (new-perturbation-tagged-value v)))
+	   (set-perturbation-tagged-value-perturb-cache! v u-perturbation)
 	   (k u-perturbation (cons (cons v u-perturbation) cs)))))
      ((bundle? v)
       (if (bundle-perturb-cache v)
 	  (k (bundle-perturb-cache v) cs)
-	  (let ((u-perturbation (create-perturbation-tagged-value v)))
+	  (let ((u-perturbation (new-perturbation-tagged-value v)))
+	   (set-bundle-perturb-cache! v u-perturbation)
 	   (k u-perturbation (cons (cons v u-perturbation) cs)))))
      ((sensitivity-tagged-value? v)
       (if (sensitivity-tagged-value-perturb-cache v)
 	  (k (sensitivity-tagged-value-perturb-cache v) cs)
-	  (let ((u-perturbation (create-perturbation-tagged-value v)))
+	  (let ((u-perturbation (new-perturbation-tagged-value v)))
+	   (set-sensitivity-tagged-value-perturb-cache! v u-perturbation)
 	   (k u-perturbation (cons (cons v u-perturbation) cs)))))
      ((reverse-tagged-value? v)
       (if (reverse-tagged-value-perturb-cache v)
 	  (k (reverse-tagged-value-perturb-cache v) cs)
-	  (let ((u-perturbation (create-perturbation-tagged-value v)))
+	  (let ((u-perturbation (new-perturbation-tagged-value v)))
+	   (set-reverse-tagged-value-perturb-cache! v u-perturbation)
 	   (k u-perturbation (cons (cons v u-perturbation) cs)))))
      ((tagged-pair? v)
       (if (tagged-pair-perturb-cache v)
@@ -6056,7 +5887,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v
 		  #f
 		  #f
 		  #f
@@ -6067,6 +5898,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-tagged-pair-perturb-cache! v u-perturbation))
 	   (loop
 	    (get-tagged-pair-car v)
 	    (cons (cons v u-perturbation) cs)
@@ -6089,7 +5922,7 @@
 	     (cs '())
 	     (k (lambda (v cs)
 		 (let ((v (canonize-and-maybe-intern-abstract-value v)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v-perturbation)
 		     (assert (or (not (nonrecursive-closure-unperturb-cache
@@ -6107,15 +5940,7 @@
 				      v)))
 		     (set-recursive-closure-unperturb-cache!
 		      v-perturbation v))
-		    ((perturbation-tagged-value? v-perturbation)
-		     (assert
-		      (or (not (perturbation-tagged-value-unperturb-cache
-				v-perturbation))
-			  (eq? (perturbation-tagged-value-unperturb-cache
-				v-perturbation)
-			       v)))
-		     (set-perturbation-tagged-value-unperturb-cache!
-		      v-perturbation v))
+		    ((perturbation-tagged-value? v-perturbation) #f)
 		    ((bundle? v-perturbation)
 		     (assert (or (not (bundle-unperturb-cache v-perturbation))
 				 (eq? (bundle-unperturb-cache v-perturbation)
@@ -6279,10 +6104,8 @@
 		       v-perturbation)))
 	      (k u (cons (cons v-perturbation u) cs))))))
      ((perturbation-tagged-value? v-perturbation)
-      (if (perturbation-tagged-value-unperturb-cache v-perturbation)
-	  (k (perturbation-tagged-value-unperturb-cache v-perturbation) cs)
-	  (let ((u (get-perturbation-tagged-value-primal v-perturbation)))
-	   (k u (cons (cons v-perturbation u) cs)))))
+      (let ((u (get-perturbation-tagged-value-primal v-perturbation)))
+       (k u (cons (cons v-perturbation u) cs))))
      ((bundle? v-perturbation)
       (if (bundle-unperturb-cache v-perturbation)
 	  (k (bundle-unperturb-cache v-perturbation) cs)
@@ -6353,7 +6176,7 @@
 	     (cs '())
 	     (k (lambda (v cs)
 		 (let ((v (canonize-and-maybe-intern-abstract-value v)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v-forward)
 		     (assert
@@ -6374,10 +6197,7 @@
 				      v)))
 		     (set-perturbation-tagged-value-primal-cache!
 		      v-forward v))
-		    ((bundle? v-forward)
-		     (assert (or (not (bundle-primal-cache v-forward))
-				 (eq? (bundle-primal-cache v-forward) v)))
-		     (set-bundle-primal-cache! v-forward v))
+		    ((bundle? v-forward) #f)
 		    ((sensitivity-tagged-value? v-forward)
 		     (assert (or (not (sensitivity-tagged-value-primal-cache
 				       v-forward))
@@ -6551,10 +6371,8 @@
 			   v-forward)))
 		  (k u (cons (cons v-forward u) cs)))))
 	    ((bundle? v-forward)
-	     (if (bundle-primal-cache v-forward)
-		 (k (bundle-primal-cache v-forward) cs)
-		 (let ((u (get-bundle-primal v-forward)))
-		  (k u (cons (cons v-forward u) cs)))))
+	     (let ((u (get-bundle-primal v-forward)))
+	      (k u (cons (cons v-forward u) cs))))
 	    ((sensitivity-tagged-value? v-forward)
 	     (if (sensitivity-tagged-value-primal-cache v-forward)
 		 (k (sensitivity-tagged-value-primal-cache v-forward) cs)
@@ -6619,7 +6437,7 @@
 		 (let ((v-perturbation
 			(canonize-and-maybe-intern-abstract-value
 			 v-perturbation)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v-forward)
 		     (assert
@@ -6643,11 +6461,7 @@
 				      v-perturbation)))
 		     (set-perturbation-tagged-value-tangent-cache!
 		      v-forward v-perturbation))
-		    ((bundle? v-forward)
-		     (assert (or (not (bundle-tangent-cache v-forward))
-				 (eq? (bundle-tangent-cache v-forward)
-				      v-perturbation)))
-		     (set-bundle-tangent-cache! v-forward v-perturbation))
+		    ((bundle? v-forward) #f)
 		    ((sensitivity-tagged-value? v-forward)
 		     (assert (or (not (sensitivity-tagged-value-tangent-cache
 				       v-forward))
@@ -6843,11 +6657,8 @@
 		  (k u-perturbation
 		     (cons (cons v-forward u-perturbation) cs)))))
 	    ((bundle? v-forward)
-	     (if (bundle-tangent-cache v-forward)
-		 (k (bundle-tangent-cache v-forward) cs)
-		 (let ((u-perturbation (get-bundle-tangent v-forward)))
-		  (k u-perturbation
-		     (cons (cons v-forward u-perturbation) cs)))))
+	     (let ((u-perturbation (get-bundle-tangent v-forward)))
+	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
 	    ((sensitivity-tagged-value? v-forward)
 	     (if (sensitivity-tagged-value-tangent-cache v-forward)
 		 (k (sensitivity-tagged-value-tangent-cache v-forward) cs)
@@ -6976,21 +6787,21 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v (perturb v))))
+	      (let ((u-forward (new-bundle v (perturb v))))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ((and (vlad-true? v) (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v (perturb v))))
+	      (let ((u-forward (new-bundle v (perturb v))))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ((and (vlad-false? v) (some-bundlable? v v-perturbation))
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v (perturb v))))
+	      (let ((u-forward (new-bundle v (perturb v))))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ((and (vlad-real? v) (some-bundlable? v v-perturbation))
@@ -7000,7 +6811,7 @@
 	      ;; here I am: Can remove from v-perturbation anything that is
 	      ;;            not a perturbation of a real. Can also narrow an
 	      ;;            abstract zero to a concrete zero.
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ((primitive-procedure? v) (internal-error))
@@ -7239,7 +7050,7 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ;; ditto
@@ -7247,7 +7058,7 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ;; ditto
@@ -7256,7 +7067,7 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ;; ditto
@@ -7265,7 +7076,7 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     ((and (tagged-pair? v)
@@ -7383,7 +7194,7 @@
 	      (unless (every-bundlable? v v-perturbation)
 	       (ad-warning
 		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (create-bundle v v-perturbation)))
+	      (let ((u-forward (new-bundle v v-perturbation)))
 	       (k u-forward
 		  (cons (cons (cons v v-perturbation) u-forward) cs))))
 	     (else
@@ -7765,7 +7576,7 @@
 		 (let ((v-sensitivity
 			(canonize-and-maybe-intern-abstract-value
 			 v-sensitivity)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v)
 		     (assert
@@ -7831,13 +7642,15 @@
 					   #f
 					   #f
 					   #f
-					   #f
+					   v
 					   #f
 					   #f
 					   #f
 					   #f
 					   #f
 					   'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-sensitize-cache! v v-sensitivity))
 	   (map-cps loop
 		    (union-members v)
 		    (cons (cons v v-sensitivity) cs)
@@ -7845,22 +7658,22 @@
 		     (fill-union-values! v-sensitivity us-sensitivity)
 		     (k v-sensitivity cs))))))
      ((vlad-empty-list? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((vlad-true? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((vlad-false? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((vlad-real? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((primitive-procedure? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((abstract-zero? v)
-      (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+      (let ((u-sensitivity (new-sensitivity-tagged-value v)))
        (k u-sensitivity (cons (cons v u-sensitivity) cs))))
      ((nonrecursive-closure? v)
       (if (nonrecursive-closure-sensitize-cache v)
@@ -7878,13 +7691,15 @@
 				#f
 				#f
 				#f
-				#f
+				v
 				#f
 				#f
 				#f
 				#f
 				#f
 				'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-nonrecursive-closure-sensitize-cache! v u-sensitivity))
 	   (map-cps
 	    loop
 	    (get-nonrecursive-closure-values v)
@@ -7912,13 +7727,15 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v
 		  #f
 		  #f
 		  #f
 		  #f
 		  #f
 		  'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-recursive-closure-sensitize-cache! v u-sensitivity))
 	   (map-cps
 	    loop
 	    (get-recursive-closure-values v)
@@ -7929,22 +7746,26 @@
      ((perturbation-tagged-value? v)
       (if (perturbation-tagged-value-sensitize-cache v)
 	  (k (perturbation-tagged-value-sensitize-cache v) cs)
-	  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	  (let ((u-sensitivity (new-sensitivity-tagged-value v)))
+	   (set-perturbation-tagged-value-sensitize-cache! v u-sensitivity)
 	   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
      ((bundle? v)
       (if (bundle-sensitize-cache v)
 	  (k (bundle-sensitize-cache v) cs)
-	  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	  (let ((u-sensitivity (new-sensitivity-tagged-value v)))
+	   (set-bundle-sensitize-cache! v u-sensitivity)
 	   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
      ((sensitivity-tagged-value? v)
       (if (sensitivity-tagged-value-sensitize-cache v)
 	  (k (sensitivity-tagged-value-sensitize-cache v) cs)
-	  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	  (let ((u-sensitivity (new-sensitivity-tagged-value v)))
+	   (set-sensitivity-tagged-value-sensitize-cache! v u-sensitivity)
 	   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
      ((reverse-tagged-value? v)
       (if (reverse-tagged-value-sensitize-cache v)
 	  (k (reverse-tagged-value-sensitize-cache v) cs)
-	  (let ((u-sensitivity (create-sensitivity-tagged-value v)))
+	  (let ((u-sensitivity (new-sensitivity-tagged-value v)))
+	   (set-reverse-tagged-value-sensitize-cache! v u-sensitivity)
 	   (k u-sensitivity (cons (cons v u-sensitivity) cs)))))
      ((tagged-pair? v)
       (if (tagged-pair-sensitize-cache v)
@@ -7961,13 +7782,15 @@
 				   #f
 				   #f
 				   #f
-				   #f
+				   v
 				   #f
 				   #f
 				   #f
 				   #f
 				   #f
 				   'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-tagged-pair-sensitize-cache! v u-sensitivity))
 	   (loop (get-tagged-pair-car v)
 		 (cons (cons v u-sensitivity) cs)
 		 (lambda (v-car-sensitivity cs)
@@ -8053,7 +7876,7 @@
 	     (cs '())
 	     (k (lambda (v cs)
 		 (let ((v (canonize-and-maybe-intern-abstract-value v)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v-sensitivity)
 		     (assert (or (not (nonrecursive-closure-unsensitize-cache
@@ -8085,15 +7908,7 @@
 		      (or (not (bundle-unsensitize-cache v-sensitivity))
 			  (eq? (bundle-unsensitize-cache v-sensitivity) v)))
 		     (set-bundle-unsensitize-cache! v-sensitivity v))
-		    ((sensitivity-tagged-value? v-sensitivity)
-		     (assert
-		      (or (not (sensitivity-tagged-value-unsensitize-cache
-				v-sensitivity))
-			  (eq? (sensitivity-tagged-value-unsensitize-cache
-				v-sensitivity)
-			       v)))
-		     (set-sensitivity-tagged-value-unsensitize-cache!
-		      v-sensitivity v))
+		    ((sensitivity-tagged-value? v-sensitivity) #f)
 		    ((reverse-tagged-value? v-sensitivity)
 		     (assert (or (not (reverse-tagged-value-unsensitize-cache
 				       v-sensitivity))
@@ -8259,10 +8074,8 @@
 		    v-sensitivity)))
 	   (k u (cons (cons v-sensitivity u) cs)))))
      ((sensitivity-tagged-value? v-sensitivity)
-      (if (sensitivity-tagged-value-unsensitize-cache v-sensitivity)
-	  (k (sensitivity-tagged-value-unsensitize-cache v-sensitivity) cs)
-	  (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
-	   (k u (cons (cons v-sensitivity u) cs)))))
+      (let ((u (get-sensitivity-tagged-value-primal v-sensitivity)))
+       (k u (cons (cons v-sensitivity u) cs))))
      ((reverse-tagged-value? v-sensitivity)
       (if (reverse-tagged-value-unsensitize-cache v-sensitivity)
 	  (k (reverse-tagged-value-unsensitize-cache v-sensitivity) cs)
@@ -8415,22 +8228,8 @@
 		   (fill-recursive-closure-values! u vs)
 		   (k u cs)))))
       ((and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
-       (let ((u (make-perturbation-tagged-value 'unfilled
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						#f
-						'unfilled)))
+       (let ((u (make-perturbation-tagged-value
+		 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-perturbation-tagged-value-primal v1)
 	      (get-perturbation-tagged-value-primal v2)
 	      (cons (cons (cons v1 v2) u) cs)
@@ -8440,8 +8239,6 @@
       ((and (bundle? v1) (bundle? v2))
        (let ((u (make-bundle 'unfilled
 			     'unfilled
-			     #f
-			     #f
 			     #f
 			     #f
 			     #f
@@ -8466,9 +8263,8 @@
 		      (fill-bundle! u v-primal v-tangent)
 		      (k u cs)))))))
       ((and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
-       (let ((u
-	      (make-sensitivity-tagged-value
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (let ((u (make-sensitivity-tagged-value
+		 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-sensitivity-tagged-value-primal v1)
 	      (get-sensitivity-tagged-value-primal v2)
 	      (cons (cons (cons v1 v2) u) cs)
@@ -8476,9 +8272,8 @@
 	       (fill-sensitivity-tagged-value-primal! u v)
 	       (k u cs)))))
       ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-       (let ((u
-	      (make-reverse-tagged-value
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+       (let ((u (make-reverse-tagged-value
+		 'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-reverse-tagged-value-primal v1)
 	      (get-reverse-tagged-value-primal v2)
 	      (cons (cons (cons v1 v2) u) cs)
@@ -8542,7 +8337,7 @@
 	     (k (lambda (v-reverse cs)
 		 (let ((v-reverse
 			(canonize-and-maybe-intern-abstract-value v-reverse)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v)
 		     (assert
@@ -8599,11 +8394,13 @@
 				       #f
 				       #f
 				       #f
-				       #f
+				       v
 				       #f
 				       #f
 				       #f
 				       'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-*j-cache! v v-reverse))
 	   (map-cps loop
 		    (union-members v)
 		    (cons (cons v v-reverse) cs)
@@ -8622,20 +8419,20 @@
 	    (k u-reverse (cons (cons v u-reverse) cs)))
 	   (cond
 	    ((vlad-empty-list? v)
-	     (let ((u-reverse (create-reverse-tagged-value v)))
+	     (let ((u-reverse (new-reverse-tagged-value v)))
 	      (k u-reverse (cons (cons v u-reverse) cs))))
 	    ((vlad-true? v)
-	     (let ((u-reverse (create-reverse-tagged-value v)))
+	     (let ((u-reverse (new-reverse-tagged-value v)))
 	      (k u-reverse (cons (cons v u-reverse) cs))))
 	    ((vlad-false? v)
-	     (let ((u-reverse (create-reverse-tagged-value v)))
+	     (let ((u-reverse (new-reverse-tagged-value v)))
 	      (k u-reverse (cons (cons v u-reverse) cs))))
 	    ((vlad-real? v)
-	     (let ((u-reverse (create-reverse-tagged-value v)))
+	     (let ((u-reverse (new-reverse-tagged-value v)))
 	      (k u-reverse (cons (cons v u-reverse) cs))))
 	    ((primitive-procedure? v) (internal-error))
 	    ((abstract-zero? v)
-	     (let ((u-reverse (create-reverse-tagged-value v)))
+	     (let ((u-reverse (new-reverse-tagged-value v)))
 	      (k u-reverse (cons (cons v u-reverse) cs))))
 	    ((nonrecursive-closure? v)
 	     (if (nonrecursive-closure-*j-cache v)
@@ -8656,11 +8453,13 @@
 			 #f
 			 #f
 			 #f
-			 #f
+			 v
 			 #f
 			 #f
 			 #f
 			 'unfilled)))
+		  (unless (or *canonized?* *interned?*)
+		   (set-nonrecursive-closure-*j-cache! v u-reverse))
 		  (map-cps
 		   loop
 		   (get-nonrecursive-closure-values v)
@@ -8701,11 +8500,13 @@
 			 #f
 			 #f
 			 #f
-			 #f
+			 v
 			 #f
 			 #f
 			 #f
 			 'unfilled)))
+		  (unless (or *canonized?* *interned?*)
+		   (set-recursive-closure-*j-cache! v u-reverse))
 		  (map-cps
 		   loop
 		   (get-recursive-closure-values v)
@@ -8716,22 +8517,26 @@
 	    ((perturbation-tagged-value? v)
 	     (if (perturbation-tagged-value-*j-cache v)
 		 (k (perturbation-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (create-reverse-tagged-value v)))
+		 (let ((u-reverse (new-reverse-tagged-value v)))
+		  (set-perturbation-tagged-value-*j-cache! v u-reverse)
 		  (k u-reverse (cons (cons v u-reverse) cs)))))
 	    ((bundle? v)
 	     (if (bundle-*j-cache v)
 		 (k (bundle-*j-cache v) cs)
-		 (let ((u-reverse (create-reverse-tagged-value v)))
+		 (let ((u-reverse (new-reverse-tagged-value v)))
+		  (set-bundle-*j-cache! v u-reverse)
 		  (k u-reverse (cons (cons v u-reverse) cs)))))
 	    ((sensitivity-tagged-value? v)
 	     (if (sensitivity-tagged-value-*j-cache v)
 		 (k (sensitivity-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (create-reverse-tagged-value v)))
+		 (let ((u-reverse (new-reverse-tagged-value v)))
+		  (set-sensitivity-tagged-value-*j-cache! v u-reverse)
 		  (k u-reverse (cons (cons v u-reverse) cs)))))
 	    ((reverse-tagged-value? v)
 	     (if (reverse-tagged-value-*j-cache v)
 		 (k (reverse-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (create-reverse-tagged-value v)))
+		 (let ((u-reverse (new-reverse-tagged-value v)))
+		  (set-reverse-tagged-value-*j-cache! v u-reverse)
 		  (k u-reverse (cons (cons v u-reverse) cs)))))
 	    ((tagged-pair? v)
 	     (if (tagged-pair-*j-cache v)
@@ -8751,11 +8556,13 @@
 			 #f
 			 #f
 			 #f
-			 #f
+			 v
 			 #f
 			 #f
 			 #f
 			 'unfilled)))
+		  (unless (or *canonized?* *interned?*)
+		   (set-tagged-pair-*j-cache! v u-reverse))
 		  (loop (get-tagged-pair-car v)
 			(cons (cons v u-reverse) cs)
 			(lambda (v-car-reverse cs)
@@ -8777,7 +8584,7 @@
 	     (cs '())
 	     (k (lambda (v cs)
 		 (let ((v (canonize-and-maybe-intern-abstract-value v)))
-		  (when *memoized?*
+		  (when (or *canonized?* *interned?*)
 		   (cond
 		    ((nonrecursive-closure? v-reverse)
 		     (assert (or (not (nonrecursive-closure-*j-inverse-cache
@@ -8815,13 +8622,7 @@
 			       v)))
 		     (set-sensitivity-tagged-value-*j-inverse-cache!
 		      v-reverse v))
-		    ((reverse-tagged-value? v-reverse)
-		     (assert (or (not (reverse-tagged-value-*j-inverse-cache
-				       v-reverse))
-				 (eq? (reverse-tagged-value-*j-inverse-cache
-				       v-reverse)
-				      v)))
-		     (set-reverse-tagged-value-*j-inverse-cache! v-reverse v))
+		    ((reverse-tagged-value? v-reverse) #f)
 		    ((tagged-pair? v-reverse)
 		     (assert
 		      (or (not (tagged-pair-*j-inverse-cache v-reverse))
@@ -9002,10 +8803,8 @@
 			   v-reverse)))
 		  (k u (cons (cons v-reverse u) cs)))))
 	    ((reverse-tagged-value? v-reverse)
-	     (if (reverse-tagged-value-*j-inverse-cache v-reverse)
-		 (k (reverse-tagged-value-*j-inverse-cache v-reverse) cs)
-		 (let ((u (get-reverse-tagged-value-primal v-reverse)))
-		  (k u (cons (cons v-reverse u) cs)))))
+	     (let ((u (get-reverse-tagged-value-primal v-reverse)))
+	      (k u (cons (cons v-reverse u) cs))))
 	    ((tagged-pair? v-reverse)
 	     (cond
 	      ((tagged-pair-*j-inverse-cache v-reverse)
@@ -9803,7 +9602,7 @@
       ((perturbation-tagged-value? v)
        (let ((u-prime
 	      (make-perturbation-tagged-value
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-perturbation-tagged-value-primal v)
 	      (cons (cons v u-prime) cs)
 	      (lambda (v-prime cs)
@@ -9812,8 +9611,6 @@
       ((bundle? v)
        (let ((u-prime (make-bundle 'unfilled
 				   'unfilled
-				   #f
-				   #f
 				   #f
 				   #f
 				   #f
@@ -9838,7 +9635,7 @@
       ((sensitivity-tagged-value? v)
        (let ((u-prime
 	      (make-sensitivity-tagged-value
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-sensitivity-tagged-value-primal v)
 	      (cons (cons v u-prime) cs)
 	      (lambda (v-prime cs)
@@ -9847,7 +9644,7 @@
       ((reverse-tagged-value? v)
        (let ((u-prime
 	      (make-reverse-tagged-value
-	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
+	       'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	(loop (get-reverse-tagged-value-primal v)
 	      (cons (cons v u-prime) cs)
 	      (lambda (v-prime cs)
@@ -10015,22 +9812,9 @@
 		   (fill-recursive-closure-values! u-prime vs-prime)
 		   (k u-prime cs)))))
        ((perturbation-tagged-value? v)
-	(let ((u-prime (make-perturbation-tagged-value 'unfilled
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       #f
-						       'unfilled)))
+	(let ((u-prime
+	       (make-perturbation-tagged-value
+		'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	 (loop (get-perturbation-tagged-value-primal v)
 	       (cons (cons v u-prime) cs)
 	       (lambda (v-prime cs)
@@ -10039,8 +9823,6 @@
        ((bundle? v)
 	(let ((u-prime (make-bundle 'unfilled
 				    'unfilled
-				    #f
-				    #f
 				    #f
 				    #f
 				    #f
@@ -10063,44 +9845,18 @@
 		       (fill-bundle! u-prime v-primal-prime v-tangent-prime)
 		       (k u-prime cs)))))))
        ((sensitivity-tagged-value? v)
-	(let ((u-prime (make-sensitivity-tagged-value 'unfilled
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      #f
-						      'unfilled)))
+	(let ((u-prime
+	       (make-sensitivity-tagged-value
+		'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	 (loop (get-sensitivity-tagged-value-primal v)
 	       (cons (cons v u-prime) cs)
 	       (lambda (v-prime cs)
 		(fill-sensitivity-tagged-value-primal! u-prime v-prime)
 		(k u-prime cs)))))
        ((reverse-tagged-value? v)
-	(let ((u-prime (make-reverse-tagged-value 'unfilled
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  #f
-						  'unfilled)))
+	(let ((u-prime
+	       (make-reverse-tagged-value
+		'unfilled #f #f #f #f #f #f #f #f #f #f #f #f #f 'unfilled)))
 	 (loop (get-reverse-tagged-value-primal v)
 	       (cons (cons v u-prime) cs)
 	       (lambda (v-prime cs)
@@ -15639,8 +15395,9 @@
 (define (initialize-basis!)
  (set! *empty-abstract-value* (create-union '()))
  (assert (not *frozen?*))
- (set! *unions* (cons (empty-abstract-value) *unions*))
- (set-union-interned?! *empty-abstract-value* #t)
+ (when *interned?*
+  (set! *unions* (cons (empty-abstract-value) *unions*))
+  (set-union-interned?! *empty-abstract-value* #t))
  (set! *abstract-boolean* (new-union (list (vlad-true) (vlad-false))))
  (cond
   (*imprecise-zero?*

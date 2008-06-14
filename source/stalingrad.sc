@@ -69,6 +69,7 @@
 		   (include-path "include-directory" string-argument)))
 		 (at-most-one ("no-assert" no-assert?))
 		 (at-most-one ("wizard" wizard?))
+		 (at-most-one ("interned" interned?))
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
@@ -104,6 +105,9 @@
 		 (at-most-one ("imprecise-inexacts" imprecise-inexacts?))
 		 (at-most-one ("imprecise-zero" imprecise-zero?))
 		 (at-most-one ("no-warnings" no-warnings?))
+		 (at-most-one ("all-limits"
+			       all-limits?
+			       (all-limits "n" integer-argument #f)))
 		 (at-most-one ("no-real-width-limit" no-real-width-limit?)
 			      ("real-width-limit"
 			       real-width-limit?
@@ -219,42 +223,84 @@
  (set! *imprecise-inexacts?* imprecise-inexacts?)
  (set! *imprecise-zero?* imprecise-zero?)
  (set! *warnings?* (not no-warnings?))
- (set! *real-width-limit* (if real-width-limit? real-width-limit #f))
- (set! *closure-width-limit* (if closure-width-limit? closure-width-limit #f))
+ (set! *real-width-limit*
+       (cond (real-width-limit? real-width-limit)
+	     (no-real-width-limit? #f)
+	     (else all-limits)))
+ (set! *closure-width-limit*
+       (cond (closure-width-limit? closure-width-limit)
+	     (no-closure-width-limit? #f)
+	     (else all-limits)))
  (set! *perturbation-tagged-value-width-limit*
-       (if perturbation-tagged-value-width-limit?
-	   perturbation-tagged-value-width-limit
-	   #f))
- (set! *bundle-width-limit* (if bundle-width-limit? bundle-width-limit #f))
+       (cond (perturbation-tagged-value-width-limit?
+	      perturbation-tagged-value-width-limit)
+	     (no-perturbation-tagged-value-width-limit? #f)
+	     (else all-limits)))
+ (set! *bundle-width-limit*
+       (cond (bundle-width-limit? bundle-width-limit)
+	     (no-bundle-width-limit? #f)
+	     (else all-limits)))
  (set! *sensitivity-tagged-value-width-limit*
-       (if sensitivity-tagged-value-width-limit?
-	   sensitivity-tagged-value-width-limit
-	   #f))
+       (cond (sensitivity-tagged-value-width-limit?
+	      sensitivity-tagged-value-width-limit)
+	     (no-sensitivity-tagged-value-width-limit? #f)
+	     (else all-limits)))
  (set! *reverse-tagged-value-width-limit*
-       (if reverse-tagged-value-width-limit?
-	   reverse-tagged-value-width-limit
-	   #f))
+       (cond (reverse-tagged-value-width-limit?
+	      reverse-tagged-value-width-limit)
+	     (no-reverse-tagged-value-width-limit? #f)
+	     (else all-limits)))
  (set! *tagged-pair-width-limit*
-       (if tagged-pair-width-limit? tagged-pair-width-limit #f))
- (set! *closure-depth-limit* (if closure-depth-limit? closure-depth-limit #f))
+       (cond (tagged-pair-width-limit? tagged-pair-width-limit)
+	     (no-tagged-pair-width-limit? #f)
+	     (else all-limits)))
+ (set! *closure-depth-limit*
+       (cond (closure-depth-limit? closure-depth-limit)
+	     (no-closure-depth-limit? #f)
+	     (else all-limits)))
  (set! *backpropagator-depth-limit*
-       (if backpropagator-depth-limit? backpropagator-depth-limit #f))
+       (cond (backpropagator-depth-limit? backpropagator-depth-limit)
+	     (no-backpropagator-depth-limit? #f)
+	     (else all-limits)))
  (set! *perturbation-tagged-value-depth-limit*
-       (if perturbation-tagged-value-depth-limit?
-	   perturbation-tagged-value-depth-limit
-	   #f))
- (set! *bundle-depth-limit* (if bundle-depth-limit? bundle-depth-limit #f))
+       (cond (perturbation-tagged-value-depth-limit?
+	      perturbation-tagged-value-depth-limit)
+	     (no-perturbation-tagged-value-depth-limit? #f)
+	     (else all-limits)))
+ (set! *bundle-depth-limit*
+       (cond (bundle-depth-limit? bundle-depth-limit)
+	     (no-bundle-depth-limit? #f)
+	     (else all-limits)))
  (set! *sensitivity-tagged-value-depth-limit*
-       (if sensitivity-tagged-value-depth-limit?
-	   sensitivity-tagged-value-depth-limit
-	   #f))
+       (cond (sensitivity-tagged-value-depth-limit?
+	      sensitivity-tagged-value-depth-limit)
+	     (no-sensitivity-tagged-value-depth-limit? #f)
+	     (else all-limits)))
  (set! *reverse-tagged-value-depth-limit*
-       (if reverse-tagged-value-depth-limit?
-	   reverse-tagged-value-depth-limit
-	   #f))
+       (cond (reverse-tagged-value-depth-limit?
+	      reverse-tagged-value-depth-limit)
+	     (no-reverse-tagged-value-depth-limit? #f)
+	     (else all-limits)))
  (set! *tagged-pair-depth-limit*
-       (if tagged-pair-depth-limit? tagged-pair-depth-limit #f))
- (set! *memoized?* *flow-analysis?*)
+       (cond (tagged-pair-depth-limit? tagged-pair-depth-limit)
+	     (no-tagged-pair-depth-limit? #f)
+	     (else all-limits)))
+ (set! *almost-union-free?*
+       (and (not *real-width-limit*)
+	    (not *closure-width-limit*)
+	    (not *perturbation-tagged-value-width-limit*)
+	    (not *bundle-width-limit*)
+	    (not *sensitivity-tagged-value-width-limit*)
+	    (not *reverse-tagged-value-width-limit*)
+	    (not *tagged-pair-width-limit*)
+	    (not *closure-depth-limit*)
+	    (not *perturbation-tagged-value-depth-limit*)
+	    (not *bundle-depth-limit*)
+	    (not *sensitivity-tagged-value-depth-limit*)
+	    (not *reverse-tagged-value-depth-limit*)
+	    (not *tagged-pair-depth-limit*)))
+ (set! *canonized?* *flow-analysis?*)
+ (set! *interned?* (or interned? *flow-analysis?*))
  (without-abstract (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
