@@ -5792,6 +5792,8 @@
 			       #f
 			       #f
 			       'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-unperturb-cache! v-perturbation v))
 	   (map-cps loop
 		    (union-members v-perturbation)
 		    (cons (cons v-perturbation v) cs)
@@ -5848,6 +5850,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-nonrecursive-closure-unperturb-cache! v-perturbation u))
 	 (map-cps loop
 		  (get-nonrecursive-closure-values v-perturbation)
 		  (cons (cons v-perturbation u) cs)
@@ -5888,6 +5892,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-recursive-closure-unperturb-cache! v-perturbation u))
 	 (map-cps loop
 		  (get-recursive-closure-values v-perturbation)
 		  (cons (cons v-perturbation u) cs)
@@ -5938,6 +5944,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-tagged-pair-unperturb-cache! v-perturbation u))
 	 (loop (get-tagged-pair-car v-perturbation)
 	       (cons (cons v-perturbation u) cs)
 	       (lambda (v-car cs)
@@ -6011,6 +6019,8 @@
 			       #f
 			       #f
 			       'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-primal-cache! v-forward v))
 	   (map-cps loop
 		    (union-members v-forward)
 		    (cons (cons v-forward v) cs)
@@ -6080,6 +6090,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-nonrecursive-closure-primal-cache! v-forward u))
 		(map-cps loop
 			 (get-nonrecursive-closure-values v-forward)
 			 (cons (cons v-forward u) cs)
@@ -6120,6 +6132,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-recursive-closure-primal-cache! v-forward u))
 		(map-cps loop
 			 (get-recursive-closure-values v-forward)
 			 (cons (cons v-forward u) cs)
@@ -6169,6 +6183,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-tagged-pair-primal-cache! v-forward u))
 		(loop (get-tagged-pair-car v-forward)
 		      (cons (cons v-forward u) cs)
 		      (lambda (v-car cs)
@@ -6249,6 +6265,8 @@
 					    #f
 					    #f
 					    'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-tangent-cache! v-forward v-perturbation))
 	   (map-cps loop
 		    (union-members v-forward)
 		    (cons (cons v-forward v-perturbation) cs)
@@ -6326,6 +6344,9 @@
 		       #f
 		       #f
 		       'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-nonrecursive-closure-tangent-cache!
+		  v-forward u-perturbation))
 		(map-cps loop
 			 (get-nonrecursive-closure-values v-forward)
 			 (cons (cons v-forward u-perturbation) cs)
@@ -6372,6 +6393,9 @@
 		       #f
 		       #f
 		       'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-recursive-closure-tangent-cache!
+		  v-forward u-perturbation))
 		(map-cps loop
 			 (get-recursive-closure-values v-forward)
 			 (cons (cons v-forward u-perturbation) cs)
@@ -6430,6 +6454,8 @@
 		       #f
 		       #f
 		       'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-tagged-pair-tangent-cache! v-forward u-perturbation))
 		(loop (get-tagged-pair-car v-forward)
 		      (cons (cons v-forward u-perturbation) cs)
 		      (lambda (v-car-perturbation cs)
@@ -7661,6 +7687,8 @@
 			       #f
 			       #f
 			       'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-unsensitize-cache! v-sensitivity v))
 	   (map-cps loop
 		    (union-members v-sensitivity)
 		    (cons (cons v-sensitivity v) cs)
@@ -7716,6 +7744,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-nonrecursive-closure-unsensitize-cache! v-sensitivity u))
 	 (map-cps loop
 		  (get-nonrecursive-closure-values v-sensitivity)
 		  (cons (cons v-sensitivity u) cs)
@@ -7757,6 +7787,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-recursive-closure-unsensitize-cache! v-sensitivity u))
 	 (map-cps loop
 		  (get-recursive-closure-values v-sensitivity)
 		  (cons (cons v-sensitivity u) cs)
@@ -7807,6 +7839,8 @@
 		  #f
 		  #f
 		  'unfilled)))
+	 (unless (or *canonized?* *interned?*)
+	  (set-tagged-pair-unsensitize-cache! v-sensitivity u))
 	 (loop (get-tagged-pair-car v-sensitivity)
 	       (cons (cons v-sensitivity u) cs)
 	       (lambda (v-car cs)
@@ -8323,6 +8357,8 @@
 			       #f
 			       #f
 			       'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-union-*j-inverse-cache! v-reverse v))
 	   (map-cps loop
 		    (union-members v-reverse)
 		    (cons (cons v-reverse v) cs)
@@ -8397,6 +8433,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-nonrecursive-closure-*j-inverse-cache! v-reverse u))
 		(map-cps loop
 			 (get-nonrecursive-closure-values v-reverse)
 			 (cons (cons v-reverse u) cs)
@@ -8438,6 +8476,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-recursive-closure-*j-inverse-cache! v-reverse u))
 		(map-cps loop
 			 (get-recursive-closure-values v-reverse)
 			 (cons (cons v-reverse u) cs)
@@ -8488,6 +8528,8 @@
 			 #f
 			 #f
 			 'unfilled)))
+		(unless (or *canonized?* *interned?*)
+		 (set-tagged-pair-*j-inverse-cache! v-reverse u))
 		(loop (get-tagged-pair-car v-reverse)
 		      (cons (cons v-reverse u) cs)
 		      (lambda (v-car cs)
