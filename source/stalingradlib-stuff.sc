@@ -5230,7 +5230,7 @@
 				  (eq? (union-zero-cache v) v0)))
 		      (set-union-zero-cache! v v0))))
 		   v0))))
-    (let ((found? (assq v cs)))
+    (let ((found? (and (or *canonized?* *interned?*) (assq v cs))))
      (cond
       (found? (k (cdr found?) cs))
       ((union? v)
@@ -5549,7 +5549,7 @@
 			  (eq? (union-perturb-cache v) v-perturbation)))
 		     (set-union-perturb-cache! v v-perturbation))))
 		  v-perturbation))))
-   (let ((found? (assq v cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v)
@@ -5770,7 +5770,7 @@
 			  (eq? (union-unperturb-cache v-perturbation) v)))
 		     (set-union-unperturb-cache! v-perturbation v))))
 		  v))))
-   (let ((found? (assq v-perturbation cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v-perturbation cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v-perturbation)
@@ -5780,7 +5780,7 @@
 			       #f
 			       #f
 			       #f
-			       #f
+			       v-perturbation
 			       #f
 			       #f
 			       #f
@@ -5838,7 +5838,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-perturbation
 		  #f
 		  #f
 		  #f
@@ -5880,7 +5880,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-perturbation
 		  #f
 		  #f
 		  #f
@@ -5932,7 +5932,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-perturbation
 		  #f
 		  #f
 		  #f
@@ -5997,7 +5997,7 @@
 				 (eq? (union-primal-cache v-forward) v)))
 		     (set-union-primal-cache! v-forward v))))
 		  v))))
-   (let ((found? (assq v-forward cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v-forward cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v-forward)
@@ -6027,177 +6027,173 @@
 		    (lambda (us cs)
 		     (fill-union-values! v us)
 		     (k v cs))))))
-     (else
-      (let ((b (find-if
-		(lambda (b)
-		 ;; This is safe because the arguments will never have
-		 ;; unfilled values.
-		 (deep-abstract-value=?
-		  v-forward
-		  (primitive-procedure-forward (value-binding-value b))))
-		*value-bindings*)))
-       (if b
-	   (let ((u (value-binding-value b)))
-	    (k u (cons (cons v-forward u) cs)))
+     ((vlad-empty-list? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((vlad-true? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((vlad-false? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((vlad-real? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((primitive-procedure? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((abstract-zero? v-forward)
+      (ad-warning "Argument to primal might be a non-forward value" v-forward)
+      (let ((u (abstract-zero))) (k u (cons (cons v-forward u) cs))))
+     ((nonrecursive-closure? v-forward)
+      (if (nonrecursive-closure-primal-cache v-forward)
+	  (k (nonrecursive-closure-primal-cache v-forward) cs)
+	  (let ((b (find-if
+		    (lambda (b)
+		     ;; This is safe because the arguments will never have
+		     ;; unfilled values.
+		     (deep-abstract-value=?
+		      v-forward
+		      (primitive-procedure-forward (value-binding-value b))))
+		    *value-bindings*)))
 	   (cond
-	    ((vlad-empty-list? v-forward)
-	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((vlad-true? v-forward)
-	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((vlad-false? v-forward)
-	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((vlad-real? v-forward)
-	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((primitive-procedure? v-forward)
-	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((abstract-zero? v-forward)
-	     (ad-warning "Argument to primal might be a non-forward value"
-			 v-forward)
-	     (let ((u (abstract-zero))) (k u (cons (cons v-forward u) cs))))
-	    ((nonrecursive-closure? v-forward)
-	     (cond
-	      ((nonrecursive-closure-primal-cache v-forward)
-	       (k (nonrecursive-closure-primal-cache v-forward) cs))
-	      ((tagged? 'forward (nonrecursive-closure-tags v-forward))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u (make-nonrecursive-closure
-			 'unfilled
-			 (forward-transform-inverse
-			  (nonrecursive-closure-lambda-expression
-			   v-forward))
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
+	    (b (let ((u (value-binding-value b)))
 		(unless (or *canonized?* *interned?*)
 		 (set-nonrecursive-closure-primal-cache! v-forward u))
-		(map-cps loop
-			 (get-nonrecursive-closure-values v-forward)
-			 (cons (cons v-forward u) cs)
-			 (lambda (vs cs)
-			  (fill-nonrecursive-closure-values! u vs)
-			  (k u cs)))))
-	      (else
-	       (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				  v-forward)))
-		(k u (cons (cons v-forward u) cs))))))
-	    ((recursive-closure? v-forward)
-	     (cond
-	      ((recursive-closure-primal-cache v-forward)
-	       (k (recursive-closure-primal-cache v-forward) cs))
-	      ((tagged? 'forward (recursive-closure-tags v-forward))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u (make-recursive-closure
-			 'unfilled
-			 (map-vector
-			  unforwardify
-			  (recursive-closure-procedure-variables v-forward))
-			 (map-vector
-			  forward-transform-inverse
-			  (recursive-closure-lambda-expressions v-forward))
-			 (recursive-closure-index v-forward)
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-recursive-closure-primal-cache! v-forward u))
-		(map-cps loop
-			 (get-recursive-closure-values v-forward)
-			 (cons (cons v-forward u) cs)
-			 (lambda (vs cs)
-			  (fill-recursive-closure-values! u vs)
-			  (k u cs)))))
-	      (else
-	       (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				  v-forward)))
-		(k u (cons (cons v-forward u) cs))))))
-	    ((perturbation-tagged-value? v-forward)
+		(k u (cons (cons v-forward u) cs))))
+	    ((tagged? 'forward (nonrecursive-closure-tags v-forward))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u (make-nonrecursive-closure
+		       'unfilled
+		       (forward-transform-inverse
+			(nonrecursive-closure-lambda-expression
+			 v-forward))
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-nonrecursive-closure-primal-cache! v-forward u))
+	      (map-cps loop
+		       (get-nonrecursive-closure-values v-forward)
+		       (cons (cons v-forward u) cs)
+		       (lambda (vs cs)
+			(fill-nonrecursive-closure-values! u vs)
+			(k u cs)))))
+	    (else
 	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
 				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((bundle? v-forward)
-	     (let ((u (get-bundle-primal v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((sensitivity-tagged-value? v-forward)
+	      (k u (cons (cons v-forward u) cs))))))))
+     ((recursive-closure? v-forward)
+      (cond ((recursive-closure-primal-cache v-forward)
+	     (k (recursive-closure-primal-cache v-forward) cs))
+	    ((tagged? 'forward (recursive-closure-tags v-forward))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u (make-recursive-closure
+		       'unfilled
+		       (map-vector
+			unforwardify
+			(recursive-closure-procedure-variables v-forward))
+		       (map-vector
+			forward-transform-inverse
+			(recursive-closure-lambda-expressions v-forward))
+		       (recursive-closure-index v-forward)
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-recursive-closure-primal-cache! v-forward u))
+	      (map-cps loop
+		       (get-recursive-closure-values v-forward)
+		       (cons (cons v-forward u) cs)
+		       (lambda (vs cs)
+			(fill-recursive-closure-values! u vs)
+			(k u cs)))))
+	    (else
 	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
 				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((reverse-tagged-value? v-forward)
+	      (k u (cons (cons v-forward u) cs))))))
+     ((perturbation-tagged-value? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((bundle? v-forward)
+      (let ((u (get-bundle-primal v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((sensitivity-tagged-value? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((reverse-tagged-value? v-forward)
+      (let ((u (ad-error "Argument to primal ~a a non-forward value"
+			 v-forward)))
+       (k u (cons (cons v-forward u) cs))))
+     ((tagged-pair? v-forward)
+      (cond ((tagged-pair-primal-cache v-forward)
+	     (k (tagged-pair-primal-cache v-forward) cs))
+	    ((tagged? 'forward (tagged-pair-tags v-forward))
+	     (let ((u (make-tagged-pair
+		       (remove-tag 'forward (tagged-pair-tags v-forward))
+		       'unfilled
+		       'unfilled
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-tagged-pair-primal-cache! v-forward u))
+	      (loop (get-tagged-pair-car v-forward)
+		    (cons (cons v-forward u) cs)
+		    (lambda (v-car cs)
+		     (loop (get-tagged-pair-cdr v-forward)
+			   cs
+			   (lambda (v-cdr cs)
+			    (fill-tagged-pair! u v-car v-cdr)
+			    (k u cs)))))))
+	    (else
 	     (let ((u (ad-error "Argument to primal ~a a non-forward value"
 				v-forward)))
-	      (k u (cons (cons v-forward u) cs))))
-	    ((tagged-pair? v-forward)
-	     (cond
-	      ((tagged-pair-primal-cache v-forward)
-	       (k (tagged-pair-primal-cache v-forward) cs))
-	      ((tagged? 'forward (tagged-pair-tags v-forward))
-	       (let ((u (make-tagged-pair
-			 (remove-tag 'forward (tagged-pair-tags v-forward))
-			 'unfilled
-			 'unfilled
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-tagged-pair-primal-cache! v-forward u))
-		(loop (get-tagged-pair-car v-forward)
-		      (cons (cons v-forward u) cs)
-		      (lambda (v-car cs)
-		       (loop (get-tagged-pair-cdr v-forward)
-			     cs
-			     (lambda (v-cdr cs)
-			      (fill-tagged-pair! u v-car v-cdr)
-			      (k u cs)))))))
-	      (else
-	       (let ((u (ad-error "Argument to primal ~a a non-forward value"
-				  v-forward)))
-		(k u (cons (cons v-forward u) cs))))))
-	    (else (internal-error)))))))))))
+	      (k u (cons (cons v-forward u) cs))))))
+     (else (internal-error)))))))
 
 (define (tangent v-forward)
  ;; This is written in CPS so as not to break structure sharing.
@@ -6243,7 +6239,7 @@
 				      v-perturbation)))
 		     (set-union-tangent-cache! v-forward v-perturbation))))
 		  v-perturbation))))
-   (let ((found? (assq v-forward cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v-forward cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v-forward)
@@ -6273,206 +6269,202 @@
 		    (lambda (us-perturbation cs)
 		     (fill-union-values! v-perturbation us-perturbation)
 		     (k v-perturbation cs))))))
-     (else
-      (let ((b (find-if
-		(lambda (b)
-		 ;; This is safe because the arguments will never have
-		 ;; unfilled values.
-		 (deep-abstract-value=?
-		  v-forward
-		  (primitive-procedure-forward (value-binding-value b))))
-		*value-bindings*)))
-       (if b
-	   (let ((u-perturbation (perturb (value-binding-value b))))
-	    (k u-perturbation (cons (cons v-forward u-perturbation) cs)))
+     ((vlad-empty-list? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((vlad-true? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((vlad-false? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((vlad-real? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((primitive-procedure? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((abstract-zero? v-forward)
+      (ad-warning "Argument to tangent might be a non-forward value"
+		  v-forward)
+      (let ((u-perturbation (abstract-zero)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((nonrecursive-closure? v-forward)
+      (if (nonrecursive-closure-tangent-cache v-forward)
+	  (k (nonrecursive-closure-tangent-cache v-forward) cs)
+	  (let ((b (find-if
+		    (lambda (b)
+		     ;; This is safe because the arguments will never have
+		     ;; unfilled values.
+		     (deep-abstract-value=?
+		      v-forward
+		      (primitive-procedure-forward (value-binding-value b))))
+		    *value-bindings*)))
 	   (cond
-	    ((vlad-empty-list? v-forward)
-	     (let ((u-perturbation
-		    (ad-error "Argument to tangent ~a a non-forward value"
-			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((vlad-true? v-forward)
-	     (let ((u-perturbation
-		    (ad-error "Argument to tangent ~a a non-forward value"
-			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((vlad-false? v-forward)
-	     (let ((u-perturbation
-		    (ad-error "Argument to tangent ~a a non-forward value"
-			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((vlad-real? v-forward)
-	     (let ((u-perturbation
-		    (ad-error "Argument to tangent ~a a non-forward value"
-			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((primitive-procedure? v-forward)
-	     (let ((u-perturbation
-		    (ad-error "Argument to tangent ~a a non-forward value"
-			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((abstract-zero? v-forward)
-	     (ad-warning "Argument to tangent might be a non-forward value"
-			 v-forward)
-	     (let ((u-perturbation (abstract-zero)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((nonrecursive-closure? v-forward)
-	     (cond
-	      ((nonrecursive-closure-tangent-cache v-forward)
-	       (k (nonrecursive-closure-tangent-cache v-forward) cs))
-	      ((tagged? 'forward (nonrecursive-closure-tags v-forward))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u-perturbation
-		      (make-nonrecursive-closure
-		       'unfilled
-		       (perturbation-transform
-			(forward-transform-inverse
-			 (nonrecursive-closure-lambda-expression
-			  v-forward)))
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       'unfilled)))
+	    (b (let ((u-perturbation (perturb (value-binding-value b))))
 		(unless (or *canonized?* *interned?*)
 		 (set-nonrecursive-closure-tangent-cache!
 		  v-forward u-perturbation))
-		(map-cps loop
-			 (get-nonrecursive-closure-values v-forward)
-			 (cons (cons v-forward u-perturbation) cs)
-			 (lambda (vs-perturbation cs)
-			  (fill-nonrecursive-closure-values!
-			   u-perturbation vs-perturbation)
-			  (k u-perturbation cs)))))
-	      (else
-	       (let ((u-perturbation
-		      (ad-error "Argument to tangent ~a a non-forward value"
-				v-forward)))
-		(k u-perturbation
-		   (cons (cons v-forward u-perturbation) cs))))))
-	    ((recursive-closure? v-forward)
-	     (cond
-	      ((recursive-closure-tangent-cache v-forward)
-	       (k (recursive-closure-tangent-cache v-forward) cs))
-	      ((tagged? 'forward (recursive-closure-tags v-forward))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u-perturbation
-		      (make-recursive-closure
-		       'unfilled
-		       (map-vector
-			(lambda (x) (perturbationify (unforwardify x)))
-			(recursive-closure-procedure-variables v-forward))
-		       (map-vector
-			(lambda (e)
-			 (perturbation-transform
-			  (forward-transform-inverse e)))
-			(recursive-closure-lambda-expressions v-forward))
-		       (recursive-closure-index v-forward)
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-recursive-closure-tangent-cache!
-		  v-forward u-perturbation))
-		(map-cps loop
-			 (get-recursive-closure-values v-forward)
-			 (cons (cons v-forward u-perturbation) cs)
-			 (lambda (vs-perturbation cs)
-			  (fill-recursive-closure-values!
-			   u-perturbation vs-perturbation)
-			  (k u-perturbation cs)))))
-	      (else
-	       (let ((u-perturbation
-		      (ad-error "Argument to tangent ~a a non-forward value"
-				v-forward)))
-		(k u-perturbation
-		   (cons (cons v-forward u-perturbation) cs))))))
-	    ((perturbation-tagged-value? v-forward)
+		(k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+	    ((tagged? 'forward (nonrecursive-closure-tags v-forward))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u-perturbation
+		    (make-nonrecursive-closure
+		     'unfilled
+		     (perturbation-transform
+		      (forward-transform-inverse
+		       (nonrecursive-closure-lambda-expression
+			v-forward)))
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-nonrecursive-closure-tangent-cache!
+		v-forward u-perturbation))
+	      (map-cps loop
+		       (get-nonrecursive-closure-values v-forward)
+		       (cons (cons v-forward u-perturbation) cs)
+		       (lambda (vs-perturbation cs)
+			(fill-nonrecursive-closure-values!
+			 u-perturbation vs-perturbation)
+			(k u-perturbation cs)))))
+	    (else
 	     (let ((u-perturbation
 		    (ad-error "Argument to tangent ~a a non-forward value"
 			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((bundle? v-forward)
-	     (let ((u-perturbation (get-bundle-tangent v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((sensitivity-tagged-value? v-forward)
+	      (k u-perturbation
+		 (cons (cons v-forward u-perturbation) cs))))))))
+     ((recursive-closure? v-forward)
+      (cond ((recursive-closure-tangent-cache v-forward)
+	     (k (recursive-closure-tangent-cache v-forward) cs))
+	    ((tagged? 'forward (recursive-closure-tags v-forward))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u-perturbation
+		    (make-recursive-closure
+		     'unfilled
+		     (map-vector
+		      (lambda (x) (perturbationify (unforwardify x)))
+		      (recursive-closure-procedure-variables v-forward))
+		     (map-vector
+		      (lambda (e)
+		       (perturbation-transform
+			(forward-transform-inverse e)))
+		      (recursive-closure-lambda-expressions v-forward))
+		     (recursive-closure-index v-forward)
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-recursive-closure-tangent-cache!
+		v-forward u-perturbation))
+	      (map-cps loop
+		       (get-recursive-closure-values v-forward)
+		       (cons (cons v-forward u-perturbation) cs)
+		       (lambda (vs-perturbation cs)
+			(fill-recursive-closure-values!
+			 u-perturbation vs-perturbation)
+			(k u-perturbation cs)))))
+	    (else
 	     (let ((u-perturbation
 		    (ad-error "Argument to tangent ~a a non-forward value"
 			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((reverse-tagged-value? v-forward)
+	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))))
+     ((perturbation-tagged-value? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((bundle? v-forward)
+      (let ((u-perturbation (get-bundle-tangent v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((sensitivity-tagged-value? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((reverse-tagged-value? v-forward)
+      (let ((u-perturbation
+	     (ad-error "Argument to tangent ~a a non-forward value"
+		       v-forward)))
+       (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
+     ((tagged-pair? v-forward)
+      (cond ((tagged-pair-tangent-cache v-forward)
+	     (k (tagged-pair-tangent-cache v-forward) cs))
+	    ((tagged? 'forward (tagged-pair-tags v-forward))
+	     (let ((u-perturbation
+		    (make-tagged-pair
+		     (add-tag
+		      'perturbation
+		      (remove-tag 'forward (tagged-pair-tags v-forward)))
+		     'unfilled
+		     'unfilled
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     #f
+		     'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-tagged-pair-tangent-cache! v-forward u-perturbation))
+	      (loop (get-tagged-pair-car v-forward)
+		    (cons (cons v-forward u-perturbation) cs)
+		    (lambda (v-car-perturbation cs)
+		     (loop (get-tagged-pair-cdr v-forward)
+			   cs
+			   (lambda (v-cdr-perturbation cs)
+			    (fill-tagged-pair! u-perturbation
+					       v-car-perturbation
+					       v-cdr-perturbation)
+			    (k u-perturbation cs)))))))
+	    (else
 	     (let ((u-perturbation
 		    (ad-error "Argument to tangent ~a a non-forward value"
 			      v-forward)))
-	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))
-	    ((tagged-pair? v-forward)
-	     (cond
-	      ((tagged-pair-tangent-cache v-forward)
-	       (k (tagged-pair-tangent-cache v-forward) cs))
-	      ((tagged? 'forward (tagged-pair-tags v-forward))
-	       (let ((u-perturbation
-		      (make-tagged-pair
-		       (add-tag
-			'perturbation
-			(remove-tag 'forward (tagged-pair-tags v-forward)))
-		       'unfilled
-		       'unfilled
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       #f
-		       'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-tagged-pair-tangent-cache! v-forward u-perturbation))
-		(loop (get-tagged-pair-car v-forward)
-		      (cons (cons v-forward u-perturbation) cs)
-		      (lambda (v-car-perturbation cs)
-		       (loop (get-tagged-pair-cdr v-forward)
-			     cs
-			     (lambda (v-cdr-perturbation cs)
-			      (fill-tagged-pair! u-perturbation
-						 v-car-perturbation
-						 v-cdr-perturbation)
-			      (k u-perturbation cs)))))))
-	      (else
-	       (let ((u-perturbation
-		      (ad-error "Argument to tangent ~a a non-forward value"
-				v-forward)))
-		(k u-perturbation
-		   (cons (cons v-forward u-perturbation) cs))))))
-	    (else (internal-error)))))))))))
+	      (k u-perturbation (cons (cons v-forward u-perturbation) cs))))))
+     (else (internal-error)))))))
 
 (define (bundle v v-perturbation)
  ;; This is written in CPS so as not to break structure sharing.
@@ -6509,459 +6501,400 @@
 		 (lambda (us-forward cs)
 		  (fill-union-values! v-forward us-forward)
 		  (k v-forward cs)))))
-      (else
-       (let ((b (find-if
-		 ;; This is safe because the arguments will never have
-		 ;; unfilled values.
-		 (lambda (b) (deep-abstract-value=? v (value-binding-value b)))
-		 *value-bindings*)))
-	(if b
-	    (cond
-	     ((some-bundlable? v v-perturbation)
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward
-		     (primitive-procedure-forward (value-binding-value b))))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     (else
-	      (if *abstract?*
-		  (let ((u-forward (compile-time-warning
-				    "Arguments to bundle might not conform"
-				    v
-				    v-perturbation)))
-		   (k u-forward
-		      (cons (cons (cons v v-perturbation) u-forward) cs)))
-		  (run-time-error "Arguments to bundle do not conform"
-				  v
-				  v-perturbation))))
-	    (cond
-	     ((and (vlad-empty-list? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v (perturb v))))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ((and (vlad-true? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v (perturb v))))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ((and (vlad-false? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v (perturb v))))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ((and (vlad-real? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      ;; here I am: Can remove from v-perturbation anything that is
-	      ;;            not a perturbation of a real. Can also narrow an
-	      ;;            abstract zero to a concrete zero.
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ((primitive-procedure? v) (internal-error))
-	     ((and (nonrecursive-closure? v)
-		   (nonrecursive-closure? v-perturbation)
-		   (perturbation-parameter?
-		    (nonrecursive-closure-parameter v-perturbation))
-		   (dereferenced-nonrecursive-closure-match?
-		    v (unperturb v-perturbation)))
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward (make-nonrecursive-closure
-				'unfilled
-				(forward-transform
-				 (nonrecursive-closure-lambda-expression v))
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	       (map2-cps
-		loop
-		(get-nonrecursive-closure-values v)
-		(get-nonrecursive-closure-values v-perturbation)
-		(cons (cons (cons v v-perturbation) u-forward) cs)
-		(lambda (vs-forward cs)
-		 (fill-nonrecursive-closure-values! u-forward vs-forward)
-		 (k u-forward cs)))))
-	     ((and (nonrecursive-closure? v)
-		   (or (abstract-zero? v-perturbation)
-		       (and (perturbation-tagged-value? v-perturbation)
-			    (some abstract-zero?
-				  (union-members
-				   (get-perturbation-tagged-value-primal
-				    v-perturbation))))))
-	      (ad-warning
-	       "Arguments to bundle might not conform" v v-perturbation)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward (make-nonrecursive-closure
-				'unfilled
-				(forward-transform
-				 (nonrecursive-closure-lambda-expression v))
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	       (map-cps
-		(lambda (u cs k) (loop u (abstract-zero) cs k))
-		(get-nonrecursive-closure-values v)
-		(cons (cons (cons v v-perturbation) u-forward) cs)
-		(lambda (vs-forward cs)
-		 (fill-nonrecursive-closure-values! u-forward vs-forward)
-		 (k u-forward cs)))))
-	     ((and (abstract-zero? v)
-		   (nonrecursive-closure? v-perturbation)
-		   (perturbation-parameter?
-		    (nonrecursive-closure-parameter v-perturbation)))
-	      (ad-warning
-	       "Arguments to bundle might not conform" v v-perturbation)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward (make-nonrecursive-closure
-				'unfilled
-				(forward-transform
-				 (perturbation-transform-inverse
-				  (nonrecursive-closure-lambda-expression
-				   v-perturbation)))
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	       (map-cps
-		(lambda (u-perturbation cs k)
-		 (loop (abstract-zero) u-perturbation cs k))
-		(get-nonrecursive-closure-values v-perturbation)
-		(cons (cons (cons v v-perturbation) u-forward) cs)
-		(lambda (vs-forward cs)
-		 (fill-nonrecursive-closure-values! u-forward vs-forward)
-		 (k u-forward cs)))))
-	     ((and (recursive-closure? v)
-		   (recursive-closure? v-perturbation)
-		   (perturbation-parameter?
-		    (recursive-closure-parameter v-perturbation))
-		   (dereferenced-recursive-closure-match?
-		    v (unperturb v-perturbation)))
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward
-		     (make-recursive-closure
-		      'unfilled
-		      (map-vector forwardify
-				  (recursive-closure-procedure-variables v))
-		      (map-vector forward-transform
-				  (recursive-closure-lambda-expressions v))
-		      (recursive-closure-index v)
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled)))
-	       (map2-cps loop
-			 (get-recursive-closure-values v)
-			 (get-recursive-closure-values v-perturbation)
-			 (cons (cons (cons v v-perturbation) u-forward) cs)
-			 (lambda (vs-forward cs)
-			  (fill-recursive-closure-values! u-forward vs-forward)
-			  (k u-forward cs)))))
-	     ((and (recursive-closure? v)
-		   (or (abstract-zero? v-perturbation)
-		       (and (perturbation-tagged-value? v-perturbation)
-			    (some abstract-zero?
-				  (union-members
-				   (get-perturbation-tagged-value-primal
-				    v-perturbation))))))
-	      (ad-warning
-	       "Arguments to bundle might not conform" v v-perturbation)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward
-		     (make-recursive-closure
-		      'unfilled
-		      (map-vector forwardify
-				  (recursive-closure-procedure-variables v))
-		      (map-vector forward-transform
-				  (recursive-closure-lambda-expressions v))
-		      (recursive-closure-index v)
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled)))
-	       (map-cps (lambda (u cs k) (loop u (abstract-zero) cs k))
-			(get-recursive-closure-values v)
-			(cons (cons (cons v v-perturbation) u-forward) cs)
-			(lambda (vs-forward cs)
-			 (fill-recursive-closure-values! u-forward vs-forward)
-			 (k u-forward cs)))))
-	     ((and (abstract-zero? v)
-		   (recursive-closure? v-perturbation)
-		   (perturbation-parameter?
-		    (recursive-closure-parameter v-perturbation)))
-	      (ad-warning
-	       "Arguments to bundle might not conform" v v-perturbation)
-	      ;; See the note in abstract-environment=?.
-	      (let ((u-forward
-		     (make-recursive-closure
-		      'unfilled
-		      (map-vector
-		       (lambda (x-perturbation)
-			(forwardify (unperturbationify x-perturbation)))
-		       (recursive-closure-procedure-variables v-perturbation))
-		      (map-vector
-		       (lambda (e-perturbation)
-			(forward-transform
-			 (perturbation-transform-inverse e-perturbation)))
-		       (recursive-closure-lambda-expressions v-perturbation))
-		      (recursive-closure-index v-perturbation)
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled)))
-	       (map-cps (lambda (u-perturbation cs k)
-			 (loop (abstract-zero) u-perturbation cs k))
-			(get-recursive-closure-values v-perturbation)
-			(cons (cons (cons v v-perturbation) u-forward) cs)
-			(lambda (vs-forward cs)
-			 (fill-recursive-closure-values! u-forward vs-forward)
-			 (k u-forward cs)))))
-	     ;; here I am: Can remove from v-perturbation anything that is
-	     ;;            not bundleable with v. Can also mutually narrow
-	     ;;            v and v-perturbation to those elements that are
-	     ;;            bundlable with the corresponding elements of the
-	     ;;            other, including narrowing abstract zeros to
-	     ;;            concrete zeros.
-	     ((and (perturbation-tagged-value? v)
-		   (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ;; ditto
-	     ((and (bundle? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ;; ditto
-	     ((and (sensitivity-tagged-value? v)
-		   (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ;; ditto
-	     ((and (reverse-tagged-value? v)
-		   (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     ((and (tagged-pair? v)
-		   (tagged-pair? v-perturbation)
-		   (tagged? 'perturbation (tagged-pair-tags v-perturbation))
-		   (equal-tags?
-		    (tagged-pair-tags v)
-		    (remove-tag
-		     'perturbation (tagged-pair-tags v-perturbation))))
-	      (let ((u-forward (make-tagged-pair
-				(add-tag 'forward (tagged-pair-tags v))
-				'unfilled
-				'unfilled
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	       (loop (get-tagged-pair-car v)
-		     (get-tagged-pair-car v-perturbation)
-		     (cons (cons (cons v v-perturbation) u-forward) cs)
-		     (lambda (v-car-forward cs)
-		      (loop (get-tagged-pair-cdr v)
-			    (get-tagged-pair-cdr v-perturbation)
-			    cs
-			    (lambda (v-cdr-forward cs)
-			     (fill-tagged-pair!
-			      u-forward v-car-forward v-cdr-forward)
-			     (k u-forward cs)))))))
-	     ((and (tagged-pair? v)
-		   (or (abstract-zero? v-perturbation)
-		       (and (perturbation-tagged-value? v-perturbation)
-			    (some abstract-zero?
-				  (union-members
-				   (get-perturbation-tagged-value-primal
-				    v-perturbation))))))
-	      (let ((u-forward (make-tagged-pair
-				(add-tag 'forward (tagged-pair-tags v))
-				'unfilled
-				'unfilled
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				#f
-				'unfilled)))
-	       (loop (get-tagged-pair-car v)
+      ((and (vlad-empty-list? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v (perturb v))))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((and (vlad-true? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v (perturb v))))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((and (vlad-false? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v (perturb v))))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((and (vlad-real? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       ;; here I am: Can remove from v-perturbation anything that is not a
+       ;;            perturbation of a real. Can also narrow an abstract zero
+       ;;            to a concrete zero.
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((primitive-procedure? v)
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (primitive-procedure-forward v)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((and (nonrecursive-closure? v)
+	    (nonrecursive-closure? v-perturbation)
+	    (perturbation-parameter?
+	     (nonrecursive-closure-parameter v-perturbation))
+	    (dereferenced-nonrecursive-closure-match?
+	     v (unperturb v-perturbation)))
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward (make-nonrecursive-closure
+			 'unfilled
+			 (forward-transform
+			  (nonrecursive-closure-lambda-expression v))
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(map2-cps loop
+		  (get-nonrecursive-closure-values v)
+		  (get-nonrecursive-closure-values v-perturbation)
+		  (cons (cons (cons v v-perturbation) u-forward) cs)
+		  (lambda (vs-forward cs)
+		   (fill-nonrecursive-closure-values! u-forward vs-forward)
+		   (k u-forward cs)))))
+      ((and (nonrecursive-closure? v)
+	    (or (abstract-zero? v-perturbation)
+		(and (perturbation-tagged-value? v-perturbation)
+		     (some abstract-zero?
+			   (union-members
+			    (get-perturbation-tagged-value-primal
+			     v-perturbation))))))
+       (ad-warning "Arguments to bundle might not conform" v v-perturbation)
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward (make-nonrecursive-closure
+			 'unfilled
+			 (forward-transform
+			  (nonrecursive-closure-lambda-expression v))
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(map-cps (lambda (u cs k) (loop u (abstract-zero) cs k))
+		 (get-nonrecursive-closure-values v)
+		 (cons (cons (cons v v-perturbation) u-forward) cs)
+		 (lambda (vs-forward cs)
+		  (fill-nonrecursive-closure-values! u-forward vs-forward)
+		  (k u-forward cs)))))
+      ((and (abstract-zero? v)
+	    (nonrecursive-closure? v-perturbation)
+	    (perturbation-parameter?
+	     (nonrecursive-closure-parameter v-perturbation)))
+       (ad-warning "Arguments to bundle might not conform" v v-perturbation)
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward (make-nonrecursive-closure
+			 'unfilled
+			 (forward-transform
+			  (perturbation-transform-inverse
+			   (nonrecursive-closure-lambda-expression
+			    v-perturbation)))
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(map-cps (lambda (u-perturbation cs k)
+		  (loop (abstract-zero) u-perturbation cs k))
+		 (get-nonrecursive-closure-values v-perturbation)
+		 (cons (cons (cons v v-perturbation) u-forward) cs)
+		 (lambda (vs-forward cs)
+		  (fill-nonrecursive-closure-values! u-forward vs-forward)
+		  (k u-forward cs)))))
+      ((and (recursive-closure? v)
+	    (recursive-closure? v-perturbation)
+	    (perturbation-parameter?
+	     (recursive-closure-parameter v-perturbation))
+	    (dereferenced-recursive-closure-match?
+	     v (unperturb v-perturbation)))
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward (make-recursive-closure
+			 'unfilled
+			 (map-vector forwardify
+				     (recursive-closure-procedure-variables v))
+			 (map-vector forward-transform
+				     (recursive-closure-lambda-expressions v))
+			 (recursive-closure-index v)
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(map2-cps loop
+		  (get-recursive-closure-values v)
+		  (get-recursive-closure-values v-perturbation)
+		  (cons (cons (cons v v-perturbation) u-forward) cs)
+		  (lambda (vs-forward cs)
+		   (fill-recursive-closure-values! u-forward vs-forward)
+		   (k u-forward cs)))))
+      ((and (recursive-closure? v)
+	    (or (abstract-zero? v-perturbation)
+		(and (perturbation-tagged-value? v-perturbation)
+		     (some abstract-zero?
+			   (union-members
+			    (get-perturbation-tagged-value-primal
+			     v-perturbation))))))
+       (ad-warning "Arguments to bundle might not conform" v v-perturbation)
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward (make-recursive-closure
+			 'unfilled
+			 (map-vector forwardify
+				     (recursive-closure-procedure-variables v))
+			 (map-vector forward-transform
+				     (recursive-closure-lambda-expressions v))
+			 (recursive-closure-index v)
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(map-cps (lambda (u cs k) (loop u (abstract-zero) cs k))
+		 (get-recursive-closure-values v)
+		 (cons (cons (cons v v-perturbation) u-forward) cs)
+		 (lambda (vs-forward cs)
+		  (fill-recursive-closure-values! u-forward vs-forward)
+		  (k u-forward cs)))))
+      ((and (abstract-zero? v)
+	    (recursive-closure? v-perturbation)
+	    (perturbation-parameter?
+	     (recursive-closure-parameter v-perturbation)))
+       (ad-warning "Arguments to bundle might not conform" v v-perturbation)
+       ;; See the note in abstract-environment=?.
+       (let ((u-forward
+	      (make-recursive-closure
+	       'unfilled
+	       (map-vector
+		(lambda (x-perturbation)
+		 (forwardify (unperturbationify x-perturbation)))
+		(recursive-closure-procedure-variables v-perturbation))
+	       (map-vector
+		(lambda (e-perturbation)
+		 (forward-transform
+		  (perturbation-transform-inverse e-perturbation)))
+		(recursive-closure-lambda-expressions v-perturbation))
+	       (recursive-closure-index v-perturbation)
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       v
+	       v-perturbation
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       'unfilled)))
+	(map-cps (lambda (u-perturbation cs k)
+		  (loop (abstract-zero) u-perturbation cs k))
+		 (get-recursive-closure-values v-perturbation)
+		 (cons (cons (cons v v-perturbation) u-forward) cs)
+		 (lambda (vs-forward cs)
+		  (fill-recursive-closure-values! u-forward vs-forward)
+		  (k u-forward cs)))))
+      ;; here I am: Can remove from v-perturbation anything that is
+      ;;            not bundleable with v. Can also mutually narrow
+      ;;            v and v-perturbation to those elements that are
+      ;;            bundlable with the corresponding elements of the
+      ;;            other, including narrowing abstract zeros to
+      ;;            concrete zeros.
+      ((and (perturbation-tagged-value? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ;; ditto
+      ((and (bundle? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ;; ditto
+      ((and (sensitivity-tagged-value? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ;; ditto
+      ((and (reverse-tagged-value? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      ((and (tagged-pair? v)
+	    (tagged-pair? v-perturbation)
+	    (tagged? 'perturbation (tagged-pair-tags v-perturbation))
+	    (equal-tags?
+	     (tagged-pair-tags v)
+	     (remove-tag 'perturbation (tagged-pair-tags v-perturbation))))
+       (let ((u-forward (make-tagged-pair
+			 (add-tag 'forward (tagged-pair-tags v))
+			 'unfilled
+			 'unfilled
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(loop (get-tagged-pair-car v)
+	      (get-tagged-pair-car v-perturbation)
+	      (cons (cons (cons v v-perturbation) u-forward) cs)
+	      (lambda (v-car-forward cs)
+	       (loop (get-tagged-pair-cdr v)
+		     (get-tagged-pair-cdr v-perturbation)
+		     cs
+		     (lambda (v-cdr-forward cs)
+		      (fill-tagged-pair! u-forward v-car-forward v-cdr-forward)
+		      (k u-forward cs)))))))
+      ((and (tagged-pair? v)
+	    (or (abstract-zero? v-perturbation)
+		(and (perturbation-tagged-value? v-perturbation)
+		     (some abstract-zero?
+			   (union-members
+			    (get-perturbation-tagged-value-primal
+			     v-perturbation))))))
+       (let ((u-forward (make-tagged-pair
+			 (add-tag 'forward (tagged-pair-tags v))
+			 'unfilled
+			 'unfilled
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 v
+			 v-perturbation
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 #f
+			 'unfilled)))
+	(loop (get-tagged-pair-car v)
+	      (abstract-zero)
+	      (cons (cons (cons v v-perturbation) u-forward) cs)
+	      (lambda (v-car-forward cs)
+	       (loop (get-tagged-pair-cdr v)
 		     (abstract-zero)
-		     (cons (cons (cons v v-perturbation) u-forward) cs)
-		     (lambda (v-car-forward cs)
-		      (loop (get-tagged-pair-cdr v)
-			    (abstract-zero)
-			    cs
-			    (lambda (v-cdr-forward cs)
-			     (fill-tagged-pair!
-			      u-forward v-car-forward v-cdr-forward)
-			     (k u-forward cs)))))))
-	     ((and (abstract-zero? v)
-		   (tagged-pair? v-perturbation)
-		   (tagged? 'perturbation (tagged-pair-tags v-perturbation)))
-	      (let ((u-forward
-		     (make-tagged-pair
-		      (add-tag 'forward
-			       (remove-tag 'perturbation
-					   (tagged-pair-tags v-perturbation)))
-		      'unfilled
-		      'unfilled
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      #f
-		      'unfilled)))
+		     cs
+		     (lambda (v-cdr-forward cs)
+		      (fill-tagged-pair! u-forward v-car-forward v-cdr-forward)
+		      (k u-forward cs)))))))
+      ((and (abstract-zero? v)
+	    (tagged-pair? v-perturbation)
+	    (tagged? 'perturbation (tagged-pair-tags v-perturbation)))
+       (let ((u-forward
+	      (make-tagged-pair
+	       (add-tag 'forward
+			(remove-tag 'perturbation
+				    (tagged-pair-tags v-perturbation)))
+	       'unfilled
+	       'unfilled
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       v
+	       v-perturbation
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       #f
+	       'unfilled)))
+	(loop (abstract-zero)
+	      (get-tagged-pair-car v-perturbation)
+	      (cons (cons (cons v v-perturbation) u-forward) cs)
+	      (lambda (v-car-forward cs)
 	       (loop (abstract-zero)
-		     (get-tagged-pair-car v-perturbation)
-		     (cons (cons (cons v v-perturbation) u-forward) cs)
-		     (lambda (v-car-forward cs)
-		      (loop (abstract-zero)
-			    (get-tagged-pair-cdr v-perturbation)
-			    cs
-			    (lambda (v-cdr-forward cs)
-			     (fill-tagged-pair!
-			      u-forward v-car-forward v-cdr-forward)
-			     (k u-forward cs)))))))
-	     ;; ditto
-	     ((and (abstract-zero? v) (some-bundlable? v v-perturbation))
-	      (unless (every-bundlable? v v-perturbation)
-	       (ad-warning
-		"Arguments to bundle might not conform" v v-perturbation))
-	      (let ((u-forward (new-bundle v v-perturbation)))
-	       (k u-forward
-		  (cons (cons (cons v v-perturbation) u-forward) cs))))
-	     (else
-	      (if *abstract?*
-		  (let ((u-forward (compile-time-warning
-				    "Arguments to bundle might not conform"
-				    v
-				    v-perturbation)))
-		   (k u-forward
-		      (cons (cons (cons v v-perturbation) u-forward) cs)))
-		  (run-time-error "Arguments to bundle do not conform"
-				  v
-				  v-perturbation)))))))))))))
+		     (get-tagged-pair-cdr v-perturbation)
+		     cs
+		     (lambda (v-cdr-forward cs)
+		      (fill-tagged-pair! u-forward v-car-forward v-cdr-forward)
+		      (k u-forward cs)))))))
+      ;; ditto
+      ((and (abstract-zero? v) (some-bundlable? v v-perturbation))
+       (unless (every-bundlable? v v-perturbation)
+	(ad-warning "Arguments to bundle might not conform" v v-perturbation))
+       (let ((u-forward (new-bundle v v-perturbation)))
+	(k u-forward (cons (cons (cons v v-perturbation) u-forward) cs))))
+      (else
+       (if *abstract?*
+	   (let ((u-forward (compile-time-warning
+			     "Arguments to bundle might not conform"
+			     v
+			     v-perturbation)))
+	    (k u-forward (cons (cons (cons v v-perturbation) u-forward) cs)))
+	   (run-time-error "Arguments to bundle do not conform"
+			   v
+			   v-perturbation)))))))))
 
 (define (j* v) (bundle v (if *imprecise-zero?* (zero '()) (zero (perturb v)))))
 
@@ -7381,7 +7314,7 @@
 			  (eq? (union-sensitize-cache v) v-sensitivity)))
 		     (set-union-sensitize-cache! v v-sensitivity))))
 		  v-sensitivity))))
-   (let ((found? (assq v cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v)
@@ -7665,7 +7598,7 @@
 			  (eq? (union-unsensitize-cache v-sensitivity) v)))
 		     (set-union-unsensitize-cache! v-sensitivity v))))
 		  v))))
-   (let ((found? (assq v-sensitivity cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v-sensitivity cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v-sensitivity)
@@ -7679,7 +7612,7 @@
 			       #f
 			       #f
 			       #f
-			       #f
+			       v-sensitivity
 			       #f
 			       #f
 			       #f
@@ -7736,7 +7669,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-sensitivity
 		  #f
 		  #f
 		  #f
@@ -7779,7 +7712,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-sensitivity
 		  #f
 		  #f
 		  #f
@@ -7831,7 +7764,7 @@
 		  #f
 		  #f
 		  #f
-		  #f
+		  v-sensitivity
 		  #f
 		  #f
 		  #f
@@ -8098,7 +8031,7 @@
 				 (eq? (union-*j-cache v) v-reverse)))
 		     (set-union-*j-cache! v v-reverse))))
 		  v-reverse))))
-   (let ((found? (assq v cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v)
@@ -8128,172 +8061,158 @@
 		    (lambda (us-reverse cs)
 		     (fill-union-values! v-reverse us-reverse)
 		     (k v-reverse cs))))))
-     (else
-      (let ((b (find-if
-		;; This is safe because the arguments will never have
-		;; unfilled values.
-		(lambda (b) (deep-abstract-value=? v (value-binding-value b)))
-		*value-bindings*)))
-       (if b
-	   (let ((u-reverse
-		  (primitive-procedure-reverse (value-binding-value b))))
-	    (k u-reverse (cons (cons v u-reverse) cs)))
-	   (cond
-	    ((vlad-empty-list? v)
-	     (let ((u-reverse (new-reverse-tagged-value v)))
-	      (k u-reverse (cons (cons v u-reverse) cs))))
-	    ((vlad-true? v)
-	     (let ((u-reverse (new-reverse-tagged-value v)))
-	      (k u-reverse (cons (cons v u-reverse) cs))))
-	    ((vlad-false? v)
-	     (let ((u-reverse (new-reverse-tagged-value v)))
-	      (k u-reverse (cons (cons v u-reverse) cs))))
-	    ((vlad-real? v)
-	     (let ((u-reverse (new-reverse-tagged-value v)))
-	      (k u-reverse (cons (cons v u-reverse) cs))))
-	    ((primitive-procedure? v) (internal-error))
-	    ((abstract-zero? v)
-	     (let ((u-reverse (new-reverse-tagged-value v)))
-	      (k u-reverse (cons (cons v u-reverse) cs))))
-	    ((nonrecursive-closure? v)
-	     (if (nonrecursive-closure-*j-cache v)
-		 (k (nonrecursive-closure-*j-cache v) cs)
-		 ;; See the note in abstract-environment=?.
-		 (let ((u-reverse
-			(make-nonrecursive-closure
-			 'unfilled
-			 (reverse-transform
-			  (nonrecursive-closure-lambda-expression v))
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 v
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		  (unless (or *canonized?* *interned?*)
-		   (set-nonrecursive-closure-*j-cache! v u-reverse))
-		  (map-cps
-		   loop
-		   (get-nonrecursive-closure-values v)
-		   (cons (cons v u-reverse) cs)
-		   (lambda (vs-reverse cs)
-		    (fill-nonrecursive-closure-values! u-reverse vs-reverse)
-		    (k u-reverse cs))))))
-	    ((recursive-closure? v)
-	     (if (recursive-closure-*j-cache v)
-		 (k (recursive-closure-*j-cache v) cs)
-		 ;; See the note in abstract-environment=?.
-		 (let ((u-reverse
-			(make-recursive-closure
-			 'unfilled
-			 (map-vector
-			  reverseify
-			  (recursive-closure-procedure-variables v))
-			 (map-n-vector
-			  (lambda (i)
-			   (reverse-transform-internal
-			    (vector-ref
-			     (recursive-closure-lambda-expressions v) i)
-			    (vector->list
+     ((vlad-empty-list? v)
+      (let ((u-reverse (new-reverse-tagged-value v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((vlad-true? v)
+      (let ((u-reverse (new-reverse-tagged-value v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((vlad-false? v)
+      (let ((u-reverse (new-reverse-tagged-value v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((vlad-real? v)
+      (let ((u-reverse (new-reverse-tagged-value v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((primitive-procedure? v)
+      (let ((u-reverse (primitive-procedure-reverse v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((abstract-zero? v)
+      (let ((u-reverse (new-reverse-tagged-value v)))
+       (k u-reverse (cons (cons v u-reverse) cs))))
+     ((nonrecursive-closure? v)
+      (if (nonrecursive-closure-*j-cache v)
+	  (k (nonrecursive-closure-*j-cache v) cs)
+	  ;; See the note in abstract-environment=?.
+	  (let ((u-reverse (make-nonrecursive-closure
+			    'unfilled
+			    (reverse-transform
+			     (nonrecursive-closure-lambda-expression v))
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    v
+			    #f
+			    #f
+			    #f
+			    'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-nonrecursive-closure-*j-cache! v u-reverse))
+	   (map-cps loop
+		    (get-nonrecursive-closure-values v)
+		    (cons (cons v u-reverse) cs)
+		    (lambda (vs-reverse cs)
+		     (fill-nonrecursive-closure-values! u-reverse vs-reverse)
+		     (k u-reverse cs))))))
+     ((recursive-closure? v)
+      (if (recursive-closure-*j-cache v)
+	  (k (recursive-closure-*j-cache v) cs)
+	  ;; See the note in abstract-environment=?.
+	  (let ((u-reverse (make-recursive-closure
+			    'unfilled
+			    (map-vector
+			     reverseify
 			     (recursive-closure-procedure-variables v))
-			    (vector->list
-			     (recursive-closure-lambda-expressions v))
-			    i))
-			  (vector-length
-			   (recursive-closure-lambda-expressions v)))
-			 (recursive-closure-index v)
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 v
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		  (unless (or *canonized?* *interned?*)
-		   (set-recursive-closure-*j-cache! v u-reverse))
-		  (map-cps
-		   loop
-		   (get-recursive-closure-values v)
-		   (cons (cons v u-reverse) cs)
-		   (lambda (vs-reverse cs)
-		    (fill-recursive-closure-values! u-reverse vs-reverse)
-		    (k u-reverse cs))))))
-	    ((perturbation-tagged-value? v)
-	     (if (perturbation-tagged-value-*j-cache v)
-		 (k (perturbation-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (new-reverse-tagged-value v)))
-		  (set-perturbation-tagged-value-*j-cache! v u-reverse)
-		  (k u-reverse (cons (cons v u-reverse) cs)))))
-	    ((bundle? v)
-	     (if (bundle-*j-cache v)
-		 (k (bundle-*j-cache v) cs)
-		 (let ((u-reverse (new-reverse-tagged-value v)))
-		  (set-bundle-*j-cache! v u-reverse)
-		  (k u-reverse (cons (cons v u-reverse) cs)))))
-	    ((sensitivity-tagged-value? v)
-	     (if (sensitivity-tagged-value-*j-cache v)
-		 (k (sensitivity-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (new-reverse-tagged-value v)))
-		  (set-sensitivity-tagged-value-*j-cache! v u-reverse)
-		  (k u-reverse (cons (cons v u-reverse) cs)))))
-	    ((reverse-tagged-value? v)
-	     (if (reverse-tagged-value-*j-cache v)
-		 (k (reverse-tagged-value-*j-cache v) cs)
-		 (let ((u-reverse (new-reverse-tagged-value v)))
-		  (set-reverse-tagged-value-*j-cache! v u-reverse)
-		  (k u-reverse (cons (cons v u-reverse) cs)))))
-	    ((tagged-pair? v)
-	     (if (tagged-pair-*j-cache v)
-		 (k (tagged-pair-*j-cache v) cs)
-		 (let ((u-reverse
-			(make-tagged-pair
-			 (add-tag 'reverse (tagged-pair-tags v))
-			 'unfilled
-			 'unfilled
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 v
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		  (unless (or *canonized?* *interned?*)
-		   (set-tagged-pair-*j-cache! v u-reverse))
-		  (loop (get-tagged-pair-car v)
-			(cons (cons v u-reverse) cs)
-			(lambda (v-car-reverse cs)
-			 (loop (get-tagged-pair-cdr v)
-			       cs
-			       (lambda (v-cdr-reverse cs)
-				(fill-tagged-pair!
-				 u-reverse v-car-reverse v-cdr-reverse)
-				(k u-reverse cs))))))))
-	    (else (internal-error)))))))))))
+			    (map-n-vector
+			     (lambda (i)
+			      (reverse-transform-internal
+			       (vector-ref
+				(recursive-closure-lambda-expressions v) i)
+			       (vector->list
+				(recursive-closure-procedure-variables v))
+			       (vector->list
+				(recursive-closure-lambda-expressions v))
+			       i))
+			     (vector-length
+			      (recursive-closure-lambda-expressions v)))
+			    (recursive-closure-index v)
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    v
+			    #f
+			    #f
+			    #f
+			    'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-recursive-closure-*j-cache! v u-reverse))
+	   (map-cps loop
+		    (get-recursive-closure-values v)
+		    (cons (cons v u-reverse) cs)
+		    (lambda (vs-reverse cs)
+		     (fill-recursive-closure-values! u-reverse vs-reverse)
+		     (k u-reverse cs))))))
+     ((perturbation-tagged-value? v)
+      (if (perturbation-tagged-value-*j-cache v)
+	  (k (perturbation-tagged-value-*j-cache v) cs)
+	  (let ((u-reverse (new-reverse-tagged-value v)))
+	   (set-perturbation-tagged-value-*j-cache! v u-reverse)
+	   (k u-reverse (cons (cons v u-reverse) cs)))))
+     ((bundle? v)
+      (if (bundle-*j-cache v)
+	  (k (bundle-*j-cache v) cs)
+	  (let ((u-reverse (new-reverse-tagged-value v)))
+	   (set-bundle-*j-cache! v u-reverse)
+	   (k u-reverse (cons (cons v u-reverse) cs)))))
+     ((sensitivity-tagged-value? v)
+      (if (sensitivity-tagged-value-*j-cache v)
+	  (k (sensitivity-tagged-value-*j-cache v) cs)
+	  (let ((u-reverse (new-reverse-tagged-value v)))
+	   (set-sensitivity-tagged-value-*j-cache! v u-reverse)
+	   (k u-reverse (cons (cons v u-reverse) cs)))))
+     ((reverse-tagged-value? v)
+      (if (reverse-tagged-value-*j-cache v)
+	  (k (reverse-tagged-value-*j-cache v) cs)
+	  (let ((u-reverse (new-reverse-tagged-value v)))
+	   (set-reverse-tagged-value-*j-cache! v u-reverse)
+	   (k u-reverse (cons (cons v u-reverse) cs)))))
+     ((tagged-pair? v)
+      (if (tagged-pair-*j-cache v)
+	  (k (tagged-pair-*j-cache v) cs)
+	  (let ((u-reverse (make-tagged-pair
+			    (add-tag 'reverse (tagged-pair-tags v))
+			    'unfilled
+			    'unfilled
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    #f
+			    v
+			    #f
+			    #f
+			    #f
+			    'unfilled)))
+	   (unless (or *canonized?* *interned?*)
+	    (set-tagged-pair-*j-cache! v u-reverse))
+	   (loop (get-tagged-pair-car v)
+		 (cons (cons v u-reverse) cs)
+		 (lambda (v-car-reverse cs)
+		  (loop (get-tagged-pair-cdr v)
+			cs
+			(lambda (v-cdr-reverse cs)
+			 (fill-tagged-pair!
+			  u-reverse v-car-reverse v-cdr-reverse)
+			 (k u-reverse cs))))))))
+     (else (internal-error)))))))
 
 (define (*j-inverse v-reverse)
  ;; This is written in CPS so as not to break structure sharing.
@@ -8335,7 +8254,7 @@
 				 (eq? (union-*j-inverse-cache v-reverse) v)))
 		     (set-union-*j-inverse-cache! v-reverse v))))
 		  v))))
-   (let ((found? (assq v-reverse cs)))
+   (let ((found? (and (or *canonized?* *interned?*) (assq v-reverse cs))))
     (cond
      (found? (k (cdr found?) cs))
      ((union? v-reverse)
@@ -8351,7 +8270,7 @@
 			       #f
 			       #f
 			       #f
-			       #f
+			       v-reverse
 			       #f
 			       #f
 			       #f
@@ -8365,184 +8284,174 @@
 		    (lambda (us cs)
 		     (fill-union-values! v us)
 		     (k v cs))))))
-     (else
-      (let ((b (find-if
-		(lambda (b)
-		 ;; This is safe because the arguments will never have
-		 ;; unfilled values.
-		 (deep-abstract-value=?
-		  v-reverse
-		  (primitive-procedure-reverse (value-binding-value b))))
-		*value-bindings*)))
-       (if b
-	   (let ((u (value-binding-value b)))
-	    (k u (cons (cons v-reverse u) cs)))
+     ((vlad-empty-list? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((vlad-true? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((vlad-false? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((vlad-real? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((primitive-procedure? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((abstract-zero? v-reverse)
+      (ad-warning "Argument to *j-inverse might be a non-reverse value"
+		  v-reverse)
+      (let ((u (abstract-zero))) (k u (cons (cons v-reverse u) cs))))
+     ((nonrecursive-closure? v-reverse)
+      (if (nonrecursive-closure-*j-inverse-cache v-reverse)
+	  (k (nonrecursive-closure-*j-inverse-cache v-reverse) cs)
+	  (let ((b (find-if
+		    (lambda (b)
+		     ;; This is safe because the arguments will never have
+		     ;; unfilled values.
+		     (deep-abstract-value=?
+		      v-reverse
+		      (primitive-procedure-reverse (value-binding-value b))))
+		    *value-bindings*)))
 	   (cond
-	    ((vlad-empty-list? v-reverse)
-	     (let ((u (ad-error
-		       "Argument to *j-inverse ~a a non-reverse value"
-		       v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((vlad-true? v-reverse)
-	     (let ((u (ad-error
-		       "Argument to *j-inverse ~a a non-reverse value"
-		       v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((vlad-false? v-reverse)
-	     (let ((u (ad-error
-		       "Argument to *j-inverse ~a a non-reverse value"
-		       v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((vlad-real? v-reverse)
-	     (let ((u (ad-error
-		       "Argument to *j-inverse ~a a non-reverse value"
-		       v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((primitive-procedure? v-reverse)
-	     (let ((u (ad-error
-		       "Argument to *j-inverse ~a a non-reverse value"
-		       v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((abstract-zero? v-reverse)
-	     (ad-warning "Argument to *j-inverse might be a non-reverse value"
-			 v-reverse)
-	     (let ((u (abstract-zero))) (k u (cons (cons v-reverse u) cs))))
-	    ((nonrecursive-closure? v-reverse)
-	     (cond
-	      ((nonrecursive-closure-*j-inverse-cache v-reverse)
-	       (k (nonrecursive-closure-*j-inverse-cache v-reverse) cs))
-	      ((tagged? 'reverse (nonrecursive-closure-tags v-reverse))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u (make-nonrecursive-closure
-			 'unfilled
-			 (reverse-transform-inverse
-			  (nonrecursive-closure-lambda-expression
-			   v-reverse))
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
+	    (b (let ((u (value-binding-value b)))
 		(unless (or *canonized?* *interned?*)
 		 (set-nonrecursive-closure-*j-inverse-cache! v-reverse u))
-		(map-cps loop
-			 (get-nonrecursive-closure-values v-reverse)
-			 (cons (cons v-reverse u) cs)
-			 (lambda (vs cs)
-			  (fill-nonrecursive-closure-values! u vs)
-			  (k u cs)))))
-	      (else
-	       (let ((u (ad-error
-			 "Argument to *j-inverse ~a a non-reverse value"
+		(k u (cons (cons v-reverse u) cs))))
+	    ((tagged? 'reverse (nonrecursive-closure-tags v-reverse))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u (make-nonrecursive-closure
+		       'unfilled
+		       (reverse-transform-inverse
+			(nonrecursive-closure-lambda-expression
+			 v-reverse))
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       v-reverse
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-nonrecursive-closure-*j-inverse-cache! v-reverse u))
+	      (map-cps loop
+		       (get-nonrecursive-closure-values v-reverse)
+		       (cons (cons v-reverse u) cs)
+		       (lambda (vs cs)
+			(fill-nonrecursive-closure-values! u vs)
+			(k u cs)))))
+	    (else
+	     (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+				v-reverse)))
+	      (k u (cons (cons v-reverse u) cs))))))))
+     ((recursive-closure? v-reverse)
+      (cond ((recursive-closure-*j-inverse-cache v-reverse)
+	     (k (recursive-closure-*j-inverse-cache v-reverse) cs))
+	    ((tagged? 'reverse (recursive-closure-tags v-reverse))
+	     ;; See the note in abstract-environment=?.
+	     (let ((u (make-recursive-closure
+		       'unfilled
+		       (map-vector
+			unreverseify
+			(recursive-closure-procedure-variables v-reverse))
+		       (map-vector
+			reverse-transform-inverse
+			(recursive-closure-lambda-expressions v-reverse))
+		       (recursive-closure-index v-reverse)
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       v-reverse
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-recursive-closure-*j-inverse-cache! v-reverse u))
+	      (map-cps loop
+		       (get-recursive-closure-values v-reverse)
+		       (cons (cons v-reverse u) cs)
+		       (lambda (vs cs)
+			(fill-recursive-closure-values! u vs)
+			(k u cs)))))
+	    (else
+	     (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+				v-reverse)))
+	      (k u (cons (cons v-reverse u) cs))))))
+     ((perturbation-tagged-value? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
 			 v-reverse)))
-		(k u (cons (cons v-reverse u) cs))))))
-	    ((recursive-closure? v-reverse)
-	     (cond
-	      ((recursive-closure-*j-inverse-cache v-reverse)
-	       (k (recursive-closure-*j-inverse-cache v-reverse) cs))
-	      ((tagged? 'reverse (recursive-closure-tags v-reverse))
-	       ;; See the note in abstract-environment=?.
-	       (let ((u (make-recursive-closure
-			 'unfilled
-			 (map-vector
-			  unreverseify
-			  (recursive-closure-procedure-variables v-reverse))
-			 (map-vector
-			  reverse-transform-inverse
-			  (recursive-closure-lambda-expressions v-reverse))
-			 (recursive-closure-index v-reverse)
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-recursive-closure-*j-inverse-cache! v-reverse u))
-		(map-cps loop
-			 (get-recursive-closure-values v-reverse)
-			 (cons (cons v-reverse u) cs)
-			 (lambda (vs cs)
-			  (fill-recursive-closure-values! u vs)
-			  (k u cs)))))
-	      (else
-	       (let ((u (ad-error
-			 "Argument to *j-inverse ~a a non-reverse value"
+       (k u (cons (cons v-reverse u) cs))))
+     ((bundle? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
 			 v-reverse)))
-		(k u (cons (cons v-reverse u) cs))))))
-	    ((perturbation-tagged-value? v-reverse)
-	     (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((bundle? v-reverse)
-	     (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((sensitivity-tagged-value? v-reverse)
-	     (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
-				v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((reverse-tagged-value? v-reverse)
-	     (let ((u (get-reverse-tagged-value-primal v-reverse)))
-	      (k u (cons (cons v-reverse u) cs))))
-	    ((tagged-pair? v-reverse)
-	     (cond
-	      ((tagged-pair-*j-inverse-cache v-reverse)
-	       (k (tagged-pair-*j-inverse-cache v-reverse) cs))
-	      ((tagged? 'reverse (tagged-pair-tags v-reverse))
-	       (let ((u (make-tagged-pair
-			 (remove-tag 'reverse (tagged-pair-tags v-reverse))
-			 'unfilled
-			 'unfilled
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 #f
-			 'unfilled)))
-		(unless (or *canonized?* *interned?*)
-		 (set-tagged-pair-*j-inverse-cache! v-reverse u))
-		(loop (get-tagged-pair-car v-reverse)
-		      (cons (cons v-reverse u) cs)
-		      (lambda (v-car cs)
-		       (loop (get-tagged-pair-cdr v-reverse)
-			     cs
-			     (lambda (v-cdr cs)
-			      (fill-tagged-pair! u v-car v-cdr)
-			      (k u cs)))))))
-	      (else (let ((u (ad-error
-			      "Argument to *j-inverse ~a a non-reverse value"
-			      v-reverse)))
-		     (k u (cons (cons v-reverse u) cs))))))
-	    (else (internal-error)))))))))))
+       (k u (cons (cons v-reverse u) cs))))
+     ((sensitivity-tagged-value? v-reverse)
+      (let ((u (ad-error "Argument to *j-inverse ~a a non-reverse value"
+			 v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((reverse-tagged-value? v-reverse)
+      (let ((u (get-reverse-tagged-value-primal v-reverse)))
+       (k u (cons (cons v-reverse u) cs))))
+     ((tagged-pair? v-reverse)
+      (cond ((tagged-pair-*j-inverse-cache v-reverse)
+	     (k (tagged-pair-*j-inverse-cache v-reverse) cs))
+	    ((tagged? 'reverse (tagged-pair-tags v-reverse))
+	     (let ((u (make-tagged-pair
+		       (remove-tag 'reverse (tagged-pair-tags v-reverse))
+		       'unfilled
+		       'unfilled
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       #f
+		       v-reverse
+		       #f
+		       #f
+		       #f
+		       #f
+		       'unfilled)))
+	      (unless (or *canonized?* *interned?*)
+	       (set-tagged-pair-*j-inverse-cache! v-reverse u))
+	      (loop (get-tagged-pair-car v-reverse)
+		    (cons (cons v-reverse u) cs)
+		    (lambda (v-car cs)
+		     (loop (get-tagged-pair-cdr v-reverse)
+			   cs
+			   (lambda (v-cdr cs)
+			    (fill-tagged-pair! u v-car v-cdr)
+			    (k u cs)))))))
+	    (else (let ((u (ad-error
+			    "Argument to *j-inverse ~a a non-reverse value"
+			    v-reverse)))
+		   (k u (cons (cons v-reverse u) cs))))))
+     (else (internal-error)))))))
 
 ;;; Pretty printer
 
@@ -15052,16 +14961,20 @@
    (alpha-convert (constant-unconvert (internalize-expression e))))))
 
 (define (initialize-forwards-and-reverses!)
- (for-each (lambda (b)
-	    (set-primitive-procedure-forward!
-	     (value-binding-value b)
-	     (evaluate-in-top-level-environment
-	      (primitive-procedure-forward (value-binding-value b))))
-	    (set-primitive-procedure-reverse!
-	     (value-binding-value b)
-	     (evaluate-in-top-level-environment
-	      (primitive-procedure-reverse (value-binding-value b)))))
-	   *value-bindings*))
+ (for-each
+  (lambda (b)
+   (let ((v (value-binding-value b)))
+    (let ((v-forward (evaluate-in-top-level-environment
+		      (primitive-procedure-forward v))))
+     (set-primitive-procedure-forward! v v-forward)
+     (set-nonrecursive-closure-primal-cache! v-forward v)
+     (set-nonrecursive-closure-tangent-cache!
+      v-forward (new-perturbation-tagged-value v)))
+    (let ((v-reverse (evaluate-in-top-level-environment
+		      (primitive-procedure-reverse v))))
+     (set-primitive-procedure-reverse! v v-reverse)
+     (set-nonrecursive-closure-*j-inverse-cache! v-reverse v))))
+  *value-bindings*))
 
 (define (initialize-basis!)
  (set! *empty-abstract-value* (create-union '()))
