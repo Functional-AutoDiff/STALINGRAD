@@ -144,7 +144,9 @@
  enqueue?
  free-variables
  callee
- argument)
+ argument
+ callee-indices
+ argument-indices)
 
 (define-structure letrec-expression
  parents
@@ -153,7 +155,8 @@
  free-variables
  procedure-variables
  lambda-expressions
- body)
+ body
+ indices)
 
 (define-structure cons-expression
  parents
@@ -162,7 +165,9 @@
  free-variables
  tags
  car
- cdr)
+ cdr
+ car-indices
+ cdr-indices)
 
 (define-structure variable-binding variable expression)
 
@@ -1114,14 +1119,19 @@
   e0))
 
 (define (new-application e1 e2)
- (let ((e0 (make-application
-	    '()
-	    '()
-	    #f
-	    (sort-variables
-	     (union-variables (free-variables e1) (free-variables e2)))
-	    e1
-	    e2)))
+ (let* ((xs (sort-variables
+	     (union-variables (free-variables e1) (free-variables e2))))
+	(e0 (make-application
+	     '()
+	     '()
+	     #f
+	     xs
+	     e1
+	     e2
+	     (map (lambda (x) (positionp variable=? x xs))
+		  (free-variables e1))
+	     (map (lambda (x) (positionp variable=? x xs))
+		  (free-variables e2)))))
   (set! *expressions* (cons e0 *expressions*))
   e0))
 
@@ -1129,33 +1139,41 @@
  (assert (and (= (length xs) (length es)) (every variable? xs)))
  (if (null? xs)
      e
-     (let ((e0 (make-letrec-expression
-		'()
-		'()
-		#f
-		(sort-variables
-		 (set-differencep
-		  variable=?
-		  (union-variables
-		   (map-reduce union-variables '() free-variables es)
-		   (free-variables e))
-		  xs))
-		xs
-		es
-		e)))
+     (let* ((xs0 (sort-variables
+		  (set-differencep
+		   variable=?
+		   (union-variables
+		    (map-reduce union-variables '() free-variables es)
+		    (free-variables e))
+		   xs)))
+	    (e0 (make-letrec-expression
+		 '()
+		 '()
+		 #f
+		 xs0
+		 xs
+		 es
+		 e
+		 (map (lambda (x) (positionp variable=? x xs0))
+		      (recursive-closure-free-variables xs es)))))
       (set! *expressions* (cons e0 *expressions*))
       e0)))
 
 (define (new-cons-expression tags e1 e2)
- (let ((e0 (make-cons-expression
-	    '()
-	    '()
-	    #f
-	    (sort-variables
-	     (union-variables (free-variables e1) (free-variables e2)))
-	    tags
-	    e1
-	    e2)))
+ (let* ((xs (sort-variables
+	     (union-variables (free-variables e1) (free-variables e2))))
+	(e0 (make-cons-expression
+	     '()
+	     '()
+	     #f
+	     xs
+	     tags
+	     e1
+	     e2
+	     (map (lambda (x) (positionp variable=? x xs))
+		  (free-variables e1))
+	     (map (lambda (x) (positionp variable=? x xs))
+		  (free-variables e2)))))
   (set! *expressions* (cons e0 *expressions*))
   e0))
 
@@ -7507,7 +7525,10 @@
     (cond
      (found? (k #t cs))
      ((union? v-sensitivity)
-      (every-cps loop (union-members v-sensitivity) (cons v-sensitivity cs) k))
+      (if (union-unsensitize-cache v-sensitivity)
+	  (k #t cs)
+	  (every-cps
+	   loop (union-members v-sensitivity) (cons v-sensitivity cs) k)))
      ((vlad-empty-list? v-sensitivity) (k #f cs))
      ((vlad-true? v-sensitivity) (k #f cs))
      ((vlad-false? v-sensitivity) (k #f cs))
@@ -7525,41 +7546,46 @@
      ;; abstract-zero instead of (sensitivity abstract-zero).
      ((abstract-zero? v-sensitivity) (k #t cs))
      ((nonrecursive-closure? v-sensitivity)
-      (if (and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
-	       (sensitivity-transform-inverse?
-		(nonrecursive-closure-lambda-expression v-sensitivity)))
-	  ;; See the note in abstract-environment=?.
-	  (every-cps loop
-		     (get-nonrecursive-closure-values v-sensitivity)
-		     (cons v-sensitivity cs)
-		     k)
-	  (k #f cs)))
+      (cond
+       ((nonrecursive-closure-unsensitize-cache v-sensitivity) (k #t cs))
+       ((and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
+	     (sensitivity-transform-inverse?
+	      (nonrecursive-closure-lambda-expression v-sensitivity)))
+	;; See the note in abstract-environment=?.
+	(every-cps loop
+		   (get-nonrecursive-closure-values v-sensitivity)
+		   (cons v-sensitivity cs)
+		   k))
+       (else (k #f cs))))
      ((recursive-closure? v-sensitivity)
-      (if (and
-	   (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
-	   (every-vector unsensitivityify?
-			 (recursive-closure-procedure-variables v-sensitivity))
-	   (every-vector sensitivity-transform-inverse?
-			 (recursive-closure-lambda-expressions v-sensitivity)))
-	  ;; See the note in abstract-environment=?.
-	  (every-cps loop
-		     (get-recursive-closure-values v-sensitivity)
-		     (cons v-sensitivity cs)
-		     k)
-	  (k #f cs)))
+      (cond
+       ((recursive-closure-unsensitize-cache v-sensitivity) (k #t cs))
+       ((and
+	 (tagged? 'sensitivity (recursive-closure-tags v-sensitivity))
+	 (every-vector unsensitivityify?
+		       (recursive-closure-procedure-variables v-sensitivity))
+	 (every-vector sensitivity-transform-inverse?
+		       (recursive-closure-lambda-expressions v-sensitivity)))
+	;; See the note in abstract-environment=?.
+	(every-cps loop
+		   (get-recursive-closure-values v-sensitivity)
+		   (cons v-sensitivity cs)
+		   k))
+       (else (k #f cs))))
      ((perturbation-tagged-value? v-sensitivity) (k #f cs))
      ((bundle? v-sensitivity) (k #f cs))
      ((sensitivity-tagged-value? v-sensitivity) (k #t (cons v-sensitivity cs)))
      ((reverse-tagged-value? v-sensitivity) (k #f cs))
      ((tagged-pair? v-sensitivity)
-      (if (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-	  (loop (get-tagged-pair-car v-sensitivity)
-		(cons v-sensitivity cs)
-		(lambda (r? cs)
-		 (if r?
-		     (loop (get-tagged-pair-cdr v-sensitivity) cs k)
-		     (k #f cs))))
-	  (k #f cs)))
+      (cond ((tagged-pair-unsensitize-cache v-sensitivity) (k #t cs))
+	    ((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
+	     (loop (get-tagged-pair-car v-sensitivity)
+		   (cons v-sensitivity cs)
+		   (lambda (r? cs)
+		    (if r?
+			(loop (get-tagged-pair-cdr v-sensitivity) cs k)
+			(k #f cs)))))
+	    (else (k #f cs))))
      (else (internal-error)))))))
 
 (define (unsensitize v-sensitivity)
@@ -8879,15 +8905,8 @@
 
 ;;; Environment Restriction/Construction
 
-(define (restrict-environment vs e f)
- (assert (= (length vs) (length (free-variables e))))
- (map (lambda (x) (list-ref vs (positionp variable=? x (free-variables e))))
-      (free-variables (f e))))
-
-(define (letrec-restrict-environment vs e)
- (assert (= (length vs) (length (free-variables e))))
- (map (lambda (x) (list-ref vs (positionp variable=? x (free-variables e))))
-      (letrec-expression-variables e)))
+(define (restrict-environment vs is)
+ (let ((vs (list->vector vs))) (map (lambda (i) (vector-ref vs i)) is)))
 
 (define (letrec-nested-environment vs e)
  ;; The abstract values in vs might violate the syntactic constraints. We adopt
@@ -8899,7 +8918,7 @@
 	   ;; This may create an abstract value that violates the syntactic
 	   ;; constraints.
 	   (new-recursive-closure
-	    (letrec-restrict-environment vs e)
+	    (restrict-environment vs (letrec-expression-indices e))
 	    (list->vector (letrec-expression-procedure-variables e))
 	    (list->vector (letrec-expression-lambda-expressions e))
 	    (positionp variable=? x (letrec-expression-procedure-variables e)))
@@ -9094,7 +9113,7 @@
        ;; on error, tracing, and the tag-check error message.
        (let ((v (concrete-eval
 		 (application-argument e)
-		 (restrict-environment vs e application-argument))))
+		 (restrict-environment vs (application-argument-indices e)))))
 	(unless (prefix-tags? (lambda-expression-tags (application-callee e))
 			      (value-tags v))
 	 (run-time-error "Value has wrong type for let binder" v))
@@ -9112,19 +9131,22 @@
        ;; This LET* is to specify the evaluation order.
        (let* ((v1 (concrete-eval
 		   (application-callee e)
-		   (restrict-environment vs e application-callee)))
+		   (restrict-environment vs (application-callee-indices e))))
 	      (v2 (concrete-eval
 		   (application-argument e)
-		   (restrict-environment vs e application-argument))))
+		   (restrict-environment
+		    vs (application-argument-indices e)))))
 	(concrete-apply v1 v2))))
   ((letrec-expression? e)
    (concrete-eval (letrec-expression-body e) (letrec-nested-environment vs e)))
   ((cons-expression? e)
    ;; This LET* is to specify the evaluation order.
-   (let* ((v1 (concrete-eval (cons-expression-car e)
-			     (restrict-environment vs e cons-expression-car)))
-	  (v2 (concrete-eval (cons-expression-cdr e)
-			     (restrict-environment vs e cons-expression-cdr))))
+   (let* ((v1 (concrete-eval
+	       (cons-expression-car e)
+	       (restrict-environment vs (cons-expression-car-indices e))))
+	  (v2 (concrete-eval
+	       (cons-expression-cdr e)
+	       (restrict-environment vs (cons-expression-cdr-indices e)))))
     (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
      (run-time-error
       (format #f "CAR argument has wrong type for target with tags ~s"
@@ -10102,8 +10124,8 @@
        (lambda (b)
 	(let ((v (abstract-eval1
 		  (application-argument e)
-		  (restrict-environment
-		   (environment-binding-values b) e application-argument))))
+		  (restrict-environment (environment-binding-values b)
+					(application-argument-indices e)))))
 	 (unless (empty-abstract-value? v)
 	  (cond
 	   ((every-value-tags
@@ -10171,8 +10193,8 @@
        (lambda (b)
 	(let* ((v (abstract-eval1
 		   (application-argument e)
-		   (restrict-environment
-		    (environment-binding-values b) e application-argument)))
+		   (restrict-environment (environment-binding-values b)
+					 (application-argument-indices e))))
 	       ;; This corresponds to call B-prime to c:widen in
 	       ;; generate-expression.
 	       (v (widen-abstract-value
@@ -10245,12 +10267,12 @@
 		 e
 		 (abstract-eval1
 		  (application-callee e)
-		  (restrict-environment
-		   (environment-binding-values b) e application-callee))
+		  (restrict-environment (environment-binding-values b)
+					(application-callee-indices e)))
 		 (abstract-eval1
 		  (application-argument e)
-		  (restrict-environment
-		   (environment-binding-values b) e application-argument))))
+		  (restrict-environment (environment-binding-values b)
+					(application-argument-indices e)))))
 	       (expression-environment-bindings e))
      (for-each
       (lambda (b)
@@ -10260,15 +10282,14 @@
 		 (abstract-value-union
 		  (environment-binding-value b)
 		  (abstract-apply
-		   (abstract-eval1
-		    (application-callee e)
-		    (restrict-environment
-		     (environment-binding-values b) e application-callee))
-		   (abstract-eval1
-		    (application-argument e)
-		    (restrict-environment (environment-binding-values b)
-					  e
-					  application-argument)))))))
+		   (abstract-eval1 (application-callee e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    (application-callee-indices e)))
+		   (abstract-eval1 (application-argument e)
+				   (restrict-environment
+				    (environment-binding-values b)
+				    (application-argument-indices e))))))))
 	;; With the above union the old value will always be a subset of the
 	;; new value by a precise calculation but might not be given that the
 	;; subset calculation is imprecise. Need to document example where this
@@ -10298,12 +10319,12 @@
     (lambda (b)
      (let ((v1 (abstract-eval1
 		(cons-expression-car e)
-		(restrict-environment
-		 (environment-binding-values b) e cons-expression-car)))
+		(restrict-environment (environment-binding-values b)
+				      (cons-expression-car-indices e))))
 	   (v2 (abstract-eval1
 		(cons-expression-cdr e)
-		(restrict-environment
-		 (environment-binding-values b) e cons-expression-cdr))))
+		(restrict-environment (environment-binding-values b)
+				      (cons-expression-cdr-indices e)))))
       (cond
        ((and
 	 (every-value-tags
@@ -10496,7 +10517,7 @@
 	 (application-argument e)
 	 (cons e (expression-parents (application-argument e)))))
        (loop (application-argument e)
-	     (restrict-environment vs e application-argument))
+	     (restrict-environment vs (application-argument-indices e)))
        (enqueue! e))
       (else
        (set-expression-environment-bindings!
@@ -10518,9 +10539,9 @@
 	 (application-argument e)
 	 (cons e (expression-parents (application-argument e)))))
        (loop (application-callee e)
-	     (restrict-environment vs e application-callee))
+	     (restrict-environment vs (application-callee-indices e)))
        (loop (application-argument e)
-	     (restrict-environment vs e application-argument))
+	     (restrict-environment vs (application-argument-indices e)))
        (enqueue! e))))
     ((letrec-expression? e)
      (set-expression-environment-bindings!
@@ -10559,9 +10580,9 @@
        (cons-expression-cdr e)
        (cons e (expression-parents (cons-expression-cdr e)))))
      (loop (cons-expression-car e)
-	   (restrict-environment vs e cons-expression-car))
+	   (restrict-environment vs (cons-expression-car-indices e)))
      (loop (cons-expression-cdr e)
-	   (restrict-environment vs e cons-expression-cdr))
+	   (restrict-environment vs (cons-expression-cdr-indices e)))
      (enqueue! e))
     (else (internal-error))))))
 
@@ -11308,15 +11329,14 @@
 				   (application-callee e)
 				   (restrict-environment
 				    (environment-binding-values b)
-				    e
-				    application-callee))))
+				    (application-callee-indices e)))))
 			 (if (and (primitive-procedure? v1)
 				  (eq? (primitive-procedure-name v1) s))
-			     (abstract-eval1 (application-argument e)
-					     (restrict-environment
-					      (environment-binding-values b)
-					      e
-					      application-argument))
+			     (abstract-eval1
+			      (application-argument e)
+			      (restrict-environment
+			       (environment-binding-values b)
+			       (application-argument-indices e)))
 			     #f)))
 		       (expression-environment-bindings e))))
 	'()))
@@ -11357,15 +11377,14 @@
 				   (application-callee e)
 				   (restrict-environment
 				    (environment-binding-values b)
-				    e
-				    application-callee))))
+				    (application-callee-indices e)))))
 			 (if (and (primitive-procedure? v1)
 				  (eq? (primitive-procedure-name v1) s))
-			     (abstract-eval1 (application-argument e)
-					     (restrict-environment
-					      (environment-binding-values b)
-					      e
-					      application-argument))
+			     (abstract-eval1
+			      (application-argument e)
+			      (restrict-environment
+			       (environment-binding-values b)
+			       (application-argument-indices e)))
 			     #f)))
 		       (expression-environment-bindings e))))
 	'()))
@@ -11536,12 +11555,12 @@
 	(lambda (b)
 	 (let ((v1 (abstract-eval1
 		    (application-callee e)
-		    (restrict-environment
-		     (environment-binding-values b) e application-callee)))
+		    (restrict-environment (environment-binding-values b)
+					  (application-callee-indices e))))
 	       (v2 (abstract-eval1
 		    (application-argument e)
-		    (restrict-environment
-		     (environment-binding-values b) e application-argument))))
+		    (restrict-environment (environment-binding-values b)
+					  (application-argument-indices e)))))
 	  (cond
 	   ((union? v1)
 	    (map-reduce
@@ -11847,8 +11866,8 @@
 		   (v
 		    (abstract-eval1
 		     (application-argument e)
-		     (restrict-environment
-		      (environment-binding-values b) e application-argument))))
+		     (restrict-environment (environment-binding-values b)
+					   (application-argument-indices e)))))
 	      (all-subwidener-instances
 	       (cond
 		((every-value-tags
@@ -11902,13 +11921,13 @@
 	       (environment-binding-value b)))
 	     (let ((v1 (abstract-eval1
 			(application-callee e)
-			(restrict-environment
-			 (environment-binding-values b) e application-callee)))
+			(restrict-environment (environment-binding-values b)
+					      (application-callee-indices e))))
 		   (v2
 		    (abstract-eval1
 		     (application-argument e)
-		     (restrict-environment
-		      (environment-binding-values b) e application-argument))))
+		     (restrict-environment (environment-binding-values b)
+					   (application-argument-indices e)))))
 	      (union-widener-instances
 	       (all-subwidener-instances
 		(abstract-apply v1 v2) (environment-binding-value b))
@@ -11972,8 +11991,8 @@
 	   '()
 	   (lambda (x)
 	    (let ((v (new-recursive-closure
-		      (letrec-restrict-environment
-		       (environment-binding-values b) e)
+		      (restrict-environment (environment-binding-values b)
+					    (letrec-expression-indices e))
 		      (list->vector (letrec-expression-procedure-variables e))
 		      (list->vector (letrec-expression-lambda-expressions e))
 		      (positionp variable=?
@@ -11988,11 +12007,11 @@
 	   (abstract-eval1
 	    (cons-expression-car e)
 	    (restrict-environment
-	     (environment-binding-values b) e cons-expression-car))
+	     (environment-binding-values b) (cons-expression-car-indices e)))
 	   (abstract-eval1
 	    (cons-expression-cdr e)
 	    (restrict-environment
-	     (environment-binding-values b) e cons-expression-cdr)))
+	     (environment-binding-values b) (cons-expression-cdr-indices e))))
 	  (environment-binding-value b)))
 	(else '())))
       (expression-environment-bindings e)))
@@ -12071,13 +12090,11 @@
 	       (let ((v1 (abstract-eval1 (application-callee e)
 					 (restrict-environment
 					  (environment-binding-values b)
-					  e
-					  application-callee)))
+					  (application-callee-indices e))))
 		     (v2 (abstract-eval1 (application-argument e)
 					 (restrict-environment
 					  (environment-binding-values b)
-					  e
-					  application-argument))))
+					  (application-argument-indices e)))))
 		(if (and (not (union? v1))
 			 (primitive-procedure? v1)
 			 (eq? (primitive-procedure-name v1) s)
@@ -12129,7 +12146,8 @@
 	      ;; This handling of LET is an optimization.
 	      (let ((v (abstract-eval1
 			(application-argument e)
-			(restrict-environment vs e application-argument))))
+			(restrict-environment
+			 vs (application-argument-indices e)))))
 	       (union-if-and-function-instances
 		(map-reduce
 		 union-if-and-function-instances
@@ -12149,14 +12167,17 @@
 			  (lambda-expression-body (application-callee e))))))
 		 (abstract-destructure
 		  (lambda-expression-parameter (application-callee e)) v))
-		(loop (application-argument e)
-		      (restrict-environment vs e application-argument))))
+		(loop
+		 (application-argument e)
+		 (restrict-environment vs (application-argument-indices e)))))
 	      (let ((v1 (abstract-eval1
 			 (application-callee e)
-			 (restrict-environment vs e application-callee)))
+			 (restrict-environment
+			  vs (application-callee-indices e))))
 		    (v2 (abstract-eval1
 			 (application-argument e)
-			 (restrict-environment vs e application-argument))))
+			 (restrict-environment
+			  vs (application-argument-indices e)))))
 	       (union-if-and-function-instances
 		(map-reduce
 		 union-if-and-function-instances
@@ -12175,19 +12196,21 @@
 		   (else '())))
 		 (union-members v1))
 		(union-if-and-function-instances
-		 (loop (application-callee e)
-		       (restrict-environment vs e application-callee))
+		 (loop
+		  (application-callee e)
+		  (restrict-environment vs (application-callee-indices e)))
 		 (loop (application-argument e)
-		       (restrict-environment vs e application-argument)))))))
+		       (restrict-environment
+			vs (application-argument-indices e))))))))
 	 ((letrec-expression? e)
 	  (loop (letrec-expression-body e)
 		(map widen-abstract-value (letrec-nested-environment vs e))))
 	 ((cons-expression? e)
 	  (union-if-and-function-instances
 	   (loop (cons-expression-car e)
-		 (restrict-environment vs e cons-expression-car))
+		 (restrict-environment vs (cons-expression-car-indices e)))
 	   (loop (cons-expression-cdr e)
-		 (restrict-environment vs e cons-expression-cdr))))
+		 (restrict-environment vs (cons-expression-cdr-indices e)))))
 	 (else '()))))
       (construct-abstract-environments (function-instance-v1 instance)
 				       (function-instance-v2 instance))))
@@ -12843,7 +12866,7 @@
        ;; We don't check the "Argument has wrong type for target" condition.
        (let ((v (abstract-eval1
 		 (application-argument e)
-		 (restrict-environment vs e application-argument)))
+		 (restrict-environment vs (application-argument-indices e))))
 	     (e1 (lambda-expression-body (application-callee e))))
 	;; This corresponds to call B-prime to widen-abstract-value in
 	;; abstract-eval!.
@@ -12902,7 +12925,7 @@
 	      '()
 	      (generate-expression
 	       (application-argument e)
-	       (restrict-environment vs e application-argument)
+	       (restrict-environment vs (application-argument-indices e))
 	       v0
 	       xs
 	       xs2
@@ -12944,10 +12967,10 @@
        ;; We don't check the "Argument has wrong type for target" condition.
        (let ((v1 (abstract-eval1
 		  (application-callee e)
-		  (restrict-environment vs e application-callee)))
+		  (restrict-environment vs (application-callee-indices e))))
 	     (v2 (abstract-eval1
 		  (application-argument e)
-		  (restrict-environment vs e application-argument))))
+		  (restrict-environment vs (application-argument-indices e)))))
 	;; This corresponds to call B to widen-abstract-value in
 	;; abstract-eval!.
 	(c:widen
@@ -12958,14 +12981,15 @@
 	   (c:let
 	    v1
 	    "y"
-	    (generate-expression (application-callee e)
-				 (restrict-environment vs e application-callee)
-				 v0
-				 xs
-				 xs2
-				 bs
-				 function-instances
-				 widener-instances)
+	    (generate-expression
+	     (application-callee e)
+	     (restrict-environment vs (application-callee-indices e))
+	     v0
+	     xs
+	     xs2
+	     bs
+	     function-instances
+	     widener-instances)
 	    (c:dispatch
 	     v1
 	     "y"
@@ -12984,7 +13008,8 @@
 			      '()
 			      (generate-expression
 			       (application-argument e)
-			       (restrict-environment vs e application-argument)
+			       (restrict-environment
+				vs (application-argument-indices e))
 			       v0
 			       xs
 			       xs2
@@ -13000,7 +13025,8 @@
 			      '()
 			      (generate-expression
 			       (application-argument e)
-			       (restrict-environment vs e application-argument)
+			       (restrict-environment
+				vs (application-argument-indices e))
 			       v0
 			       xs
 			       xs2
@@ -13020,7 +13046,8 @@
 		       '()
 		       (generate-expression
 			(application-argument e)
-			(restrict-environment vs e application-argument)
+			(restrict-environment
+			 vs (application-argument-indices e))
 			v0
 			xs
 			xs2
@@ -13034,7 +13061,8 @@
 		       '()
 		       (generate-expression
 			(application-callee e)
-			(restrict-environment vs e application-callee)
+			(restrict-environment
+			 vs (application-callee-indices e))
 			v0
 			xs
 			xs2
@@ -13046,7 +13074,8 @@
 		       '()
 		       (generate-expression
 			(application-argument e)
-			(restrict-environment vs e application-argument)
+			(restrict-environment
+			 vs (application-argument-indices e))
 			v0
 			xs
 			xs2
@@ -13071,10 +13100,12 @@
 	     widener-instances)
 	    widener-instances))
   ((cons-expression? e)
-   (let ((v1 (abstract-eval1 (cons-expression-car e)
-			     (restrict-environment vs e cons-expression-car)))
-	 (v2 (abstract-eval1 (cons-expression-cdr e)
-			     (restrict-environment vs e cons-expression-cdr))))
+   (let ((v1 (abstract-eval1
+	      (cons-expression-car e)
+	      (restrict-environment vs (cons-expression-car-indices e))))
+	 (v2 (abstract-eval1
+	      (cons-expression-cdr e)
+	      (restrict-environment vs (cons-expression-cdr-indices e)))))
     ;; This c:widen is necessary for the case where the tagged pair created
     ;; violates the syntactic constraints (presumably tagged pair depth limit)
     ;; or where the flow analysis widened due to imprecision. This corresponds
@@ -13086,24 +13117,26 @@
       (c:constructor-name (new-tagged-pair (cons-expression-tags e) v1 v2))
       (if (void? v1)
 	  '()
-	  (generate-expression (cons-expression-car e)
-			       (restrict-environment vs e cons-expression-car)
-			       v0
-			       xs
-			       xs2
-			       bs
-			       function-instances
-			       widener-instances))
+	  (generate-expression
+	   (cons-expression-car e)
+	   (restrict-environment vs (cons-expression-car-indices e))
+	   v0
+	   xs
+	   xs2
+	   bs
+	   function-instances
+	   widener-instances))
       (if (void? v2)
 	  '()
-	  (generate-expression (cons-expression-cdr e)
-			       (restrict-environment vs e cons-expression-cdr)
-			       v0
-			       xs
-			       xs2
-			       bs
-			       function-instances
-			       widener-instances)))
+	  (generate-expression
+	   (cons-expression-cdr e)
+	   (restrict-environment vs (cons-expression-cdr-indices e))
+	   v0
+	   xs
+	   xs2
+	   bs
+	   function-instances
+	   widener-instances)))
      widener-instances)))
   (else (internal-error))))
 
@@ -13115,23 +13148,25 @@
   ((application? e)
    ;; abstraction
    (list
-    (generate-letrec-bindings (application-callee e)
-			      (restrict-environment vs e application-callee)
-			      xs
-			      xs2
-			      widener-instances)
-    (generate-letrec-bindings (application-argument e)
-			      (restrict-environment vs e application-argument)
-			      xs
-			      xs2
-			      widener-instances)))
+    (generate-letrec-bindings
+     (application-callee e)
+     (restrict-environment vs (application-callee-indices e))
+     xs
+     xs2
+     widener-instances)
+    (generate-letrec-bindings
+     (application-argument e)
+     (restrict-environment vs (application-argument-indices e))
+     xs
+     xs2
+     widener-instances)))
   ((letrec-expression? e)
    ;; abstraction
    (list
     ;; abstraction
     (map (lambda (x)
 	  (let* ((v (new-recursive-closure
-		     (letrec-restrict-environment vs e)
+		     (restrict-environment vs (letrec-expression-indices e))
 		     (list->vector (letrec-expression-procedure-variables e))
 		     (list->vector (letrec-expression-lambda-expressions e))
 		     (positionp
@@ -13151,7 +13186,7 @@
 	      (map (lambda (x1 v1)
 		    (if (void? v1) '() (generate-reference v x1 xs xs2)))
 		   (letrec-expression-variables e)
-		   (letrec-restrict-environment vs e)))
+		   (restrict-environment vs (letrec-expression-indices e))))
 	     widener-instances))))
 	 (letrec-expression-procedure-variables e))
     (generate-letrec-bindings
@@ -13162,17 +13197,18 @@
      widener-instances)))
   ((cons-expression? e)
    ;; abstraction
-   (list
-    (generate-letrec-bindings (cons-expression-car e)
-			      (restrict-environment vs e cons-expression-car)
-			      xs
-			      xs2
-			      widener-instances)
-    (generate-letrec-bindings (cons-expression-cdr e)
-			      (restrict-environment vs e cons-expression-cdr)
-			      xs
-			      xs2
-			      widener-instances)))
+   (list (generate-letrec-bindings
+	  (cons-expression-car e)
+	  (restrict-environment vs (cons-expression-car-indices e))
+	  xs
+	  xs2
+	  widener-instances)
+	 (generate-letrec-bindings
+	  (cons-expression-cdr e)
+	  (restrict-environment vs (cons-expression-cdr-indices e))
+	  xs
+	  xs2
+	  widener-instances)))
   (else (internal-error))))
 
 ;;; Definition generators
