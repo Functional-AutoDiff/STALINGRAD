@@ -185,7 +185,7 @@
 		   tagged-pair-depth-limit?
 		   (tagged-pair-depth-limit "n" integer-argument 1)))
 		 (required (pathname "pathname" string-argument)))
- (when #f (initialize-time-buckets 36))	;debugging
+ (when #f (initialize-time-buckets 37))	;debugging
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
