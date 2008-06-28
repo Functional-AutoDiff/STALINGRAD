@@ -11447,6 +11447,15 @@
 			       (c:specifier-parameter v "x"))))
       (all-primitives s)))
 
+(define (generate-type-predicate-declarations s code)
+ ;; abstraction
+ (map (lambda (v)
+       (c:specifier-function-declaration
+	#t #t #f (abstract-boolean)
+	(c:function-declarator (c:builtin-name code v)
+			       (c:specifier-parameter v "x"))))
+      (all-primitives s)))
+
 (define (generate-unary-ad-declaration v f code p?)
  ;; here I am: The result of f might violate the syntactic constraints.
  (c:specifier-function-declaration
@@ -12203,6 +12212,25 @@
       ((vlad-real? v) (generate (if (void? v) (exact->inexact v) "x")))
       (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
   (all-primitives s)))
+
+(define (generate-type-predicate-definitions s code p?)
+ ;; abstraction
+ (map (lambda (v)
+       (unless (union? v) (internal-error))
+       (c:specifier-function-definition
+	#t #t #f (abstract-boolean)
+	(c:function-declarator (c:builtin-name code v)
+			       (c:specifier-parameter v "x"))
+	(c:return
+	 (c:dispatch
+	  v
+	  "x"
+	  (map (lambda (code u)
+		(c:call (c:unioner-name (if (p? u) (vlad-true) (vlad-false))
+					(abstract-boolean))))
+	       (generate-slot-names v)
+	       (get-union-values v))))))
+      (all-primitives s)))
 
 (define (generate-unary-ad-definition v f code generate p?)
  ;; here I am: The result of f might violate the syntactic constraints.
@@ -13125,8 +13153,15 @@
    (time-it (generate-real-primitive-declarations 'zero? (abstract-boolean) "iszero"))
    (time-it (generate-real-primitive-declarations 'positive? (abstract-boolean) "positive"))
    (time-it (generate-real-primitive-declarations 'negative? (abstract-boolean) "negative"))
-   ;; here I am: null, boolean, is_real, pair, procedure, perturbation,
-   ;;            forward, sensitivity, and reverse
+   (time-it (generate-type-predicate-declarations 'null? "null"))
+   (time-it (generate-type-predicate-declarations 'boolean? "boolean"))
+   (time-it (generate-type-predicate-declarations 'real? "is_real"))
+   (time-it (generate-type-predicate-declarations 'pair? "pair"))
+   (time-it (generate-type-predicate-declarations 'procedure? "procedure"))
+   (time-it (generate-type-predicate-declarations 'perturbation? "perturbation"))
+   (time-it (generate-type-predicate-declarations 'forward? "forward"))
+   (time-it (generate-type-predicate-declarations 'sensitivty? "sensitivity"))
+   (time-it (generate-type-predicate-declarations 'reverse? "reverse"))
    (time-it (c:specifier-function-declaration
 	     #t #t #f (abstract-real) (c:function-declarator "read_real")))
    (time-it (generate-real-primitive-declarations 'real (abstract-real) "real"))
@@ -13229,8 +13264,15 @@
 	     'positive? (abstract-boolean) "positive" "positive?" (c:unary-boolean ">")))
    (time-it (generate-real-primitive-definitions
 	     'negative? (abstract-boolean) "negative" "negative?" (c:unary-boolean "<")))
-   ;; here I am: null, boolean, is_real, pair, procedure, perturbation,
-   ;;            forward, sensitivity, and reverse
+   (time-it (generate-type-predicate-definitions 'null? "null" vlad-empty-list?))
+   (time-it (generate-type-predicate-definitions 'boolean? "boolean" vlad-boolean?))
+   (time-it (generate-type-predicate-definitions 'real? "is_real" vlad-real?))
+   (time-it (generate-type-predicate-definitions 'pair? "pair" vlad-pair?))
+   (time-it (generate-type-predicate-definitions 'procedure? "procedure" vlad-procedure?))
+   (time-it (generate-type-predicate-definitions 'perturbation? "perturbation" perturbation-value?))
+   (time-it (generate-type-predicate-definitions 'forward? "forward" forward-value?))
+   (time-it (generate-type-predicate-definitions 'sensitivty? "sensitivity" sensitivity-value?))
+   (time-it (generate-type-predicate-definitions 'reverse? "reverse" reverse-value?))
    (time-it (c:specifier-function-definition
 	     #t #t #f (abstract-real) (c:function-declarator "read_real")
 	     ;; abstraction
