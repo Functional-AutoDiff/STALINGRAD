@@ -10181,8 +10181,8 @@
  ;; generate definitions.
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
- ;; here I am: Need better choice function.
  (feedback-topological-sort
+  ;; here I am: Need better choice function.
   abstract-value=? abstract-values-before first (all-unary-ad s descend?)))
 
 (define (all-binary-ad s descend? f? f f-inverse aggregates-match?)
@@ -10370,6 +10370,99 @@
 (define (union-function-instances function-instances1 function-instances2)
  (unionp function-instance=? function-instances1 function-instances2))
 
+(define (if-return-value v)
+ (map-union
+  (lambda (u)
+   (if (vlad-pair? u)
+       (let ((v1 (vlad-car u)))
+	(map-union
+	 (lambda (u23)
+	  (if (vlad-pair? u23)
+	      (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
+	       (cond ((and (some vlad-false? (union-members v1))
+			   (some (lambda (u1) (not (vlad-false? u1)))
+				 (union-members v1)))
+		      ;; here I am: The result might violate the syntactic
+		      ;;            constraints.
+		      (abstract-value-union
+		       (abstract-apply v2 (vlad-empty-list))
+		       (abstract-apply v3 (vlad-empty-list))))
+		     ((some vlad-false? (union-members v1))
+		      (abstract-apply v3 (vlad-empty-list)))
+		     ((some (lambda (u1) (not (vlad-false? u1)))
+			    (union-members v1))
+		      (abstract-apply v2 (vlad-empty-list)))
+		     (else (internal-error))))
+	      (empty-abstract-value)))
+	 (vlad-cdr u)))
+       (empty-abstract-value)))
+  v))
+
+(define (if-function-instances v)
+ (if (void? (if-return-value v))
+     ;; needs work: I'm not sure whether this should be moved into the
+     ;;             individual make-function-instance calls.
+     '()
+     (map-reduce
+      union-function-instances
+      '()
+      (lambda (u)
+       (if (vlad-pair? u)
+	   (let ((v1 (vlad-car u)))
+	    (map-reduce
+	     union-function-instances
+	     '()
+	     (lambda (u23)
+	      (if (vlad-pair? u23)
+		  (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
+		   (cond
+		    ((and (some vlad-false? (union-members v1))
+			  (some (lambda (u1) (not (vlad-false? u1)))
+				(union-members v1)))
+		     (union-function-instances
+		      (map-reduce
+		       union-function-instances
+		       '()
+		       (lambda (u2)
+			(if (closure? u2)
+			    (list
+			     (make-function-instance u2 (vlad-empty-list)))
+			    '()))
+		       (union-members v2))
+		      (map-reduce
+		       union-function-instances
+		       '()
+		       (lambda (u3)
+			(if (closure? u3)
+			    (list
+			     (make-function-instance u3 (vlad-empty-list)))
+			    '()))
+		       (union-members v3))))
+		    ((some vlad-false? (union-members v1))
+		     (map-reduce
+		      union-function-instances
+		      '()
+		      (lambda (u3)
+		       (if (closure? u3)
+			   (list (make-function-instance u3 (vlad-empty-list)))
+			   '()))
+		      (union-members v3)))
+		    ((some (lambda (u1) (not (vlad-false? u1)))
+			   (union-members v1))
+		     (map-reduce
+		      union-function-instances
+		      '()
+		      (lambda (u2)
+		       (if (closure? u2)
+			   (list (make-function-instance u2 (vlad-empty-list)))
+			   '()))
+		      (union-members v2)))
+		    (else (internal-error))))
+		  '()))
+	     (union-members (vlad-cdr u))))
+	   '()))
+      (union-members v))))
+
 (define (all-function-instances)
  (map-reduce
   union-function-instances
@@ -10396,92 +10489,16 @@
 	     union-function-instances
 	     '()
 	     (lambda (u1)
-	      (cond
-	       ((closure? u1) (list (make-function-instance u1 v2)))
-	       ((and (primitive-procedure? u1)
-		     (eq? (primitive-procedure-name u1) 'if-procedure))
-		(assert (and (vlad-pair? v2)
-			     (vlad-pair? (vlad-cdr v2))
-			     (closure? (vlad-car (vlad-cdr v2)))
-			     (closure? (vlad-cdr (vlad-cdr v2)))))
-		(let* ((v3 (vlad-car v2))
-		       (v4 (vlad-cdr v2))
-		       (v5 (vlad-car v4))
-		       (v6 (vlad-cdr v4)))
-		 (if (void?
-		      (cond ((and (some vlad-false? (union-members v3))
-				  (some (lambda (u) (not (vlad-false? u)))
-					(union-members v3)))
-			     ;; here I am: The result might violate the
-			     ;;            syntactic constraints.
-			     (abstract-value-union
-			      (abstract-apply v5 (vlad-empty-list))
-			      (abstract-apply v6 (vlad-empty-list))))
-			    ((some vlad-false? (union-members v3))
-			     (abstract-apply v6 (vlad-empty-list)))
-			    ((some (lambda (u) (not (vlad-false? u)))
-				   (union-members v3))
-			     (abstract-apply v5 (vlad-empty-list)))
-			    (else (internal-error))))
-		     '()
-		     (cond
-		      ((and (some vlad-false? (union-members v3))
-			    (some (lambda (u) (not (vlad-false? u)))
-				  (union-members v3)))
-		       ;; We make the assumption that v5 and v6 will not be
-		       ;; abstract-value=?. If this assumption is false then
-		       ;; there may be duplicates.
-		       (list (make-function-instance v5 (vlad-empty-list))
-			     (make-function-instance v6 (vlad-empty-list))))
-		      ((some vlad-false? (union-members v3))
-		       (list (make-function-instance v6 (vlad-empty-list))))
-		      ((some (lambda (u) (not (vlad-false? u)))
-			     (union-members v3))
-		       (list (make-function-instance v5 (vlad-empty-list))))
-		      (else (internal-error))))))
-	       (else '())))
+	      (cond ((closure? u1) (list (make-function-instance u1 v2)))
+		    ((and (primitive-procedure? u1)
+			  (eq? (primitive-procedure-name u1) 'if-procedure))
+		     (if-function-instances v2))
+		    (else '())))
 	     (get-union-values v1)))
 	   ((closure? v1) (list (make-function-instance v1 v2)))
 	   ((and (primitive-procedure? v1)
 		 (eq? (primitive-procedure-name v1) 'if-procedure))
-	    (assert (and (vlad-pair? v2)
-			 (vlad-pair? (vlad-cdr v2))
-			 (closure? (vlad-car (vlad-cdr v2)))
-			 (closure? (vlad-cdr (vlad-cdr v2)))))
-	    (let* ((v3 (vlad-car v2))
-		   (v4 (vlad-cdr v2))
-		   (v5 (vlad-car v4))
-		   (v6 (vlad-cdr v4)))
-	     (if (void?
-		  (cond ((and (some vlad-false? (union-members v3))
-			      (some (lambda (u) (not (vlad-false? u)))
-				    (union-members v3)))
-			 ;; here I am: The result might violate the syntactic
-			 ;;            constraints.
-			 (abstract-value-union
-			  (abstract-apply v5 (vlad-empty-list))
-			  (abstract-apply v6 (vlad-empty-list))))
-			((some vlad-false? (union-members v3))
-			 (abstract-apply v6 (vlad-empty-list)))
-			((some (lambda (u) (not (vlad-false? u)))
-			       (union-members v3))
-			 (abstract-apply v5 (vlad-empty-list)))
-			(else (internal-error))))
-		 '()
-		 (cond
-		  ((and (some vlad-false? (union-members v3))
-			(some (lambda (u) (not (vlad-false? u)))
-			      (union-members v3)))
-		   ;; We make the assumption that v5 and v6 will not be
-		   ;; abstract-value=?. If this assumption is false then
-		   ;; there may be duplicates.
-		   (list (make-function-instance v5 (vlad-empty-list))
-			 (make-function-instance v6 (vlad-empty-list))))
-		  ((some vlad-false? (union-members v3))
-		   (list (make-function-instance v6 (vlad-empty-list))))
-		  ((some (lambda (u) (not (vlad-false? u))) (union-members v3))
-		   (list (make-function-instance v5 (vlad-empty-list))))
-		  (else (internal-error))))))
+	    (if-function-instances v2))
 	   (else '()))))
 	(expression-environment-bindings e))
        '()))
@@ -10615,6 +10632,43 @@
     (else '())))
   (all-binary-ad s descend? f? f f-inverse aggregates-match?)))
 
+(define (if-widener-instances v)
+ (let ((v0 (if-return-value v)))
+  (if (void? v0)
+      '()
+      (map-reduce
+       union-widener-instances
+       '()
+       (lambda (u)
+	(if (vlad-pair? u)
+	    (let ((v1 (vlad-car u)))
+	     (map-reduce
+	      union-widener-instances
+	      '()
+	      (lambda (u23)
+	       (if (vlad-pair? u23)
+		   (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
+		    (cond ((and (some vlad-false? (union-members v1))
+				(some (lambda (u1) (not (vlad-false? u1)))
+				      (union-members v1)))
+			   (union-widener-instances
+			    (all-subwidener-instances
+			     (abstract-apply v3 (vlad-empty-list)) v0)
+			    (all-subwidener-instances
+			     (abstract-apply v2 (vlad-empty-list)) v0)))
+			  ((some vlad-false? (union-members v1))
+			   (all-subwidener-instances
+			    (abstract-apply v3 (vlad-empty-list)) v0))
+			  ((some (lambda (u1) (not (vlad-false? u1)))
+				 (union-members v1))
+			   (all-subwidener-instances
+			    (abstract-apply v2 (vlad-empty-list)) v0))
+			  (else (internal-error))))
+		   '()))
+	      (union-members (vlad-cdr u))))
+	    '()))
+       (union-members v)))))
+
 (define (all-widener-instances)
  ;; This topological sort is needed so that all INLINE definitions come before
  ;; their uses as required by gcc.
@@ -10741,39 +10795,7 @@
 		((closure? v1) '())
 		((and (primitive-procedure? v1)
 		      (eq? (primitive-procedure-name v1) 'if-procedure))
-		 (assert (and (vlad-pair? v2)
-			      (vlad-pair? (vlad-cdr v2))
-			      (closure? (vlad-car (vlad-cdr v2)))
-			      (closure? (vlad-cdr (vlad-cdr v2)))))
-		 (let* ((v3 (vlad-car v2))
-			(v4 (vlad-cdr v2))
-			(v5 (vlad-car v4))
-			(v6 (vlad-cdr v4))
-			(v7 (cond
-			     ((and (some vlad-false? (union-members v3))
-				   (some (lambda (u) (not (vlad-false? u)))
-					 (union-members v3)))
-			      ;; here I am: The result might violate the
-			      ;;            syntactic constraints.
-			      (abstract-value-union
-			       (abstract-apply v5 (vlad-empty-list))
-			       (abstract-apply v6 (vlad-empty-list))))
-			     ((some vlad-false? (union-members v3))
-			      (abstract-apply v6 (vlad-empty-list)))
-			     ((some (lambda (u) (not (vlad-false? u)))
-				    (union-members v3))
-			      (abstract-apply v5 (vlad-empty-list)))
-			     (else (internal-error)))))
-		  (if (and (not (void? v7))
-			   (some vlad-false? (union-members v3))
-			   (some (lambda (u) (not (vlad-false? u)))
-				 (union-members v3)))
-		      (union-widener-instances
-		       (all-subwidener-instances
-			(abstract-apply v5 (vlad-empty-list)) v7)
-		       (all-subwidener-instances
-			(abstract-apply v6 (vlad-empty-list)) v7))
-		      '())))
+		 (if-widener-instances v2))
 		(else '()))))))
 	((letrec-expression? e)
 	 (union-widener-instances
@@ -10922,12 +10944,7 @@
   if-and-function-instance=?
   (lambda (instance)
    (cond
-    ((if-instance? instance)
-     (list
-      (make-function-instance (vlad-car (vlad-cdr (if-instance-v instance)))
-			      (vlad-empty-list))
-      (make-function-instance (vlad-cdr (vlad-cdr (if-instance-v instance)))
-			      (vlad-empty-list))))
+    ((if-instance? instance) (if-function-instances (if-instance-v instance)))
     ((function-instance? instance)
      (map-reduce
       union-if-and-function-instances
@@ -10982,10 +10999,6 @@
 		  (cond
 		   ((and (primitive-procedure? u1)
 			 (eq? (primitive-procedure-name u1) 'if-procedure))
-		    (assert (and (vlad-pair? v2)
-				 (vlad-pair? (vlad-cdr v2))
-				 (closure? (vlad-car (vlad-cdr v2)))
-				 (closure? (vlad-cdr (vlad-cdr v2)))))
 		    (list (make-if-instance v2)))
 		   ((closure? u1) (list (make-function-instance u1 v2)))
 		   (else '())))
@@ -11021,16 +11034,11 @@
 	       (lambda (instance)
 		(and (function-instance? instance)
 		     (backpropagator? (function-instance-v1 instance))))
-	       instances))))
+	       instances)
+	      (find-if function-instance? instances))))
     (assert instance)
     instance))
-  (append (map (lambda (v)
-		(assert (and (vlad-pair? v)
-			     (vlad-pair? (vlad-cdr v))
-			     (closure? (vlad-car (vlad-cdr v)))
-			     (closure? (vlad-cdr (vlad-cdr v)))))
-		(make-if-instance v))
-	       (all-primitives 'if-procedure))
+  (append (map make-if-instance (all-primitives 'if-procedure))
 	  function-instances)))
 
 (define (boxed? v)
@@ -11463,37 +11471,21 @@
 	(second vs1a-vs2a)))))
 
 (define (generate-if-and-function-declaration instance function-instances p?)
- (cond
-  ((if-instance? instance)
-   (let* ((v (if-instance-v instance))
-	  (v1 (vlad-car v))
-	  (v2 (vlad-cdr v))
-	  (v3 (vlad-car v2))
-	  (v4 (vlad-cdr v2)))
-    (c:specifier-function-declaration
-     #t #t #f
-     (cond ((and (some vlad-false? (union-members v1))
-		 (some (lambda (u) (not (vlad-false? u))) (union-members v1)))
-	    ;; here I am: The result might violate the syntactic constraints.
-	    (abstract-value-union (abstract-apply v3 (vlad-empty-list))
-				  (abstract-apply v4 (vlad-empty-list))))
-	   ((some vlad-false? (union-members v1))
-	    (abstract-apply v4 (vlad-empty-list)))
-	   ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
-	    (abstract-apply v3 (vlad-empty-list)))
-	   (else (internal-error)))
-     (c:function-declarator (c:builtin-name "if_procedure" v)
-			    (c:specifier-parameter v "x")))))
-  ((function-instance? instance)
-   (let ((v1 (function-instance-v1 instance))
-	 (v2 (function-instance-v2 instance)))
-    (c:specifier-function-declaration
-     #t p? #f
-     (abstract-apply v1 v2)
-     (c:function-declarator (c:function-name v1 v2 function-instances)
-			    (c:specifier-parameter v1 "c")
-			    (c:specifier-parameter v2 "x")))))
-  (else (internal-error))))
+ (cond ((if-instance? instance)
+	(let ((v (if-instance-v instance)))
+	 (c:specifier-function-declaration
+	  #t #t #f (if-return-value v)
+	  (c:function-declarator (c:builtin-name "if_procedure" v)
+				 (c:specifier-parameter v "x")))))
+       ((function-instance? instance)
+	(let ((v1 (function-instance-v1 instance))
+	      (v2 (function-instance-v2 instance)))
+	 (c:specifier-function-declaration
+	  #t p? #f (abstract-apply v1 v2)
+	  (c:function-declarator (c:function-name v1 v2 function-instances)
+				 (c:specifier-parameter v1 "c")
+				 (c:specifier-parameter v2 "x")))))
+       (else (internal-error))))
 
 (define (generate-if-and-function-declarations
 	 function-instances instances1-instances2)
@@ -11618,6 +11610,51 @@
  (cond ((memp variable=? x xs2) "c")
        ((memp variable=? x xs) (c:slot v "c" (c:variable-name x)))
        (else (c:variable-name x))))
+
+(define (generate-call
+	 v0 v1 v2 code1 code2 function-instances widener-instances)
+ ;; We don't check the "Argument has wrong type for target" condition.
+ ;; This corresponds to call B to widen-abstract-value in abstract-eval!.
+ (c:widen
+  (abstract-apply v1 v2)
+  v0
+  (cond
+   ((union? v1)
+    (c:let
+     v1
+     "y"
+     code1
+     (c:dispatch
+      v1
+      "y"
+      (map
+       (lambda (code1 u1)
+	(c:widen
+	 (abstract-apply u1 v2)
+	 (abstract-apply v1 v2)
+	 (cond
+	  ((primitive-procedure? u1)
+	   (c:call ((primitive-procedure-generator u1) v2) code2))
+	  ((closure? u1)
+	   (c:call (c:function-name u1 v2 function-instances)
+		   ;; here I am: widen?
+		   (if (void? u1) '() (c:union v1 "y" code1))
+		   ;; here I am: widen?
+		   code2))
+	  (else (c:panic (abstract-apply u1 v2) "Target is not a procedure")))
+	 widener-instances))
+       (generate-slot-names v1)
+       (get-union-values v1)))))
+   ((primitive-procedure? v1)
+    (c:call ((primitive-procedure-generator v1) v2) code2))
+   ((closure? v1)
+    (c:call (c:function-name v1 v2 function-instances)
+	    ;; here I am: widen?
+	    code1
+	    ;; here I am: widen?
+	    code2))
+   (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))
+  widener-instances))
 
 (define (generate-expression
 	 e vs v0 xs xs2 bs function-instances widener-instances)
@@ -11757,120 +11794,39 @@
 	   "}"
 	   ")"))
 	 widener-instances))
-       ;; We don't check the "Argument has wrong type for target" condition.
        (let ((v1 (abstract-eval1
 		  (application-callee e)
 		  (restrict-environment vs (application-callee-indices e))))
 	     (v2 (abstract-eval1
 		  (application-argument e)
 		  (restrict-environment vs (application-argument-indices e)))))
-	;; This corresponds to call B to widen-abstract-value in
-	;; abstract-eval!.
-	(c:widen
-	 (abstract-apply v1 v2)
+	(generate-call
 	 (abstract-eval1 e vs)
-	 (cond
-	  ((union? v1)
-	   (c:let
-	    v1
-	    "y"
-	    (generate-expression
-	     (application-callee e)
-	     (restrict-environment vs (application-callee-indices e))
-	     v0
-	     xs
-	     xs2
-	     bs
-	     function-instances
-	     widener-instances)
-	    (c:dispatch
-	     v1
-	     "y"
-	     (map
-	      (lambda (code1 u1)
-	       (c:widen
-		(abstract-apply u1 v2)
-		(abstract-apply v1 v2)
-		(cond
-		 ((primitive-procedure? u1)
-		  (c:call ((primitive-procedure-generator u1) v2)
-			  (if (void? v2)
-			      '()
-			      (generate-expression
-			       (application-argument e)
-			       (restrict-environment
-				vs (application-argument-indices e))
-			       v0
-			       xs
-			       xs2
-			       bs
-			       function-instances
-			       widener-instances))))
-		 ((closure? u1)
-		  (c:call (c:function-name u1 v2 function-instances)
-			  ;; here I am: widen?
-			  (if (void? u1) '() (c:union v1 "y" code1))
-			  ;; here I am: widen?
-			  (if (void? v2)
-			      '()
-			      (generate-expression
-			       (application-argument e)
-			       (restrict-environment
-				vs (application-argument-indices e))
-			       v0
-			       xs
-			       xs2
-			       bs
-			       function-instances
-			       widener-instances))))
-		 (else (c:panic
-			(abstract-apply u1 v2) "Target is not a procedure")))
-		widener-instances))
-	      (generate-slot-names v1)
-	      (get-union-values v1)))))
-	  ((primitive-procedure? v1)
-	   (c:call ((primitive-procedure-generator v1) v2)
-		   (if (void? v2)
-		       '()
-		       (generate-expression
-			(application-argument e)
-			(restrict-environment
-			 vs (application-argument-indices e))
-			v0
-			xs
-			xs2
-			bs
-			function-instances
-			widener-instances))))
-	  ((closure? v1)
-	   (c:call (c:function-name v1 v2 function-instances)
-		   ;; here I am: widen?
-		   (if (void? v1)
-		       '()
-		       (generate-expression
-			(application-callee e)
-			(restrict-environment
-			 vs (application-callee-indices e))
-			v0
-			xs
-			xs2
-			bs
-			function-instances
-			widener-instances))
-		   ;; here I am: widen?
-		   (if (void? v2)
-		       '()
-		       (generate-expression
-			(application-argument e)
-			(restrict-environment
-			 vs (application-argument-indices e))
-			v0
-			xs
-			xs2
-			bs
-			function-instances
-			widener-instances))))
-	  (else (c:panic (abstract-apply v1 v2) "Target is not a procedure")))
+	 v1
+	 v2
+	 (if (void? v1)
+	     '()
+	     (generate-expression
+	      (application-callee e)
+	      (restrict-environment vs (application-callee-indices e))
+	      v0
+	      xs
+	      xs2
+	      bs
+	      function-instances
+	      widener-instances))
+	 (if (void? v2)
+	     '()
+	     (generate-expression
+	      (application-argument e)
+	      (restrict-environment vs (application-argument-indices e))
+	      v0
+	      xs
+	      xs2
+	      bs
+	      function-instances
+	      widener-instances))
+	 function-instances
 	 widener-instances))))
   ((letrec-expression? e)
    ;; This corresponds to call C to widen-abstract-value in abstract-eval!.
@@ -12562,10 +12518,10 @@
 	    ;; here I am: need to check conformance
 	    ;;            even when one or both arguments is void
 	    ;;            and even when one or both arguments is deep
-	    (perturbation-tagged-value? v1)
-	    (bundle? v1)
-	    (sensitivity-tagged-value? v1)
-	    (reverse-tagged-value? v1))
+	    (and (perturbation-tagged-value? v1) (some-bundlable? v1 v2))
+	    (and (bundle? v1) (some-bundlable? v1 v2))
+	    (and (sensitivity-tagged-value? v1) (some-bundlable? v1 v2))
+	    (and (reverse-tagged-value? v1) (some-bundlable? v1 v2)))
 	(c:call (c:constructor-name (bundle v1 v2))
 		(if (void? v1) '() (c:slot v "x" "a"))
 		(if (void? v2) '() (c:slot v "x" "d"))))
@@ -12882,68 +12838,146 @@
     (else (c:panic (*j-inverse v)
 		   "Argument to *j-inverse is a non-reverse value"))))))
 
+(define (generate-if
+	 v0 v1 v2 v3 code1 code2 code3 function-instances widener-instances)
+ (cond
+  ((and (some vlad-false? (union-members v1))
+	(some (lambda (u1) (not (vlad-false? u1))) (union-members v1)))
+   (c:conditional
+    (c:binary
+     ;; The type tag is always unboxed.
+     (c:tag v1 code1)
+     "!="
+     ;; This uses per-union tags here instead of per-program tags.
+     (position-if vlad-false? (union-members v1)))
+    (generate-call
+     v0 v2 (vlad-empty-list) code2 '() function-instances widener-instances)
+    (generate-call
+     v0 v3 (vlad-empty-list) code3 '() function-instances widener-instances)))
+  ((some vlad-false? (union-members v1))
+   (generate-call
+    v0 v3 (vlad-empty-list) code3 '() function-instances widener-instances))
+  ((some (lambda (u1) (not (vlad-false? u1))) (union-members v1))
+   (generate-call
+    v0 v2 (vlad-empty-list) code2 '() function-instances widener-instances))
+  (else (internal-error))))
+
 (define (generate-if-and-function-definition
 	 instance bs function-instances widener-instances p?)
  (cond
   ((if-instance? instance)
-   (let* ((v (if-instance-v instance))
-	  (v1 (vlad-car v))
-	  (v2 (vlad-cdr v))
-	  (v3 (vlad-car v2))
-	  (v4 (vlad-cdr v2))
-	  (v5 (cond
-	       ((and (some vlad-false? (union-members v1))
-		     (some (lambda (u) (not (vlad-false? u)))
-			   (union-members v1)))
-		;; here I am: The result might violate the syntactic
-		;;            constraints.
-		(abstract-value-union (abstract-apply v3 (vlad-empty-list))
-				      (abstract-apply v4 (vlad-empty-list))))
-	       ((some vlad-false? (union-members v1))
-		(abstract-apply v4 (vlad-empty-list)))
-	       ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
-		(abstract-apply v3 (vlad-empty-list)))
-	       (else (internal-error)))))
+   (let* ((v (if-instance-v instance)) (v0 (if-return-value v)))
     (c:specifier-function-definition
-     #t #t #f v5
+     #t #t #f v0
      (c:function-declarator (c:builtin-name "if_procedure" v)
 			    (c:specifier-parameter v "x"))
      (c:return
       (cond
-       ((and (some vlad-false? (union-members v1))
-	     (some (lambda (u) (not (vlad-false? u))) (union-members v1)))
-	(let ((v6 (abstract-apply v3 (vlad-empty-list)))
-	      (v7 (abstract-apply v4 (vlad-empty-list))))
-	 (c:conditional
-	  (c:binary
-	   ;; The type tag is always unboxed.
-	   (c:tag v1 (c:slot v "x" "a"))
-	   "!="
-	   ;; This uses per-union tags here instead of per-program tags.
-	   (position-if vlad-false? (union-members v1)))
-	  (c:widen
-	   v6
-	   v5
-	   (c:call (c:function-name v3 (vlad-empty-list) function-instances)
-		   ;; here I am: widen?
-		   (if (void? v3) '() (c:slot v2 (c:slot v "x" "d") "a")))
-	   widener-instances)
-	  (c:widen
-	   v7
-	   v5
-	   (c:call (c:function-name v4 (vlad-empty-list) function-instances)
-		   ;; here I am: widen?
-		   (if (void? v4) '() (c:slot v2 (c:slot v "x" "d") "d")))
-	   widener-instances))))
-       ((some vlad-false? (union-members v1))
-	(c:call (c:function-name v4 (vlad-empty-list) function-instances)
-		;; here I am: widen?
-		(if (void? v4) '() (c:slot v2 (c:slot v "x" "d") "d"))))
-       ((some (lambda (u) (not (vlad-false? u))) (union-members v1))
-	(c:call (c:function-name v3 (vlad-empty-list) function-instances)
-		;; here I am: widen?
-		(if (void? v3) '() (c:slot v2 (c:slot v "x" "d") "a"))))
-       (else (internal-error)))))))
+       ((union? v)
+	(c:dispatch
+	 v
+	 "x"
+	 (map
+	  (lambda (code u)
+	   (if (vlad-pair? u)
+	       (let ((v1 (vlad-car u)) (v23 (vlad-cdr u)))
+		(cond
+		 ((union? v23)
+		  (c:dispatch
+		   v23
+		   (if (void? v23) '() (c:slot u (c:slot v "x" code) "d"))
+		   (map
+		    (lambda (code23 u23)
+		     (if (vlad-pair? u23)
+			 (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
+			  (generate-if
+			   v0
+			   v1
+			   v2
+			   v3
+			   (c:slot u (c:slot v "x" code) "a")
+			   (if (void? v2)
+			       '()
+			       (c:slot
+				u23
+				(c:slot
+				 v23 (c:slot u (c:slot v "x" code) "d") code23)
+				"a"))
+			   (if (void? v3)
+			       '()
+			       (c:slot
+				u23
+				(c:slot
+				 v23 (c:slot u (c:slot v "x" code) "d") code23)
+				"d"))
+			   function-instances
+			   widener-instances))
+			 (c:panic v0 "Argument to if-procedure is invalid")))
+		    (generate-slot-names v23)
+		    (get-union-values v23))))
+		 ((vlad-pair? v23)
+		  (let ((v2 (vlad-car v23)) (v3 (vlad-cdr v23)))
+		   (generate-if
+		    v0
+		    v1
+		    v2
+		    v3
+		    (c:slot u (c:slot v "x" code) "a")
+		    (if (void? v2)
+			'()
+			(c:slot v23 (c:slot u (c:slot v "x" code) "d") "a"))
+		    (if (void? v3)
+			'()
+			(c:slot v23 (c:slot u (c:slot v "x" code) "d") "d"))
+		    function-instances
+		    widener-instances)))
+		 (else (c:panic v0 "Argument to if-procedure is invalid"))))
+	       (c:panic v0 "Argument to if-procedure is invalid")))
+	  (generate-slot-names v)
+	  (get-union-values v))))
+       ((vlad-pair? v)
+	(let ((v1 (vlad-car v)) (v23 (vlad-cdr v)))
+	 (cond
+	  ((union? v23)
+	   (c:dispatch
+	    v23
+	    (if (void? v23) '() (c:slot v "x" "d"))
+	    (map (lambda (code23 u23)
+		  (if (vlad-pair? u23)
+		      (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
+		       (generate-if
+			v0
+			v1
+			v2
+			v3
+			(c:slot v "x" "a")
+			(if (void? v2)
+			    '()
+			    (c:slot
+			     u23 (c:slot v23 (c:slot v "x" "d") code23) "a"))
+			(if (void? v3)
+			    '()
+			    (c:slot
+			     u23 (c:slot v23 (c:slot v "x" "d") code23) "d"))
+			function-instances
+			widener-instances))
+		      (c:panic v0 "Argument to if-procedure is invalid")))
+		 (generate-slot-names v23)
+		 (get-union-values v23))))
+	  ((vlad-pair? v23)
+	   (let ((v2 (vlad-car v23)) (v3 (vlad-cdr v23)))
+	    (generate-if
+	     v0
+	     v1
+	     v2
+	     v3
+	     (c:slot v "x" "a")
+	     (if (void? v2) '() (c:slot v23 (c:slot v "x" "d") "a"))
+	     (if (void? v3) '() (c:slot v23 (c:slot v "x" "d") "d"))
+	     function-instances
+	     widener-instances)))
+	  (else (c:panic v0 "Argument to if-procedure is invalid")))))
+       (else (c:panic v0 "Argument to if-procedure is invalid")))))))
   ((function-instance? instance)
    (let ((v1 (function-instance-v1 instance))
 	 (v2 (function-instance-v2 instance)))
