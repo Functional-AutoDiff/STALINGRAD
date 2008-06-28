@@ -7684,8 +7684,8 @@
  (cond
   ((constant-expression? p)
    (unless (abstract-value=? (constant-expression-value p) v)
-    (run-time-error "Argument is not an equivalent value"
-		    (constant-expression-value p)
+    (run-time-error (format #f "Argument is not an equivalent value for ~s"
+			    (externalize-expression p))
 		    v))
    '())
   ((variable-access-expression? p)
@@ -8650,13 +8650,15 @@
       (widen-abstract-value
        (concrete-value->abstract-value (constant-expression-value p)))
       v)
-     (compile-time-warning "Argument might not be an equivalent value"
-			   (constant-expression-value p)
-			   v)
+     (compile-time-warning
+      (format #f "Argument might not be an equivalent value for ~s"
+	      (constant-expression-value p))
+      v)
      '(()))
-    (else (compile-time-warning "Argument might not be an equivalent value"
-				(constant-expression-value p)
-				v)
+    (else (compile-time-warning
+	   (format #f "Argument might not be an equivalent value for ~s"
+		   (constant-expression-value p))
+	   v)
 	  '())))
   ((variable-access-expression? p)
    (list (list (cons (variable-access-expression-variable p) v))))
@@ -11128,8 +11130,10 @@
 			 (if (boxed? v) (c:pointer-declarator code1) code1)
 			 code2)))
 
+(define (c:statement-expression . codes) (list "(" "{" codes ";" "}" ")"))
+
 (define (c:let v code1 code2 code3)
- (list "(" "{" (c:specifier-init-declaration v code1 code2) code3 ";" "}" ")"))
+ (c:statement-expression (c:specifier-init-declaration v code1 code2) code3))
 
 (define (generate-struct-and-union-declarations vs1-vs2)
  ;; generate -~-> c:
@@ -11224,6 +11228,14 @@
 (define (c:unioner-name u v) (list "m" (c:index v) "_" (c:index u)))
 
 (define (c:function-name v1 v2 function-instances)
+ ;; debugging
+ (unless (memp function-instance=?
+	       (make-function-instance v1 v2)
+	       function-instances)
+  (write (externalize v1))
+  (newline)
+  (write (externalize v2))
+  (newline))
  (assert (memp function-instance=?
 	       (make-function-instance v1 v2)
 	       function-instances))
@@ -11232,6 +11244,14 @@
 		      function-instances)))
 
 (define (c:widener-name v1 v2 widener-instances)
+ ;; debugging
+ (unless (memp widener-instance=?
+	       (make-widener-instance v1 v2)
+	       (append (first widener-instances) (second widener-instances)))
+  (write (externalize v1))
+  (newline)
+  (write (externalize v2))
+  (newline))
  (assert (memp widener-instance=?
 	       (make-widener-instance v1 v2)
 	       (append (first widener-instances) (second widener-instances))))
@@ -11502,109 +11522,120 @@
 
 ;;; Expression generators
 
-(define (generate-destructure p e v code)
- ;; here I am: Need to handle unions for everything except variable access
- ;;            expressions and to convert run-time-error to c:panic.
- (cond
-  ((constant-expression? p)
-   (when (union? v) (unimplemented))
-   ;; needs work: To generate run-time equivalence check when the constant
-   ;;             expression parameter and/or argument contain abstract
-   ;;             booleans or abstract reals. When we do so, we need to call
-   ;;             c:widen appropriately. These would correspond to the calls A
-   ;;             to widen-abstract-value in abstract-destructure.
-   (unless (abstract-value-nondisjoint?
-	    (concrete-value->abstract-value (constant-expression-value p))
-	    v)
-    (run-time-error "Argument is not an equivalent value"
-		    (constant-expression-value p)
-		    v))
-   '())
-  ((variable-access-expression? p)
-   ;; We get "warning: unused variable" messages from gcc. This is an
-   ;; unsuccessful attempt to eliminate such messages. It is difficult to
-   ;; soundly eliminate all unneeded destructuring bindings. This is sound but
-   ;; eliminates only some. One can't simply check if the variable is
-   ;; referenced in the VLAD source. Because suppose you have code like
-   ;; (F (G X)). Even though X is not void, (G X) might be, and then code is
-   ;; not generated for (G X). For example (REST '(3)) or (NULL? '(3)).
-   (if (memp variable=?
-	     (variable-access-expression-variable p)
-	     (free-variables e))
-       (c:specifier-init-declaration
-	v (c:variable-name (variable-access-expression-variable p)) code)
-       '()))
-  ((lambda-expression? p)
-   (when (union? v) (unimplemented))
-   (unless (and (nonrecursive-closure? v)
-		(dereferenced-expression-eqv?
-		 p (nonrecursive-closure-lambda-expression v)))
-    (run-time-error
-     (format #f "Argument is not a matching nonrecursive closure for ~s"
-	     (externalize-expression p))
-     v))
-   ;; abstraction
-   (map (lambda (x1 x2 v1)
-	 (generate-destructure (new-variable-access-expression x1)
-			       e
-			       v1
-			       (c:slot v code (c:variable-name x2))))
-	(parameter-variables p)
-	(nonrecursive-closure-variables v)
-	(get-nonrecursive-closure-values v)))
-  ((letrec-expression? p)
-   (when (union? v) (unimplemented))
-   (assert (and (variable-access-expression? (letrec-expression-body p))
-		(memp variable=?
-		      (variable-access-expression-variable
-		       (letrec-expression-body p))
-		      (letrec-expression-procedure-variables p))))
-   (unless (and (recursive-closure? v)
-		(= (recursive-closure-index v)
-		   (positionp variable=?
-			      (variable-access-expression-variable
-			       (letrec-expression-body p))
-			      (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-procedure-variables v))
-		   (length (letrec-expression-procedure-variables p)))
-		(= (vector-length
-		    (recursive-closure-lambda-expressions v))
-		   (length (letrec-expression-lambda-expressions p)))
-		(every dereferenced-expression-eqv?
-		       (vector->list (recursive-closure-lambda-expressions v))
-		       (letrec-expression-lambda-expressions p)))
-    (run-time-error
-     (format #f "Argument is not a matching recursive closure for ~s"
-	     (externalize-expression p))
-     v))
-   ;; abstraction
-   (map (lambda (x1 x2 v1)
-	 (generate-destructure (new-variable-access-expression x1)
-			       e
-			       v1
-			       (c:slot v code (c:variable-name x2))))
-	(parameter-variables p)
-	(recursive-closure-variables v)
-	(get-recursive-closure-values v)))
-  ((cons-expression? p)
-   (when (union? v) (unimplemented))
-   (unless (and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-    (run-time-error
-     (format #f "Argument is not a matching tagged pair with tags ~s"
-	     (cons-expression-tags p))
-     v))
-   ;; abstraction
-   (append (generate-destructure (cons-expression-car p)
-				 e
-				 (get-tagged-pair-car v)
-				 (c:slot v code "a"))
-	   (generate-destructure (cons-expression-cdr p)
-				 e
-				 (get-tagged-pair-cdr v)
-				 (c:slot v code "d"))))
-  (else (internal-error))))
+(define (generate-destructure v0 p v code k)
+ (let outer ((p p) (v v) (code code) (alist '()) (codes '()) (k k))
+  (cond
+   ;; This case comes first to avoid the dispatch.
+   ((variable-access-expression? p)
+    (k (cons (cons (variable-access-expression-variable p) v) alist)
+       ;; abstraction
+       (append
+	codes
+	(list
+	 (c:specifier-init-declaration
+	  v (c:variable-name (variable-access-expression-variable p)) code)))))
+   ((union? v)
+    (c:dispatch
+     v
+     code
+     (map
+      (lambda (code1 u)
+       (c:statement-expression
+	(outer p u (c:union v code code1) alist codes k)))
+      (generate-slot-names v)
+      (get-union-values v))))
+   ((constant-expression? p)
+    ;; needs work: To generate run-time equivalence check when the constant
+    ;;             expression parameter and/or argument contain abstract
+    ;;             booleans or abstract reals. When we do so, we need to call
+    ;;             c:widen appropriately. These would correspond to the calls A
+    ;;             to widen-abstract-value in abstract-destructure.
+    (if (abstract-value-nondisjoint?
+	 (concrete-value->abstract-value (constant-expression-value p))
+	 v)
+	(k alist codes)
+	(c:panic v0 (format #f "Argument is not an equivalent value for ~s"
+			    (externalize-expression p)))))
+   ((lambda-expression? p)
+    (if (and (nonrecursive-closure? v)
+	     (dereferenced-expression-eqv?
+	      p (nonrecursive-closure-lambda-expression v)))
+	(let inner ((xs1 (parameter-variables p))
+		    (xs2 (nonrecursive-closure-variables v))
+		    (vs (get-nonrecursive-closure-values v))
+		    (alist alist)
+		    (codes codes)
+		    (k k))
+	 (if (null? xs1)
+	     (k alist codes)
+	     (outer (new-variable-access-expression (first xs1))
+		    (first vs)
+		    (c:slot v code (c:variable-name (first xs2)))
+		    alist
+		    codes
+		    (lambda (alist codes)
+		     (inner (rest xs1) (rest xs2) (rest vs) alist codes k)))))
+	(c:panic
+	 v0 (format #f "Argument is not a matching nonrecursive closure for ~s"
+		    (externalize-expression p)))))
+   ((letrec-expression? p)
+    (assert (and (variable-access-expression? (letrec-expression-body p))
+		 (memp variable=?
+		       (variable-access-expression-variable
+			(letrec-expression-body p))
+		       (letrec-expression-procedure-variables p))))
+    (if (and (recursive-closure? v)
+	     (= (recursive-closure-index v)
+		(positionp variable=?
+			   (variable-access-expression-variable
+			    (letrec-expression-body p))
+			   (letrec-expression-procedure-variables p)))
+	     (= (vector-length
+		 (recursive-closure-procedure-variables v))
+		(length (letrec-expression-procedure-variables p)))
+	     (= (vector-length
+		 (recursive-closure-lambda-expressions v))
+		(length (letrec-expression-lambda-expressions p)))
+	     (every dereferenced-expression-eqv?
+		    (vector->list (recursive-closure-lambda-expressions v))
+		    (letrec-expression-lambda-expressions p)))
+	(let inner ((xs1 (parameter-variables p))
+		    (xs2 (recursive-closure-variables v))
+		    (vs (get-recursive-closure-values v))
+		    (alist alist)
+		    (codes codes)
+		    (k k))
+	 (if (null? xs1)
+	     (k alist codes)
+	     (outer (new-variable-access-expression (first xs1))
+		    (first vs)
+		    (c:slot v code (c:variable-name (first xs2)))
+		    alist
+		    codes
+		    (lambda (alist codes)
+		     (inner (rest xs1) (rest xs2) (rest vs) alist codes k)))))
+	(c:panic
+	 v0 (format #f "Argument is not a matching recursive closure for ~s"
+		    (externalize-expression p)))))
+   ((cons-expression? p)
+    (if (and (tagged-pair? v)
+	     (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
+	(outer (cons-expression-car p)
+	       (get-tagged-pair-car v)
+	       (c:slot v code "a")
+	       alist
+	       codes
+	       (lambda (alist codes)
+		(outer (cons-expression-cdr p)
+		       (get-tagged-pair-cdr v)
+		       (c:slot v code "d")
+		       alist
+		       codes
+		       k)))
+	(c:panic
+	 v0 (format #f "Argument is not a matching tagged pair with tags ~s"
+		    (cons-expression-tags p)))))
+   (else (internal-error)))))
 
 (define (generate-reference v x xs xs2)
  (cond ((memp variable=? x xs2) "c")
@@ -11762,19 +11793,14 @@
 	       bs
 	       function-instances
 	       widener-instances))
-	  ;; abstraction
-	  (list
-	   "("
-	   "{"
-	   ;; here I am: need to handle the possibility that destructuring
-	   ;;            might dispatch
-	   (generate-destructure
-	    (lambda-expression-parameter (application-callee e)) e1 v "z")
-	   (let ((alists
-		  (abstract-destructure
-		   (lambda-expression-parameter (application-callee e)) v)))
-	    (assert (= (length alists) 1))
-	    (let ((alist (first alists)))
+	  (generate-destructure
+	   (abstract-eval1 e vs)
+	   (lambda-expression-parameter (application-callee e))
+	   v
+	   "z"
+	   (lambda (alist codes)
+	    (c:statement-expression
+	     codes
 	     (generate-expression
 	      e1
 	      (map (lambda (x)
@@ -11789,10 +11815,7 @@
 	      xs2
 	      bs
 	      function-instances
-	      widener-instances)))
-	   ";"
-	   "}"
-	   ")"))
+	      widener-instances)))))
 	 widener-instances))
        (let ((v1 (abstract-eval1
 		  (application-callee e)
@@ -12885,7 +12908,7 @@
 		 ((union? v23)
 		  (c:dispatch
 		   v23
-		   (if (void? v23) '() (c:slot u (c:slot v "x" code) "d"))
+		   (if (void? v23) '() (c:slot u (c:union v "x" code) "d"))
 		   (map
 		    (lambda (code23 u23)
 		     (if (vlad-pair? u23)
@@ -12895,20 +12918,22 @@
 			   v1
 			   v2
 			   v3
-			   (c:slot u (c:slot v "x" code) "a")
+			   (c:slot u (c:union v "x" code) "a")
 			   (if (void? v2)
 			       '()
 			       (c:slot
 				u23
-				(c:slot
-				 v23 (c:slot u (c:slot v "x" code) "d") code23)
+				(c:union
+				 v23
+				 (c:slot u (c:union v "x" code) "d") code23)
 				"a"))
 			   (if (void? v3)
 			       '()
 			       (c:slot
 				u23
-				(c:slot
-				 v23 (c:slot u (c:slot v "x" code) "d") code23)
+				(c:union
+				 v23
+				 (c:slot u (c:union v "x" code) "d") code23)
 				"d"))
 			   function-instances
 			   widener-instances))
@@ -12922,13 +12947,13 @@
 		    v1
 		    v2
 		    v3
-		    (c:slot u (c:slot v "x" code) "a")
+		    (c:slot u (c:union v "x" code) "a")
 		    (if (void? v2)
 			'()
-			(c:slot v23 (c:slot u (c:slot v "x" code) "d") "a"))
+			(c:slot v23 (c:slot u (c:union v "x" code) "d") "a"))
 		    (if (void? v3)
 			'()
-			(c:slot v23 (c:slot u (c:slot v "x" code) "d") "d"))
+			(c:slot v23 (c:slot u (c:union v "x" code) "d") "d"))
 		    function-instances
 		    widener-instances)))
 		 (else (c:panic v0 "Argument to if-procedure is invalid"))))
@@ -12954,11 +12979,11 @@
 			(if (void? v2)
 			    '()
 			    (c:slot
-			     u23 (c:slot v23 (c:slot v "x" "d") code23) "a"))
+			     u23 (c:union v23 (c:slot v "x" "d") code23) "a"))
 			(if (void? v3)
 			    '()
 			    (c:slot
-			     u23 (c:slot v23 (c:slot v "x" "d") code23) "d"))
+			     u23 (c:union v23 (c:slot v "x" "d") code23) "d"))
 			function-instances
 			widener-instances))
 		      (c:panic v0 "Argument to if-procedure is invalid")))
@@ -12987,41 +13012,38 @@
      (c:function-declarator (c:function-name v1 v2 function-instances)
 			    (c:specifier-parameter v1 "c")
 			    (c:specifier-parameter v2 "x"))
-     ;; abstraction
-     (list
-      ;; here I am: need to handle the possibility that destructuring might
-      ;;            dispatch
-      (generate-destructure (closure-parameter v1) (closure-body v1) v2 "x")
-      (generate-letrec-bindings
-       (closure-body v1)
-       ;; here I am: need to handle the possibility that destructuring might
-       ;;            dispatch
-       (let ((vss (construct-abstract-environments v1 v2)))
-	(assert (= (length vss) 1))
-	(map widen-abstract-value (first vss)))
-       (closure-variables v1)
-       (cond ((nonrecursive-closure? v1) '())
-	     ((recursive-closure? v1)
-	      (vector->list (recursive-closure-procedure-variables v1)))
-	     (else (internal-error)))
-       widener-instances)
-      (c:return
-       (generate-expression
-	(closure-body v1)
-	;; here I am: need to handle the possibility that destructuring might
-	;;            dispatch
-	(let ((vss (construct-abstract-environments v1 v2)))
-	 (assert (= (length vss) 1))
-	 (map widen-abstract-value (first vss)))
-	v1
-	(closure-variables v1)
-	(cond ((nonrecursive-closure? v1) '())
-	      ((recursive-closure? v1)
-	       (vector->list (recursive-closure-procedure-variables v1)))
-	      (else (internal-error)))
-	bs
-	function-instances
-	widener-instances))))))
+     (c:return
+      (generate-destructure
+       (abstract-apply v1 v2)
+       (closure-parameter v1)
+       v2
+       "x"
+       (lambda (alist codes)
+	(let ((vs (map widen-abstract-value
+		       (construct-abstract-environment v1 alist))))
+	 (c:statement-expression
+	  codes
+	  (generate-letrec-bindings
+	   (closure-body v1)
+	   vs
+	   (closure-variables v1)
+	   (cond ((nonrecursive-closure? v1) '())
+		 ((recursive-closure? v1)
+		  (vector->list (recursive-closure-procedure-variables v1)))
+		 (else (internal-error)))
+	   widener-instances)
+	  (generate-expression
+	   (closure-body v1)
+	   vs
+	   v1
+	   (closure-variables v1)
+	   (cond ((nonrecursive-closure? v1) '())
+		 ((recursive-closure? v1)
+		  (vector->list (recursive-closure-procedure-variables v1)))
+		 (else (internal-error)))
+	   bs
+	   function-instances
+	   widener-instances)))))))))
   (else (internal-error))))
 
 (define (generate-if-and-function-definitions
@@ -13398,10 +13420,9 @@
 	(if (vlad-empty-list? v)
 	    (abstract-real)
 	    (compile-time-warning
-	     "Argument might not be an equivalent value" (vlad-empty-list) v)))
+	     "Argument might not be an equivalent value for '()" v)))
        (else (unless (vlad-empty-list? v)
-	      (run-time-error
-	       "Argument is not an equivalent value" (vlad-empty-list) v))
+	      (run-time-error "Argument is not an equivalent value for '()" v))
 	     (unimplemented "read-real"))))
 
 (define (unary f s) (lambda (v) (if *abstract?* (map-union f v) (f v))))
