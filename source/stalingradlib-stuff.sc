@@ -10285,6 +10285,45 @@
 	  (tagged-pair? v2)
 	  (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))))
 
+(define (all-real*real-abstract-subvalues v)
+ (union-abstract-values
+  (list v)
+  (cond
+   ((union? v)
+    (map-reduce union-abstract-values
+		'()
+		all-real*real-abstract-subvalues
+		(get-union-values v)))
+   ((vlad-pair? v)
+    (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+     (cond
+      ((union? v1)
+       (map-reduce
+	union-abstract-values
+	'()
+	(lambda (u1) (all-real*real-abstract-subvalues (vlad-cons u1 v2)))
+	(get-union-values v1)))
+      ((union? v2)
+       (map-reduce
+	union-abstract-values
+	'()
+	(lambda (u2) (all-real*real-abstract-subvalues (vlad-cons v1 u2)))
+	(get-union-values v2)))
+      ((and (vlad-real? v1) (vlad-real? v2)) '())
+      (else '()))))
+   (else '()))))
+
+(define (all-real-abstract-subvalues v)
+ (union-abstract-values
+  (list v)
+  (cond ((union? v)
+	 (map-reduce union-abstract-values
+		     '()
+		     all-real-abstract-subvalues
+		     (get-union-values v)))
+	((vlad-real? v) '())
+	(else '()))))
+
 (define (all-nested-abstract-values widener-instances)
  (feedback-topological-sort
   abstract-value=?
@@ -10334,21 +10373,39 @@
      (union-abstract-values
       (union-abstract-values
        (union-abstract-values
-	(binary-ad-argument-and-result-abstract-values
-	 bundle-value
-	 (all-binary-ad 'bundle
-			(lambda (v)
-			 (and (not (perturbation-tagged-value? v))
-			      (not (bundle? v))
-			      (not (sensitivity-tagged-value? v))
-			      (not (reverse-tagged-value? v))))
-			perturbation-tagged-value? perturb unperturb
-			bundle-aggregates-match?))
-	(binary-ad-argument-and-result-abstract-values
-	 plus-value
-	 (all-binary-ad 'plus (lambda (v) #t) (lambda (v) #f) identity identity
-			plus-aggregates-match?)))
-       (all-abstract-values))
+	(union-abstract-values
+	 (binary-ad-argument-and-result-abstract-values
+	  bundle-value
+	  (all-binary-ad 'bundle
+			 (lambda (v)
+			  (and (not (perturbation-tagged-value? v))
+			       (not (bundle? v))
+			       (not (sensitivity-tagged-value? v))
+			       (not (reverse-tagged-value? v))))
+			 perturbation-tagged-value? perturb unperturb
+			 bundle-aggregates-match?))
+	 (binary-ad-argument-and-result-abstract-values
+	  plus-value
+	  (all-binary-ad 'plus (lambda (v) #t) (lambda (v) #f) identity
+			 identity plus-aggregates-match?)))
+	(all-abstract-values))
+       (union-abstract-values
+	(map-reduce union-abstract-values
+		    '()
+		    (lambda (s)
+		     (map-reduce union-abstract-values
+				 '()
+				 all-real*real-abstract-subvalues
+				 (all-primitives s)))
+		    '(+ - * / atan = < > <= >=))
+	(map-reduce union-abstract-values
+		    '()
+		    (lambda (s)
+		     (map-reduce union-abstract-values
+				 '()
+				 all-real-abstract-subvalues
+				 (all-primitives s)))
+		    '(zero? positive? negative? real write))))
       (union-abstract-values
        (map-reduce
 	union-abstract-values
@@ -11429,6 +11486,19 @@
 	 (c:parameter "char" (c:pointer-declarator "x")))))
       (append (first vs1-vs2) (second vs1-vs2))))
 
+(define (real*real-before v)
+ (cond ((union? v) (get-union-values v))
+       ((vlad-pair? v)
+	(cond ((union? (vlad-car v))
+	       (map (lambda (u) (vlad-cons u (vlad-cdr v)))
+		    (get-union-values (vlad-car v))))
+	      ((union? (vlad-cdr v))
+	       (map (lambda (u) (vlad-cons (vlad-car v) u))
+		    (get-union-values (vlad-cdr v))))
+	      ((and (vlad-real? (vlad-car v)) (vlad-real? (vlad-cdr v))) '())
+	      (else '())))
+       (else '())))
+
 (define (generate-real*real-primitive-declarations s v0 code)
  ;; abstraction
  (map (lambda (v)
@@ -11436,7 +11506,23 @@
 	#t #t #f v0
 	(c:function-declarator (c:builtin-name code v)
 			       (c:specifier-parameter v "x"))))
-      (all-primitives s)))
+      ;; This is called redundantly twice, once to generate declarations and
+      ;; once to generate definitions.
+      ;; This topological sort is needed so that all INLINE definitions come
+      ;; before their uses as required by gcc.
+      (first
+       (feedback-topological-sort abstract-value=?
+				  real*real-before
+				  (lambda (vertex) (internal-error))
+				  (map-reduce union-abstract-values
+					      '()
+					      all-real*real-abstract-subvalues
+					      (all-primitives s))))))
+
+(define (real-before v)
+ (cond ((union? v) (get-union-values v))
+       ((vlad-real? v) '())
+       (else '())))
 
 (define (generate-real-primitive-declarations s v0 code)
  ;; abstraction
@@ -11445,7 +11531,18 @@
 	#t #t #f v0
 	(c:function-declarator (c:builtin-name code v)
 			       (c:specifier-parameter v "x"))))
-      (all-primitives s)))
+      ;; This is called redundantly twice, once to generate declarations and
+      ;; once to generate definitions.
+      ;; This topological sort is needed so that all INLINE definitions come
+      ;; before their uses as required by gcc.
+      (first
+       (feedback-topological-sort abstract-value=?
+				  real-before
+				  (lambda (vertex) (internal-error))
+				  (map-reduce union-abstract-values
+					      '()
+					      all-real-abstract-subvalues
+					      (all-primitives s))))))
 
 (define (generate-type-predicate-declarations s code)
  ;; abstraction
@@ -12151,14 +12248,14 @@
 	   v1
 	   (c:slot v "x" "a")
 	   (map
-	    (lambda (code1 u1)
+	    (lambda (code u1)
 	     (c:call
 	      (c:builtin-name code1 (vlad-cons u1 v2))
 	      (if (void? (vlad-cons u1 v2))
 		  '()
 		  (c:call
 		   (c:constructor-name (vlad-cons u1 v2))
-		   (if (void? u1) '() (c:union v1 (c:slot v "x" "a") code1))
+		   (if (void? u1) '() (c:union v1 (c:slot v "x" "a") code))
 		   (if (void? v2) '() (c:slot v "x" "d"))))))
 	    (generate-slot-names v1)
 	    (get-union-values v1))))
@@ -12167,15 +12264,15 @@
 	   v2
 	   (c:slot v "x" "d")
 	   (map
-	    (lambda (code2 u2)
-	     (c:call (c:builtin-name code1 (vlad-cons v1 u2))
-		     (if (void? (vlad-cons v1 u2))
-			 '()
-			 (c:call (c:constructor-name (vlad-cons v1 u2))
-				 (if (void? v1) '() (c:slot v "x" "a"))
-				 (if (void? u2)
-				     '()
-				     (c:union v2 (c:slot v "x" "d") code2))))))
+	    (lambda (code u2)
+	     (c:call
+	      (c:builtin-name code1 (vlad-cons v1 u2))
+	      (if (void? (vlad-cons v1 u2))
+		  '()
+		  (c:call
+		   (c:constructor-name (vlad-cons v1 u2))
+		   (if (void? v1) '() (c:slot v "x" "a"))
+		   (if (void? u2) '() (c:union v2 (c:slot v "x" "d") code))))))
 	    (generate-slot-names v2)
 	    (get-union-values v2))))
 	 ((and (vlad-real? v1) (vlad-real? v2))
@@ -12188,30 +12285,51 @@
 	   (if (void? v2) (exact->inexact v2) (c:slot v "x" "d"))))
 	 (else (c:panic v0 (format #f "Argument to ~a is invalid" code2))))))
       (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
-  (all-primitives s)))
+  ;; This is called redundantly twice, once to generate declarations and once
+  ;; to generate definitions.
+  ;; This topological sort is needed so that all INLINE definitions come before
+  ;; their uses as required by gcc.
+  (first
+   (feedback-topological-sort abstract-value=?
+			      real*real-before
+			      (lambda (vertex) (internal-error))
+			      (map-reduce union-abstract-values
+					  '()
+					  all-real*real-abstract-subvalues
+					  (all-primitives s))))))
 
 (define (generate-real-primitive-definitions s v0 code1 code2 generate)
  ;; abstraction
- (map
-  (lambda (v)
-   (c:specifier-function-definition
-    #t #t #f v0
-    (c:function-declarator (c:builtin-name code1 v)
-			   (c:specifier-parameter v "x"))
-    (c:return
-     (cond
-      ((union? v)
-       (c:dispatch v
-		   "x"
-		   (map (lambda (code u)
-			 (c:call (c:builtin-name code1 u)
-				 (if (void? u) '() (c:union v "x" code))))
-			(generate-slot-names v)
-			(get-union-values v))))
-      ;; This assumes that Scheme inexact numbers are printed as C doubles.
-      ((vlad-real? v) (generate (if (void? v) (exact->inexact v) "x")))
-      (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
-  (all-primitives s)))
+ (map (lambda (v)
+       (c:specifier-function-definition
+	#t #t #f v0
+	(c:function-declarator (c:builtin-name code1 v)
+			       (c:specifier-parameter v "x"))
+	(c:return
+	 (cond
+	  ((union? v)
+	   (c:dispatch v
+		       "x"
+		       (map (lambda (code u)
+			     (c:call (c:builtin-name code1 u)
+				     (if (void? u) '() (c:union v "x" code))))
+			    (generate-slot-names v)
+			    (get-union-values v))))
+	  ;; This assumes that Scheme inexact numbers are printed as C doubles.
+	  ((vlad-real? v) (generate (if (void? v) (exact->inexact v) "x")))
+	  (else (c:panic v0 (format #f "Argument to ~a is invalid" code2)))))))
+      ;; This is called redundantly twice, once to generate declarations and
+      ;; once to generate definitions.
+      ;; This topological sort is needed so that all INLINE definitions come
+      ;; before their uses as required by gcc.
+      (first
+       (feedback-topological-sort abstract-value=?
+				  real-before
+				  (lambda (vertex) (internal-error))
+				  (map-reduce union-abstract-values
+					      '()
+					      all-real-abstract-subvalues
+					      (all-primitives s))))))
 
 (define (generate-type-predicate-definitions s code p?)
  ;; abstraction
@@ -13158,6 +13276,9 @@
    (time-it (generate-type-predicate-declarations 'real? "is_real"))
    (time-it (generate-type-predicate-declarations 'pair? "pair"))
    (time-it (generate-type-predicate-declarations 'procedure? "procedure"))
+   ;; The perturbation?, forward?, sensitivity? and reverse? primitives are not
+   ;; referentially transparent and violate the forward-transformation rule for
+   ;; functions that only rearrange data.
    (time-it (generate-type-predicate-declarations 'perturbation? "perturbation"))
    (time-it (generate-type-predicate-declarations 'forward? "forward"))
    (time-it (generate-type-predicate-declarations 'sensitivty? "sensitivity"))
@@ -13169,7 +13290,7 @@
 	     #t #t #f (abstract-real)
 	     (c:function-declarator
 	      "write_real" (c:specifier-parameter (abstract-real) "x"))))
-   (time-it (generate-real-primitive-declarations 'write (abstract-real) "write"))
+   (time-it (generate-real-primitive-declarations 'write-real (abstract-real) "write_real"))
    (time-it (generate-unary-ad-declarations 'zero (lambda (v) #t) zero "zero"))
    (time-it (generate-unary-ad-declarations
 	     'perturb
@@ -13268,7 +13389,11 @@
    (time-it (generate-type-predicate-definitions 'boolean? "boolean" vlad-boolean?))
    (time-it (generate-type-predicate-definitions 'real? "is_real" vlad-real?))
    (time-it (generate-type-predicate-definitions 'pair? "pair" vlad-pair?))
+   ;; needs work: This should probably return #f for any transformed procedure.
    (time-it (generate-type-predicate-definitions 'procedure? "procedure" vlad-procedure?))
+   ;; The perturbation?, forward?, sensitivity? and reverse? primitives are not
+   ;; referentially transparent and violate the forward-transformation rule for
+   ;; functions that only rearrange data.
    (time-it (generate-type-predicate-definitions 'perturbation? "perturbation" perturbation-value?))
    (time-it (generate-type-predicate-definitions 'forward? "forward" forward-value?))
    (time-it (generate-type-predicate-definitions 'sensitivty? "sensitivity" sensitivity-value?))
@@ -13292,7 +13417,7 @@
 	      "printf(\"%.18lg\\n\",x);"
 	      (c:return "x"))))
    (time-it (generate-real-primitive-definitions
-	     'write (abstract-real) "write" "write"
+	     'write-real (abstract-real) "write_real" "write-real"
 	     (lambda (code) (c:call "write_real" code))))
    (time-it (generate-zero-definitions widener-instances))
    (time-it (generate-perturb-definitions widener-instances))
@@ -14163,6 +14288,22 @@
      (cons (*j (real x))
 	   (lambda ((sensitivity y))
 	    (sensitize (cons real (real (unsensitize (sensitivity y))))))))))
+ (define-primitive-procedure 'write-real
+  (unary-real
+   (lambda (v)
+    (unless *abstract?* ((if *pp?* pp write) (externalize v)) (newline))
+    v)
+   "write-real")
+  (lambda (v) (c:builtin-name "write_real" v))
+  '(lambda ((forward x))
+    (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
+     ;; The unperturb composed with perturb could be optimized away.
+     (bundle (write-real x) (perturb (unperturb (perturbation x))))))
+  '(lambda ((reverse x))
+    (let ((x (*j-inverse (reverse x))))
+     (cons (*j (write-real x))
+	   (lambda ((sensitivity y))
+	    (sensitize (cons write-real (unsensitize (sensitivity y)))))))))
  (define-primitive-procedure 'write
   (unary (lambda (v)
 	  (unless *abstract?* ((if *pp?* pp write) (externalize v)) (newline))
