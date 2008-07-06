@@ -5,4 +5,4 @@
 
 (define (series x) (if (< x 1e-5) x (+ x (series (/ x 2)))))
 
-(write ((derivative series) (read-real)))
+(write-real ((derivative series) (read-real)))

@@ -5,4 +5,4 @@
 
 (define (sqr x) (* x x))
 
-(write ((derivative sqr) (read-real)))
+(write-real ((derivative sqr) (read-real)))

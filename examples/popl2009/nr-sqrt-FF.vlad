@@ -10,4 +10,4 @@
 		      (loop y-prime))))))
   (loop 1.0)))
 
-(write ((derivative-using-j* (derivative-using-j* nr-sqrt)) (read-real)))
+(write-real ((derivative-using-j* (derivative-using-j* nr-sqrt)) (read-real)))

@@ -27,5 +27,5 @@
 			    ((list w*)
 			     (multivariate-argmin-using-j*
 			      (lambda ((list w)) (naive-euler w)) (list w0))))
-		      (write w*)))))))
+		      (write-real w*)))))))
  (loop (real 1000) 0))

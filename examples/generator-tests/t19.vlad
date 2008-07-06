@@ -6,4 +6,4 @@
 (let (((cons x y)
        ((gradient (lambda (x y) (+ (* x x) (* x y))))
 	(read-real) (read-real))))
- (list (write x) (write y)))
+ (list (write-real x) (write-real y)))

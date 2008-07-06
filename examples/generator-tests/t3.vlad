@@ -1,1 +1,1 @@
-(write (sqrt (read-real)))
+(write-real (sqrt (read-real)))

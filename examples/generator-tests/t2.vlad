@@ -1,1 +1,1 @@
-(write (read-real))
+(write-real (read-real))

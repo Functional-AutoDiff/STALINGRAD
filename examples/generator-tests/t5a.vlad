@@ -1,1 +1,1 @@
-(write (+ (read-real) 3.0))
+(write-real (+ (read-real) 3.0))

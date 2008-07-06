@@ -1,1 +1,1 @@
-(write 5.0)
+(write-real 5.0)

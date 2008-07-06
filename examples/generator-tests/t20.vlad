@@ -13,4 +13,4 @@
 		      (loop y-prime))))))
   (loop 1.0)))
 
-(write ((derivative nr-sqrt) (read-real)))
+(write-real ((derivative nr-sqrt) (read-real)))

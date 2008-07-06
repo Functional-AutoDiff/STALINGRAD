@@ -1,1 +1,1 @@
-(write (if (null? 0) (sin (read-real)) (cos (read-real))))
+(write-real (if (null? 0) (sin (read-real)) (cos (read-real))))

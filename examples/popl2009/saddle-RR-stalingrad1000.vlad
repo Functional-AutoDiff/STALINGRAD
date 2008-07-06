@@ -1,24 +1,25 @@
 (include "common-stalingrad")
 
-(letrec ((loop (lambda (i r)
-		(if (zero? i)
-		    r
-		    (loop (- i 1)
-			  (let* ((start (list (real 1) (real 1)))
-				 (f (lambda (x1 y1 x2 y2)
-				     (- (+ (sqr x1) (sqr y1))
-					(+ (sqr x2) (sqr y2)))))
-				 ((list x1* y1*)
-				  (multivariate-argmin-using-*j
-				   (lambda ((list x1 y1))
-				    (multivariate-max-using-*j
-				     (lambda ((list x2 y2)) (f x1 y1 x2 y2))
-				     start))
-				   start))
-				 ((list x2* y2*)
-				  (multivariate-argmax-using-*j
-				   (lambda ((list x2 y2)) (f x1* y1* x2 y2))
-				   start)))
-			   (list (list (write x1*) (write y1*))
-				 (list (write x2*) (write y2*)))))))))
+(letrec ((loop
+	  (lambda (i r)
+	   (if (zero? i)
+	       r
+	       (loop (- i 1)
+		     (let* ((start (list (real 1) (real 1)))
+			    (f (lambda (x1 y1 x2 y2)
+				(- (+ (sqr x1) (sqr y1))
+				   (+ (sqr x2) (sqr y2)))))
+			    ((list x1* y1*)
+			     (multivariate-argmin-using-*j
+			      (lambda ((list x1 y1))
+			       (multivariate-max-using-*j
+				(lambda ((list x2 y2)) (f x1 y1 x2 y2))
+				start))
+			      start))
+			    ((list x2* y2*)
+			     (multivariate-argmax-using-*j
+			      (lambda ((list x2 y2)) (f x1* y1* x2 y2))
+			      start)))
+		      (list (list (write-real x1*) (write-real y1*))
+			    (list (write-real x2*) (write-real y2*)))))))))
  (loop (real 1000) (list (list 0 0) (list 0 0))))
