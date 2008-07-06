@@ -1,0 +1,9 @@
+(define (first (cons x y)) x)
+
+(define (rest (cons x y)) y)
+
+(define (enumerate n) (if (zero? n) '() (cons n (enumerate (- n 1)))))
+
+(define (length n) (if (null? n) 0 (+ (length (rest n)) 1)))
+
+(write-real (length (enumerate (read-real))))
