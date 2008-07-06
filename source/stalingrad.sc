@@ -187,8 +187,9 @@
 			      ("order-limit"
 			       order-limit?
 			       (order-limit "n" integer-argument 1)))
+		 (at-most-one ("widen-lists" widen-lists?))
 		 (required (pathname "pathname" string-argument)))
- (when #f (initialize-time-buckets 38))	;debugging
+ (when #f (initialize-time-buckets 39))	;debugging
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
   (compile-time-error "Can't specify both -unabbreviate-executably and -unabbreviate-nonrecursive-closures"))
  (when (and unabbreviate-executably? unabbreviate-recursive-closures?)
@@ -291,6 +292,7 @@
        (cond (order-limit? order-limit)
 	     (no-order-limit? #f)
 	     (else all-limits)))
+ (set! *widen-lists?* widen-lists?)
  (set! *almost-union-free?*
        (and (not *real-width-limit*)
 	    (not *closure-width-limit*)
