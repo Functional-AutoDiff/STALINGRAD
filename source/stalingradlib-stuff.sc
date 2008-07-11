@@ -178,7 +178,7 @@
 (define-structure alpha-binding variable1 variable2)
 
 (define-structure primitive-procedure
- name procedure generator forward reverse meter)
+ name concrete abstract symbolic generator forward reverse meter)
 
 (define-structure nonrecursive-closure
  values
@@ -318,6 +318,82 @@
 (define-structure function-instance v1 v2)
 
 (define-structure widener-instance v1 v2)
+
+(define-structure panic-unit x)
+
+(define-structure dispatch-unit x y z)
+
+(define-structure car-unit x)
+
+(define-structure cdr-unit x)
+
+(define-structure +-unit x y)
+
+(define-structure --unit x y)
+
+(define-structure *-unit x y)
+
+(define-structure /-unit x y)
+
+(define-structure sqrt-unit x)
+
+(define-structure exp-unit x)
+
+(define-structure log-unit x)
+
+(define-structure sin-unit x)
+
+(define-structure cos-unit x)
+
+(define-structure atan-unit x y)
+
+(define-structure =-unit x y)
+
+(define-structure <-unit x y)
+
+(define-structure >-unit x y)
+
+(define-structure <=-unit x y)
+
+(define-structure >=-unit x y)
+
+(define-structure zero?-unit x)
+
+(define-structure positive?-unit x)
+
+(define-structure negative?-unit x)
+
+(define-structure null?-unit x)
+
+(define-structure boolean?-unit x)
+
+(define-structure real?-unit x)
+
+(define-structure pair?-unit x)
+
+(define-structure procedure?-unit x)
+
+(define-structure perturbation?-unit x)
+
+(define-structure forward?-unit x)
+
+(define-structure sensitivity?-unit x)
+
+(define-structure reverse?-unit x)
+
+(define-structure if-unit x y z)
+
+(define-structure read-real-unit x)
+
+(define-structure real-unit x)
+
+(define-structure write-real-unit x)
+
+(define-structure write-unit x)
+
+(define-structure bundle-unit x y)
+
+(define-structure plus-unit x y)
 
 ;;; Variables
 
@@ -8087,41 +8163,47 @@
 	    (list-ref vs (positionp variable=? x (free-variables e))))))
       (free-variables (lambda-expression-body (application-callee e)))))
 
-(define (construct-concrete-environment v1 v2)
+(define (construct-environment u1 alist)
+ ;; We don't need to enforce the constraint that the abstract values in the
+ ;; result environment not violate the syntactic constraints since the result
+ ;; environment is only passed to abstract-eval1, abstract-eval-prime!,
+ ;; all-instances1-instances2, generate-letrec-bindings, and
+ ;; generate-expression and the constraint is enforced there.
+ (assert (not (union? u1)))
  (cond
-  ((nonrecursive-closure? v1)
-   (let ((alist (concrete-destructure (nonrecursive-closure-parameter v1) v2)))
-    (map
-     (lambda (x)
-      (let ((result (assp variable=? x alist)))
-       (if result
-	   (cdr result)
-	   (list-ref
-	    (get-nonrecursive-closure-values v1)
-	    (positionp variable=? x (nonrecursive-closure-variables v1))))))
-     (free-variables
-      (lambda-expression-body (nonrecursive-closure-lambda-expression v1))))))
-  ((recursive-closure? v1)
-   (let ((alist (concrete-destructure (recursive-closure-parameter v1) v2)))
-    (map (lambda (x)
-	  (let ((result (assp variable=? x alist)))
-	   (cond
-	    (result (cdr result))
-	    ((some-vector (lambda (x1) (variable=? x x1))
-			  (recursive-closure-procedure-variables v1))
-	     (new-recursive-closure
-	      (get-recursive-closure-values v1)
-	      (recursive-closure-procedure-variables v1)
-	      (recursive-closure-lambda-expressions v1)
-	      (positionp-vector
-	       variable=? x (recursive-closure-procedure-variables v1))))
-	    (else
-	     (list-ref
-	      (get-recursive-closure-values v1)
-	      (positionp variable=? x (recursive-closure-variables v1)))))))
-	 (free-variables (lambda-expression-body
-			  (vector-ref (recursive-closure-lambda-expressions v1)
-				      (recursive-closure-index v1)))))))
+  ((nonrecursive-closure? u1)
+   (map
+    (lambda (x)
+     (let ((result (assp variable=? x alist)))
+      (if result
+	  (cdr result)
+	  (list-ref
+	   (get-nonrecursive-closure-values u1)
+	   (positionp variable=? x (nonrecursive-closure-variables u1))))))
+    (free-variables
+     (lambda-expression-body (nonrecursive-closure-lambda-expression u1)))))
+  ((recursive-closure? u1)
+   (map (lambda (x)
+	 (let ((result (assp variable=? x alist)))
+	  (cond
+	   (result (cdr result))
+	   ((some-vector (lambda (x1) (variable=? x x1))
+			 (recursive-closure-procedure-variables u1))
+	    ;; This may create an abstract value that violates the syntactic
+	    ;; constraints.
+	    (new-recursive-closure
+	     (get-recursive-closure-values u1)
+	     (recursive-closure-procedure-variables u1)
+	     (recursive-closure-lambda-expressions u1)
+	     (positionp-vector
+	      variable=? x (recursive-closure-procedure-variables u1))))
+	   (else
+	    (list-ref
+	     (get-recursive-closure-values u1)
+	     (positionp variable=? x (recursive-closure-variables u1)))))))
+	(free-variables (lambda-expression-body
+			 (vector-ref (recursive-closure-lambda-expressions u1)
+				     (recursive-closure-index u1))))))
   (else (internal-error))))
 
 ;;; needs work: This evaluator is not tail recursive.
@@ -8149,10 +8231,12 @@
    v1 (+ (primitive-procedure-meter v1) 1)))
  (let ((result
 	(cond
-	 ((primitive-procedure? v1) ((primitive-procedure-procedure v1) v2))
+	 ((primitive-procedure? v1) ((primitive-procedure-concrete v1) v2))
 	 ((closure? v1)
 	  (concrete-eval
-	   (closure-body v1) (construct-concrete-environment v1 v2)))
+	   (closure-body v1)
+	   (construct-environment
+	    v1 (concrete-destructure (closure-parameter v1) v2))))
 	 (else (internal-error)))))
   (set! *stack* (rest *stack*))
   (when (cond ((primitive-procedure? v1) *trace-primitive-procedures?*)
@@ -9265,11 +9349,13 @@
 (define (abstract-destructure p v)
  ;; The assumption is that v doesn't violate the syntactic constraints.
  (cond
+  ((variable-access-expression? p)
+   (list (list (cons (variable-access-expression-variable p) v))))
+  ((union? v)
+   (map-reduce
+    append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
   ((constant-expression? p)
    (cond
-    ((union? v)
-     (map-reduce
-      append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
     ((abstract-value=?
       ;; This can widen when the constant expression value violates the
       ;; syntactic constraints (presumably tagged pair depth limit). This would
@@ -9295,13 +9381,8 @@
 		   (constant-expression-value p))
 	   v)
 	  '())))
-  ((variable-access-expression? p)
-   (list (list (cons (variable-access-expression-variable p) v))))
   ((lambda-expression? p)
    (cond
-    ((union? v)
-     (map-reduce
-      append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
     ((and (nonrecursive-closure? v)
 	  (dereferenced-expression-eqv?
 	   p (nonrecursive-closure-lambda-expression v)))
@@ -9320,9 +9401,6 @@
 		       (letrec-expression-body p))
 		      (letrec-expression-procedure-variables p))))
    (cond
-    ((union? v)
-     (map-reduce
-      append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
     ((and (recursive-closure? v)
 	  (= (recursive-closure-index v)
 	     (positionp variable=?
@@ -9348,9 +9426,6 @@
      '())))
   ((cons-expression? p)
    (cond
-    ((union? v)
-     (map-reduce
-      append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
     ((and (tagged-pair? v)
 	  (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
      (cross-product
@@ -9365,72 +9440,31 @@
      '())))
   (else (internal-error))))
 
-(define (construct-abstract-environment u1 alist)
- ;; We don't need to enforce the constraint that the abstract values in the
- ;; result environment not violate the syntactic constraints since the result
- ;; environment is only passed to abstract-eval1, abstract-eval-prime!,
- ;; all-instances1-instances2, generate-letrec-bindings, and
- ;; generate-expression and the constraint is enforced there.
- (assert (not (union? u1)))
- (cond
-  ((nonrecursive-closure? u1)
-   (map (lambda (x)
-	 (let ((result (assp variable=? x alist)))
-	  (if result
-	      (cdr result)
-	      (list-ref
-	       (get-nonrecursive-closure-values u1)
-	       (positionp variable=? x (nonrecursive-closure-variables u1))))))
-	(free-variables (lambda-expression-body
-			 (nonrecursive-closure-lambda-expression u1)))))
-  ((recursive-closure? u1)
-   (map (lambda (x)
-	 (let ((result (assp variable=? x alist)))
-	  (cond
-	   (result (cdr result))
-	   ((some-vector (lambda (x1) (variable=? x x1))
-			 (recursive-closure-procedure-variables u1))
-	    ;; This may create an abstract value that violates the syntactic
-	    ;; constraints.
-	    (new-recursive-closure
-	     (get-recursive-closure-values u1)
-	     (recursive-closure-procedure-variables u1)
-	     (recursive-closure-lambda-expressions u1)
-	     (positionp-vector
-	      variable=? x (recursive-closure-procedure-variables u1))))
-	   (else
-	    (list-ref
-	     (get-recursive-closure-values u1)
-	     (positionp variable=? x (recursive-closure-variables u1)))))))
-	(free-variables (lambda-expression-body
-			 (vector-ref (recursive-closure-lambda-expressions u1)
-				     (recursive-closure-index u1))))))
-  (else (internal-error))))
-
-(define (construct-abstract-environments u1 v2)
- (assert (not (union? u1)))
- (map (lambda (alist) (construct-abstract-environment u1 alist))
-      (abstract-destructure (closure-parameter u1) v2)))
-
 (define (abstract-apply v1 v2)
  (if (empty-abstract-value? v2)
      v2
      (map-union
       (lambda (u1)
        (cond
-	((primitive-procedure? u1) ((primitive-procedure-procedure u1) v2))
+	((primitive-procedure? u1) ((primitive-procedure-abstract u1) v2))
 	((closure? u1)
 	 (cond
 	  ((every-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	   (unionize (map (lambda (vs) (abstract-eval1 (closure-body u1) vs))
-			  (construct-abstract-environments u1 v2))))
+	   (unionize
+	    (map (lambda (alist)
+		  (abstract-eval1
+		   (closure-body u1) (construct-environment u1 alist)))
+		 (abstract-destructure (closure-parameter u1) v2))))
 	  ((some-value-tags
 	    (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
 	   (compile-time-warning
 	    "Argument might have wrong type for target" u1 v2)
-	   (unionize (map (lambda (vs) (abstract-eval1 (closure-body u1) vs))
-			  (construct-abstract-environments u1 v2))))
+	   (unionize
+	    (map (lambda (alist)
+		  (abstract-eval1
+		   (closure-body u1) (construct-environment u1 alist)))
+		 (abstract-destructure (closure-parameter u1) v2))))
 	  (else (compile-time-warning
 		 "Argument might have wrong type for target" u1 v2))))
 	(else (compile-time-warning "Target might not be a procedure" u1))))
@@ -9668,14 +9702,14 @@
 
 (define (abstract-apply-closure! e u1 v2)
  (assert (not (union? u1)))
- (for-each (lambda (vs)
+ (for-each (lambda (alist)
 	    (let ((e1 (closure-body u1)))
 	     ;; See the note in abstract-eval-prime!
 	     (unless (memp expression-eqv? e (expression-parents e1))
 	      (set-expression-parents! e1 (cons e (expression-parents e1)))
 	      (enqueue! e))
-	     (abstract-eval-prime! e1 vs)))
-	   (construct-abstract-environments u1 v2)))
+	     (abstract-eval-prime! e1 (construct-environment u1 alist))))
+	   (abstract-destructure (closure-parameter u1) v2)))
 
 (define (abstract-apply-prime! e v1 v2)
  (unless (empty-abstract-value? v2)
@@ -9685,7 +9719,7 @@
 	   ;; needs work: Should put this into slots of the primitive
 	   ;;             procedures.
 	   (when (eq? (primitive-procedure-name u1) 'if-procedure)
-	    ((ternary-prime
+	    ((abstract-ternary-prime
 	      (lambda (v1 v2 v3)
 	       ;; When v3 and/or v2 is not a procedure the warning is issued by
 	       ;; abstract-apply. If it is a primitive procedure we don't have
@@ -10379,6 +10413,292 @@
    (loop (+ i 1))))
  (check-analysis!)
  (when *verbose* (verbosity)))
+
+;;; Symbolic Evaluator
+
+(define (unit? v)
+ (or (panic-unit? v)
+     (dispatch-unit? v)
+     (car-unit? v)
+     (cdr-unit? v)
+     (+-unit? v)
+     (--unit? v)
+     (*-unit? v)
+     (/-unit? v)
+     (sqrt-unit? v)
+     (exp-unit? v)
+     (log-unit? v)
+     (sin-unit? v)
+     (cos-unit? v)
+     (atan-unit? v)
+     (=-unit? v)
+     (<-unit? v)
+     (>-unit? v)
+     (<=-unit? v)
+     (>=-unit? v)
+     (zero?-unit? v)
+     (positive?-unit? v)
+     (negative?-unit? v)
+     (null?-unit? v)
+     (boolean?-unit? v)
+     (real?-unit? v)
+     (pair?-unit? v)
+     (procedure?-unit? v)
+     (perturbation?-unit? v)
+     (forward?-unit? v)
+     (sensitivity?-unit? v)
+     (reverse?-unit? v)
+     (if-unit? v)
+     (read-real-unit? v)
+     (real-unit? v)
+     (write-real-unit? v)
+     (write-unit? v)
+     (bundle-unit? v)
+     (plus-unit? v)))
+
+(define (unit-abstract-value v) (unimplemented))
+
+(define (symbolic-destructure p v)
+ ;; The assumption is that v doesn't violate the syntactic constraints.
+ (cond
+  ((variable-access-expression? p)
+   (list (list (cons (variable-access-expression-variable p) v))))
+  ((union? v)
+   (map-reduce
+    append '() (lambda (u) (symbolic-destructure p u)) (union-members v)))
+  ((constant-expression? p)
+   (cond
+    ((abstract-value=?
+      ;; This can widen when the constant expression value violates the
+      ;; syntactic constraints (presumably tagged pair depth limit). This would
+      ;; correspond to the call A to c:widen in generate-destructure.
+      (widen-abstract-value
+       (concrete-value->abstract-value (constant-expression-value p)))
+      v)
+     '(()))
+    ((abstract-value-nondisjoint?
+      ;; This can widen when the constant expression value violates the
+      ;; syntactic constraints (presumably tagged pair depth limit). This would
+      ;; correspond to the call A to c:widen in generate-destructure.
+      (widen-abstract-value
+       (concrete-value->abstract-value (constant-expression-value p)))
+      v)
+     (compile-time-warning
+      (format #f "Argument might not be an equivalent value for ~s"
+	      (constant-expression-value p))
+      v)
+     '(()))
+    (else (compile-time-warning
+	   (format #f "Argument might not be an equivalent value for ~s"
+		   (constant-expression-value p))
+	   v)
+	  '())))
+  ((lambda-expression? p)
+   (cond
+    ((and (nonrecursive-closure? v)
+	  (dereferenced-expression-eqv?
+	   p (nonrecursive-closure-lambda-expression v)))
+     (list
+      (map cons (parameter-variables p) (get-nonrecursive-closure-values v))))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching nonrecursive closure for ~s"
+	      (externalize-expression p))
+      v)
+     '())))
+  ((letrec-expression? p)
+   (assert (and (variable-access-expression? (letrec-expression-body p))
+		(memp variable=?
+		      (variable-access-expression-variable
+		       (letrec-expression-body p))
+		      (letrec-expression-procedure-variables p))))
+   (cond
+    ((and (recursive-closure? v)
+	  (= (recursive-closure-index v)
+	     (positionp variable=?
+			(variable-access-expression-variable
+			 (letrec-expression-body p))
+			(letrec-expression-procedure-variables p)))
+	  (= (vector-length
+	      (recursive-closure-procedure-variables v))
+	     (length (letrec-expression-procedure-variables p)))
+	  (= (vector-length
+	      (recursive-closure-lambda-expressions v))
+	     (length (letrec-expression-lambda-expressions p)))
+	  (every dereferenced-expression-eqv?
+		 (vector->list (recursive-closure-lambda-expressions v))
+		 (letrec-expression-lambda-expressions p)))
+     (list
+      (map cons (parameter-variables p) (get-recursive-closure-values v))))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching recursive closure for ~s"
+	      (externalize-expression p))
+      v)
+     '())))
+  ((cons-expression? p)
+   (cond
+    ((and (tagged-pair? v)
+	  (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
+     (cross-product
+      append
+      (symbolic-destructure (cons-expression-car p) (get-tagged-pair-car v))
+      (symbolic-destructure (cons-expression-cdr p) (get-tagged-pair-cdr v))))
+    (else
+     (compile-time-warning
+      (format #f "Argument might not be a matching tagged pair with tags ~s"
+	      (cons-expression-tags p))
+      v)
+     '())))
+  (else (internal-error))))
+
+(define (symbolic-apply-internal u1 v2)
+ (cond
+  ((primitive-procedure? u1) ((primitive-procedure-symbolic u1) v2))
+  ((closure? u1)
+   ;; here I am: should only pursue inlined closures
+   (cond ((every-value-tags
+	   (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
+	  (unionize (map (lambda (alist)
+			  (symbolic-eval (closure-body u1)
+					 (construct-environment u1 alist)))
+			 (symbolic-destructure (closure-parameter u1) v2))))
+	 ((some-value-tags
+	   (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
+	  (compile-time-warning
+	   "Argument might have wrong type for target" u1 v2)
+	  (unionize (map (lambda (alist)
+			  (symbolic-eval (closure-body u1)
+					 (construct-environment u1 alist)))
+			 (symbolic-destructure (closure-parameter u1) v2))))
+	 (else (compile-time-warning
+		"Argument might have wrong type for target" u1 v2)
+	       (make-panic-unit "Argument has wrong type for target"))))
+  (else (compile-time-warning "Target might not be a procedure" u1)
+	(make-panic-unit "Target is not a procedure"))))
+
+(define (symbolic-apply v1 v2)
+ (map-union
+  (lambda (u1)
+   (if (unit? u1)
+       (let ((v1-prime (unit-abstract-value u1)))
+	(if (union? v1-prime)
+	    (map-union (lambda (u1-prime)
+			(symbolic-apply-internal
+			 (make-dispatch-unit v1-prime u1-prime u1) v2))
+		       v1-prime)
+	    (symbolic-apply-internal v1-prime v2)))
+       (symbolic-apply-internal u1 v2)))
+  v1))
+
+(define (symbolic-eval e vs)
+ (cond
+  ((constant-expression? e) (constant-expression-value e))
+  ((variable-access-expression? e) (first vs))
+  ((lambda-expression? e) (new-nonrecursive-closure vs e))
+  ((application? e)
+   (if (lambda-expression? (application-callee e))
+       ;; This handling of LET is an optimization. See the note in
+       ;; concrete-eval.
+       (let* ((e1 (lambda-expression-body (application-callee e)))
+	      (p (lambda-expression-parameter (application-callee e)))
+	      (tags1 (lambda-expression-tags (application-callee e)))
+	      (v (symbolic-eval
+		  (application-argument e)
+		  (restrict-environment vs (application-argument-indices e)))))
+	(cond
+	 ((every-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
+	  (unionize
+	   (map (lambda (alist)
+		 (symbolic-eval e1 (construct-environment-for-let e vs alist)))
+		(symbolic-destructure p v))))
+	 ((some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
+	  (compile-time-warning "Value might have wrong type for let binder" v)
+	  (unionize
+	   (map (lambda (alist)
+		 (symbolic-eval e1 (construct-environment-for-let e vs alist)))
+		(symbolic-destructure p v))))
+	 (else (compile-time-warning
+		"Value might have wrong type for let binder" v)
+	       (make-panic-unit "Value has wrong type for let binder"))))
+       (symbolic-apply
+	(symbolic-eval
+	 (application-callee e)
+	 (restrict-environment vs (application-callee-indices e)))
+	(symbolic-eval
+	 (application-argument e)
+	 (restrict-environment vs (application-argument-indices e))))))
+  ((letrec-expression? e)
+   (symbolic-eval (letrec-expression-body e) (letrec-nested-environment vs e)))
+  ((cons-expression? e)
+   (let* ((v1 (symbolic-eval
+	       (cons-expression-car e)
+	       (restrict-environment vs (cons-expression-car-indices e))))
+	  (v2 (symbolic-eval
+	       (cons-expression-cdr e)
+	       (restrict-environment vs (cons-expression-cdr-indices e)))))
+    (cond
+     ((every-value-tags
+       (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1)) v1)
+      (cond
+       ((every-value-tags
+	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2)
+	(new-tagged-pair (cons-expression-tags e) v1 v2))
+       ((some-value-tags
+	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2)
+	(compile-time-warning
+	 (format #f
+		 "CDR argument might have wrong type for target with tags ~s"
+		 (cons-expression-tags e))
+	 v2)
+	(new-tagged-pair (cons-expression-tags e) v1 v2))
+       (else
+	(compile-time-warning
+	 (format #f
+		 "CDR argument might have wrong type for target with tags ~s"
+		 (cons-expression-tags e))
+	 v2)
+	(make-panic-unit
+	 (format #f "CDR argument has wrong type for target with tags ~s"
+		 (cons-expression-tags e))))))
+     ((some-value-tags
+       (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1)) v1)
+      (compile-time-warning
+       (format #f
+	       "CAR argument might have wrong type for target with tags ~s"
+	       (cons-expression-tags e))
+       v1)
+      (cond
+       ((every-value-tags
+	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2)
+	(new-tagged-pair (cons-expression-tags e) v1 v2))
+       ((some-value-tags
+	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2)
+	(compile-time-warning
+	 (format #f
+		 "CDR argument might have wrong type for target with tags ~s"
+		 (cons-expression-tags e))
+	 v2)
+	(new-tagged-pair (cons-expression-tags e) v1 v2))
+       (else
+	(compile-time-warning
+	 (format #f
+		 "CDR argument might have wrong type for target with tags ~s"
+		 (cons-expression-tags e))
+	 v2)
+	(make-panic-unit
+	 (format #f "CDR argument has wrong type for target with tags ~s"
+		 (cons-expression-tags e))))))
+     (else
+      (compile-time-warning
+       (format #f
+	       "CAR argument might have wrong type for target with tags ~s"
+	       (cons-expression-tags e))
+       v1)
+      (make-panic-unit
+       (format #f "CAR argument has wrong type for target with tags ~s"
+	       (cons-expression-tags e)))))))
+  (else (internal-error))))
 
 ;;; Code Generator
 
@@ -11364,14 +11684,16 @@
      (map-reduce
       union-widener-instances
       '()
-      (lambda (vs)
+      (lambda (alist)
        (all-subwidener-instances
-	(abstract-eval1 (closure-body (function-instance-v1 function-instance))
-			vs)
+	(abstract-eval1
+	 (closure-body (function-instance-v1 function-instance))
+	 (construct-environment
+	  (function-instance-v1 function-instance) alist))
 	(abstract-apply (function-instance-v1 function-instance)
 			(function-instance-v2 function-instance))))
-      (construct-abstract-environments
-       (function-instance-v1 function-instance)
+      (abstract-destructure
+       (closure-parameter (function-instance-v1 function-instance))
        (function-instance-v2 function-instance))))
     function-instances)
    (union-widener-instances
@@ -11605,9 +11927,11 @@
      (map-reduce
       union-if-and-function-instances
       '()
-      (lambda (vs)
+      (lambda (alist)
        (let loop ((e (closure-body (function-instance-v1 instance)))
-		  (vs (map widen-abstract-value vs)))
+		  (vs (map widen-abstract-value
+			   (construct-environment
+			    (function-instance-v1 instance) alist))))
 	(assert (= (length vs) (length (free-variables e))))
 	(cond
 	 ((application? e)
@@ -11682,8 +12006,9 @@
 	   (loop (cons-expression-cdr e)
 		 (restrict-environment vs (cons-expression-cdr-indices e)))))
 	 (else '()))))
-      (construct-abstract-environments (function-instance-v1 instance)
-				       (function-instance-v2 instance))))
+      (abstract-destructure
+       (closure-parameter (function-instance-v1 instance))
+       (function-instance-v2 instance))))
     (else (internal-error))))
   (lambda (instances)
    (let ((instance
@@ -13701,8 +14026,7 @@
        v2
        "x"
        (lambda (alist codes)
-	(let ((vs (map widen-abstract-value
-		       (construct-abstract-environment v1 alist))))
+	(let ((vs (map widen-abstract-value (construct-environment v1 alist))))
 	 (c:statement-expression
 	  codes
 	  (generate-letrec-bindings
@@ -14154,138 +14478,149 @@
 	      (unless (real? v) (run-time-error "Value read is not real" v))
 	      v))))
 
-(define (unary f s) (lambda (v) (if *abstract?* (map-union f v) (f v))))
+(define (concrete-unary f) (lambda (v) (f v)))
 
-(define (unary-ad f s) f)
+(define (concrete-unary-ad f) f)
 
-(define (unary-predicate f s)
+(define (concrete-unary-predicate f)
+ (lambda (v) (if (f v) (vlad-true) (vlad-false))))
+
+(define (concrete-unary-real f s)
  (lambda (v)
-  (if *abstract?*
-      (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)
-      (if (f v) (vlad-true) (vlad-false)))))
+  (unless (vlad-real? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (f v)))
 
-(define (unary-real f s)
+(define (concrete-unary-real-predicate f s)
  (lambda (v)
-  (cond (*abstract?*
-	 (map-union (lambda (u)
-		     (if (vlad-real? u)
-			 (if (real? u) (f u) (abstract-real))
-			 (compile-time-warning
-			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v))
-	(else (unless (vlad-real? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (f v)))))
+  (unless (vlad-real? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (if (f v) (vlad-true) (vlad-false))))
 
-(define (unary-real-predicate f s)
+(define (concrete-binary-ad f s)
  (lambda (v)
-  (cond (*abstract?*
-	 (map-union (lambda (u)
-		     (if (vlad-real? u)
-			 (if (real? u)
-			     (if (f u) (vlad-true) (vlad-false))
-			     (abstract-boolean))
-			 (compile-time-warning
-			  (format #f "Argument to ~a might be invalid" s) u)))
-		    v))
-	(else (unless (vlad-real? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (if (f v) (vlad-true) (vlad-false))))))
+  (unless (vlad-pair? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (f (vlad-car v) (vlad-cdr v))))
 
-(define (binary-ad f s)
+(define (concrete-binary-real f s)
  (lambda (v)
-  (cond (*abstract?*
-	 (map-union
-	  (lambda (u)
-	   (if (vlad-pair? u)
-	       (f (vlad-car u) (vlad-cdr u))
-	       (compile-time-warning
-		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
-	(else (unless (vlad-pair? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (f (vlad-car v) (vlad-cdr v))))))
+  (unless (vlad-pair? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+   (unless (and (vlad-real? v1) (vlad-real? v2))
+    (run-time-error (format #f "Argument to ~a is invalid" s) v))
+   (f v1 v2))))
 
-(define (binary-real f s)
+(define (concrete-binary-real-predicate f s)
  (lambda (v)
-  (cond (*abstract?*
-	 (map-union
-	  (lambda (u)
-	   (if (vlad-pair? u)
-	       (cross-union
-		(lambda (u1 u2)
-		 (if (and (vlad-real? u1) (vlad-real? u2))
-		     ;; needs work: This may be imprecise for *, /, and atan.
-		     (if (and (real? u1) (real? u2)) (f u1 u2) (abstract-real))
-		     (compile-time-warning
-		      (format #f "Argument to ~a might be invalid" s) u)))
-		(vlad-car u)
-		(vlad-cdr u))
-	       (compile-time-warning
-		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
-	(else (unless (vlad-pair? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	       (unless (and (vlad-real? v1) (vlad-real? v2))
-		(run-time-error (format #f "Argument to ~a is invalid" s) v))
-	       (f v1 v2))))))
+  (unless (vlad-pair? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+   (unless (and (vlad-real? v1) (vlad-real? v2))
+    (run-time-error (format #f "Argument to ~a is invalid" s) v))
+   (if (f v1 v2) (vlad-true) (vlad-false)))))
 
-(define (binary-real-predicate f s)
+(define (concrete-ternary f s)
  (lambda (v)
-  (cond (*abstract?*
-	 (map-union
-	  (lambda (u)
-	   (if (vlad-pair? u)
-	       (cross-union
-		(lambda (u1 u2)
-		 (if (and (vlad-real? u1) (vlad-real? u2))
-		     (if (and (real? u1) (real? u2))
-			 (if (f u1 u2) (vlad-true) (vlad-false))
-			 (abstract-boolean))
-		     (compile-time-warning
-		      (format #f "Argument to ~a might be invalid" s) u)))
-		(vlad-car u)
-		(vlad-cdr u))
-	       (compile-time-warning
-		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
-	(else (unless (vlad-pair? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	       (unless (and (vlad-real? v1) (vlad-real? v2))
-		(run-time-error (format #f "Argument to ~a is invalid" s) v))
-	       (if (f v1 v2) (vlad-true) (vlad-false)))))))
+  (unless (vlad-pair? v)
+   (run-time-error (format #f "Argument to ~a is invalid" s) v))
+  (let ((v23 (vlad-cdr v)))
+   (unless (vlad-pair? v23)
+    (run-time-error (format #f "Argument to ~a is invalid" s) v))
+   (f (vlad-car v) (vlad-car v23) (vlad-cdr v23)))))
 
-(define (ternary f s)
- (lambda (v)
-  (cond (*abstract?*
-	 (map-union
-	  (lambda (u)
-	   (if (vlad-pair? u)
-	       (cross-union
-		(lambda (u1 u23)
-		 (if (vlad-pair? u23)
-		     (cross-union (lambda (u2 u3) (f u1 u2 u3))
-				  (vlad-car u23)
-				  (vlad-cdr u23))
-		     (compile-time-warning
-		      (format #f "Argument to ~a might be invalid" s) u)))
-		(vlad-car u)
-		(vlad-cdr u))
-	       (compile-time-warning
-		(format #f "Argument to ~a might be invalid" s) u)))
-	  v))
-	(else (unless (vlad-pair? v)
-	       (run-time-error (format #f "Argument to ~a is invalid" s) v))
-	      (let ((v23 (vlad-cdr v)))
-	       (unless (vlad-pair? v23)
-		(run-time-error (format #f "Argument to ~a is invalid" s) v))
-	       (f (vlad-car v) (vlad-car v23) (vlad-cdr v23)))))))
+(define (abstract-unary f) (lambda (v) (map-union f v)))
 
-(define (ternary-prime f s)
+(define (abstract-unary-ad f) f)
+
+(define (abstract-unary-predicate f)
+ (lambda (v) (map-union (lambda (u) (if (f u) (vlad-true) (vlad-false))) v)))
+
+(define (abstract-unary-real f s)
  (lambda (v)
-  (assert *abstract?*)
+  (map-union (lambda (u)
+	      (if (vlad-real? u)
+		  (if (real? u) (f u) (abstract-real))
+		  (compile-time-warning
+		   (format #f "Argument to ~a might be invalid" s) u)))
+	     v)))
+
+(define (abstract-unary-real-predicate f s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (vlad-real? u)
+	(if (real? u) (if (f u) (vlad-true) (vlad-false)) (abstract-boolean))
+	(compile-time-warning
+	 (format #f "Argument to ~a might be invalid" s) u)))
+   v)))
+
+(define (abstract-binary-ad f s)
+ (lambda (v)
+  (map-union (lambda (u)
+	      (if (vlad-pair? u)
+		  (f (vlad-car u) (vlad-cdr u))
+		  (compile-time-warning
+		   (format #f "Argument to ~a might be invalid" s) u)))
+	     v)))
+
+(define (abstract-binary-real f s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (vlad-pair? u)
+	(cross-union
+	 (lambda (u1 u2)
+	  (if (and (vlad-real? u1) (vlad-real? u2))
+	      ;; needs work: This may be imprecise for *, /, and atan.
+	      (if (and (real? u1) (real? u2)) (f u1 u2) (abstract-real))
+	      (compile-time-warning
+	       (format #f "Argument to ~a might be invalid" s) u)))
+	 (vlad-car u)
+	 (vlad-cdr u))
+	(compile-time-warning
+	 (format #f "Argument to ~a might be invalid" s) u)))
+   v)))
+
+(define (abstract-binary-real-predicate f s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (vlad-pair? u)
+	(cross-union (lambda (u1 u2)
+		      (if (and (vlad-real? u1) (vlad-real? u2))
+			  (if (and (real? u1) (real? u2))
+			      (if (f u1 u2) (vlad-true) (vlad-false))
+			      (abstract-boolean))
+			  (compile-time-warning
+			   (format #f "Argument to ~a might be invalid" s) u)))
+		     (vlad-car u)
+		     (vlad-cdr u))
+	(compile-time-warning
+	 (format #f "Argument to ~a might be invalid" s) u)))
+   v)))
+
+(define (abstract-ternary f s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (vlad-pair? u)
+	(cross-union (lambda (u1 u23)
+		      (if (vlad-pair? u23)
+			  (cross-union (lambda (u2 u3) (f u1 u2 u3))
+				       (vlad-car u23)
+				       (vlad-cdr u23))
+			  (compile-time-warning
+			   (format #f "Argument to ~a might be invalid" s) u)))
+		     (vlad-car u)
+		     (vlad-cdr u))
+	(compile-time-warning
+	 (format #f "Argument to ~a might be invalid" s) u)))
+   v)))
+
+(define (abstract-ternary-prime f s)
+ (lambda (v)
   (for-each
    (lambda (u)
     (if (vlad-pair? u)
@@ -14306,12 +14641,349 @@
 	 (format #f "Argument to ~a might be invalid" s) u)))
    (union-members v))))
 
-(define (define-primitive-procedure x procedure generator forward reverse)
+(define (symbolic-unary f g)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union (lambda (u-prime)
+			 (g (make-dispatch-unit v-prime u-prime u)))
+			v-prime)
+	     (g u)))
+	(f u)))
+   v)))
+
+(define (symbolic-unary-ad f) f)
+
+(define (symbolic-unary-predicate f g)
+ (lambda (v)
+  (map-union (lambda (u)
+	      (if (unit? u)
+		  (let ((v-prime (unit-abstract-value u)))
+		   (if (union? v-prime)
+		       (map-union (lambda (u-prime)
+				   (g (make-dispatch-unit v-prime u-prime u)))
+				  v-prime)
+		       (g u)))
+		  (if (f u) (vlad-true) (vlad-false))))
+	     v)))
+
+(define (symbolic-unary-real-internal u v-prime f g s)
+ (if (vlad-real? v-prime)
+     (if (real? v-prime) (f v-prime) (g u))
+     (make-panic-unit (format #f "Argument to ~a is invalid" s))))
+
+(define (symbolic-unary-real f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union
+	      (lambda (u-prime)
+	       (symbolic-unary-real-internal
+		(make-dispatch-unit v-prime u-prime u) u-prime f g s))
+	      v-prime)
+	     (symbolic-unary-real-internal u v-prime f g s)))
+	(if (vlad-real? u)
+	    (if (real? u) (f u) (abstract-real))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (symbolic-unary-real-predicate-internal u v-prime f g s)
+ (if (vlad-real? v-prime)
+     (if (real? v-prime) (if (f v-prime) (vlad-true) (vlad-false)) (g u))
+     (make-panic-unit (format #f "Argument to ~a is invalid" s))))
+
+(define (symbolic-unary-real-predicate f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union
+	      (lambda (u-prime)
+	       (symbolic-unary-real-predicate-internal
+		(make-dispatch-unit v-prime u-prime u) u-prime f g s))
+	      v-prime)
+	     (symbolic-unary-real-predicate-internal u v-prime f g s)))
+	(if (vlad-real? u)
+	    (if (real? u)
+		(if (f u) (vlad-true) (vlad-false))
+		(abstract-boolean))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (symbolic-binary-ad-internal u v-prime g s)
+ (if (vlad-pair? v-prime)
+     (g (make-car-unit u) (make-cdr-unit u))
+     (make-panic-unit (format #f "Argument to ~a is invalid" s))))
+
+(define (symbolic-binary-ad f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union
+	      (lambda (u-prime)
+	       (symbolic-binary-ad-internal
+		(make-dispatch-unit v-prime u-prime u) u-prime g s))
+	      v-prime)
+	     (symbolic-binary-ad-internal u v-prime g s)))
+	(if (vlad-pair? u)
+	    (if (or (unit? (vlad-car u)) (unit? (vlad-cdr u)))
+		(g (vlad-car u) (vlad-cdr u))
+		(f (vlad-car u) (vlad-cdr u)))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (symbolic-binary-real-internal u1 u2 u1-prime u2-prime f g s)
+ (if (and (vlad-real? u1-prime) (vlad-real? u2-prime))
+     ;; needs work: This may be imprecise for *, /, and atan.
+     (if (and (real? u1-prime) (real? u2-prime))
+	 (f u1-prime u2-prime)
+	 (g u1 u2))
+     (make-panic-unit (format #f "Argument to ~a is invalid" s))))
+
+(define (symbolic-binary-real-internal2 u1 u2 v1-prime v2-prime f g s)
+ (if (union? v1-prime)
+     (if (union? v2-prime)
+	 (cross-union (lambda (u1-prime u2-prime)
+		       (symbolic-binary-real-internal
+			(make-dispatch-unit v1-prime u1-prime u1)
+			(make-dispatch-unit v2-prime u2-prime u2)
+			u1-prime u2-prime f g s))
+		      v1-prime
+		      v2-prime)
+	 (map-union (lambda (u1-prime)
+		     (symbolic-binary-real-internal
+		      (make-dispatch-unit v1-prime u1-prime u1) u2
+		      u1-prime v2-prime f g s))
+		    v1-prime))
+     (if (union? v2-prime)
+	 (map-union (lambda (u2-prime)
+		     (symbolic-binary-real-internal
+		      u1 (make-dispatch-unit v2-prime u2-prime u2)
+		      v1-prime u2-prime f g s))
+		    v2-prime)
+	 (symbolic-binary-real-internal u1 u2 v1-prime v2-prime f g s))))
+
+(define (symbolic-binary-real f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union (lambda (u-prime)
+			 (if (vlad-pair? u-prime)
+			     (let ((u-prime-prime
+				    (make-dispatch-unit v-prime u-prime u)))
+			      (symbolic-binary-real-internal2
+			       (make-car-unit u-prime-prime)
+			       (make-cdr-unit u-prime-prime)
+			       (vlad-car v-prime) (vlad-cdr v-prime)
+			       f g s))
+			     (make-panic-unit
+			      (format #f "Argument to ~a is invalid" s))))
+			v-prime)
+	     (if (vlad-pair? v-prime)
+		 (symbolic-binary-real-internal2
+		  (make-car-unit u) (make-cdr-unit u)
+		  (vlad-car v-prime) (vlad-cdr v-prime)
+		  f g s)
+		 (make-panic-unit
+		  (format #f "Argument to ~a is invalid" s)))))
+	(if (vlad-pair? u)
+	    (cross-union
+	     (lambda (u1 u2)
+	      (if (unit? u1)
+		  (let ((v1-prime (unit-abstract-value u1)))
+		   (if (unit? u2)
+		       (let ((v2-prime (unit-abstract-value u2)))
+			(symbolic-binary-real-internal2
+			 u1 u2 v1-prime v2-prime f g s))
+		       (if (union? v1-prime)
+			   (map-union
+			    (lambda (u1-prime)
+			     (symbolic-binary-real-internal
+			      (make-dispatch-unit v1-prime u1-prime u1) u2
+			      u1-prime u2 f g s))
+			    v1-prime)
+			   (symbolic-binary-real-internal
+			    u1 u2 v1-prime u2 f g s))))
+		  (if (unit? u2)
+		      (let ((v2-prime (unit-abstract-value u2)))
+		       (if (union? v2-prime)
+			   (map-union
+			    (lambda (u2-prime)
+			     (symbolic-binary-real-internal
+			      u1 (make-dispatch-unit v2-prime u2-prime u2)
+			      u1 u2-prime f g s))
+			    v2-prime)
+			   (symbolic-binary-real-internal
+			    u1 u2 u1 v2-prime f g s)))
+		      (if (and (vlad-real? u1) (vlad-real? u2))
+			  ;; needs work: This may be imprecise for *, /, and
+			  ;;             atan.
+			  (if (and (real? u1) (real? u2))
+			      (f u1 u2)
+			      (abstract-real))
+			  (compile-time-warning
+			   (format #f "Argument to ~a might be invalid" s)
+			   u)))))
+	     (vlad-car u)
+	     (vlad-cdr u))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (symbolic-binary-real-predicate-internal u1 u2 u1-prime u2-prime f g s)
+ (if (and (vlad-real? u1-prime) (vlad-real? u2-prime))
+     (if (and (real? u1-prime) (real? u2-prime))
+	 (if (f u1-prime u2-prime) (vlad-true) (vlad-false))
+	 (g u1 u2))
+     (make-panic-unit (format #f "Argument to ~a is invalid" s))))
+
+(define (symbolic-binary-real-predicate-internal2
+	 u1 u2 v1-prime v2-prime f g s)
+ (if (union? v1-prime)
+     (if (union? v2-prime)
+	 (cross-union (lambda (u1-prime u2-prime)
+		       (symbolic-binary-real-internal
+			(make-dispatch-unit v1-prime u1-prime u1)
+			(make-dispatch-unit v2-prime u2-prime u2)
+			u1-prime u2-prime f g s))
+		      v1-prime
+		      v2-prime)
+	 (map-union (lambda (u1-prime)
+		     (symbolic-binary-real-internal
+		      (make-dispatch-unit v1-prime u1-prime u1) u2
+		      u1-prime v2-prime f g s))
+		    v1-prime))
+     (if (union? v2-prime)
+	 (map-union (lambda (u2-prime)
+		     (symbolic-binary-real-internal
+		      u1 (make-dispatch-unit v2-prime u2-prime u2)
+		      v1-prime u2-prime f g s))
+		    v2-prime)
+	 (symbolic-binary-real-internal u1 u2 v1-prime v2-prime f g s))))
+
+(define (symbolic-binary-real-predicate f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(let ((v-prime (unit-abstract-value u)))
+	 (if (union? v-prime)
+	     (map-union (lambda (u-prime)
+			 (if (vlad-pair? u-prime)
+			     (let ((u-prime-prime
+				    (make-dispatch-unit v-prime u-prime u)))
+			      (symbolic-binary-real-internal2
+			       (make-car-unit u-prime-prime)
+			       (make-cdr-unit u-prime-prime)
+			       (vlad-car v-prime) (vlad-cdr v-prime)
+			       f g s))
+			     (make-panic-unit
+			      (format #f "Argument to ~a is invalid" s))))
+			v-prime)
+	     (if (vlad-pair? v-prime)
+		 (symbolic-binary-real-internal2
+		  (make-car-unit u) (make-cdr-unit u)
+		  (vlad-car v-prime) (vlad-cdr v-prime)
+		  f g s)
+		 (make-panic-unit
+		  (format #f "Argument to ~a is invalid" s)))))
+	(if (vlad-pair? u)
+	    (cross-union
+	     (lambda (u1 u2)
+	      (if (unit? u1)
+		  (let ((v1-prime (unit-abstract-value u1)))
+		   (if (unit? u2)
+		       (let ((v2-prime (unit-abstract-value u2)))
+			(symbolic-binary-real-internal2
+			 u1 u2 v1-prime v2-prime f g s))
+		       (if (union? v1-prime)
+			   (map-union
+			    (lambda (u1-prime)
+			     (symbolic-binary-real-internal
+			      (make-dispatch-unit v1-prime u1-prime u1) u2
+			      u1-prime u2 f g s))
+			    v1-prime)
+			   (symbolic-binary-real-internal
+			    u1 u2 v1-prime u2 f g s))))
+		  (if (unit? u2)
+		      (let ((v2-prime (unit-abstract-value u2)))
+		       (if (union? v2-prime)
+			   (map-union
+			    (lambda (u2-prime)
+			     (symbolic-binary-real-internal
+			      u1 (make-dispatch-unit v2-prime u2-prime u2)
+			      u1 u2-prime f g s))
+			    v2-prime)
+			   (symbolic-binary-real-internal
+			    u1 u2 u1 v2-prime f g s)))
+		      (if (and (vlad-real? u1) (vlad-real? u2))
+			  ;; needs work: This may be imprecise for *, /, and
+			  ;;             atan.
+			  (if (and (real? u1) (real? u2))
+			      (if (f u1 u2) (vlad-true) (vlad-false))
+			      (abstract-boolean))
+			  (compile-time-warning
+			   (format #f "Argument to ~a might be invalid" s)
+			   u)))))
+	     (vlad-car u)
+	     (vlad-cdr u))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (symbolic-ternary f g s)
+ (lambda (v)
+  (map-union
+   (lambda (u)
+    (if (unit? u)
+	(g (make-car-unit u)
+	   (make-car-unit (make-cdr-unit u))
+	   (make-cdr-unit (make-cdr-unit u)))
+	(if (vlad-pair? u)
+	    (cross-union
+	     (lambda (u1 u23)
+	      (if (unit? u23)
+		  (g u1 (make-car-unit u23) (make-cdr-unit u23))
+		  (if (vlad-pair? u23)
+		      (cross-union (lambda (u2 u3)
+				    (if (or (unit? u1) (unit? u2) (unit? u3))
+					(g u1 u2 u3)
+					(f u1 u2 u3)))
+				   (vlad-car u23)
+				   (vlad-cdr u23))
+		      (compile-time-warning
+		       (format #f "Argument to ~a might be invalid" s) u))))
+	     (vlad-car u)
+	     (vlad-cdr u))
+	    (compile-time-warning
+	     (format #f "Argument to ~a might be invalid" s) u))))
+   v)))
+
+(define (define-primitive-procedure
+	 x concrete abstract symbolic generator forward reverse)
  (set! *value-bindings*
        (cons
 	(make-value-binding
 	 (new-variable x)
-	 (make-primitive-procedure x procedure generator forward reverse 0))
+	 (make-primitive-procedure
+	  x concrete abstract symbolic generator forward reverse 0))
 	*value-bindings*)))
 
 (define (constant-unconvert e)
@@ -14377,7 +15049,9 @@
   (set-union-intern-cache! *empty-abstract-value* *empty-abstract-value*))
  (set! *abstract-boolean* (new-union (list (vlad-true) (vlad-false))))
  (define-primitive-procedure '+
-  (binary-real + "+")
+  (concrete-binary-real + "+")
+  (abstract-binary-real + "+")
+  (symbolic-binary-real + make-+-unit "+")
   (lambda (v) (c:builtin-name "add" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14392,7 +15066,9 @@
 			     (cons (unsensitize (sensitivity y))
 				   (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure '-
-  (binary-real - "-")
+  (concrete-binary-real - "-")
+  (abstract-binary-real - "-")
+  (symbolic-binary-real - make---unit "-")
   (lambda (v) (c:builtin-name "minus" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14417,7 +15093,9 @@
 		       (cons (unsensitize (sensitivity y))
 			     (- 0 (unsensitize (sensitivity y))))))))))))
  (define-primitive-procedure '*
-  (binary-real * "*")
+  (concrete-binary-real * "*")
+  (abstract-binary-real * "*")
+  (symbolic-binary-real * make-*-unit "*")
   (lambda (v) (c:builtin-name "times" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14434,7 +15112,9 @@
 		   (cons (* x2 (unsensitize (sensitivity y)))
 			 (* x1 (unsensitize (sensitivity y)))))))))))
  (define-primitive-procedure '/
-  (binary-real divide "/")
+  (concrete-binary-real divide "/")
+  (abstract-binary-real divide "/")
+  (symbolic-binary-real divide make-/-unit "/")
   (lambda (v) (c:builtin-name "divide" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14465,7 +15145,9 @@
 				(/ (* x1 (unsensitize (sensitivity y)))
 				   (* x2 x2))))))))))))
  (define-primitive-procedure 'sqrt
-  (unary-real sqrt "sqrt")
+  (concrete-unary-real sqrt "sqrt")
+  (abstract-unary-real sqrt "sqrt")
+  (symbolic-unary-real sqrt make-sqrt-unit "sqrt")
   (lambda (v) "sqrt")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14481,7 +15163,9 @@
 	(cons sqrt
 	      (/ (unsensitize (sensitivity y)) (+ (sqrt x) (sqrt x))))))))))
  (define-primitive-procedure 'exp
-  (unary-real exp "exp")
+  (concrete-unary-real exp "exp")
+  (abstract-unary-real exp "exp")
+  (symbolic-unary-real exp make-exp-unit "exp")
   (lambda (v) "exp")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14493,7 +15177,9 @@
       (lambda ((sensitivity y))
        (sensitize (cons exp (* (exp x) (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'log
-  (unary-real log "log")
+  (concrete-unary-real log "log")
+  (abstract-unary-real log "log")
+  (symbolic-unary-real log make-log-unit "log")
   (lambda (v) "log")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14504,7 +15190,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons log (/ (unsensitize (sensitivity y)) x))))))))
  (define-primitive-procedure 'sin
-  (unary-real sin "sin")
+  (concrete-unary-real sin "sin")
+  (abstract-unary-real sin "sin")
+  (symbolic-unary-real sin make-sin-unit "sin")
   (lambda (v) "sin")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14516,7 +15204,9 @@
       (lambda ((sensitivity y))
        (sensitize (cons sin (* (cos x) (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'cos
-  (unary-real cos "cos")
+  (concrete-unary-real cos "cos")
+  (abstract-unary-real cos "cos")
+  (symbolic-unary-real cos make-cos-unit "cos")
   (lambda (v) "cos")
   (if *imprecise-inexacts?*
       '(lambda ((forward x))
@@ -14545,7 +15235,9 @@
 	   (sensitize
 	    (cons cos (- 0 (* (sin x) (unsensitize (sensitivity y))))))))))))
  (define-primitive-procedure 'atan
-  (binary-real atan "atan")
+  (concrete-binary-real atan "atan")
+  (abstract-binary-real atan "atan")
+  (symbolic-binary-real atan make-atan-unit "atan")
   (lambda (v) (c:builtin-name "atantwo" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14578,7 +15270,9 @@
 			     (/ (* x1 (unsensitize (sensitivity y)))
 				(+ (* x1 x1) (* x2 x2))))))))))))
  (define-primitive-procedure '=
-  (binary-real-predicate = "=")
+  (concrete-binary-real-predicate = "=")
+  (abstract-binary-real-predicate = "=")
+  (symbolic-binary-real-predicate = make-=-unit "=")
   (lambda (v) (c:builtin-name "eq" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14590,7 +15284,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons = (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '<
-  (binary-real-predicate < "<")
+  (concrete-binary-real-predicate < "<")
+  (abstract-binary-real-predicate < "<")
+  (symbolic-binary-real-predicate < make-<-unit "<")
   (lambda (v) (c:builtin-name "lt" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14602,7 +15298,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons < (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '>
-  (binary-real-predicate > ">")
+  (concrete-binary-real-predicate > ">")
+  (abstract-binary-real-predicate > ">")
+  (symbolic-binary-real-predicate > make->-unit ">")
   (lambda (v) (c:builtin-name "gt" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14614,7 +15312,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons > (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '<=
-  (binary-real-predicate <= "<=")
+  (concrete-binary-real-predicate <= "<=")
+  (abstract-binary-real-predicate <= "<=")
+  (symbolic-binary-real-predicate <= make-<=-unit "<=")
   (lambda (v) (c:builtin-name "le" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14626,7 +15326,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons <= (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure '>=
-  (binary-real-predicate >= ">=")
+  (concrete-binary-real-predicate >= ">=")
+  (abstract-binary-real-predicate >= ">=")
+  (symbolic-binary-real-predicate >= make->=-unit ">=")
   (lambda (v) (c:builtin-name "ge" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -14638,7 +15340,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons >= (cons (zero x1) (zero x2)))))))))
  (define-primitive-procedure 'zero?
-  (unary-real-predicate zero? "zero?")
+  (concrete-unary-real-predicate zero? "zero?")
+  (abstract-unary-real-predicate zero? "zero?")
+  (symbolic-unary-real-predicate zero? make-zero?-unit "zero?")
   (lambda (v) (c:builtin-name "iszero" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14649,7 +15353,9 @@
      (cons (*j (zero? x))
 	   (lambda ((sensitivity y)) (sensitize (cons zero? (zero x))))))))
  (define-primitive-procedure 'positive?
-  (unary-real-predicate positive? "positive?")
+  (concrete-unary-real-predicate positive? "positive?")
+  (abstract-unary-real-predicate positive? "positive?")
+  (symbolic-unary-real-predicate positive? make-positive?-unit "positive?")
   (lambda (v) (c:builtin-name "positive" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14660,7 +15366,9 @@
      (cons (*j (positive? x))
 	   (lambda ((sensitivity y)) (sensitize (cons positive? (zero x))))))))
  (define-primitive-procedure 'negative?
-  (unary-real-predicate negative? "negative?")
+  (concrete-unary-real-predicate negative? "negative?")
+  (abstract-unary-real-predicate negative? "negative?")
+  (symbolic-unary-real-predicate negative? make-negative?-unit "negative?")
   (lambda (v) (c:builtin-name "negative" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14671,7 +15379,9 @@
      (cons (*j (negative? x))
 	   (lambda ((sensitivity y)) (sensitize (cons negative? (zero x))))))))
  (define-primitive-procedure 'null?
-  (unary-predicate vlad-empty-list? "null?")
+  (concrete-unary-predicate vlad-empty-list?)
+  (abstract-unary-predicate vlad-empty-list?)
+  (symbolic-unary-predicate vlad-empty-list? make-null?-unit)
   (lambda (v) (c:builtin-name "null" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14682,7 +15392,9 @@
      (cons (*j (null? x))
 	   (lambda ((sensitivity y)) (sensitize (cons null? (zero x))))))))
  (define-primitive-procedure 'boolean?
-  (unary-predicate vlad-boolean? "boolean?")
+  (concrete-unary-predicate vlad-boolean?)
+  (abstract-unary-predicate vlad-boolean?)
+  (symbolic-unary-predicate vlad-boolean? make-boolean?-unit)
   (lambda (v) (c:builtin-name "boolean" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14693,7 +15405,9 @@
      (cons (*j (boolean? x))
 	   (lambda ((sensitivity y)) (sensitize (cons boolean? (zero x))))))))
  (define-primitive-procedure 'real?
-  (unary-predicate vlad-real? "real?")
+  (concrete-unary-predicate vlad-real?)
+  (abstract-unary-predicate vlad-real?)
+  (symbolic-unary-predicate vlad-real? make-real?-unit)
   (lambda (v) (c:builtin-name "is_real" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14704,7 +15418,9 @@
      (cons (*j (real? x))
 	   (lambda ((sensitivity y)) (sensitize (cons real? (zero x))))))))
  (define-primitive-procedure 'pair?
-  (unary-predicate vlad-pair? "pair?")
+  (concrete-unary-predicate vlad-pair?)
+  (abstract-unary-predicate vlad-pair?)
+  (symbolic-unary-predicate vlad-pair? make-pair?-unit)
   (lambda (v) (c:builtin-name "pair" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14716,7 +15432,9 @@
 	   (lambda ((sensitivity y)) (sensitize (cons pair? (zero x))))))))
  (define-primitive-procedure 'procedure?
   ;; needs work: This should probably return #f for any transformed procedure.
-  (unary-predicate vlad-procedure? "procedure?")
+  (concrete-unary-predicate vlad-procedure?)
+  (abstract-unary-predicate vlad-procedure?)
+  (symbolic-unary-predicate vlad-procedure? make-procedure?-unit)
   (lambda (v) (c:builtin-name "procedure" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14731,7 +15449,9 @@
  ;; referentially transparent and violate the forward-transformation rule for
  ;; functions that only rearrange data.
  (define-primitive-procedure 'perturbation?
-  (unary-predicate perturbation-value? "perturbation?")
+  (concrete-unary-predicate perturbation-value?)
+  (abstract-unary-predicate perturbation-value?)
+  (symbolic-unary-predicate perturbation-value? make-perturbation?-unit)
   (lambda (v) (c:builtin-name "perturbation" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14743,7 +15463,9 @@
       (*j (perturbation? x))
       (lambda ((sensitivity y)) (sensitize (cons perturbation? (zero x))))))))
  (define-primitive-procedure 'forward?
-  (unary-predicate forward-value? "forward?")
+  (concrete-unary-predicate forward-value?)
+  (abstract-unary-predicate forward-value?)
+  (symbolic-unary-predicate forward-value? make-forward?-unit)
   (lambda (v) (c:builtin-name "forward" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14754,7 +15476,9 @@
      (cons (*j (forward? x))
 	   (lambda ((sensitivity y)) (sensitize (cons forward? (zero x))))))))
  (define-primitive-procedure 'sensitivity?
-  (unary-predicate sensitivity-value? "sensitivity?")
+  (concrete-unary-predicate sensitivity-value?)
+  (abstract-unary-predicate sensitivity-value?)
+  (symbolic-unary-predicate sensitivity-value? make-sensitivity?-unit)
   (lambda (v) (c:builtin-name "sensitivity" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14766,7 +15490,9 @@
       (*j (sensitivity? x))
       (lambda ((sensitivity y)) (sensitize (cons sensitivity? (zero x))))))))
  (define-primitive-procedure 'reverse?
-  (unary-predicate reverse-value? "reverse?")
+  (concrete-unary-predicate reverse-value?)
+  (abstract-unary-predicate reverse-value?)
+  (symbolic-unary-predicate reverse-value? make-reverse?-unit)
   (lambda (v) (c:builtin-name "reverse" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -14777,15 +15503,22 @@
      (cons (*j (reverse? x))
 	   (lambda ((sensitivity y)) (sensitize (cons reverse? (zero x))))))))
  (define-primitive-procedure 'if-procedure
-  (ternary (lambda (v1 v2 v3)
-	    (if *abstract?*
-		(if (vlad-false? v1)
-		    (abstract-apply v3 (vlad-empty-list))
-		    (abstract-apply v2 (vlad-empty-list)))
-		(if (vlad-false? v1)
-		    (concrete-apply v3 (vlad-empty-list))
-		    (concrete-apply v2 (vlad-empty-list)))))
-	   "if-procedure")
+  (concrete-ternary (lambda (v1 v2 v3)
+		     (if (vlad-false? v1)
+			 (concrete-apply v3 (vlad-empty-list))
+			 (concrete-apply v2 (vlad-empty-list))))
+		    "if-procedure")
+  (abstract-ternary (lambda (v1 v2 v3)
+		     (if (vlad-false? v1)
+			 (abstract-apply v3 (vlad-empty-list))
+			 (abstract-apply v2 (vlad-empty-list))))
+		    "if-procedure")
+  (symbolic-ternary (lambda (v1 v2 v3)
+		     (if (vlad-false? v1)
+			 (symbolic-apply v3 (vlad-empty-list))
+			 (symbolic-apply v2 (vlad-empty-list))))
+		    make-if-unit
+		    "if-procedure")
   (lambda (v) (c:builtin-name "if_procedure" v))
   '(lambda ((forward x))
     (let (((cons* x1 x2 x3) (primal (forward x)))
@@ -14829,7 +15562,9 @@
 	       ((lambda ((cons x y)) x)
 		(unsensitize (y-backpropagator (sensitivity y))))))))))))))
  (define-primitive-procedure 'read-real
-  (unary read-real "read-real")
+  (concrete-unary read-real)
+  (abstract-unary read-real)
+  (symbolic-unary read-real make-read-real-unit)
   (lambda (v) "read_real")
   (if *imprecise-inexacts?*
       `(lambda (',(j* (vlad-empty-list))) (bundle (read-real) (perturb 0.0)))
@@ -14838,7 +15573,9 @@
     (cons (*j (read-real))
 	  (lambda ((sensitivity y)) (sensitize (cons read-real '()))))))
  (define-primitive-procedure 'real
-  (unary-real (lambda (v) (if *abstract?* (abstract-real) v)) "real")
+  (concrete-unary-real (lambda (v) v) "real")
+  (abstract-unary-real (lambda (v) (abstract-real)) "real")
+  (symbolic-unary-real (lambda (v) (abstract-real)) make-real-unit "real")
   (lambda (v) (c:builtin-name "real" v))
   ;; These widen the tangent and cotangent as well. Nothing requires us to do
   ;; so. It is just a design decision.
@@ -14851,11 +15588,14 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons real (real (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'write-real
-  (unary-real
+  (concrete-unary-real
    (lambda (v)
-    (unless *abstract?* ((if *pp?* pp write) (externalize v)) (newline))
+    ((if *pp?* pp write) (externalize v))
+    (newline)
     v)
    "write-real")
+  (abstract-unary-real (lambda (v) v) "write-real")
+  (symbolic-unary-real (lambda (v) v) make-write-real-unit "write-real")
   (lambda (v) (c:builtin-name "write_real" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14867,10 +15607,12 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons write-real (unsensitize (sensitivity y)))))))))
  (define-primitive-procedure 'write
-  (unary (lambda (v)
-	  (unless *abstract?* ((if *pp?* pp write) (externalize v)) (newline))
-	  v)
-	 "write")
+  (concrete-unary (lambda (v)
+		   ((if *pp?* pp write) (externalize v))
+		   (newline)
+		   v))
+  (abstract-unary (lambda (v) v))
+  (symbolic-unary (lambda (v) v) make-write-unit)
   (lambda (v) (unimplemented "write"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14882,7 +15624,9 @@
 	   (lambda ((sensitivity y))
 	    (sensitize (cons write (unsensitize (sensitivity y)))))))))
  (define-primitive-procedure 'zero
-  (unary-ad zero "zero")
+  (concrete-unary-ad zero)
+  (abstract-unary-ad zero)
+  (symbolic-unary-ad zero)
   (lambda (v) (c:builtin-name "zero" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14893,7 +15637,9 @@
      (cons (*j (zero x))
 	   (lambda ((sensitivity y)) (sensitize (cons zero (zero x))))))))
  (define-primitive-procedure 'perturb
-  (unary-ad perturb "perturb")
+  (concrete-unary-ad perturb)
+  (abstract-unary-ad perturb)
+  (symbolic-unary-ad perturb)
   (lambda (v) (c:builtin-name "perturb" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -14910,7 +15656,9 @@
 	(cons perturb
 	      (unperturb (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'unperturb
-  (unary-ad unperturb "unperturb")
+  (concrete-unary-ad unperturb)
+  (abstract-unary-ad unperturb)
+  (symbolic-unary-ad unperturb)
   (lambda (v) (c:builtin-name "unperturb" v))
   ;; The argument must be called x-perturbation so as not to confuse the tags.
   '(lambda ((forward x-perturbation))
@@ -14927,7 +15675,9 @@
 	    (sensitize
 	     (cons unperturb (perturb (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'primal
-  (unary-ad primal "primal")
+  (concrete-unary-ad primal)
+  (abstract-unary-ad primal)
+  (symbolic-unary-ad primal)
   (lambda (v) (c:builtin-name "primal" v))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -14947,7 +15697,9 @@
 		   (bundle (unsensitize (sensitivity y))
 			   (zero (tangent x-forward))))))))))
  (define-primitive-procedure 'tangent
-  (unary-ad tangent "tangent")
+  (concrete-unary-ad tangent)
+  (abstract-unary-ad tangent)
+  (symbolic-unary-ad tangent)
   (lambda (v) (c:builtin-name "tangent" v))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -14969,7 +15721,9 @@
 		   (bundle (zero (primal x-forward))
 			   (unsensitize (sensitivity y-perturbation))))))))))
  (define-primitive-procedure 'bundle
-  (binary-ad bundle "bundle")
+  (concrete-binary-ad bundle "bundle")
+  (abstract-binary-ad bundle "bundle")
+  (symbolic-binary-ad bundle make-bundle-unit "bundle")
   (lambda (v) (c:builtin-name "bundle" v))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
@@ -14993,7 +15747,9 @@
 	      (cons (primal (unsensitize (sensitivity y-forward)))
 		    (tangent (unsensitize (sensitivity y-forward)))))))))))
  (define-primitive-procedure 'sensitize
-  (unary-ad sensitize "sensitize")
+  (concrete-unary-ad sensitize)
+  (abstract-unary-ad sensitize)
+  (symbolic-unary-ad sensitize)
   (lambda (v) (c:builtin-name "sensitize" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -15010,7 +15766,9 @@
 	(cons sensitize
 	      (unsensitize (unsensitize (sensitivity y-sensitivity))))))))))
  (define-primitive-procedure 'unsensitize
-  (unary-ad unsensitize "unsensitize")
+  (concrete-unary-ad unsensitize)
+  (abstract-unary-ad unsensitize)
+  (symbolic-unary-ad unsensitize)
   (lambda (v) (c:builtin-name "unsensitize" v))
   ;; The argument must be called x-sensitivity so as not to confuse the tags.
   '(lambda ((forward x-sensitivity))
@@ -15029,7 +15787,9 @@
 	;; The unsensitize composed with sensitize could be optimized away.
 	(cons unsensitize (sensitize (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure 'plus
-  (binary-ad plus "plus")
+  (concrete-binary-ad plus "plus")
+  (abstract-binary-ad plus "plus")
+  (symbolic-binary-ad plus make-plus-unit "plus")
   (lambda (v) (c:builtin-name "plus" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -15044,7 +15804,9 @@
 			     (cons (unsensitize (sensitivity y))
 				   (unsensitize (sensitivity y))))))))))
  (define-primitive-procedure '*j
-  (unary-ad *j "*j")
+  (concrete-unary-ad *j)
+  (abstract-unary-ad *j)
+  (symbolic-unary-ad *j)
   (lambda (v) (c:builtin-name "starj" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -15059,7 +15821,9 @@
        (sensitize
 	(cons *j (*j-inverse (unsensitize (sensitivity y-reverse))))))))))
  (define-primitive-procedure '*j-inverse
-  (unary-ad *j-inverse "*j-inverse")
+  (concrete-unary-ad *j-inverse)
+  (abstract-unary-ad *j-inverse)
+  (symbolic-unary-ad *j-inverse)
   (lambda (v) (c:builtin-name "starj_inverse" v))
   ;; The argument must be called x-reverse so as not to confuse the tags.
   '(lambda ((forward x-reverse))
