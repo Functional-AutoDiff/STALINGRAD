@@ -73,6 +73,7 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
+		 (at-most-one ("new-code-generator" new-code-generator?))
 		 (at-most-one
 		  ("cc" cc? (cc "C-compiler" string-argument "gcc")))
 		 (at-most-one ("c" disable-run-cc?))
@@ -307,9 +308,11 @@
 	    (not *sensitivity-tagged-value-depth-limit*)
 	    (not *reverse-tagged-value-depth-limit*)
 	    (not *tagged-pair-depth-limit*)))
+ ;; Cannot rely on the with-* procedures since syntax-check-expression! and
+ ;; parse need to have these set.
  (set! *canonized?* *flow-analysis?*)
  (set! *interned?* (or interned? *flow-analysis?*))
- (without-abstract (lambda () (initialize-basis!)))
+ (with-concrete (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
    (if (definition? (first es))
@@ -341,7 +344,11 @@
 	   ;;             more than once.
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
-	   (generate-file (generate e 'needs-work bs) pathname)
+	   (generate-file (if (or new-code-generator?
+				  (getenv "STALINGRAD_NEW_CODE_GENERATOR"))
+			      (new-generate)
+			      (generate e 'needs-work))
+			  pathname)
 	   (unless disable-run-cc?
 	    (system (reduce (lambda (s1 s2) (string-append s1 " " s2))
 			    `(,cc
@@ -369,7 +376,9 @@
 	      (lambda ()
 	       ((if *pp?* pp write)
 		(externalize
-		 (concrete-eval e (map value-binding-value bs))))))))
+		 (with-concrete
+		  (lambda ()
+		   (concrete-eval e (map value-binding-value bs))))))))))
 	   (newline)
 	   (when metered?
 	    (for-each (lambda (b)
