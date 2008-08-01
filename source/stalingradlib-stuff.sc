@@ -5580,14 +5580,14 @@
   9
   (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v)) (k 0) (loop (unroll v) #f k)))
     ((and
       (eq? *mode* 'symbolic) (not top?) (not (inline-zero? (abstractify v))))
      (let ((v-abstract (abstractify v)))
       (k (new-call-unit (with-abstract (lambda () (zero v-abstract)))
 			(c:builtin-name "zero" v-abstract)
 			v))))
+    ((unit? v)
+     (if (vlad-real? (unit-abstract-value v)) (k 0) (loop (unroll v) top? k)))
     ((union? v)
      (if (union-zero-cache v)
 	 (k (union-zero-cache v))
@@ -5784,10 +5784,6 @@
   10
   (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-perturbation-tagged-value v))
-	 (loop (unroll v) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-perturb? (abstractify v))))
@@ -5795,6 +5791,10 @@
       (k (new-call-unit (with-abstract (lambda () (perturb v-abstract)))
 			(c:builtin-name "perturb" v-abstract)
 			v))))
+    ((unit? v)
+     (if (vlad-real? (unit-abstract-value v))
+	 (k (new-perturbation-tagged-value v))
+	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-perturb-cache v)
 	 (k (union-perturb-cache v))
@@ -5904,11 +5904,6 @@
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v-perturbation)
-     (if (vlad-real? (unit-abstract-value v-perturbation))
-	 (k (new-panic-unit
-	     "Argument to unperturb is not a perturbation value"))
-	 (loop (unroll v-perturbation) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-unperturb? (abstractify v-perturbation))))
@@ -5917,6 +5912,11 @@
 	  (with-abstract (lambda () (unperturb v-perturbation-abstract)))
 	  (c:builtin-name "unperturb" v-perturbation-abstract)
 	  v-perturbation))))
+    ((unit? v-perturbation)
+     (if (vlad-real? (unit-abstract-value v-perturbation))
+	 (k (new-panic-unit
+	     "Argument to unperturb is not a perturbation value"))
+	 (loop (unroll v-perturbation) top? k)))
     ((union? v-perturbation)
      (if (union-unperturb-cache v-perturbation)
 	 (k (union-unperturb-cache v-perturbation))
@@ -6031,10 +6031,6 @@
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v-forward)
-     (if (vlad-real? (unit-abstract-value v-forward))
-	 (k (new-panic-unit "Argument to primal is not a forward value"))
-	 (loop (unroll v-forward) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-primal? (abstractify v-forward))))
@@ -6043,6 +6039,10 @@
 	  (with-abstract (lambda () (primal v-forward-abstract)))
 	  (c:builtin-name "primal" v-forward-abstract)
 	  v-forward))))
+    ((unit? v-forward)
+     (if (vlad-real? (unit-abstract-value v-forward))
+	 (k (new-panic-unit "Argument to primal is not a forward value"))
+	 (loop (unroll v-forward) top? k)))
     ((union? v-forward)
      (if (union-primal-cache v-forward)
 	 (k (union-primal-cache v-forward))
@@ -6152,10 +6152,6 @@
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v-forward)
-     (if (vlad-real? (unit-abstract-value v-forward))
-	 (k (new-panic-unit "Argument to tangent is not a forward value"))
-	 (loop (unroll v-forward) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-tangent? (abstractify v-forward))))
@@ -6164,6 +6160,10 @@
 	  (with-abstract (lambda () (tangent v-forward-abstract)))
 	  (c:builtin-name "tangent" v-forward-abstract)
 	  v-forward))))
+    ((unit? v-forward)
+     (if (vlad-real? (unit-abstract-value v-forward))
+	 (k (new-panic-unit "Argument to tangent is not a forward value"))
+	 (loop (unroll v-forward) top? k)))
     ((union? v-forward)
      (if (union-tangent-cache v-forward)
 	 (k (union-tangent-cache v-forward))
@@ -6289,10 +6289,6 @@
   ;; needs work: v0 naming convention
   (let loop ((v0 v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v0)
-     (if (vlad-real? (unit-abstract-value v0))
-	 (k (new-panic-unit "Argument to bundle is not valid"))
-	 (loop (unroll v0) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-bundle? (abstractify v0))))
@@ -6300,6 +6296,10 @@
       (k (new-call-unit (with-abstract (lambda () (bundle v-abstract)))
 			(c:builtin-name "bundle" v-abstract)
 			v))))
+    ((unit? v0)
+     (if (vlad-real? (unit-abstract-value v0))
+	 (k (new-panic-unit "Argument to bundle is not valid"))
+	 (loop (unroll v0) top? k)))
     ((union? v0)
      (if (union-bundle-cache v0)
 	 (k (union-bundle-cache v0))
@@ -6888,10 +6888,6 @@
   15
   (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-sensitivity-tagged-value v))
-	 (loop (unroll v) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-sensitize? (abstractify v))))
@@ -6899,6 +6895,10 @@
       (k (new-call-unit (with-abstract (lambda () (sensitize v-abstract)))
 			(c:builtin-name "sensitize" v-abstract)
 			v))))
+    ((unit? v)
+     (if (vlad-real? (unit-abstract-value v))
+	 (k (new-sensitivity-tagged-value v))
+	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-sensitize-cache v)
 	 (k (union-sensitize-cache v))
@@ -7072,11 +7072,6 @@
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v-sensitivity)
-     (if (vlad-real? (unit-abstract-value v-sensitivity))
-	 (k (new-panic-unit
-	     "Argument to unperturb is not a sensitivity value"))
-	 (loop (unroll v-sensitivity) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-unsensitize? (abstractify v-sensitivity))))
@@ -7085,6 +7080,11 @@
 	  (with-abstract (lambda () (unsensitize v-sensitivity-abstract)))
 	  (c:builtin-name "unsensitize" v-sensitivity-abstract)
 	  v-sensitivity))))
+    ((unit? v-sensitivity)
+     (if (vlad-real? (unit-abstract-value v-sensitivity))
+	 (k (new-panic-unit
+	     "Argument to unperturb is not a sensitivity value"))
+	 (loop (unroll v-sensitivity) top? k)))
     ((union? v-sensitivity)
      (if (union-unsensitize-cache v-sensitivity)
 	 (k (union-unsensitize-cache v-sensitivity))
@@ -7218,10 +7218,6 @@
   ;; needs work: v0 naming convention
   (let loop ((v0 v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v0)
-     (if (vlad-real? (unit-abstract-value v0))
-	 (k (new-panic-unit "Argument to plus is not valid"))
-	 (loop (unroll v0) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-plus? (abstractify v0))))
@@ -7229,6 +7225,10 @@
       (k (new-call-unit (with-abstract (lambda () (plus v-abstract)))
 			(c:builtin-name "plus" v-abstract)
 			v))))
+    ((unit? v0)
+     (if (vlad-real? (unit-abstract-value v0))
+	 (k (new-panic-unit "Argument to plus is not valid"))
+	 (loop (unroll v0) top? k)))
     ((union? v0)
      (if (union-plus-cache v0)
 	 (k (union-plus-cache v0))
@@ -7411,15 +7411,15 @@
   19
   (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-reverse-tagged-value v))
-	 (loop (unroll v) #f k)))
     ((and (eq? *mode* 'symbolic) (not top?) (not (inline-*j? (abstractify v))))
      (let ((v-abstract (abstractify v)))
       (k (new-call-unit (with-abstract (lambda () (*j v-abstract)))
 			(c:builtin-name "starj" v-abstract)
 			v))))
+    ((unit? v)
+     (if (vlad-real? (unit-abstract-value v))
+	 (k (new-reverse-tagged-value v))
+	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-*j-cache v)
 	 (k (union-*j-cache v))
@@ -7534,10 +7534,6 @@
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((unit? v-reverse)
-     (if (vlad-real? (unit-abstract-value v-reverse))
-	 (k (new-panic-unit "Argument to unperturb is not a reverse value"))
-	 (loop (unroll v-reverse) #f k)))
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
 	  (not (inline-*j-inverse? (abstractify v-reverse))))
@@ -7546,6 +7542,10 @@
 	  (with-abstract (lambda () (*j-inverse v-reverse-abstract)))
 	  (c:builtin-name "starj_inverse" v-reverse-abstract)
 	  v-reverse))))
+    ((unit? v-reverse)
+     (if (vlad-real? (unit-abstract-value v-reverse))
+	 (k (new-panic-unit "Argument to unperturb is not a reverse value"))
+	 (loop (unroll v-reverse) top? k)))
     ((union? v-reverse)
      (if (union-*j-inverse-cache v-reverse)
 	 (k (union-*j-inverse-cache v-reverse))
@@ -10527,34 +10527,34 @@
        ((scalar-value? v) '())
        (else (map-reduce append '() flatten (aggregate-value-values v)))))
 
-(define (unitify v s top?)
+(define (unitify v s top? return?)
  (assert (not (unit? v)))
- (cond
-  ((void? v) v)
-  ((union? v)
-   (if (and (not top?) (boxed? v))
-       (new-name-unit v s)
-       (create-tagged-union
-	(new-name-unit 'int (if (null? s) "v" (list s "_" "v")))
-	(map (lambda (v1 s1) (unitify v1 (if (null? s) s1 (list s "_" s1)) #f))
-	     (get-union-values v)
-	     (generate-slot-names v)))))
-  ((abstract-real? v) (new-name-unit v s))
-  (else
-   (if (and (not top?) (boxed? v))
-       (new-name-unit v s)
-       (create-aggregate-value-with-new-values
-	v
-	(map (lambda (v1 s1) (unitify v1 (if (null? s) s1 (list s "_" s1)) #f))
-	     (aggregate-value-values v)
-	     (generate-slot-names v)))))))
+ (cond ((void? v) v)
+       ((union? v)
+	(if (and (not top?) (boxed? v))
+	    (new-name-unit v s)
+	    (create-tagged-union
+	     (new-name-unit 'int (c:new-slot return? v s "v"))
+	     (map (lambda (v1 s1)
+		   (unitify v1 (c:new-slot return? v s s1) #f #f))
+		  (get-union-values v)
+		  (generate-slot-names v)))))
+       ((abstract-real? v) (new-name-unit v s))
+       (else (if (and (not top?) (boxed? v))
+		 (new-name-unit v s)
+		 (create-aggregate-value-with-new-values
+		  v
+		  (map (lambda (v1 s1)
+			(unitify v1 (c:new-slot return? v s s1) #f #f))
+		       (aggregate-value-values v)
+		       (generate-slot-names v)))))))
 
 (define (unroll v)
  (if (name-unit? v)
-     (unitify (unit-abstract-value v) (name-unit-code v) #t)
+     (unitify (unit-abstract-value v) (name-unit-code v) #t #f)
      (let ((i (positionq v *units*)))
       (assert i)
-      (unitify (unit-abstract-value v) (list "u" i) #t))))
+      (unitify (unit-abstract-value v) (list "u" i) #t #f))))
 
 (define (symbolic-destructure p v k)
  (let outer ((p p) (v v) (alist '()) (k k))
@@ -10659,8 +10659,11 @@
  ;; needs work: We don't check the "Argument has wrong type for target"
  ;;             condition.
  (cond
-  ((and (unit? v1) (union? (unit-abstract-value v1)))
-   (symbolic-apply (unroll v1) v2 #f function-instances))
+  ((and (unit? v1)
+	(or (union? (unit-abstract-value v1))
+	    (primitive-procedure? (unit-abstract-value v1))
+	    (closure? (unit-abstract-value v1))))
+   (symbolic-apply (unroll v1) v2 top? function-instances))
   ((union? v1)
    (create-tagged-union
     (union-tag v1)
@@ -10701,7 +10704,8 @@
 	(symbolic-eval (closure-body v1)
 		       (construct-environment v1 alist)
 		       function-instances))))
-     (else (new-panic-unit "Argument has wrong type for target")))))))
+     (else (new-panic-unit "Argument has wrong type for target")))))
+  (else (new-panic-unit "Target is not a procedure"))))
 
 (define (symbolic-eval e vs function-instances)
  (cond
@@ -12418,6 +12422,11 @@
 (define (c:slot v code1 code2)
  (if (void? v) 'error (c:binary code1 (if (boxed? v) "->" ".") code2)))
 
+(define (c:new-slot return? v code1 code2)
+ (if (null? code1)
+     code2
+     (c:binary code1 (cond ((boxed? v) "->") (return? ".") (else "_")) code2)))
+
 (define (c:tag v code) (c:slot v code "v"))
 
 (define (c:union v code1 code2)
@@ -12440,6 +12449,17 @@
       (c:conditional (c:binary (c:tag v code) "==" i)
 		     (first codes)
 		     (loop (rest codes) (+ i 1))))))
+
+(define (c:new-dispatch code codes)
+ ;; This uses per-union tags here instead of per-program tags.
+ ;; needs work: To optimize the choice of which case becomes the default or to
+ ;;             specify that the cases are exhaustive.
+ (list "switch"
+       (c:parenthesize code)
+       "{"
+       (map-indexed
+	(lambda (code i) (list "case" " " i ":" code "break" ";")) codes)
+       "}"))
 
 (define (c:widen v1 v2 code widener-instances)
  (if (abstract-value=? v1 v2)
@@ -13070,12 +13090,12 @@
 				   (c:specifier-parameter u "x"))
 	    ;; abstraction
 	    (list (if (boxed? v)
-		      ;; We don't check for out of memory.
 		      (c:specifier-init-declaration
 		       v
 		       "r"
 		       (c:pointer-cast
 			(c:specifier v)
+			;; We don't check for out of memory.
 			(c:call "GC_malloc" (c:sizeof (c:specifier v)))))
 		      (c:specifier-declaration v "r"))
 		  (c:assignment
@@ -13103,12 +13123,12 @@
 				   (generate-slot-names v)))
       ;; abstraction
       (list (if (boxed? v)
-		;; We don't check for out of memory.
 		(c:specifier-init-declaration
 		 v
 		 "r"
 		 (c:pointer-cast
 		  (c:specifier v)
+		  ;; We don't check for out of memory.
 		  (c:call "GC_malloc" (c:sizeof (c:specifier v)))))
 		(c:specifier-declaration v "r"))
 	    (map
@@ -14579,55 +14599,44 @@
 	      (map (lambda (u)
 		    (c:specifier-declaration
 		     (name-unit-abstract-value u) (name-unit-code u)))
-		   (flatten (with-symbolic (lambda () (unitify v '() #f)))))
+		   (flatten (with-symbolic (lambda () (unitify v '() #f #f)))))
 	      "}"
 	      ";"
 	      #\newline))))
        (first vs1-vs2))
   ;; abstraction
-  (map (lambda (v)
-	;; abstraction
-	(list
-	 ;; abstraction
-	 (list (c:specifier v)
-	       "{"
-	       ;; needs work: to sort slots
-	       (map (lambda (u)
-		     (c:specifier-declaration
-		      (name-unit-abstract-value u) (name-unit-code u)))
-		    (flatten (with-symbolic (lambda () (unitify v '() #t)))))
-	       "}"
-	       ";"
-	       #\newline)))
-       (second vs1-vs2))))
-
-(define (new-generate-constructor-declarations vs1-vs2)
- ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-declaration
-	#t #t #f v
-	(c:function-declarator*
-	 (c:constructor-name v)
-	 (map (lambda (u)
-	       (c:specifier-parameter
-		(name-unit-abstract-value u) (name-unit-code u)))
-	      (flatten (with-symbolic (lambda () (unitify v '() #t))))))))
-      (second vs1-vs2)))
+  (map
+   (lambda (v)
+    ;; abstraction
+    (list
+     ;; abstraction
+     (list (c:specifier v)
+	   "{"
+	   ;; needs work: to sort slots
+	   (map (lambda (u)
+		 (c:specifier-declaration
+		  (name-unit-abstract-value u) (name-unit-code u)))
+		(flatten (with-symbolic (lambda () (unitify v '() #t #f)))))
+	   "}"
+	   ";"
+	   #\newline)))
+   (second vs1-vs2))))
 
 (define (new-generate-unary-ad-declarations s descend? f code)
  ;; here I am: The result of f might violate the syntactic constraints.
  ;; abstraction
  (map (lambda (v)
-       (c:specifier-function-declaration
-	;; The call to f might issue "might" warnings and might return an empty
-	;; abstract value.
-	#t #f #f (f v)
-	(c:function-declarator*
-	 (c:builtin-name code v)
-	 (map (lambda (u)
-	       (c:specifier-parameter
-		(name-unit-abstract-value u) (name-unit-code u)))
-	      (flatten (with-symbolic (lambda () (unitify v "x" #t))))))))
+       (let ((v0 (f v)))
+	(c:specifier-function-declaration
+	 ;; The call to f might issue "might" warnings and might return an
+	 ;; empty abstract value.
+	 #t #f #f v0
+	 (c:function-declarator*
+	  (c:builtin-name code v)
+	  (map (lambda (u)
+		(c:specifier-parameter
+		 (name-unit-abstract-value u) (name-unit-code u)))
+	       (flatten (with-symbolic (lambda () (unitify v "x" #f #f)))))))))
       (second (all-sorted-unary-ad s descend?))))
 
 (define (new-generate-binary-ad-declarations
@@ -14636,16 +14645,17 @@
  ;;            constraints.
  ;; abstraction
  (map (lambda (v)
-       (c:specifier-function-declaration
-	;; The call to g might issue "might" warnings and might return an empty
-	;; abstract value.
-	#t #f #f (g v)
-	(c:function-declarator*
-	 (c:builtin-name code v)
-	 (map (lambda (u)
-	       (c:specifier-parameter
-		(name-unit-abstract-value u) (name-unit-code u)))
-	      (flatten (with-symbolic (lambda () (unitify v "x" #t))))))))
+       (let ((v0 (g v)))
+	(c:specifier-function-declaration
+	 ;; The call to g might issue "might" warnings and might return an
+	 ;; empty abstract value.
+	 #t #f #f v0
+	 (c:function-declarator*
+	  (c:builtin-name code v)
+	  (map (lambda (u)
+		(c:specifier-parameter
+		 (name-unit-abstract-value u) (name-unit-code u)))
+	       (flatten (with-symbolic (lambda () (unitify v "x" #f #f)))))))))
       (second (all-sorted-binary-ad
 	       s descend? f? f f-inverse aggregates-match? before))))
 
@@ -14654,53 +14664,109 @@
  ;; abstraction
  (map (lambda (instance)
        (assert (function-instance? instance))
-       (let ((v1 (function-instance-v1 instance))
-	     (v2 (function-instance-v2 instance)))
+       (let* ((v1 (function-instance-v1 instance))
+	      (v2 (function-instance-v2 instance))
+	      (v0 (abstract-apply v1 v2)))
 	(c:specifier-function-declaration
-	 #t #f #f (abstract-apply v1 v2)
+	 #t #f #f v0
 	 (c:function-declarator*
 	  (c:function-name v1 v2 function-instances)
-	  (append (map (lambda (u)
-			(c:specifier-parameter
-			 (name-unit-abstract-value u) (name-unit-code u)))
-		       (flatten
-			(with-symbolic (lambda () (unitify v1 "x1" #t)))))
-		  (map (lambda (u)
-			(c:specifier-parameter
-			 (name-unit-abstract-value u) (name-unit-code u)))
-		       (flatten
-			(with-symbolic (lambda () (unitify v2 "x2" #t))))))))))
+	  (append
+	   (map (lambda (u)
+		 (c:specifier-parameter
+		  (name-unit-abstract-value u) (name-unit-code u)))
+		(flatten (with-symbolic (lambda () (unitify v1 "x1" #f #f)))))
+	   (map (lambda (u)
+		 (c:specifier-parameter
+		  (name-unit-abstract-value u) (name-unit-code u)))
+		(flatten
+		 (with-symbolic (lambda () (unitify v2 "x2" #f #f))))))))))
       (second instances1-instances2)))
 
-(define (new-generate-constructor-definitions vs1-vs2)
+(define (new-generate-body v0 v)
  ;; abstraction
- (map (lambda (v)
-       (c:specifier-function-definition
-	#t #t #f v
-	(c:function-declarator*
-	 (c:constructor-name v)
-	 (map (lambda (u)
-	       (c:specifier-parameter
-		(name-unit-abstract-value u) (name-unit-code u)))
-	      (flatten (with-symbolic (lambda () (unitify v '() #f))))))
+ (list
+  (c:specifier-declaration (abstractify v0) "r")
+  (let loop ((v0 v0) (v v))
+   (let ((v0-abstract (abstractify v0)) (v-abstract (abstractify v)))
+    (unless (and (not (abstract-real? v0))
+		 (not (abstract-real? v))
+		 (abstract-value-subset? v-abstract v0-abstract))
+     (format #t "debugging1~%"))
+    (assert (and (not (abstract-real? v0))
+		 (not (abstract-real? v))
+		 (abstract-value-subset? v-abstract v0-abstract)))
+    (cond
+     ;; abstraction
+     ((empty-abstract-value? v-abstract) (list (unit->code v) ";"))
+     ((union? v)
+      (c:new-dispatch (unit->code (union-tag v))
+		      (map (lambda (v) (loop v0 v)) (get-union-values v))))
+     ((unit? v0)
+      (cond
+       ((and (unit? v) (abstract-value=? v-abstract v0-abstract))
+	(c:assignment (unit->code v0) (unit->code v)))
+       ((abstract-real? (unit-abstract-value v0))
+	(unless (vlad-real? v-abstract) (format #t "debugging2~%"))
+	(assert (vlad-real? v-abstract))
+	(c:assignment (unit->code v0) (unit->code v)))
+       (else
 	;; abstraction
-	(list
-	 ;; We don't check for out of memory.
-	 (c:specifier-init-declaration
-	  v
-	  "r"
-	  (c:pointer-cast
-	   (c:specifier v) (c:call "GC_malloc" (c:sizeof (c:specifier v)))))
-	 (map (lambda (u)
-	       ;; abstraction
-	       (c:assignment
-		(list "r" "->" (name-unit-code u)) (name-unit-code u)))
-	      (flatten (with-symbolic (lambda () (unitify v '() #t)))))
-	 (c:return "r"))))
-      (second vs1-vs2)))
-
-(define (new-generate-body v)
- (map (lambda (u) (list (unit->code u) ";")) (flatten v)))
+	(list (c:assignment
+	       (unit->code v0)
+	       (c:pointer-cast
+		(c:specifier v0-abstract)
+		;; We don't check for out of memory.
+		(c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract)))))
+	      (loop (unroll v0) v)))))
+     ((union? v0)
+      (if (union? v-abstract)
+	  (loop v0 (unroll v))
+	  (let ((i (positionp abstract-value=?
+			      v-abstract
+			      (get-union-values v0-abstract))))
+	   (unless i
+	    (format #t "debugging3~%")
+	    (write (debugging-externalize v0))
+	    (newline)
+	    (write (debugging-externalize v))
+	    (newline)
+	    (write (debugging-externalize v0-abstract))
+	    (newline)
+	    (write (debugging-externalize v-abstract))
+	    (newline))
+	   (assert i)
+	   ;; abstraction
+	   (list (c:assignment (unit->code (union-tag v0)) i)
+		 (loop (list-ref (get-union-values v0) i) v)))))
+     ((scalar-value? v0)
+      (unless (abstract-value=? v-abstract v0-abstract)
+       (format #t "debugging4~%"))
+      (assert (abstract-value=? v-abstract v0-abstract))
+      ;; abstraction
+      (if (unit? v) (list (unit->code v) ";") '()))
+     ((unit? v)
+      (unless (not (abstract-real? (unit-abstract-value v)))
+       (format #t "debugging5~%"))
+      (assert (not (abstract-real? (unit-abstract-value v))))
+      (loop v0 (unroll v)))
+     ((or (and (nonrecursive-closure? v0)
+	       (nonrecursive-closure? v)
+	       (dereferenced-nonrecursive-closure-match? v0 v))
+	  (and (recursive-closure? v0)
+	       (recursive-closure? v)
+	       (dereferenced-recursive-closure-match? v0 v))
+	  (and (perturbation-tagged-value? v0) (perturbation-tagged-value? v))
+	  (and (bundle? v0) (bundle? v))
+	  (and (sensitivity-tagged-value? v0) (sensitivity-tagged-value? v))
+	  (and (reverse-tagged-value? v0) (reverse-tagged-value? v))
+	  (and (tagged-pair? v0)
+	       (tagged-pair? v)
+	       (equal-tags? (tagged-pair-tags v0) (tagged-pair-tags v))))
+      ;; abstraction
+      (map loop (aggregate-value-values v0) (aggregate-value-values v)))
+     (else (internal-error)))))
+  (c:return "r")))
 
 (define (new-generate-unary-ad-definitions s descend? f g code)
  ;; here I am: The result of f might violate the syntactic constraints.
@@ -14708,18 +14774,21 @@
  (let ((vs (second (all-sorted-unary-ad s descend?))))
   (for-each g vs)
   (map (lambda (v)
-	(c:specifier-function-definition
-	 ;; The call to f might issue "might" warnings and might return an
-	 ;; empty abstract value.
-	 #t #f #f (f v)
-	 (c:function-declarator*
-	  (c:builtin-name code v)
-	  (map (lambda (u)
-		(c:specifier-parameter
-		 (name-unit-abstract-value u) (name-unit-code u)))
-	       (flatten (with-symbolic (lambda () (unitify v "x" #t))))))
-	 (new-generate-body
-	  (with-symbolic (lambda () (f (unitify v "x" #t)))))))
+	(let ((v0 (f v)))
+	 (c:specifier-function-definition
+	  ;; The call to f might issue "might" warnings and might return an
+	  ;; empty abstract value.
+	  #t #f #f v0
+	  (c:function-declarator*
+	   (c:builtin-name code v)
+	   (map (lambda (u)
+		 (c:specifier-parameter
+		  (name-unit-abstract-value u) (name-unit-code u)))
+		(flatten (with-symbolic (lambda () (unitify v "x" #f #f))))))
+	  (with-symbolic
+	   (lambda ()
+	    (new-generate-body (unitify v0 "r" #f #t)
+			       (f (unitify v "x" #f #f))))))))
        vs)))
 
 (define (new-generate-binary-ad-definitions
@@ -14731,18 +14800,21 @@
 		    s descend? f? f f-inverse aggregates-match? before))))
   (for-each h vs)
   (map (lambda (v)
-	(c:specifier-function-definition
-	 ;; The call to g might issue "might" warnings and might return an
-	 ;; empty abstract value.
-	 #t #f #f (g v)
-	 (c:function-declarator*
-	  (c:builtin-name code v)
-	  (map (lambda (u)
-		(c:specifier-parameter
-		 (name-unit-abstract-value u) (name-unit-code u)))
-	       (flatten (with-symbolic (lambda () (unitify v "x" #t))))))
-	 (new-generate-body
-	  (with-symbolic (lambda () (g (unitify v "x" #t)))))))
+	(let ((v0 (g v)))
+	 (c:specifier-function-definition
+	  ;; The call to g might issue "might" warnings and might return an
+	  ;; empty abstract value.
+	  #t #f #f v0
+	  (c:function-declarator*
+	   (c:builtin-name code v)
+	   (map (lambda (u)
+		 (c:specifier-parameter
+		  (name-unit-abstract-value u) (name-unit-code u)))
+		(flatten (with-symbolic (lambda () (unitify v "x" #f #f))))))
+	  (with-symbolic
+	   (lambda ()
+	    (new-generate-body (unitify v0 "r" #f #t)
+			       (g (unitify v "x" #f #f))))))))
        vs)))
 
 (define (new-generate-function-definitions
@@ -14754,30 +14826,31 @@
  ;; abstraction
  (map (lambda (instance)
        (assert (function-instance? instance))
-       (let ((v1 (function-instance-v1 instance))
-	     (v2 (function-instance-v2 instance)))
+       (let* ((v1 (function-instance-v1 instance))
+	      (v2 (function-instance-v2 instance))
+	      (v0 (abstract-apply v1 v2)))
 	(c:specifier-function-definition
-	 #t #f #f (abstract-apply v1 v2)
+	 #t #f #f v0
 	 (c:function-declarator*
 	  (c:function-name v1 v2 function-instances)
 	  (append
 	   (map (lambda (u)
 		 (c:specifier-parameter
 		  (name-unit-abstract-value u) (name-unit-code u)))
-		(flatten (with-symbolic (lambda () (unitify v1 "x1" #t)))))
+		(flatten (with-symbolic (lambda () (unitify v1 "x1" #f #f)))))
 	   (map (lambda (u)
 		 (c:specifier-parameter
 		  (name-unit-abstract-value u) (name-unit-code u)))
 		(flatten
-		 (with-symbolic (lambda () (unitify v2 "x2" #t)))))))
-	 (new-generate-body
-	  (with-symbolic
-	   (lambda ()
-	    (symbolic-apply
-	     (unitify (function-instance-v1 instance) "x1" #t)
-	     (unitify (function-instance-v2 instance) "x2" #t)
-	     #t
-	     function-instances)))))))
+		 (with-symbolic (lambda () (unitify v2 "x2" #f #f)))))))
+	 (with-symbolic (lambda ()
+			 (new-generate-body
+			  (unitify v0 "r" #f #t)
+			  (symbolic-apply
+			   (unitify (function-instance-v1 instance) "x1" #f #f)
+			   (unitify (function-instance-v2 instance) "x2" #f #f)
+			   #t
+			   function-instances)))))))
       (second instances1-instances2)))
 
 (define (new-generate)
@@ -14827,8 +14900,12 @@
      "#include <stdlib.h>" #\newline
      "#include <gc/gc.h>" #\newline
      "#define INLINE inline __attribute__ ((always_inline))" #\newline
+     "#define NORETURN __attribute__ ((noreturn))" #\newline
      (new-generate-struct-and-union-declarations vs1-vs2)
-     (new-generate-constructor-declarations vs1-vs2)
+     (c:specifier-function-declaration
+      #t #t #t (empty-abstract-value)
+      (c:function-declarator "panic"
+			     (c:parameter "char" (c:pointer-declarator "x"))))
      (new-generate-unary-ad-declarations 'zero (lambda (v) #t) zero "zero")
      (new-generate-unary-ad-declarations
       'perturb
@@ -14888,7 +14965,12 @@
       *j-inverse "starj_inverse")
      (new-generate-function-declarations
       function-instances instances1-instances2)
-     (new-generate-constructor-definitions vs1-vs2)
+     (c:specifier-function-definition
+      #t #t #t (empty-abstract-value)
+      (c:function-declarator "panic"
+			     (c:parameter "char" (c:pointer-declarator "x")))
+      ;; abstraction
+      "fputs(x,stderr);fputc('\\n',stderr);exit(EXIT_FAILURE);")
      (new-generate-unary-ad-definitions
       'zero (lambda (v) #t) zero
       (lambda (v)
