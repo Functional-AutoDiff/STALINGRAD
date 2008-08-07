@@ -403,7 +403,7 @@
 
 (define-structure widener-instance v1 v2)
 
-(define-structure name-unit v0 code)
+(define-structure name-unit top? v0 code)
 
 (define-structure slot-unit v0 v1 code)
 
@@ -447,7 +447,7 @@
 
 (define-structure negative?-unit v1)
 
-(define-structure read-real-unit v1)
+(define-structure read-real-unit dummy)
 
 (define-structure write-real-unit v1)
 
@@ -509,7 +509,7 @@
 
 (define *units* '())
 
-(define *name* 0)
+(define *name* 2)
 
 ;;; Parameters
 
@@ -590,6 +590,8 @@
 (define *expensive-checks?* #f)
 
 (define *union* "struct")
+
+(define *new-code-generator?* #f)
 
 ;;; Procedures
 
@@ -2722,8 +2724,8 @@
 
 ;;; Units
 
-(define (new-name-unit v0 code)
- (let ((u (make-name-unit v0 code)))
+(define (new-name-unit top? v0 code)
+ (let ((u (make-name-unit top? v0 code)))
   (set! *units* (append *units* (list u)))
   u))
 
@@ -2832,8 +2834,8 @@
   (set! *units* (append *units* (list u)))
   u))
 
-(define (new-read-real-unit v1)
- (let ((u (make-read-real-unit v1)))
+(define (new-read-real-unit)
+ (let ((u (make-read-real-unit 'dummy)))
   (set! *units* (append *units* (list u)))
   u))
 
@@ -7832,7 +7834,7 @@
    ((zero?-unit? v) `(zero? ,(loop (zero?-unit-v1 v) vs)))
    ((positive?-unit? v) `(positive? ,(loop (positive?-unit-v1 v) vs)))
    ((negative?-unit? v) `(negative? ,(loop (negative?-unit-v1 v) vs)))
-   ((read-real-unit? v) `(read-real ,(loop (read-real-unit-v1 v) vs)))
+   ((read-real-unit? v) `(read-real))
    ((write-real-unit? v) `(write-real ,(loop (write-real-unit-v1 v) vs)))
    (else (internal-error)))))
 
@@ -8173,7 +8175,7 @@
 	  ((read-real-unit? v)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(read-real ,(loop (read-real-unit-v1 v) quote? vs)))
+	   '(read-real))
 	  ((write-real-unit? v)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably" v))
@@ -10946,7 +10948,7 @@
 	  ;; void parameter/arguments are eliminated and we cannot do that for
 	  ;; code that will issue an error. That is why the following is = and
 	  ;; not <=.
-	  (if (= (length (get-union-values v)) 1)
+	  (if ((if *new-code-generator?* <= =) (length (get-union-values v)) 1)
 	      (every-cps loop (get-union-values v) (cons v cs) k)
 	      (k #f cs)))
 	 ((abstract-real? v) (k #f cs))
@@ -12217,7 +12219,10 @@
 
 (define (c:specifier v)
  ;; abstraction
- (cond ((eq? v 'int) "int")
+ (cond ((eq? v 'int)
+	(assert *new-code-generator?*)
+	"int")
+       ((and *new-code-generator?* (void? v)) "void")
        (else (assert (not (void? v)))
 	     (if (and (not (union? v)) (abstract-real? v))
 		 "double"
@@ -12383,7 +12388,7 @@
    code2)))
 
 (define (c:specifier-function-declaration p1? p2? p3? v code)
- (if (void? v)
+ (if (and (void? v) (not *new-code-generator?*))
      '()
      (c:function-declaration
       p1? p2? p3? (c:specifier v)
@@ -12400,7 +12405,7 @@
   (c:braces-around code3)))
 
 (define (c:specifier-function-definition p1? p2? p3? v code1 code2)
- (if (void? v)
+ (if (and (void? v) (not *new-code-generator?*))
      '()
      (c:function-definition p1? p2? p3? (c:specifier v)
 			    (if (boxed? v) (c:pointer-declarator code1) code1)
@@ -12428,11 +12433,37 @@
 		 (c:call (c:unioner-name (vlad-true) (abstract-boolean)))
 		 (c:call (c:unioner-name (vlad-false) (abstract-boolean))))))
 
+(define (c:new-binary-boolean code)
+ (lambda (code1 code2)
+  (assert
+   (and
+    (memp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (memp abstract-value=? (vlad-false) (union-members (abstract-boolean)))))
+  (c:parenthesize
+   (c:conditional
+    (c:binary code1 code code2)
+    (positionp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (positionp
+     abstract-value=? (vlad-false) (union-members (abstract-boolean)))))))
+
 (define (c:unary-boolean code)
  (lambda (code1)
   (c:conditional (c:binary code1 code "0.0")
 		 (c:call (c:unioner-name (vlad-true) (abstract-boolean)))
 		 (c:call (c:unioner-name (vlad-false) (abstract-boolean))))))
+
+(define (c:new-unary-boolean code)
+ (lambda (code1)
+  (assert
+   (and
+    (memp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (memp abstract-value=? (vlad-false) (union-members (abstract-boolean)))))
+  (c:parenthesize
+   (c:conditional
+    (c:binary code1 code "0.0")
+    (positionp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (positionp
+     abstract-value=? (vlad-false) (union-members (abstract-boolean)))))))
 
 (define (c:function-declarator code . codes)
  (c:function-declarator* code codes))
@@ -14511,18 +14542,18 @@
 (define (unit->name u)
  (cond ((name-unit? u) (name-unit-code u))
        ((slot-unit? u)
-	(if (and (name-unit? (slot-unit-v1 u))
-		 (null? (name-unit-code (slot-unit-v1 u))))
-	    (slot-unit-code u)
+	(if (name-unit? (slot-unit-v1 u))
+	    (if (null? (name-unit-code (slot-unit-v1 u)))
+		(slot-unit-code u)
+		(list (name-unit-code (slot-unit-v1 u))
+		      (cond ((boxed? (name-unit-v0 (slot-unit-v1 u))) "->")
+			    ((name-unit-top? (slot-unit-v1 u)) ".")
+			    (else "_"))
+		      (slot-unit-code u)))
 	    (list (unit->name (slot-unit-v1 u))
 		  (if (boxed? (unit-abstract-value (slot-unit-v1 u))) "->" "_")
 		  (slot-unit-code u))))
        (else (internal-error))))
-
-(define (top-unit->name u)
- (if (name-unit? u)
-     (name-unit-code u)
-     (list (unit->name (slot-unit-v1 u)) "." (slot-unit-code u))))
 
 (define (new-generate-struct-and-union-declarations vs1-vs2)
  ;; generate -~-> c:
@@ -14547,7 +14578,7 @@
 	    (lambda (u)
 	     (c:specifier-declaration (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v '())))))))))))
+		      (lambda () (unitify (new-name-unit #f v '())))))))))))
    (first vs1-vs2))
   ;; abstraction
   (map
@@ -14561,7 +14592,7 @@
        (map (lambda (u)
 	     (c:specifier-declaration (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unroll (new-name-unit v '()))))))))))
+		      (lambda () (unroll (new-name-unit #f v '()))))))))))
    (second vs1-vs2))))
 
 (define (new-generate-unary-ad-declarations s descend? f code)
@@ -14578,7 +14609,7 @@
 	  (map (lambda (u)
 		(c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	       (flatten (with-symbolic
-			 (lambda () (unitify (new-name-unit v "x"))))))))))
+			 (lambda () (unitify (new-name-unit #f v "x"))))))))))
       (second (all-sorted-unary-ad s descend?))))
 
 (define (new-generate-binary-ad-declarations
@@ -14597,7 +14628,7 @@
 	  (map (lambda (u)
 		(c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	       (flatten (with-symbolic
-			 (lambda () (unitify (new-name-unit v "x"))))))))))
+			 (lambda () (unitify (new-name-unit #f v "x"))))))))))
       (second (all-sorted-binary-ad
 	       s descend? f? f f-inverse aggregates-match? before))))
 
@@ -14618,20 +14649,26 @@
        (map (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v1 "x1"))))))
+		      (lambda () (unitify (new-name-unit #f v1 "x1"))))))
        (map (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v2 "x2")))))))))))
+		      (lambda () (unitify (new-name-unit #f v2 "x2")))))))))))
   (second instances1-instances2)))
+
+(define (flat-specifier-declaration v code)
+ (if (void? v)
+     '()
+     (map (lambda (u) (c:specifier-declaration (abstractify u) (unit->name u)))
+	  (flatten (unitify (new-name-unit #f v code))))))
 
 (define (new-generate-body v0 v)
  ;; abstraction
  (list
   (c:specifier-declaration (abstractify v0) "r")
-  (let loop ((p top-unit->name) (v0 v0) (v v))
+  (let loop ((v0 v0) (v v))
    (let ((v0-abstract (abstractify v0)) (v-abstract (abstractify v)))
-    (define (new-generate-real-unit f v1)
+    (define (new-generate-real->real-unit f v1)
      ;; Flow analysis can:
      ;;  1. migrate to compile time a run-time arithmetic error that wouldn't
      ;;     actually occur
@@ -14641,9 +14678,9 @@
      ;;     (if <abstract boolean>
      ;;         <concrete real>
      ;;         <something that panics or diverges>)
-     (let ((code0 (c:generate-name))
-	   (code1 (c:generate-name))
-	   (v1-abstract (abstractify v1)))
+     (let* ((code0 (c:generate-name))
+	    (code1 (c:generate-name))
+	    (v1-abstract (abstractify v1)))
       (assert (and (or (empty-abstract-value? v1-abstract)
 		       (abstract-real? v1-abstract))
 		   (not (eq? v-abstract 'int))
@@ -14652,13 +14689,9 @@
 		   ;;             always panics.
 		   (abstract-value=? v-abstract v0-abstract)))
       (c:braces-around
-       (if (void? v0-abstract)
-	   '()
-	   (c:specifier-declaration v0-abstract code0))
-       (if (void? v1-abstract)
-	   '()
-	   (c:specifier-declaration v1-abstract code1))
-       (loop unit->name (unitify (new-name-unit v1-abstract code1)) v1)
+       (flat-specifier-declaration v0-abstract code0)
+       (flat-specifier-declaration v1-abstract code1)
+       (loop (unitify (new-name-unit #f v1-abstract code1)) v1)
        (if (void? v0-abstract)
 	   '()
 	   (c:assignment
@@ -14666,34 +14699,61 @@
 	    ;; This assumes that Scheme inexact numbers are printed as C
 	    ;; doubles.
 	    (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1))))
-       (loop p v0 (unitify (new-name-unit v0-abstract code0))))))
-    (define (new-generate-real*real-unit f v1 v2)
-     (let ((code0 (c:generate-name))
-	   (code1 (c:generate-name))
-	   (code2 (c:generate-name))
-	   (v1-abstract (abstractify v1))
-	   (v2-abstract (abstractify v2)))
-      (assert
-       (and
-	(or (empty-abstract-value? v1-abstract) (vlad-real? v1-abstract))
-	(or (empty-abstract-value? v2-abstract) (vlad-real? v2-abstract))
-	(not (and (real? v1-abstract) (real? v2-abstract)))
-	(not (eq? v-abstract 'int))
-	(not (eq? v0-abstract 'int))
-	;; needs work: This might not hold if v is a unit that always panics.
-	(abstract-value=? v-abstract v0-abstract)))
+       (loop v0 (unitify (new-name-unit #f v0-abstract code0))))))
+    (define (new-generate-real->boolean-unit f v1)
+     ;; Flow analysis can:
+     ;;  1. migrate to compile time a run-time arithmetic error that wouldn't
+     ;;     actually occur
+     ;;  2. eliminate a write-real of a concrete real
+     ;;  3. eliminate read-real in (zero (read-real))
+     ;;  4. eliminate a panic or divergence in
+     ;;     (if <abstract boolean>
+     ;;         <concrete real>
+     ;;         <something that panics or diverges>)
+     (let* ((code0 (c:generate-name))
+	    (code1 (c:generate-name))
+	    (v1-abstract (abstractify v1)))
+      (assert (and (or (empty-abstract-value? v1-abstract)
+		       (abstract-real? v1-abstract))
+		   (not (eq? v-abstract 'int))
+		   (not (eq? v0-abstract 'int))
+		   ;; needs work: This might not hold if v is a unit that
+		   ;;             always panics.
+		   (abstract-value=? v-abstract v0-abstract)))
       (c:braces-around
+       (flat-specifier-declaration v0-abstract code0)
+       (flat-specifier-declaration v1-abstract code1)
+       (loop (unitify (new-name-unit #f v1-abstract code1)) v1)
        (if (void? v0-abstract)
 	   '()
-	   (c:specifier-declaration v0-abstract code0))
-       (if (void? v1-abstract)
-	   '()
-	   (c:specifier-declaration v1-abstract code1))
-       (if (void? v2-abstract)
-	   '()
-	   (c:specifier-declaration v2-abstract code2))
-       (loop unit->name (unitify (new-name-unit v1-abstract code1)) v1)
-       (loop unit->name (unitify (new-name-unit v2-abstract code2)) v2)
+	   (c:assignment
+	    ;; abstraction
+	    (list code0 "_" "v")
+	    ;; This assumes that Scheme inexact numbers are printed as C
+	    ;; doubles.
+	    (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1))))
+       (loop v0 (unitify (new-name-unit #f v0-abstract code0))))))
+    (define (new-generate-real*real->real-unit f v1 v2)
+     (let* ((code0 (c:generate-name))
+	    (code1 (c:generate-name))
+	    (code2 (c:generate-name))
+	    (v1-abstract (abstractify v1))
+	    (v2-abstract (abstractify v2)))
+      (assert
+       (and (or (empty-abstract-value? v1-abstract) (vlad-real? v1-abstract))
+	    (or (empty-abstract-value? v2-abstract) (vlad-real? v2-abstract))
+	    (not (and (real? v1-abstract) (real? v2-abstract)))
+	    (not (eq? v-abstract 'int))
+	    (not (eq? v0-abstract 'int))
+	    ;; needs work: This might not hold if v is a unit that always
+	    ;;             panics.
+	    (abstract-value=? v-abstract v0-abstract)))
+      (c:braces-around
+       (flat-specifier-declaration v0-abstract code0)
+       (flat-specifier-declaration v1-abstract code1)
+       (flat-specifier-declaration v2-abstract code2)
+       (loop (unitify (new-name-unit #f v1-abstract code1)) v1)
+       (loop (unitify (new-name-unit #f v2-abstract code2)) v2)
        (if (void? v0-abstract)
 	   '()
 	   (c:assignment
@@ -14702,26 +14762,56 @@
 	    ;; doubles.
 	    (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1)
 	       (if (real? v2-abstract) (exact->inexact v2-abstract) code2))))
-       (loop p v0 (unitify (new-name-unit v0-abstract code0))))))
-    (assert
-     (or (and (eq? v-abstract 'int) (eq? v0-abstract 'int))
-	 (and (not (eq? v-abstract 'int))
-	      (not (eq? v0-abstract 'int))
-	      (not (abstract-real? v0))
-	      (not (abstract-real? v))
-	      ;; needs work: This might not hold if v is a unit that always
-	      ;;             panics.
-	      (abstract-value-subset? v-abstract v0-abstract))))
+       (loop v0 (unitify (new-name-unit #f v0-abstract code0))))))
+    (define (new-generate-real*real->boolean-unit f v1 v2)
+     (let* ((code0 (c:generate-name))
+	    (code1 (c:generate-name))
+	    (code2 (c:generate-name))
+	    (v1-abstract (abstractify v1))
+	    (v2-abstract (abstractify v2)))
+      (assert
+       (and (or (empty-abstract-value? v1-abstract) (vlad-real? v1-abstract))
+	    (or (empty-abstract-value? v2-abstract) (vlad-real? v2-abstract))
+	    (not (and (real? v1-abstract) (real? v2-abstract)))
+	    (not (eq? v-abstract 'int))
+	    (not (eq? v0-abstract 'int))
+	    ;; needs work: This might not hold if v is a unit that always
+	    ;;             panics.
+	    (abstract-value=? v-abstract v0-abstract)))
+      (c:braces-around
+       (flat-specifier-declaration v0-abstract code0)
+       (flat-specifier-declaration v1-abstract code1)
+       (flat-specifier-declaration v2-abstract code2)
+       (loop (unitify (new-name-unit #f v1-abstract code1)) v1)
+       (loop (unitify (new-name-unit #f v2-abstract code2)) v2)
+       (if (void? v0-abstract)
+	   '()
+	   (c:assignment
+	    ;; abstraction
+	    (list code0 "_" "v")
+	    ;; These assume that Scheme inexact numbers are printed as C
+	    ;; doubles.
+	    (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1)
+	       (if (real? v2-abstract) (exact->inexact v2-abstract) code2))))
+       (loop v0 (unitify (new-name-unit #f v0-abstract code0))))))
+    (assert (or (and (eq? v-abstract 'int) (eq? v0-abstract 'int))
+		(and (not (eq? v-abstract 'int))
+		     (not (eq? v0-abstract 'int))
+		     (not (abstract-real? v0))
+		     (not (abstract-real? v))
+		     ;; needs work: This might not hold if v is a unit that
+		     ;;             always panics.
+		     (abstract-value-subset? v-abstract v0-abstract))))
     (cond
      ((union? v)
       (let* ((code (c:generate-name))
 	     (v-tag (union-tag v))
 	     (v-tag-abstract (abstractify v-tag)))
        (c:braces-around
-	(c:specifier-declaration v-tag-abstract code)
-	(loop unit->name (unitify (new-name-unit v-tag-abstract code)) v-tag)
+	(flat-specifier-declaration v-tag-abstract code)
+	(loop (unitify (new-name-unit #f v-tag-abstract code)) v-tag)
 	(c:new-dispatch
-	 code (map (lambda (v) (loop p v0 v)) (get-union-values v))))))
+	 code (map (lambda (v) (loop v0 v)) (get-union-values v))))))
      ((or (nonrecursive-closure? v)
 	  (recursive-closure? v)
 	  (perturbation-tagged-value? v)
@@ -14745,7 +14835,7 @@
 	      (tagged-pair? v)
 	      (equal-tags? (tagged-pair-tags v0) (tagged-pair-tags v))))
 	;; abstraction
-	(map (lambda (v0 v) (loop p v0 v))
+	(map (lambda (v0 v) (loop v0 v))
 	     (aggregate-value-values v0)
 	     (aggregate-value-values v)))
        ((and (slotted-name-unit? v0)
@@ -14772,12 +14862,12 @@
 	 (if (void? v0-abstract)
 	     '()
 	     (c:assignment
-	      (p v0)
+	      (unit->name v0)
 	      (c:pointer-cast
 	       (c:specifier v0-abstract)
 	       ;; We don't check for out of memory.
 	       (c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract))))))
-	 (loop p (unroll v0) v)))
+	 (loop (unroll v0) v)))
        ((union? v0)
 	(assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
 	(let ((i (positionp abstract-value=?
@@ -14785,22 +14875,22 @@
 			    (get-union-values v0-abstract))))
 	 (assert i)
 	 ;; abstraction
-	 (list (c:assignment (p (union-tag v0)) i)
-	       (loop p (list-ref (get-union-values v0) i) v))))
+	 (list (c:assignment (unit->name (union-tag v0)) i)
+	       (loop (list-ref (get-union-values v0) i) v))))
        (else (internal-error))))
      ((slotted-name-unit? v)
       (cond
        ((union? v0)
 	(assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
 	(if (union? v-abstract)
-	    (loop p v0 (unroll v))
+	    (loop v0 (unroll v))
 	    (let ((i (positionp abstract-value=?
 				v-abstract
 				(get-union-values v0-abstract))))
 	     (assert i)
 	     ;; abstraction
-	     (list (c:assignment (p (union-tag v0)) i)
-		   (loop p (list-ref (get-union-values v0) i) v)))))
+	     (list (c:assignment (unit->name (union-tag v0)) i)
+		   (loop (list-ref (get-union-values v0) i) v)))))
        ((or (nonrecursive-closure? v0)
 	    (recursive-closure? v0)
 	    (perturbation-tagged-value? v0)
@@ -14808,7 +14898,7 @@
 	    (sensitivity-tagged-value? v0)
 	    (reverse-tagged-value? v0)
 	    (tagged-pair? v0))
-	(loop p v0 (unroll v)))
+	(loop v0 (unroll v)))
        ((void? v0-abstract)
 	(assert (and (not (eq? v-abstract 'int))
 		     (not (eq? v0-abstract 'int))
@@ -14818,58 +14908,49 @@
 	(cond
 	 ((or (eq? v-abstract 'int) (eq? v0-abstract 'int))
 	  (assert (and (eq? v-abstract 'int) (eq? v0-abstract 'int)))
-	  (c:assignment (p v0) (unit->name v)))
-	 ((not (atomic? v-abstract)) (loop p v0 (unroll v)))
+	  (c:assignment (unit->name v0) (unit->name v)))
+	 ((not (atomic? v-abstract)) (loop v0 (unroll v)))
 	 ((or (not (atomic? v0-abstract))
 	      (and (union? v0-abstract)
 		   (not (abstract-value=? v-abstract v0-abstract))))
 	  ;; abstraction
 	  (list (c:assignment
-		 (p v0)
+		 (unit->name v0)
 		 (c:pointer-cast
 		  (c:specifier v0-abstract)
 		  ;; We don't check for out of memory.
 		  (c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract)))))
-		(loop p (unroll v0) v)))
+		(loop (unroll v0) v)))
 	 (else (assert (abstract-value=? v-abstract v0-abstract))
-	       (c:assignment (p v0) (unit->name v)))))
+	       (c:assignment (unit->name v0) (unit->name v)))))
        (else (internal-error))))
      ((slot-unit? v)
       (let* ((code1 (c:generate-name))
 	     (v1 (slot-unit-v1 v))
 	     (v1-abstract (abstractify v1)))
-       ;; needs work: This might not hold if v is a unit that always panics.
-       (assert (abstract-value=? v-abstract v0-abstract))
        (c:braces-around
-	(if (void? v1-abstract)
-	    '()
-	    (c:specifier-declaration v1-abstract code1))
-	(loop unit->name (unitify (new-name-unit v1-abstract code1)) v1)
-	(loop p
-	      v0
+	(flat-specifier-declaration v1-abstract code1)
+	(loop (unitify (new-name-unit #f v1-abstract code1)) v1)
+	(loop v0
 	      (unitify
-	       (new-slot-unit v0-abstract
-			      (new-name-unit v1-abstract code1)
+	       (new-slot-unit v-abstract
+			      (new-name-unit #f v1-abstract code1)
 			      (slot-unit-code v)))))))
      ((call-unit? v)
       (assert (and (not (eq? v-abstract 'int)) (not (eq? v0-abstract 'int))))
-      (let ((code0 (c:generate-name))
-	    (codes (map (lambda (v) (c:generate-name)) (call-unit-vs v)))
-	    (vs-abstract (map abstractify (call-unit-vs v))))
+      (let* ((code0 (c:generate-name))
+	     (codes (map (lambda (v) (c:generate-name)) (call-unit-vs v)))
+	     (vs-abstract (map abstractify (call-unit-vs v))))
        (c:braces-around
-	(if (void? v0-abstract)
-	    '()
-	    (c:specifier-declaration v0-abstract code0))
+	(c:specifier-declaration v-abstract code0)
 	;; abstraction
 	(map (lambda (v-abstract code)
-	      (if (void? v-abstract)
-		  '()
-		  (c:specifier-declaration v-abstract code)))
+	      (flat-specifier-declaration v-abstract code))
 	     vs-abstract
 	     codes)
 	;; abstraction
 	(map (lambda (v-abstract code v)
-	      (loop unit->name (unitify (new-name-unit v-abstract code)) v))
+	      (loop (unitify (new-name-unit #f v-abstract code)) v))
 	     vs-abstract
 	     codes
 	     (call-unit-vs v))
@@ -14881,112 +14962,94 @@
 		 '()
 		 (lambda (v-abstract code v)
 		  (map unit->name
-		       (flatten (unitify (new-name-unit v-abstract code)))))
+		       (flatten (unitify (new-name-unit #f v-abstract code)))))
 		 vs-abstract
 		 codes
 		 (call-unit-vs v)))))
-	 (if (void? v0-abstract)
+	 (if (void? v-abstract)
 	     (c:semicolon-after code)
-	     (c:assignment code0 code))
-	 (loop p v0 (unitify (new-name-unit v0-abstract code0)))))))
+	     (c:assignment code0 code)))
+	(loop v0 (unitify (new-name-unit #t v-abstract code0))))))
      ((panic-unit? v)
       (c:semicolon-after
        (c:call "panic" (list "\"" (panic-unit-code v) "\""))))
      ((+-unit? v)
-      (new-generate-real*real-unit
+      (new-generate-real*real->real-unit
        (lambda (code1 code2) (c:parenthesize (c:binary code1 "+" code2)))
        (+-unit-v1 v)
        (+-unit-v2 v)))
      ((--unit? v)
-      (new-generate-real*real-unit
+      (new-generate-real*real->real-unit
        (lambda (code1 code2) (c:parenthesize (c:binary code1 "-" code2)))
        (--unit-v1 v)
        (--unit-v2 v)))
      ((*-unit? v)
-      (new-generate-real*real-unit
+      (new-generate-real*real->real-unit
        (lambda (code1 code2) (c:parenthesize (c:binary code1 "*" code2)))
        (*-unit-v1 v)
        (*-unit-v2 v)))
      ((/-unit? v)
-      (new-generate-real*real-unit
+      (new-generate-real*real->real-unit
        (lambda (code1 code2) (c:parenthesize (c:binary code1 "/" code2)))
        (/-unit-v1 v)
        (/-unit-v2 v)))
      ((sqrt-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "sqrt" code)) (sqrt-unit-v1 v)))
      ((exp-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "exp" code)) (exp-unit-v1 v)))
      ((log-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "log" code)) (log-unit-v1 v)))
      ((sin-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "sin" code)) (sin-unit-v1 v)))
      ((cos-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "cos" code)) (cos-unit-v1 v)))
      ((atan-unit? v)
-      (new-generate-real*real-unit
+      (new-generate-real*real->real-unit
        (lambda (code1 code2) (c:call "atan2" code1 code2))
        (atan-unit-v1 v)
        (atan-unit-v2 v)))
      ((=-unit? v)
-      (new-generate-real*real-unit
-       (lambda (code1 code2)
-	(c:parenthesize ((c:binary-boolean "=") code1 code2)))
-       (=-unit-v1 v)
-       (=-unit-v2 v)))
+      (new-generate-real*real->boolean-unit
+       (c:new-binary-boolean "=") (=-unit-v1 v) (=-unit-v2 v)))
      ((<-unit? v)
-      (new-generate-real*real-unit
-       (lambda (code1 code2)
-	(c:parenthesize ((c:binary-boolean "<") code1 code2)))
-       (<-unit-v1 v)
-       (<-unit-v2 v)))
+      (new-generate-real*real->boolean-unit
+       (c:new-binary-boolean "<") (<-unit-v1 v) (<-unit-v2 v)))
      ((>-unit? v)
-      (new-generate-real*real-unit
-       (lambda (code1 code2)
-	(c:parenthesize ((c:binary-boolean ">") code1 code2)))
-       (>-unit-v1 v)
-       (>-unit-v2 v)))
+      (new-generate-real*real->boolean-unit
+       (c:new-binary-boolean ">") (>-unit-v1 v) (>-unit-v2 v)))
      ((<=-unit? v)
-      (new-generate-real*real-unit
-       (lambda (code1 code2)
-	(c:parenthesize ((c:binary-boolean "<=") code1 code2)))
-       (<=-unit-v1 v)
-       (<=-unit-v2 v)))
+      (new-generate-real*real->boolean-unit
+       (c:new-binary-boolean "<=") (<=-unit-v1 v) (<=-unit-v2 v)))
      ((>=-unit? v)
-      (new-generate-real*real-unit
-       (lambda (code1 code2)
-	(c:parenthesize ((c:binary-boolean ">=") code1 code2)))
-       (>=-unit-v1 v)
-       (>=-unit-v2 v)))
+      (new-generate-real*real->boolean-unit
+       (c:new-binary-boolean ">=") (>=-unit-v1 v) (>=-unit-v2 v)))
      ((zero?-unit? v)
-      (new-generate-real-unit
-       (lambda (code) (c:parenthesize ((c:unary-boolean "=") code)))
-       (zero?-unit-v1 v)))
+      (new-generate-real->boolean-unit
+       (c:new-unary-boolean "=") (zero?-unit-v1 v)))
      ((positive?-unit? v)
-      (new-generate-real-unit
-       (lambda (code) (c:parenthesize ((c:unary-boolean ">") code)))
-       (positive?-unit-v1 v)))
+      (new-generate-real->boolean-unit
+       (c:new-unary-boolean ">") (positive?-unit-v1 v)))
      ((negative?-unit? v)
-      (new-generate-real-unit
-       (lambda (code) (c:parenthesize ((c:unary-boolean "<") code)))
-       (negative?-unit-v1 v)))
+      (new-generate-real->boolean-unit
+       (c:new-unary-boolean "<") (negative?-unit-v1 v)))
      ((read-real-unit? v)
       (assert (and (not (eq? v-abstract 'int))
 		   (not (eq? v0-abstract 'int))
 		   (abstract-value=? v-abstract v0-abstract)))
-      (c:assignment (p v0) (c:call "read_real")))
+      (c:assignment (unit->name v0) (c:call "read_real")))
      ((write-real-unit? v)
-      (new-generate-real-unit
+      (new-generate-real->real-unit
        (lambda (code) (c:call "write_real" code)) (write-real-unit-v1 v)))
      ((scalar-value? v)
       (cond
        ((or (eq? v-abstract 'int) (eq? v0-abstract 'int))
 	(assert (and (eq? v-abstract 'int) (eq? v0-abstract 'int)))
-	(c:assignment (p v0) v))
+	(c:assignment (unit->name v0) v))
        ((union? v0)
 	(assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
 	(let ((i (positionp abstract-value=?
@@ -14994,8 +15057,8 @@
 			    (get-union-values v0-abstract))))
 	 (assert i)
 	 ;; abstraction
-	 (list (c:assignment (p (union-tag v0)) i)
-	       (loop p (list-ref (get-union-values v0) i) v))))
+	 (list (c:assignment (unit->name (union-tag v0)) i)
+	       (loop (list-ref (get-union-values v0) i) v))))
        ((void? v0-abstract)
 	(assert (abstract-value=? v-abstract v0-abstract))
 	'())
@@ -15005,7 +15068,7 @@
 	  (if (void? v0-abstract)
 	      '()
 	      (c:assignment
-	       (p v0)
+	       (unit->name v0)
 	       (c:pointer-cast
 		(c:specifier v0-abstract)
 		;; We don't check for out of memory.
@@ -15013,7 +15076,7 @@
 	 (else
 	  (assert (and (abstract-real? v0-abstract) (real? v-abstract)))
 	  ;; This assumes that Scheme inexact numbers are printed as C doubles.
-	  (c:assignment (p v0) (exact->inexact v-abstract)))))
+	  (c:assignment (unit->name v0) (exact->inexact v-abstract)))))
        (else (internal-error))))
      (else (internal-error)))))
   (c:return "r")))
@@ -15029,7 +15092,7 @@
 	(lambda (v)
 	 (pp (debugging-externalize
 	      (with-symbolic
-	       (lambda () (f (unitify (new-name-unit v "x")))))))
+	       (lambda () (f (unitify (new-name-unit #f v "x")))))))
 	 (newline))
 	vs)
        '())
@@ -15046,12 +15109,11 @@
 	    (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v "x")))))))
+		      (lambda () (unitify (new-name-unit #f v "x")))))))
 	  (with-symbolic
 	   (lambda ()
-	    (new-generate-body
-	     (unitify (new-name-unit v0 "r"))
-	     (f (unitify (new-name-unit v "x")))))))))
+	    (new-generate-body (unitify (new-name-unit #t v0 "r"))
+			       (f (unitify (new-name-unit #f v "x")))))))))
        vs))))
 
 (define (new-generate-binary-ad-definitions
@@ -15068,7 +15130,7 @@
 	(lambda (v)
 	 (pp (debugging-externalize
 	      (with-symbolic
-	       (lambda () (g (unitify (new-name-unit v "x")))))))
+	       (lambda () (g (unitify (new-name-unit #f v "x")))))))
 	 (newline))
 	vs)
        '())
@@ -15085,12 +15147,11 @@
 	    (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v "x")))))))
+		      (lambda () (unitify (new-name-unit #f v "x")))))))
 	  (with-symbolic
 	   (lambda ()
-	    (new-generate-body
-	     (unitify (new-name-unit v0 "r"))
-	     (g (unitify (new-name-unit v "x")))))))))
+	    (new-generate-body (unitify (new-name-unit #t v0 "r"))
+			       (g (unitify (new-name-unit #f v "x")))))))))
        vs))))
 
 (define (new-generate-function-definitions
@@ -15110,8 +15171,8 @@
 	 (pp (debugging-externalize
 	      (with-symbolic
 	       (lambda ()
-		(symbolic-apply (unitify (new-name-unit v1 "x1"))
-				(unitify (new-name-unit v2 "x2"))
+		(symbolic-apply (unitify (new-name-unit #f v1 "x1"))
+				(unitify (new-name-unit #f v2 "x2"))
 				#t
 				function-instances)))))
 	 (newline)))
@@ -15132,18 +15193,18 @@
 	    (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v1 "x1"))))))
+		      (lambda () (unitify (new-name-unit #f v1 "x1"))))))
 	   (map
 	    (lambda (u)
 	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
 	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit v2 "x2"))))))))
+		      (lambda () (unitify (new-name-unit #f v2 "x2"))))))))
 	 (with-symbolic
 	  (lambda ()
 	   (new-generate-body
-	    (unitify (new-name-unit v0 "r"))
-	    (symbolic-apply (unitify (new-name-unit v1 "x1"))
-			    (unitify (new-name-unit v2 "x2"))
+	    (unitify (new-name-unit #t v0 "r"))
+	    (symbolic-apply (unitify (new-name-unit #f v1 "x1"))
+			    (unitify (new-name-unit #f v2 "x2"))
 			    #t
 			    function-instances)))))))
       (second instances1-instances2))))
@@ -15201,6 +15262,12 @@
       #t #t #t (empty-abstract-value)
       (c:function-declarator "panic"
 			     (c:parameter "char" (c:pointer-declarator "x"))))
+     (c:specifier-function-declaration
+      #t #t #f (abstract-real) (c:function-declarator "read_real"))
+     (c:specifier-function-declaration
+      #t #t #f (abstract-real)
+      (c:function-declarator
+       "write_real" (c:specifier-parameter (abstract-real) "x")))
      (new-generate-unary-ad-declarations 'zero (lambda (v) #t) zero "zero")
      (new-generate-unary-ad-declarations
       'perturb
@@ -15266,6 +15333,22 @@
 			     (c:parameter "char" (c:pointer-declarator "x")))
       ;; abstraction
       "fputs(x,stderr);fputc('\\n',stderr);exit(EXIT_FAILURE);")
+     (c:specifier-function-definition
+      #t #t #f (abstract-real) (c:function-declarator "read_real")
+      ;; abstraction
+      (list (c:specifier-declaration (abstract-real) "x")
+	    ;; abstraction
+	    "scanf(\"%lf\",&x);"
+	    (c:return "x")))
+     (c:specifier-function-definition
+      #t #t #f (abstract-real)
+      (c:function-declarator
+       "write_real" (c:specifier-parameter (abstract-real) "x"))
+      ;; abstraction
+      (list
+       ;; abstraction
+       "printf(\"%.18lg\\n\",x);"
+       (c:return "x")))
      (new-generate-unary-ad-definitions
       'zero (lambda (v) #t) zero
       (lambda (v)
@@ -15728,10 +15811,21 @@
        (compile-time-warning "Argument to if-procedure might be invalid" u)))
   v))
 
-(define (symbolic-read-real v)
- (if (vlad-empty-list? v)
-     (make-read-real-unit v)
-     (new-panic-unit "Argument might not be an equivalent value for '()")))
+(define (symbolic-read-real v function-instances)
+ (cond
+  ((unit? v)
+   (cond
+    ((union? (unit-abstract-value v))
+     (symbolic-read-real (unroll v) function-instances))
+    ((vlad-empty-list? (unit-abstract-value v)) (new-read-real-unit))
+    (else (new-panic-unit "Argument is not an equivalent value for '()"))))
+  ((union? v)
+   (create-tagged-union
+    (union-tag v)
+    (map (lambda (v) (symbolic-read-real v function-instances))
+	 (get-union-values v))))
+  ((vlad-empty-list? v) (new-read-real-unit))
+  (else (new-panic-unit "Argument is not an equivalent value for '()"))))
 
 (define (symbolic-unary f g)
  (lambda (v function-instances)
@@ -16520,7 +16614,7 @@
  (define-primitive-procedure 'read-real
   (concrete-unary concrete-read-real)
   (abstract-unary abstract-read-real)
-  (symbolic-unary symbolic-read-real new-read-real-unit)
+  symbolic-read-real
   (lambda (v) "read_real")
   (if *imprecise-inexacts?*
       `(lambda (',(j* (vlad-empty-list))) (bundle (read-real) (perturb 0.0)))
