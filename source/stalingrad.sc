@@ -312,6 +312,9 @@
  ;; parse need to have these set.
  (set! *canonized?* *flow-analysis?*)
  (set! *interned?* (or interned? *flow-analysis?*))
+ (set! *new-code-generator?*
+       (or new-code-generator?
+	   (getenv "STALINGRAD_NEW_CODE_GENERATOR")))
  (with-concrete (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
@@ -344,9 +347,8 @@
 	   ;;             more than once.
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
-	   (generate-file (if (or new-code-generator?
-				  (getenv "STALINGRAD_NEW_CODE_GENERATOR"))
-			      (new-generate)
+	   (generate-file (if *new-code-generator?*
+			      (new-generate e)
 			      (generate e 'needs-work))
 			  pathname)
 	   (unless disable-run-cc?
