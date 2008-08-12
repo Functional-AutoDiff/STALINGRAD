@@ -2128,43 +2128,43 @@
 	 (cond
 	  ((union? v)
 	   (some-cps (lambda (u cs k) (loop u v-perturbation cs k))
-		     (union-members-check v)
+		     (union-members v)
 		     cs
 		     k))
 	  ((union? v-perturbation)
 	   (some-cps
 	    (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
-	    (union-members-check v-perturbation)
+	    (union-members v-perturbation)
 	    cs
 	    k))
 	  ((or (and (vlad-empty-list? v)
 		    (perturbation-tagged-value? v-perturbation)
 		    (some vlad-empty-list?
-			  (union-members-check
+			  (union-members
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation))))
 	       (and (vlad-true? v)
 		    (perturbation-tagged-value? v-perturbation)
 		    (some vlad-true?
-			  (union-members-check
+			  (union-members
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation))))
 	       (and (vlad-false? v)
 		    (perturbation-tagged-value? v-perturbation)
 		    (some vlad-false?
-			  (union-members-check
+			  (union-members
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation))))
 	       (and (vlad-real? v)
 		    (perturbation-tagged-value? v-perturbation)
 		    (some vlad-real?
-			  (union-members-check
+			  (union-members
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation))))
 	       (and (primitive-procedure? v)
 		    (perturbation-tagged-value? v-perturbation)
 		    (some (lambda (u) (and (primitive-procedure? u) (eq? v u)))
-			  (union-members-check
+			  (union-members
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation)))))
 	   (k #t cs))
@@ -2179,7 +2179,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2200,7 +2200,7 @@
 				  k)
 			    (k #f cs))))
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2215,7 +2215,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2230,7 +2230,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2260,13 +2260,13 @@
 	 (cond
 	  ((union? v)
 	   (every-cps (lambda (u cs k) (loop u v-perturbation cs k))
-		      (union-members-check v)
+		      (union-members v)
 		      cs
 		      k))
 	  ((union? v-perturbation)
 	   (every-cps
 	    (lambda (u-perturbation cs k) (loop v u-perturbation cs k))
-	    (union-members-check v-perturbation)
+	    (union-members v-perturbation)
 	    cs
 	    k))
 	  ((or
@@ -2274,31 +2274,31 @@
 	     (vlad-empty-list? v)
 	     (perturbation-tagged-value? v-perturbation)
 	     (every vlad-empty-list?
-		    (union-members-check
+		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation))))
 	    (and
 	     (vlad-true? v)
 	     (perturbation-tagged-value? v-perturbation)
 	     (every vlad-true?
-		    (union-members-check
+		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation))))
 	    (and
 	     (vlad-false? v)
 	     (perturbation-tagged-value? v-perturbation)
 	     (every vlad-false?
-		    (union-members-check
+		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation))))
 	    (and
 	     (vlad-real? v)
 	     (perturbation-tagged-value? v-perturbation)
 	     (every vlad-real?
-		    (union-members-check
+		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation))))
 	    (and
 	     (primitive-procedure? v)
 	     (perturbation-tagged-value? v-perturbation)
 	     (every (lambda (u) (and (primitive-procedure? u) (eq? v u)))
-		    (union-members-check
+		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation)))))
 	   (k #t cs))
 	  ((and (perturbation-tagged-value? v)
@@ -2312,7 +2312,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2333,7 +2333,7 @@
 				  k)
 			    (k #f cs))))
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2348,7 +2348,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2363,7 +2363,7 @@
 		       cs
 		       k)
 		 (k #f cs)))
-	    (union-members-check
+	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
 	    cs
 	    k))
@@ -2673,13 +2673,6 @@
      (map-reduce append '() union-members (get-union-values v))
      (list v)))
 
-(define (union-members-check v)
- ;; debugging
- (cond ((union? v)
-	(assert (not (some union? (get-union-values v))))
-	(get-union-values v))
-       (else (list v))))
-
 (define (allocate-union vs)
  (make-union vs
 	     #f
@@ -2737,10 +2730,10 @@
 
 (define (unionize vs) (reduce abstract-value-union vs (empty-abstract-value)))
 
-(define (map-union f v) (unionize (map f (union-members-check v))))
+(define (map-union f v) (unionize (map f (union-members v))))
 
 (define (cross-union f v1 v2)
- (unionize (cross-product f (union-members-check v1) (union-members-check v2))))
+ (unionize (cross-product f (union-members v1) (union-members v2))))
 
 ;;; Units
 
@@ -2977,8 +2970,7 @@
   (cond
    ;; needs work: I'm not sure that this is sound.
    ((memq v vs) #t)
-   ((union? v)
-    (some (lambda (u) (loop tags u (cons v vs))) (get-union-values v)))
+   ((union? v) (some (lambda (u) (loop tags u (cons v vs))) (union-members v)))
    ((scalar-value? v) (p (reverse tags)))
    ((nonrecursive-closure? v)
     (p (append (reverse tags) (nonrecursive-closure-tags v))))
@@ -3001,7 +2993,7 @@
    ;; needs work: I'm not sure that this is sound.
    ((memq v vs) #f)
    ((union? v)
-    (every (lambda (u) (loop tags u (cons v vs))) (get-union-values v)))
+    (every (lambda (u) (loop tags u (cons v vs))) (union-members v)))
    ((scalar-value? v) (p (reverse tags)))
    ((nonrecursive-closure? v)
     (p (append (reverse tags) (nonrecursive-closure-tags v))))
@@ -3175,12 +3167,12 @@
 	   (if (eq? (union-values v1) 'unfilled)
 	       (k #f cs)
 	       (every-cps
-		(lambda (u1 cs k) (loop u1 v2 cs k)) (union-members-check v1) cs k)))
+		(lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k)))
 	  ((union? v2)
 	   (if (eq? (union-values v2) 'unfilled)
 	       (k #f cs)
 	       (some-cps
-		(lambda (u2 cs k) (loop v1 u2 cs k)) (union-members-check v2) cs k)))
+		(lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k)))
 	  ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	       (and (vlad-true? v1) (vlad-true? v2))
 	       (and (vlad-false? v1) (vlad-false? v2))
@@ -3313,11 +3305,11 @@
 	  ((and (eq? v1 v2) (not (empty-abstract-value? v1))) (k #t cs))
 	  ((union? v1)
 	   (some-cps
-	    (lambda (u1 cs k) (loop u1 v2 cs k)) (union-members-check v1) cs k))
+	    (lambda (u1 cs k) (loop u1 v2 cs k)) (union-members v1) cs k))
 	  ((union? v2)
 	   (let ((c (cons (cons v1 v2) #f)))
 	    (some-cps
-	     (lambda (u2 cs k) (loop v1 u2 cs k)) (union-members-check v2) cs k)))
+	     (lambda (u2 cs k) (loop v1 u2 cs k)) (union-members v2) cs k)))
 	  ((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
 	       (and (vlad-true? v1) (vlad-true? v2))
 	       (and (vlad-false? v1) (vlad-false? v2))
@@ -3772,6 +3764,274 @@
 (define (abstract-value-union v1 v2)
  (canonize-and-maybe-intern-abstract-value
   (abstract-value-union-internal v1 v2)))
+
+(define (debugging-canonize-abstract-value v)
+ ;; needs work: This is a rewrite which is an attempt to clean up the union
+ ;;             case. It is not finished, does not work, and does not handle
+ ;;             transforming unions of aggregates into aggregates of unions.
+ ;; This is written in CPS so as not to break structure sharing.
+ ;; The whole purpose of this procedure is to:
+ ;; - propagate empty abstract values (empty unions) upward so that there are
+ ;;   never any nested empty abstract values,
+ ;; - to merge unions of unions so that there are never any unions immediately
+ ;;   nested in another union,
+ ;; - to remove singleton unions, and
+ ;; - to propagate unions of transformed booleans into transformed unions of
+ ;;   booleans. For bundles, this widens in the process.
+ ;; If assq is replaced with assp deep-abstract-value=? then this also:
+ ;; - discovers structure to share.
+ ;; It is necessary to use assp deep-abstract-value=? or else an error occurs
+ ;; during nr-sqrt-RR where equivalent but non-eq recursive abstract values are
+ ;; nested and then path-of-greatest-depth finds a path with equivalent but
+ ;; non-eq values which when merged yield a value that again has that path
+ ;; causing an infinite loop.
+ (time-it-bucket
+  7
+  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
+   (let ((found? (assp deep-abstract-value=? v cs)))
+    (cond
+     (found? (k (cdr found?) cs))
+     ((union? v)
+      (cond
+       ((union-canonize-cache v) (k (union-canonize-cache v) cs))
+       ((deep-empty-abstract-value? v)
+	(let ((u-prime (empty-abstract-value)))
+	 (k u-prime (cons (cons v u-prime) cs))))
+       (else
+	;; This is the whole reason we require that abstract values be copied.
+	;; This performs the optimization that unionize performs but
+	;; fill-union-values! is unable to because of unfilled slots.
+	(let ((v-prime (allocate-union 'unfilled)))
+	 ;; We cannot (set-union-canonize-cache! v v-prime) or
+	 ;; (set-union-canonize-cache! v-prime v-prime) here because of the
+	 ;; singleton case (the first branch of the cond) below.
+	 (map-cps loop
+		  (union-members v)
+		  ;; We cannot (cons (cons v v-prime) cs) here for the same
+		  ;; reason as above.
+		  cs
+		  (lambda (us-prime cs)
+		   (assert (and (not (some union? us-prime))))
+		   ;; needs work
+		   ;; Still need to transform unions of transformed booleans
+		   ;; into transformed unions of booleans when union-freeness
+		   ;; must be preserved. Only want to do this in this case
+		   ;; since it widens.
+		   (cond ((and (not (null? us-prime)) (null? (rest us-prime)))
+			  (set-union-canonize-cache! v (first us-prime))
+			  (k (first us-prime) cs))
+			 (else (set-union-canonize-cache! v v-prime)
+			       (set-union-canonize-cache! v-prime v-prime)
+			       (fill-union-values! v-prime us-prime)
+			       (k v-prime cs)))))))))
+     ((vlad-empty-list? v)
+      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+     ((vlad-true? v)
+      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+     ((vlad-false? v)
+      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+     ((vlad-real? v)
+      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+     ((primitive-procedure? v)
+      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
+     ((nonrecursive-closure? v)
+      (cond
+       ((nonrecursive-closure-canonize-cache v)
+	(k (nonrecursive-closure-canonize-cache v) cs))
+       ((deep-empty-abstract-value? v)
+	(let ((u-prime (empty-abstract-value)))
+	 (k u-prime (cons (cons v u-prime) cs))))
+       (else
+	;; See the note in abstract-environment=?.
+	(let ((u-prime (allocate-nonrecursive-closure
+			'unfilled (nonrecursive-closure-lambda-expression v))))
+	 (assert
+	  (and (= (length (get-nonrecursive-closure-values v))
+		  (length (free-variables
+			   (nonrecursive-closure-lambda-expression u-prime))))
+	       ;; See the note in new-nonrecursive-closure.
+	       (or (eq? *mode* 'abstract)
+		   (eq? *mode* 'symbolic)
+		   (every (lambda (x v)
+			   (prefix-tags? (variable-tags x) (value-tags v)))
+			  (free-variables
+			   (nonrecursive-closure-lambda-expression u-prime))
+			  (get-nonrecursive-closure-values v)))
+	       (not (some empty-abstract-value?
+			  (get-nonrecursive-closure-values v)))
+	       (or (eq? *mode* 'concrete)
+		   (eq? *mode* 'symbolic)
+		   (every (lambda (x v)
+			   (some-value-tags
+			    (lambda (tags)
+			     (prefix-tags? (variable-tags x) tags)) v))
+			  (free-variables
+			   (nonrecursive-closure-lambda-expression u-prime))
+			  (get-nonrecursive-closure-values v)))))
+	 (set-nonrecursive-closure-canonize-cache! v u-prime)
+	 (set-nonrecursive-closure-canonize-cache! u-prime u-prime)
+	 (map-cps loop
+		  (get-nonrecursive-closure-values v)
+		  (cons (cons v u-prime) cs)
+		  (lambda (vs-prime cs)
+		   (fill-nonrecursive-closure-values! u-prime vs-prime)
+		   (k u-prime cs)))))))
+     ((recursive-closure? v)
+      (cond ((recursive-closure-canonize-cache v)
+	     (k (recursive-closure-canonize-cache v) cs))
+	    ((deep-empty-abstract-value? v)
+	     (let ((u-prime (empty-abstract-value)))
+	      (k u-prime (cons (cons v u-prime) cs))))
+	    (else
+	     ;; See the note in abstract-environment=?.
+	     (let ((u-prime (allocate-recursive-closure
+			     'unfilled
+			     (recursive-closure-procedure-variables v)
+			     (recursive-closure-lambda-expressions v)
+			     (recursive-closure-index v))))
+	      (assert
+	       (and
+		(= (length (get-recursive-closure-values v))
+		   (length (recursive-closure-variables u-prime)))
+		;; See the note in new-nonrecursive-closure.
+		(or (eq? *mode* 'abstract)
+		    (eq? *mode* 'symbolic)
+		    (every (lambda (x v)
+			    (prefix-tags? (variable-tags x) (value-tags v)))
+			   (recursive-closure-variables u-prime)
+			   (get-recursive-closure-values v)))
+		(not (some empty-abstract-value?
+			   (get-recursive-closure-values v)))
+		(or (eq? *mode* 'concrete)
+		    (eq? *mode* 'symbolic)
+		    (every (lambda (x v)
+			    (some-value-tags
+			     (lambda (tags)
+			      (prefix-tags? (variable-tags x) tags)) v))
+			   (recursive-closure-variables u-prime)
+			   (get-recursive-closure-values v)))))
+	      (set-recursive-closure-canonize-cache! v u-prime)
+	      (set-recursive-closure-canonize-cache! u-prime u-prime)
+	      (map-cps loop
+		       (get-recursive-closure-values v)
+		       (cons (cons v u-prime) cs)
+		       (lambda (vs-prime cs)
+			(fill-recursive-closure-values! u-prime vs-prime)
+			(k u-prime cs)))))))
+     ((perturbation-tagged-value? v)
+      (cond ((perturbation-tagged-value-canonize-cache v)
+	     (k (perturbation-tagged-value-canonize-cache v) cs))
+	    ((deep-empty-abstract-value? v)
+	     (let ((u-prime (empty-abstract-value)))
+	      (k u-prime (cons (cons v u-prime) cs))))
+	    (else
+	     (let ((u-prime (allocate-perturbation-tagged-value 'unfilled)))
+	      (assert (not (empty-abstract-value?
+			    (get-perturbation-tagged-value-primal v))))
+	      (set-perturbation-tagged-value-canonize-cache! v u-prime)
+	      (set-perturbation-tagged-value-canonize-cache! u-prime u-prime)
+	      (loop (get-perturbation-tagged-value-primal v)
+		    (cons (cons v u-prime) cs)
+		    (lambda (v-prime cs)
+		     (fill-perturbation-tagged-value-primal! u-prime v-prime)
+		     (k u-prime cs)))))))
+     ((bundle? v)
+      (cond
+       ((bundle-canonize-cache v) (k (bundle-canonize-cache v) cs))
+       ((deep-empty-abstract-value? v)
+	(let ((u-prime (empty-abstract-value)))
+	 (k u-prime (cons (cons v u-prime) cs))))
+       (else
+	(let ((u-prime (allocate-bundle 'unfilled 'unfilled)))
+	 (assert
+	  (and (some-bundlable? (get-bundle-primal v) (get-bundle-tangent v))
+	       (not (empty-abstract-value? (get-bundle-primal v)))
+	       (not (empty-abstract-value? (get-bundle-tangent v)))))
+	 (set-bundle-canonize-cache! v u-prime)
+	 (set-bundle-canonize-cache! u-prime u-prime)
+	 (loop (get-bundle-primal v)
+	       (cons (cons v u-prime) cs)
+	       (lambda (v-primal-prime cs)
+		(loop (get-bundle-tangent v)
+		      cs
+		      (lambda (v-tangent-prime cs)
+		       (fill-bundle! u-prime v-primal-prime v-tangent-prime)
+		       (k u-prime cs)))))))))
+     ((sensitivity-tagged-value? v)
+      (cond ((sensitivity-tagged-value-canonize-cache v)
+	     (k (sensitivity-tagged-value-canonize-cache v) cs))
+	    ((deep-empty-abstract-value? v)
+	     (let ((u-prime (empty-abstract-value)))
+	      (k u-prime (cons (cons v u-prime) cs))))
+	    (else
+	     (let ((u-prime (allocate-sensitivity-tagged-value 'unfilled)))
+	      (assert (not (empty-abstract-value?
+			    (get-sensitivity-tagged-value-primal v))))
+	      (set-sensitivity-tagged-value-canonize-cache! v u-prime)
+	      (set-sensitivity-tagged-value-canonize-cache! u-prime u-prime)
+	      (loop (get-sensitivity-tagged-value-primal v)
+		    (cons (cons v u-prime) cs)
+		    (lambda (v-prime cs)
+		     (fill-sensitivity-tagged-value-primal! u-prime v-prime)
+		     (k u-prime cs)))))))
+     ((reverse-tagged-value? v)
+      (cond
+       ((reverse-tagged-value-canonize-cache v)
+	(k (reverse-tagged-value-canonize-cache v) cs))
+       ((deep-empty-abstract-value? v)
+	(let ((u-prime (empty-abstract-value)))
+	 (k u-prime (cons (cons v u-prime) cs))))
+       (else
+	(let ((u-prime (allocate-reverse-tagged-value 'unfilled)))
+	 (assert
+	  (not (empty-abstract-value? (get-reverse-tagged-value-primal v))))
+	 (set-reverse-tagged-value-canonize-cache! v u-prime)
+	 (set-reverse-tagged-value-canonize-cache! u-prime u-prime)
+	 (loop (get-reverse-tagged-value-primal v)
+	       (cons (cons v u-prime) cs)
+	       (lambda (v-prime cs)
+		(fill-reverse-tagged-value-primal! u-prime v-prime)
+		(k u-prime cs)))))))
+     ((tagged-pair? v)
+      (cond
+       ((tagged-pair-canonize-cache v) (k (tagged-pair-canonize-cache v) cs))
+       ((deep-empty-abstract-value? v)
+	(let ((u-prime (empty-abstract-value)))
+	 (k u-prime (cons (cons v u-prime) cs))))
+       (else
+	(let ((u-prime (allocate-tagged-pair
+			(tagged-pair-tags v) 'unfilled 'unfilled)))
+	 (assert
+	  (and
+	   (or (eq? *mode* 'abstract)
+	       (eq? *mode* 'symbolic)
+	       (and (prefix-tags? (tagged-pair-tags u-prime)
+				  (value-tags (get-tagged-pair-car v)))
+		    (prefix-tags? (tagged-pair-tags u-prime)
+				  (value-tags (get-tagged-pair-cdr v)))))
+	   (not (empty-abstract-value? (get-tagged-pair-car v)))
+	   (not (empty-abstract-value? (get-tagged-pair-cdr v)))
+	   (or
+	    (eq? *mode* 'concrete)
+	    (eq? *mode* 'symbolic)
+	    (and
+	     (some-value-tags
+	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
+	      (get-tagged-pair-car v))
+	     (some-value-tags
+	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
+	      (get-tagged-pair-cdr v))))))
+	 (set-tagged-pair-canonize-cache! v u-prime)
+	 (set-tagged-pair-canonize-cache! u-prime u-prime)
+	 (loop (get-tagged-pair-car v)
+	       (cons (cons v u-prime) cs)
+	       (lambda (v-car-prime cs)
+		(loop (get-tagged-pair-cdr v)
+		      cs
+		      (lambda (v-cdr-prime cs)
+		       (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+		       (k u-prime cs)))))))))
+     (else (internal-error)))))))
 
 (define (canonize-abstract-value v)
  ;; This is written in CPS so as not to break structure sharing.
@@ -5258,7 +5518,7 @@
    ((union? v)
     (let ((v-prime (allocate-union 'unfilled)))
      (map-cps loop
-	      (get-union-values v)
+	      (union-members v)
 	      (cons (cons v v-prime) cs)
 	      (lambda (us-prime cs)
 	       (fill-union-values! v-prime us-prime)
@@ -5365,7 +5625,7 @@
 	  (set-union-zero-cache! v v0)
 	  (set-union-zero-cache! v0 v0)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v)
+			  (union-members v)
 			  (lambda (us0)
 			   (fill-union-values! v0 us0)
 			   (k v0))))))
@@ -5572,7 +5832,7 @@
 	  (set-union-unperturb-cache! v-perturbation v)
 	  (set-union-perturb-cache! v v-perturbation)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v)
+			  (union-members v)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
 			   (k v-perturbation))))))
@@ -5694,7 +5954,7 @@
 	  (set-union-perturb-cache! v v-perturbation)
 	  (set-union-unperturb-cache! v-perturbation v)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v-perturbation)
+			  (union-members v-perturbation)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
@@ -5795,21 +6055,11 @@
   (check-canonize-cache! v-forward)
   (check-intern-cache! v-forward)
   (check-interned! v-forward))
- ;; debugging
- (when (eq? *mode* 'symbolic)
-  (format #t "debugging 2~%")
-  (write (debugging-externalize v-forward))
-  (newline))
  (time-it-bucket
   12
   (let loop ((v-forward v-forward)
 	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
-   ;; debugging
-   (when (eq? *mode* 'symbolic)
-    (format #t "debugging 3~%")
-    (write (debugging-externalize v-forward))
-    (newline))
    (cond
     ((and (eq? *mode* 'symbolic)
 	  (not top?)
@@ -5829,7 +6079,7 @@
 	 (let ((v (create-tagged-union (union-tag v-forward) 'unfilled)))
 	  (set-union-primal-cache! v-forward v)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v-forward)
+			  (union-members v-forward)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
@@ -5951,7 +6201,7 @@
 		(create-tagged-union (union-tag v-forward) 'unfilled)))
 	  (set-union-tangent-cache! v-forward v-perturbation)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v-forward)
+			  (union-members v-forward)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
 			   (k v-perturbation))))))
@@ -6086,7 +6336,7 @@
 	 (let ((v-forward (create-tagged-union (union-tag v0) 'unfilled)))
 	  (set-union-bundle-cache! v0 v-forward)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v0)
+			  (union-members v0)
 			  (lambda (us-forward)
 			   (fill-union-values! v-forward us-forward)
 			   (k v-forward))))))
@@ -6137,7 +6387,7 @@
 	     (set-tagged-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs
 	      (lambda (u k) (loop (vlad-cons u v-perturbation) #f k))
-	      (get-union-values v)
+	      (union-members v)
 	      (lambda (us-forward)
 	       (fill-union-values! v-forward us-forward)
 	       (k v-forward)))))
@@ -6147,7 +6397,7 @@
 	     (set-tagged-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs (lambda (u-perturbation k)
 			      (loop (vlad-cons v u-perturbation) #f k))
-			     (get-union-values v-perturbation)
+			     (union-members v-perturbation)
 			     (lambda (us-forward)
 			      (fill-union-values! v-forward us-forward)
 			      (k v-forward)))))
@@ -6686,7 +6936,7 @@
 	  (set-union-unsensitize-cache! v-sensitivity v)
 	  (set-union-sensitize-cache! v v-sensitivity)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v)
+			  (union-members v)
 			  (lambda (us-sensitivity)
 			   (fill-union-values! v-sensitivity us-sensitivity)
 			   (k v-sensitivity))))))
@@ -6791,7 +7041,7 @@
       (if (union-unsensitize-cache v-sensitivity)
 	  (k #t cs)
 	  (every-cps
-	   loop (union-members-check v-sensitivity) (cons v-sensitivity cs) k)))
+	   loop (union-members v-sensitivity) (cons v-sensitivity cs) k)))
      ((vlad-empty-list? v-sensitivity) (k #f cs))
      ((vlad-true? v-sensitivity) (k #f cs))
      ((vlad-false? v-sensitivity) (k #f cs))
@@ -6872,7 +7122,7 @@
 	  (set-union-sensitize-cache! v v-sensitivity)
 	  (set-union-unsensitize-cache! v-sensitivity v)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v-sensitivity)
+			  (union-members v-sensitivity)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
@@ -7015,7 +7265,7 @@
 	 (let ((v (create-tagged-union (union-tag v0) 'unfilled)))
 	  (set-union-plus-cache! v0 v)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v0)
+			  (union-members v0)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
@@ -7052,7 +7302,7 @@
 	    (let ((v (create-tagged-union (union-tag v1) 'unfilled)))
 	     (set-tagged-pair-plus-cache! v0 v)
 	     (map-cps-non-cs (lambda (u1 k) (loop (vlad-cons u1 v2) #f k))
-			     (get-union-values v1)
+			     (union-members v1)
 			     (lambda (us)
 			      (fill-union-values! v us)
 			      (k v)))))
@@ -7060,7 +7310,7 @@
 	    (let ((v (create-tagged-union (union-tag v2) 'unfilled)))
 	     (set-tagged-pair-plus-cache! v0 v)
 	     (map-cps-non-cs (lambda (u2 k) (loop (vlad-cons v1 u2) #f k))
-			     (get-union-values v2)
+			     (union-members v2)
 			     (lambda (us)
 			      (fill-union-values! v us)
 			      (k v)))))
@@ -7213,7 +7463,7 @@
 	  (set-union-*j-inverse-cache! v-reverse v)
 	  (set-union-*j-cache! v v-reverse)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v)
+			  (union-members v)
 			  (lambda (us-reverse)
 			   (fill-union-values! v-reverse us-reverse)
 			   (k v-reverse))))))
@@ -7339,7 +7589,7 @@
 	  (set-union-*j-cache! v v-reverse)
 	  (set-union-*j-inverse-cache! v-reverse v)
 	  (map-cps-non-cs (lambda (v k) (loop v #f k))
-			  (get-union-values v-reverse)
+			  (union-members v-reverse)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
@@ -7520,7 +7770,7 @@
 	(if (eq? (union-values v) 'unfilled)
 	    '(union unfilled)
 	    `(union
-	      ,@(map (lambda (u) (loop u (cons v vs))) (get-union-values v))))
+	      ,@(map (lambda (u) (loop u (cons v vs))) (union-members v))))
 	(if (eq? (union-values v) 'unfilled)
 	    `(tagged-union ,(loop (union-tag v) (cons v vs)) unfilled)
 	    `(tagged-union ,(loop (union-tag v) (cons v vs))
@@ -7642,10 +7892,10 @@
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably" v))
 	   (cond ((empty-abstract-value? v) 'bottom)
-		 ((null? (rest (get-union-values v))) (internal-error))
+		 ((null? (rest (union-members v))) (internal-error))
 		 ((eq? (union-tag v) 'unfilled)
 		  `(union ,@(map (lambda (u) (loop u quote? (cons v vs)))
-				 (get-union-values v))))
+				 (union-members v))))
 		 (else `(tagged-union
 			 ,(loop (union-tag v) quote? (cons v vs))
 			 ,@(map (lambda (u) (loop u quote? (cons v vs)))
@@ -8285,9 +8535,9 @@
       ((union? v)
        (let ((v-prime (allocate-union 'unfilled)))
 	(map-cps loop
-		 (if (> (count-if real? (union-members-check v)) limit)
-		     (cons (abstract-real) (remove-if real? (union-members-check v)))
-		     (union-members-check v))
+		 (if (> (count-if real? (union-members v)) limit)
+		     (cons (abstract-real) (remove-if real? (union-members v)))
+		     (union-members v))
 		 (cons (cons v v-prime) cs)
 		 (lambda (us-prime cs)
 		  (fill-union-values! v-prime us-prime)
@@ -8383,10 +8633,10 @@
     ((union? v)
      (let* ((us (find-if (lambda (us) (> (length us) limit))
 			 (transitive-equivalence-classesp
-			  match? (remove-if-not type? (union-members-check v))))))
+			  match? (remove-if-not type? (union-members v))))))
       (if us
 	  (list (first us) (second us))
-	  (let inner ((us (union-members-check v)) (vs (cons v vs)))
+	  (let inner ((us (union-members v)) (vs (cons v vs)))
 	   (if (null? us)
 	       (k vs)
 	       (outer (first us) vs (lambda (vs) (inner (rest us) vs))))))))
@@ -8416,7 +8666,7 @@
        ((union? v)
 	(let ((v-prime (allocate-union 'unfilled)))
 	 (map-cps loop
-		  (union-members-check v)
+		  (union-members v)
 		  (cons (cons v v-prime) cs)
 		  (lambda (us-prime cs)
 		   (fill-union-values! v-prime us-prime)
@@ -8678,7 +8928,7 @@
 	  ((union? v)
 	   (let ((v-prime (allocate-union 'unfilled)))
 	    (map-cps loop
-		     (union-members-check v)
+		     (union-members v)
 		     (cons (cons v v-prime) cs)
 		     (lambda (us-prime cs)
 		      (fill-union-values! v-prime us-prime)
@@ -8762,17 +9012,17 @@
 		     (fill-tagged-pair! u-prime v-car-prime v-prime)
 		     (k v-prime cs)))))
 	    ((and (union? (tagged-pair-cdr v))
-		  (= (length (union-members-check (tagged-pair-cdr v))) 2)
+		  (= (length (union-members (tagged-pair-cdr v))) 2)
 		  (some (lambda (u)
 			 (tagged-empty-list? (tagged-pair-tags v) u))
-			(union-members-check (tagged-pair-cdr v)))
+			(union-members (tagged-pair-cdr v)))
 		  (some (lambda (u)
 			 (and (tagged-pair? u)
 			      (equal-tags? (tagged-pair-tags u)
 					   (tagged-pair-tags v))
 			      (deep-abstract-value=? (tagged-pair-cdr u)
 						     (tagged-pair-cdr v))))
-			(union-members-check (tagged-pair-cdr v)))
+			(union-members (tagged-pair-cdr v)))
 		  (abstract-value-unionable?
 		   #t
 		   (get-tagged-pair-car v)
@@ -8784,7 +9034,7 @@
 					(tagged-pair-tags v))
 			   (deep-abstract-value=? (tagged-pair-cdr u)
 						  (tagged-pair-cdr v))))
-		     (union-members-check (tagged-pair-cdr v))))))
+		     (union-members (tagged-pair-cdr v))))))
 	     (let* ((u-prime (allocate-tagged-pair
 			      (tagged-pair-tags v) 'unfilled 'unfilled))
 		    (v-prime
@@ -8793,7 +9043,7 @@
 		       u-prime
 		       (find-if (lambda (u)
 				 (tagged-empty-list? (tagged-pair-tags v) u))
-				(union-members-check (tagged-pair-cdr v)))))))
+				(union-members (tagged-pair-cdr v)))))))
 	      (loop (abstract-value-union-internal
 		     (get-tagged-pair-car v)
 		     (get-tagged-pair-car
@@ -8804,7 +9054,7 @@
 					  (tagged-pair-tags v))
 			     (deep-abstract-value=? (tagged-pair-cdr u)
 						    (tagged-pair-cdr v))))
-		       (union-members-check (tagged-pair-cdr v)))))
+		       (union-members (tagged-pair-cdr v)))))
 		    cs
 		    (lambda (v-car-prime cs)
 		     (fill-tagged-pair! u-prime v-car-prime v-prime)
@@ -9033,7 +9283,7 @@
    (list (list (cons (variable-access-expression-variable p) v))))
   ((union? v)
    (map-reduce
-    append '() (lambda (u) (abstract-destructure p u)) (union-members-check v)))
+    append '() (lambda (u) (abstract-destructure p u)) (union-members v)))
   ((constant-expression? p)
    (cond
     ((abstract-value=?
@@ -9423,15 +9673,15 @@
 			     (when (closure? u2)
 			      (abstract-apply-closure!
 			       e u2 (vlad-empty-list)))))
-			(union-members-check (vlad-cdr u23))))
-		      (union-members-check (vlad-car u23)))
+			(union-members (vlad-cdr u23))))
+		      (union-members (vlad-car u23)))
 		     (compile-time-warning
 		      "Argument to if-procedure might be invalid" u)))
-		(union-members-check (vlad-cdr u))))
-	      (union-members-check (vlad-car u)))
+		(union-members (vlad-cdr u))))
+	      (union-members (vlad-car u)))
 	     (compile-time-warning
 	      "Argument to if-procedure might be invalid" u)))
-	(union-members-check v2))))
+	(union-members v2))))
      ((closure? u1)
       (cond ((every-value-tags
 	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
@@ -9444,7 +9694,7 @@
 	    (else (compile-time-warning
 		   "Argument might have wrong type for target" u1 v2))))
      (else (compile-time-warning "Target might not be a procedure" u1))))
-   (union-members-check v1))))
+   (union-members v1))))
 
 (define (abstract-eval-prime! e vs)
  ;; Can't give an error if entry already exists since we call this
@@ -9617,7 +9867,7 @@
 	 ((union? v)
 	  (if (eq? (union-values v) 'unfilled)
 	      (k #t vs)
-	      (let inner ((us (union-members-check v)) (vs (cons v vs)))
+	      (let inner ((us (union-members v)) (vs (cons v vs)))
 	       (if (null? us)
 		   (k #f vs)
 		   (outer (first us)
@@ -9659,9 +9909,9 @@
    (cond ((real? v) (k #f vs))
 	 ((memq v vs) (k #f vs))
 	 ((union? v)
-	  (if (>= (length (union-members-check v)) 2)
+	  (if (>= (length (union-members v)) 2)
 	      (k #t vs)
-	      (let inner ((us (union-members-check v)) (vs (cons v vs)))
+	      (let inner ((us (union-members v)) (vs (cons v vs)))
 	       (if (null? us)
 		   (k #f vs)
 		   (outer (first us)
@@ -9685,9 +9935,9 @@
    (cond ((real? v) (k n vs))
 	 ((memq v vs) (k n vs))
 	 ((union? v)
-	  (let inner ((us (union-members-check v))
+	  (let inner ((us (union-members v))
 		      (vs (cons v vs))
-		      (n (+ n (if (>= (length (union-members-check v)) 2) 1 0))))
+		      (n (+ n (if (>= (length (union-members v)) 2) 1 0))))
 	   (if (null? us)
 	       (k n vs)
 	       (outer (first us)
@@ -9712,7 +9962,7 @@
   (let outer ((v v) (vs '()) (n '()) (k (lambda (n vs) n)))
    (cond ((memq v vs) (k n vs))
 	 ((union? v)
-	  (let inner ((us (union-members-check v))
+	  (let inner ((us (union-members v))
 		      (vs (cons v vs))
 		      (n (if (type? v) (cons v n) n)))
 	   (if (null? us)
@@ -9741,7 +9991,7 @@
     ((real? v) (k (if (memv v n) n (cons v n)) vs))
     ((memq v vs) (k n vs))
     ((union? v)
-     (let inner ((us (union-members-check v)) (vs (cons v vs)) (n n))
+     (let inner ((us (union-members v)) (vs (cons v vs)) (n n))
       (if (null? us)
 	  (k n vs)
 	  (outer (first us)
@@ -9766,7 +10016,7 @@
     ((memq v vs) (k n vs))
     ;; We intentionally omit the special case for real here but not elsewhere.
     ((union? v)
-     (let inner ((us (union-members-check v)) (vs (cons v vs)) (n (+ n 1)))
+     (let inner ((us (union-members v)) (vs (cons v vs)) (n (+ n 1)))
       (if (null? us)
 	  (k n vs)
 	  (outer (first us) vs n (lambda (n vs) (inner (rest us) vs n))))))
@@ -9791,9 +10041,9 @@
     ((real? v) (k (max n 1) vs))
     ((memq v vs) (k n vs))
     ((union? v)
-     (let inner ((us (union-members-check v))
+     (let inner ((us (union-members v))
 		 (vs (cons v vs))
-		 (n (max n (length (union-members-check v)))))
+		 (n (max n (length (union-members v)))))
       (if (null? us)
 	  (k n vs)
 	  (outer (first us) vs n (lambda (n vs) (inner (rest us) vs n))))))
@@ -9997,8 +10247,8 @@
     (for-each-indexed
      (lambda (u2 i2)
       (assert (or (= i1 i2) (not (abstract-value-subset? u1 u2)))))
-     (union-members-check v)))
-   (union-members-check v))))
+     (union-members v)))
+   (union-members v))))
 
 (define (check-abstract-value! v)
  (check-canonize-cache! v)
@@ -10054,7 +10304,7 @@
    (cond ((real? v) (k vs))
 	 ((memq v vs) (k vs))
 	 ((union? v)
-	  (let inner ((us (union-members-check v)) (vs (cons v vs)))
+	  (let inner ((us (union-members v)) (vs (cons v vs)))
 	   (if (null? us)
 	       (k vs)
 	       (outer (first us) vs (lambda (vs) (inner (rest us) vs))))))
@@ -11240,18 +11490,18 @@
 	(map-union (lambda (u23)
 		    (if (vlad-pair? u23)
 			(let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
-			 (cond ((and (some vlad-false? (union-members-check v1))
+			 (cond ((and (some vlad-false? (union-members v1))
 				     (some (lambda (u1) (not (vlad-false? u1)))
-					   (union-members-check v1)))
+					   (union-members v1)))
 				;; here I am: The result might violate the
 				;;            syntactic constraints.
 				(abstract-value-union
 				 (abstract-apply v2 (vlad-empty-list))
 				 (abstract-apply v3 (vlad-empty-list))))
-			       ((some vlad-false? (union-members-check v1))
+			       ((some vlad-false? (union-members v1))
 				(abstract-apply v3 (vlad-empty-list)))
 			       ((some (lambda (u1) (not (vlad-false? u1)))
-				      (union-members-check v1))
+				      (union-members v1))
 				(abstract-apply v2 (vlad-empty-list)))
 			       (else (internal-error))))
 			(empty-abstract-value)))
@@ -11277,9 +11527,9 @@
 	      (if (vlad-pair? u23)
 		  (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
 		   (cond
-		    ((and (some vlad-false? (union-members-check v1))
+		    ((and (some vlad-false? (union-members v1))
 			  (some (lambda (u1) (not (vlad-false? u1)))
-				(union-members-check v1)))
+				(union-members v1)))
 		     (union-function-instances
 		      (map-reduce
 		       union-function-instances
@@ -11289,7 +11539,7 @@
 			    (list
 			     (make-function-instance u2 (vlad-empty-list) #t))
 			    '()))
-		       (union-members-check v2))
+		       (union-members v2))
 		      (map-reduce
 		       union-function-instances
 		       '()
@@ -11298,8 +11548,8 @@
 			    (list
 			     (make-function-instance u3 (vlad-empty-list) #t))
 			    '()))
-		       (union-members-check v3))))
-		    ((some vlad-false? (union-members-check v1))
+		       (union-members v3))))
+		    ((some vlad-false? (union-members v1))
 		     (map-reduce
 		      union-function-instances
 		      '()
@@ -11308,9 +11558,9 @@
 			   (list
 			    (make-function-instance u3 (vlad-empty-list) #t))
 			   '()))
-		      (union-members-check v3)))
+		      (union-members v3)))
 		    ((some (lambda (u1) (not (vlad-false? u1)))
-			   (union-members-check v1))
+			   (union-members v1))
 		     (map-reduce
 		      union-function-instances
 		      '()
@@ -11319,12 +11569,12 @@
 			   (list
 			    (make-function-instance u2 (vlad-empty-list) #t))
 			   '()))
-		      (union-members-check v2)))
+		      (union-members v2)))
 		    (else (internal-error))))
 		  '()))
-	     (union-members-check (vlad-cdr u))))
+	     (union-members (vlad-cdr u))))
 	   '()))
-      (union-members-check v))))
+      (union-members v))))
 
 (define (all-function-instances)
  (map-reduce
@@ -11513,9 +11763,9 @@
 	   (if (vlad-pair? u23)
 	       (let ((v2 (vlad-car u23)) (v3 (vlad-cdr u23)))
 		(cond
-		 ((and (some vlad-false? (union-members-check v1))
+		 ((and (some vlad-false? (union-members v1))
 		       (some (lambda (u1) (not (vlad-false? u1)))
-			     (union-members-check v1)))
+			     (union-members v1)))
 		  (union-widener-instances
 		   (union-widener-instances
 		    (map-reduce union-widener-instances
@@ -11524,7 +11774,7 @@
 				 (all-subwidener-instances
 				  (abstract-apply u2 (vlad-empty-list))
 				  (abstract-apply v2 (vlad-empty-list))))
-				(union-members-check v2))
+				(union-members v2))
 		    (all-subwidener-instances
 		     (abstract-apply v2 (vlad-empty-list)) v0))
 		   (union-widener-instances
@@ -11534,10 +11784,10 @@
 				 (all-subwidener-instances
 				  (abstract-apply u3 (vlad-empty-list))
 				  (abstract-apply v3 (vlad-empty-list))))
-				(union-members-check v3))
+				(union-members v3))
 		    (all-subwidener-instances
 		     (abstract-apply v3 (vlad-empty-list)) v0))))
-		 ((some vlad-false? (union-members-check v1))
+		 ((some vlad-false? (union-members v1))
 		  (union-widener-instances
 		   (map-reduce union-widener-instances
 			       '()
@@ -11545,11 +11795,11 @@
 				(all-subwidener-instances
 				 (abstract-apply u3 (vlad-empty-list))
 				 (abstract-apply v3 (vlad-empty-list))))
-			       (union-members-check v3))
+			       (union-members v3))
 		   (all-subwidener-instances
 		    (abstract-apply v3 (vlad-empty-list)) v0)))
 		 ((some (lambda (u1) (not (vlad-false? u1)))
-			(union-members-check v1))
+			(union-members v1))
 		  (union-widener-instances
 		   (map-reduce union-widener-instances
 			       '()
@@ -11557,14 +11807,14 @@
 				(all-subwidener-instances
 				 (abstract-apply u2 (vlad-empty-list))
 				 (abstract-apply v2 (vlad-empty-list))))
-			       (union-members-check v2))
+			       (union-members v2))
 		   (all-subwidener-instances
 		    (abstract-apply v2 (vlad-empty-list)) v0)))
 		 (else (internal-error))))
 	       '()))
-	  (union-members-check (vlad-cdr u))))
+	  (union-members (vlad-cdr u))))
 	'()))
-   (union-members-check v))))
+   (union-members v))))
 
 (define (all-widener-instances function-instances)
  ;; This topological sort is needed so that all INLINE definitions come before
@@ -11904,7 +12154,7 @@
 		    (list (make-if-instance v2)))
 		   ((closure? u1) (list (make-function-instance u1 v2 #t)))
 		   (else '())))
-		 (union-members-check v1))
+		 (union-members v1))
 		(union-if-and-function-instances
 		 (loop
 		  (application-callee e)
@@ -12211,14 +12461,14 @@
  (lambda (code1 code2)
   (assert
    (and
-    (memp abstract-value=? (vlad-true) (union-members-check (abstract-boolean)))
-    (memp abstract-value=? (vlad-false) (union-members-check (abstract-boolean)))))
+    (memp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (memp abstract-value=? (vlad-false) (union-members (abstract-boolean)))))
   (c:parenthesize
    (c:conditional
     (c:binary code1 code code2)
-    (positionp abstract-value=? (vlad-true) (union-members-check (abstract-boolean)))
+    (positionp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
     (positionp
-     abstract-value=? (vlad-false) (union-members-check (abstract-boolean)))))))
+     abstract-value=? (vlad-false) (union-members (abstract-boolean)))))))
 
 (define (c:unary-boolean code)
  (lambda (code1)
@@ -12230,14 +12480,14 @@
  (lambda (code1)
   (assert
    (and
-    (memp abstract-value=? (vlad-true) (union-members-check (abstract-boolean)))
-    (memp abstract-value=? (vlad-false) (union-members-check (abstract-boolean)))))
+    (memp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
+    (memp abstract-value=? (vlad-false) (union-members (abstract-boolean)))))
   (c:parenthesize
    (c:conditional
     (c:binary code1 code "0.0")
-    (positionp abstract-value=? (vlad-true) (union-members-check (abstract-boolean)))
+    (positionp abstract-value=? (vlad-true) (union-members (abstract-boolean)))
     (positionp
-     abstract-value=? (vlad-false) (union-members-check (abstract-boolean)))))))
+     abstract-value=? (vlad-false) (union-members (abstract-boolean)))))))
 
 (define (c:function-declarator code . codes)
  (c:function-declarator* code codes))
@@ -13816,23 +14066,23 @@
 (define (generate-if
 	 v0 v1 v2 v3 code1 code2 code3 function-instances widener-instances)
  (cond
-  ((and (some vlad-false? (union-members-check v1))
-	(some (lambda (u1) (not (vlad-false? u1))) (union-members-check v1)))
+  ((and (some vlad-false? (union-members v1))
+	(some (lambda (u1) (not (vlad-false? u1))) (union-members v1)))
    (c:conditional
     (c:binary
      ;; The type tag is always unboxed.
      (c:tag v1 code1)
      "!="
      ;; This uses per-union tags here instead of per-program tags.
-     (position-if vlad-false? (union-members-check v1)))
+     (position-if vlad-false? (union-members v1)))
     (generate-call
      v0 v2 (vlad-empty-list) code2 '() function-instances widener-instances)
     (generate-call
      v0 v3 (vlad-empty-list) code3 '() function-instances widener-instances)))
-  ((some vlad-false? (union-members-check v1))
+  ((some vlad-false? (union-members v1))
    (generate-call
     v0 v3 (vlad-empty-list) code3 '() function-instances widener-instances))
-  ((some (lambda (u1) (not (vlad-false? u1))) (union-members-check v1))
+  ((some (lambda (u1) (not (vlad-false? u1))) (union-members v1))
    (generate-call
     v0 v2 (vlad-empty-list) code2 '() function-instances widener-instances))
   (else (internal-error))))
