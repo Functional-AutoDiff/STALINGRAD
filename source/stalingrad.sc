@@ -73,7 +73,6 @@
 		 (at-most-one ("flow-analysis" flow-analysis?)
 			      ("flow-analysis-result" flow-analysis-result?)
 			      ("compile" compile?))
-		 (at-most-one ("new-code-generator" new-code-generator?))
 		 (at-most-one
 		  ("cc" cc? (cc "C-compiler" string-argument "gcc")))
 		 (at-most-one ("c" disable-run-cc?))
@@ -312,9 +311,6 @@
  ;; parse need to have these set.
  (set! *canonized?* *flow-analysis?*)
  (set! *interned?* (or interned? *flow-analysis?*))
- (set! *new-code-generator?*
-       (or new-code-generator?
-	   (getenv "STALINGRAD_NEW_CODE_GENERATOR")))
  (with-concrete (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
@@ -347,10 +343,7 @@
 	   ;;             more than once.
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
-	   (generate-file (if *new-code-generator?*
-			      (new-generate e)
-			      (generate e 'needs-work))
-			  pathname)
+	   (generate-file (generate e 'needs-work) pathname)
 	   (unless disable-run-cc?
 	    (system (reduce (lambda (s1 s2) (string-append s1 " " s2))
 			    `(,cc

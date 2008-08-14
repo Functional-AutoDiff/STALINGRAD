@@ -187,7 +187,7 @@
 (define-structure alpha-binding variable1 variable2)
 
 (define-structure primitive-procedure
- name concrete abstract symbolic generator forward reverse meter)
+ name concrete abstract generator forward reverse meter)
 
 (define-structure nonrecursive-closure
  values
@@ -398,9 +398,7 @@
  inline-unsensitize?
  inline-plus?
  inline-*j?
- inline-*j-inverse?
- ;; needs work: This is ambiguous with the other notion of tag.
- tag)
+ inline-*j-inverse?)
 
 (define-structure environment-binding values value)
 
@@ -409,54 +407,6 @@
 (define-structure function-instance v1 v2 inline?)
 
 (define-structure widener-instance v1 v2)
-
-(define-structure name-unit top? v0 code)
-
-(define-structure slot-unit v0 v1 code)
-
-(define-structure call-unit v0 code vs)
-
-(define-structure panic-unit code)
-
-(define-structure +-unit v1 v2)
-
-(define-structure --unit v1 v2)
-
-(define-structure *-unit v1 v2)
-
-(define-structure /-unit v1 v2)
-
-(define-structure sqrt-unit v1)
-
-(define-structure exp-unit v1)
-
-(define-structure log-unit v1)
-
-(define-structure sin-unit v1)
-
-(define-structure cos-unit v1)
-
-(define-structure atan-unit v1 v2)
-
-(define-structure =-unit v1 v2)
-
-(define-structure <-unit v1 v2)
-
-(define-structure >-unit v1 v2)
-
-(define-structure <=-unit v1 v2)
-
-(define-structure >=-unit v1 v2)
-
-(define-structure zero?-unit v1)
-
-(define-structure positive?-unit v1)
-
-(define-structure negative?-unit v1)
-
-(define-structure read-real-unit dummy)
-
-(define-structure write-real-unit v1)
 
 ;;; Variables
 
@@ -513,10 +463,6 @@
 ;;; Can better index the following.
 
 (define *c:indices* '())
-
-(define *units* '())
-
-(define *name* 2)
 
 ;;; Parameters
 
@@ -598,8 +544,6 @@
 
 (define *union* "struct")
 
-(define *new-code-generator?* #f)
-
 ;;; Procedures
 
 ;;; General
@@ -672,17 +616,6 @@
   (set! *mode* 'abstract)
   (set! *canonized?* #t)
   (set! *interned?* #t)
-  (let ((result (thunk)))
-   (set! *mode* mode)
-   (set! *canonized?* canonized?)
-   (set! *interned?* interned?)
-   result)))
-
-(define (with-symbolic thunk)
- (let ((mode *mode*) (canonized? *canonized?*) (interned? *interned?*))
-  (set! *mode* 'symbolic)
-  (set! *canonized?* #f)
-  (set! *interned?* #f)
   (let ((result (thunk)))
    (set! *mode* mode)
    (set! *canonized?* canonized?)
@@ -874,7 +807,6 @@
  (case *mode*
   ((concrete) (apply run-time-warning message vs))
   ((abstract) (apply compile-time-warning message vs))
-  ((symbolic) #f)
   (else (internal-error))))
 
 (define (ad-error message . vs)
@@ -882,7 +814,6 @@
   ((concrete) (apply run-time-error (format #f message "is not") vs))
   ((abstract)
    (apply compile-time-warning (format #f message "might not be") vs))
-  ((symbolic) (new-panic-unit (format #f message "is not")))
   (else (internal-error))))
 
 ;;; Tags
@@ -1745,7 +1676,6 @@
        ;; the nested let* context context of the forward phase reverse
        ;; transformed procedure but the backpropagators are not reverse values.
        (or (eq? *mode* 'abstract)
-	   (eq? *mode* 'symbolic)
 	   (every
 	    (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
 	    (free-variables e)
@@ -1773,7 +1703,6 @@
        ;; the nested let* context context of the forward phase reverse
        ;; transformed procedure but the backpropagators are not reverse values.
        (or (eq? *mode* 'abstract)
-	   (eq? *mode* 'symbolic)
 	   (every
 	    (lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
 	    (free-variables e)
@@ -1860,7 +1789,6 @@
    ;; See the note in new-nonrecursive-closure. While that hasn't happened in
    ;; practise, and I don't know whether it can, I removed it in principle.
    (or (eq? *mode* 'abstract)
-       (eq? *mode* 'symbolic)
        (every
 	(lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
 	(recursive-closure-free-variables (vector->list xs) (vector->list es))
@@ -1887,7 +1815,6 @@
    ;; See the note in new-nonrecursive-closure. While that hasn't happened in
    ;; practise, and I don't know whether it can, I removed it in principle.
    (or (eq? *mode* 'abstract)
-       (eq? *mode* 'symbolic)
        (every
 	(lambda (x v) (prefix-tags? (variable-tags x) (value-tags v)))
 	(recursive-closure-free-variables (vector->list xs) (vector->list es))
@@ -2393,9 +2320,7 @@
 	      #t))
 
 (define (create-bundle v v-perturbation)
- (assert (or (eq? *mode* 'abstract)
-	     (eq? *mode* 'symbolic)
-	     (some-bundlable? v v-perturbation)))
+ (assert (or (eq? *mode* 'abstract) (some-bundlable? v v-perturbation)))
  (if (or (empty-abstract-value? v)
 	 (empty-abstract-value? v-perturbation)
 	 (and (eq? *mode* 'abstract) (not (some-bundlable? v v-perturbation))))
@@ -2403,9 +2328,7 @@
      (allocate-bundle v v-perturbation)))
 
 (define (new-bundle v v-perturbation)
- (assert (or (eq? *mode* 'abstract)
-	     (eq? *mode* 'symbolic)
-	     (some-bundlable? v v-perturbation)))
+ (assert (or (eq? *mode* 'abstract) (some-bundlable? v v-perturbation)))
  (if (or (empty-abstract-value? v)
 	 (empty-abstract-value? v-perturbation)
 	 (and (eq? *mode* 'abstract) (not (some-bundlable? v v-perturbation))))
@@ -2587,7 +2510,6 @@
 
 (define (create-tagged-pair tags v1 v2)
  (assert (or (eq? *mode* 'abstract)
-	     (eq? *mode* 'symbolic)
 	     (and (prefix-tags? tags (value-tags v1))
 		  (prefix-tags? tags (value-tags v2)))))
  (if (or
@@ -2603,7 +2525,6 @@
 
 (define (new-tagged-pair tags v1 v2)
  (assert (or (eq? *mode* 'abstract)
-	     (eq? *mode* 'symbolic)
 	     (and (prefix-tags? tags (value-tags v1))
 		  (prefix-tags? tags (value-tags v2)))))
  (if (or
@@ -2702,8 +2623,7 @@
 	     #t
 	     #t
 	     #t
-	     #t
-	     'unfilled))
+	     #t))
 
 (define (create-union vs) (allocate-union vs))
 
@@ -2734,128 +2654,6 @@
 
 (define (cross-union f v1 v2)
  (unionize (cross-product f (union-members v1) (union-members v2))))
-
-;;; Units
-
-(define (new-name-unit top? v0 code)
- (let ((u (make-name-unit top? v0 code)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-slot-unit v0 v1 code)
- (let ((u (make-slot-unit v0 v1 code)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-call-unit v0 code . vs)
- (let ((u (make-call-unit v0 code vs)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-panic-unit code)
- (let ((u (make-panic-unit code)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-+-unit v1 v2)
- (let ((u (make-+-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new---unit v1 v2)
- (let ((u (make---unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-*-unit v1 v2)
- (let ((u (make-*-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-/-unit v1 v2)
- (let ((u (make-/-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-sqrt-unit v1)
- (let ((u (make-sqrt-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-exp-unit v1)
- (let ((u (make-exp-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-log-unit v1)
- (let ((u (make-log-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-sin-unit v1)
- (let ((u (make-sin-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-cos-unit v1)
- (let ((u (make-cos-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-atan-unit v1 v2)
- (let ((u (make-atan-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-=-unit v1 v2)
- (let ((u (make-=-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-<-unit v1 v2)
- (let ((u (make-<-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new->-unit v1 v2)
- (let ((u (make->-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-<=-unit v1 v2)
- (let ((u (make-<=-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new->=-unit v1 v2)
- (let ((u (make->=-unit v1 v2)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-zero?-unit v1)
- (let ((u (make-zero?-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-positive?-unit v1)
- (let ((u (make-positive?-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-negative?-unit v1)
- (let ((u (make-negative?-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-read-real-unit)
- (let ((u (make-read-real-unit 'dummy)))
-  (set! *units* (append *units* (list u)))
-  u))
-
-(define (new-write-real-unit v1)
- (let ((u (make-write-real-unit v1)))
-  (set! *units* (append *units* (list u)))
-  u))
 
 ;;; Generic
 
@@ -3765,274 +3563,6 @@
  (canonize-and-maybe-intern-abstract-value
   (abstract-value-union-internal v1 v2)))
 
-(define (debugging-canonize-abstract-value v)
- ;; needs work: This is a rewrite which is an attempt to clean up the union
- ;;             case. It is not finished, does not work, and does not handle
- ;;             transforming unions of aggregates into aggregates of unions.
- ;; This is written in CPS so as not to break structure sharing.
- ;; The whole purpose of this procedure is to:
- ;; - propagate empty abstract values (empty unions) upward so that there are
- ;;   never any nested empty abstract values,
- ;; - to merge unions of unions so that there are never any unions immediately
- ;;   nested in another union,
- ;; - to remove singleton unions, and
- ;; - to propagate unions of transformed booleans into transformed unions of
- ;;   booleans. For bundles, this widens in the process.
- ;; If assq is replaced with assp deep-abstract-value=? then this also:
- ;; - discovers structure to share.
- ;; It is necessary to use assp deep-abstract-value=? or else an error occurs
- ;; during nr-sqrt-RR where equivalent but non-eq recursive abstract values are
- ;; nested and then path-of-greatest-depth finds a path with equivalent but
- ;; non-eq values which when merged yield a value that again has that path
- ;; causing an infinite loop.
- (time-it-bucket
-  7
-  (let loop ((v v) (cs '()) (k (lambda (v-prime cs) v-prime)))
-   (let ((found? (assp deep-abstract-value=? v cs)))
-    (cond
-     (found? (k (cdr found?) cs))
-     ((union? v)
-      (cond
-       ((union-canonize-cache v) (k (union-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	;; This is the whole reason we require that abstract values be copied.
-	;; This performs the optimization that unionize performs but
-	;; fill-union-values! is unable to because of unfilled slots.
-	(let ((v-prime (allocate-union 'unfilled)))
-	 ;; We cannot (set-union-canonize-cache! v v-prime) or
-	 ;; (set-union-canonize-cache! v-prime v-prime) here because of the
-	 ;; singleton case (the first branch of the cond) below.
-	 (map-cps loop
-		  (union-members v)
-		  ;; We cannot (cons (cons v v-prime) cs) here for the same
-		  ;; reason as above.
-		  cs
-		  (lambda (us-prime cs)
-		   (assert (and (not (some union? us-prime))))
-		   ;; needs work
-		   ;; Still need to transform unions of transformed booleans
-		   ;; into transformed unions of booleans when union-freeness
-		   ;; must be preserved. Only want to do this in this case
-		   ;; since it widens.
-		   (cond ((and (not (null? us-prime)) (null? (rest us-prime)))
-			  (set-union-canonize-cache! v (first us-prime))
-			  (k (first us-prime) cs))
-			 (else (set-union-canonize-cache! v v-prime)
-			       (set-union-canonize-cache! v-prime v-prime)
-			       (fill-union-values! v-prime us-prime)
-			       (k v-prime cs)))))))))
-     ((vlad-empty-list? v)
-      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-     ((vlad-true? v)
-      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-     ((vlad-false? v)
-      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-     ((vlad-real? v)
-      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-     ((primitive-procedure? v)
-      (let ((u-prime v)) (k u-prime (cons (cons v u-prime) cs))))
-     ((nonrecursive-closure? v)
-      (cond
-       ((nonrecursive-closure-canonize-cache v)
-	(k (nonrecursive-closure-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	;; See the note in abstract-environment=?.
-	(let ((u-prime (allocate-nonrecursive-closure
-			'unfilled (nonrecursive-closure-lambda-expression v))))
-	 (assert
-	  (and (= (length (get-nonrecursive-closure-values v))
-		  (length (free-variables
-			   (nonrecursive-closure-lambda-expression u-prime))))
-	       ;; See the note in new-nonrecursive-closure.
-	       (or (eq? *mode* 'abstract)
-		   (eq? *mode* 'symbolic)
-		   (every (lambda (x v)
-			   (prefix-tags? (variable-tags x) (value-tags v)))
-			  (free-variables
-			   (nonrecursive-closure-lambda-expression u-prime))
-			  (get-nonrecursive-closure-values v)))
-	       (not (some empty-abstract-value?
-			  (get-nonrecursive-closure-values v)))
-	       (or (eq? *mode* 'concrete)
-		   (eq? *mode* 'symbolic)
-		   (every (lambda (x v)
-			   (some-value-tags
-			    (lambda (tags)
-			     (prefix-tags? (variable-tags x) tags)) v))
-			  (free-variables
-			   (nonrecursive-closure-lambda-expression u-prime))
-			  (get-nonrecursive-closure-values v)))))
-	 (set-nonrecursive-closure-canonize-cache! v u-prime)
-	 (set-nonrecursive-closure-canonize-cache! u-prime u-prime)
-	 (map-cps loop
-		  (get-nonrecursive-closure-values v)
-		  (cons (cons v u-prime) cs)
-		  (lambda (vs-prime cs)
-		   (fill-nonrecursive-closure-values! u-prime vs-prime)
-		   (k u-prime cs)))))))
-     ((recursive-closure? v)
-      (cond ((recursive-closure-canonize-cache v)
-	     (k (recursive-closure-canonize-cache v) cs))
-	    ((deep-empty-abstract-value? v)
-	     (let ((u-prime (empty-abstract-value)))
-	      (k u-prime (cons (cons v u-prime) cs))))
-	    (else
-	     ;; See the note in abstract-environment=?.
-	     (let ((u-prime (allocate-recursive-closure
-			     'unfilled
-			     (recursive-closure-procedure-variables v)
-			     (recursive-closure-lambda-expressions v)
-			     (recursive-closure-index v))))
-	      (assert
-	       (and
-		(= (length (get-recursive-closure-values v))
-		   (length (recursive-closure-variables u-prime)))
-		;; See the note in new-nonrecursive-closure.
-		(or (eq? *mode* 'abstract)
-		    (eq? *mode* 'symbolic)
-		    (every (lambda (x v)
-			    (prefix-tags? (variable-tags x) (value-tags v)))
-			   (recursive-closure-variables u-prime)
-			   (get-recursive-closure-values v)))
-		(not (some empty-abstract-value?
-			   (get-recursive-closure-values v)))
-		(or (eq? *mode* 'concrete)
-		    (eq? *mode* 'symbolic)
-		    (every (lambda (x v)
-			    (some-value-tags
-			     (lambda (tags)
-			      (prefix-tags? (variable-tags x) tags)) v))
-			   (recursive-closure-variables u-prime)
-			   (get-recursive-closure-values v)))))
-	      (set-recursive-closure-canonize-cache! v u-prime)
-	      (set-recursive-closure-canonize-cache! u-prime u-prime)
-	      (map-cps loop
-		       (get-recursive-closure-values v)
-		       (cons (cons v u-prime) cs)
-		       (lambda (vs-prime cs)
-			(fill-recursive-closure-values! u-prime vs-prime)
-			(k u-prime cs)))))))
-     ((perturbation-tagged-value? v)
-      (cond ((perturbation-tagged-value-canonize-cache v)
-	     (k (perturbation-tagged-value-canonize-cache v) cs))
-	    ((deep-empty-abstract-value? v)
-	     (let ((u-prime (empty-abstract-value)))
-	      (k u-prime (cons (cons v u-prime) cs))))
-	    (else
-	     (let ((u-prime (allocate-perturbation-tagged-value 'unfilled)))
-	      (assert (not (empty-abstract-value?
-			    (get-perturbation-tagged-value-primal v))))
-	      (set-perturbation-tagged-value-canonize-cache! v u-prime)
-	      (set-perturbation-tagged-value-canonize-cache! u-prime u-prime)
-	      (loop (get-perturbation-tagged-value-primal v)
-		    (cons (cons v u-prime) cs)
-		    (lambda (v-prime cs)
-		     (fill-perturbation-tagged-value-primal! u-prime v-prime)
-		     (k u-prime cs)))))))
-     ((bundle? v)
-      (cond
-       ((bundle-canonize-cache v) (k (bundle-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	(let ((u-prime (allocate-bundle 'unfilled 'unfilled)))
-	 (assert
-	  (and (some-bundlable? (get-bundle-primal v) (get-bundle-tangent v))
-	       (not (empty-abstract-value? (get-bundle-primal v)))
-	       (not (empty-abstract-value? (get-bundle-tangent v)))))
-	 (set-bundle-canonize-cache! v u-prime)
-	 (set-bundle-canonize-cache! u-prime u-prime)
-	 (loop (get-bundle-primal v)
-	       (cons (cons v u-prime) cs)
-	       (lambda (v-primal-prime cs)
-		(loop (get-bundle-tangent v)
-		      cs
-		      (lambda (v-tangent-prime cs)
-		       (fill-bundle! u-prime v-primal-prime v-tangent-prime)
-		       (k u-prime cs)))))))))
-     ((sensitivity-tagged-value? v)
-      (cond ((sensitivity-tagged-value-canonize-cache v)
-	     (k (sensitivity-tagged-value-canonize-cache v) cs))
-	    ((deep-empty-abstract-value? v)
-	     (let ((u-prime (empty-abstract-value)))
-	      (k u-prime (cons (cons v u-prime) cs))))
-	    (else
-	     (let ((u-prime (allocate-sensitivity-tagged-value 'unfilled)))
-	      (assert (not (empty-abstract-value?
-			    (get-sensitivity-tagged-value-primal v))))
-	      (set-sensitivity-tagged-value-canonize-cache! v u-prime)
-	      (set-sensitivity-tagged-value-canonize-cache! u-prime u-prime)
-	      (loop (get-sensitivity-tagged-value-primal v)
-		    (cons (cons v u-prime) cs)
-		    (lambda (v-prime cs)
-		     (fill-sensitivity-tagged-value-primal! u-prime v-prime)
-		     (k u-prime cs)))))))
-     ((reverse-tagged-value? v)
-      (cond
-       ((reverse-tagged-value-canonize-cache v)
-	(k (reverse-tagged-value-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	(let ((u-prime (allocate-reverse-tagged-value 'unfilled)))
-	 (assert
-	  (not (empty-abstract-value? (get-reverse-tagged-value-primal v))))
-	 (set-reverse-tagged-value-canonize-cache! v u-prime)
-	 (set-reverse-tagged-value-canonize-cache! u-prime u-prime)
-	 (loop (get-reverse-tagged-value-primal v)
-	       (cons (cons v u-prime) cs)
-	       (lambda (v-prime cs)
-		(fill-reverse-tagged-value-primal! u-prime v-prime)
-		(k u-prime cs)))))))
-     ((tagged-pair? v)
-      (cond
-       ((tagged-pair-canonize-cache v) (k (tagged-pair-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	(let ((u-prime (allocate-tagged-pair
-			(tagged-pair-tags v) 'unfilled 'unfilled)))
-	 (assert
-	  (and
-	   (or (eq? *mode* 'abstract)
-	       (eq? *mode* 'symbolic)
-	       (and (prefix-tags? (tagged-pair-tags u-prime)
-				  (value-tags (get-tagged-pair-car v)))
-		    (prefix-tags? (tagged-pair-tags u-prime)
-				  (value-tags (get-tagged-pair-cdr v)))))
-	   (not (empty-abstract-value? (get-tagged-pair-car v)))
-	   (not (empty-abstract-value? (get-tagged-pair-cdr v)))
-	   (or
-	    (eq? *mode* 'concrete)
-	    (eq? *mode* 'symbolic)
-	    (and
-	     (some-value-tags
-	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
-	      (get-tagged-pair-car v))
-	     (some-value-tags
-	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
-	      (get-tagged-pair-cdr v))))))
-	 (set-tagged-pair-canonize-cache! v u-prime)
-	 (set-tagged-pair-canonize-cache! u-prime u-prime)
-	 (loop (get-tagged-pair-car v)
-	       (cons (cons v u-prime) cs)
-	       (lambda (v-car-prime cs)
-		(loop (get-tagged-pair-cdr v)
-		      cs
-		      (lambda (v-cdr-prime cs)
-		       (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
-		       (k u-prime cs)))))))))
-     (else (internal-error)))))))
-
 (define (canonize-abstract-value v)
  ;; This is written in CPS so as not to break structure sharing.
  ;; The whole purpose of this procedure is to:
@@ -4127,7 +3657,6 @@
 			   (nonrecursive-closure-lambda-expression u-prime))))
 	       ;; See the note in new-nonrecursive-closure.
 	       (or (eq? *mode* 'abstract)
-		   (eq? *mode* 'symbolic)
 		   (every (lambda (x v)
 			   (prefix-tags? (variable-tags x) (value-tags v)))
 			  (free-variables
@@ -4136,7 +3665,6 @@
 	       (not (some empty-abstract-value?
 			  (get-nonrecursive-closure-values v)))
 	       (or (eq? *mode* 'concrete)
-		   (eq? *mode* 'symbolic)
 		   (every (lambda (x v)
 			   (some-value-tags
 			    (lambda (tags)
@@ -4171,7 +3699,6 @@
 		   (length (recursive-closure-variables u-prime)))
 		;; See the note in new-nonrecursive-closure.
 		(or (eq? *mode* 'abstract)
-		    (eq? *mode* 'symbolic)
 		    (every (lambda (x v)
 			    (prefix-tags? (variable-tags x) (value-tags v)))
 			   (recursive-closure-variables u-prime)
@@ -4179,7 +3706,6 @@
 		(not (some empty-abstract-value?
 			   (get-recursive-closure-values v)))
 		(or (eq? *mode* 'concrete)
-		    (eq? *mode* 'symbolic)
 		    (every (lambda (x v)
 			    (some-value-tags
 			     (lambda (tags)
@@ -4280,7 +3806,6 @@
 	 (assert
 	  (and
 	   (or (eq? *mode* 'abstract)
-	       (eq? *mode* 'symbolic)
 	       (and (prefix-tags? (tagged-pair-tags u-prime)
 				  (value-tags (get-tagged-pair-car v)))
 		    (prefix-tags? (tagged-pair-tags u-prime)
@@ -4289,7 +3814,6 @@
 	   (not (empty-abstract-value? (get-tagged-pair-cdr v)))
 	   (or
 	    (eq? *mode* 'concrete)
-	    (eq? *mode* 'symbolic)
 	    (and
 	     (some-value-tags
 	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
@@ -4371,7 +3895,6 @@
 		      (nonrecursive-closure-lambda-expression u-prime))))
 		 ;; See the note in new-nonrecursive-closure.
 		 (or (eq? *mode* 'abstract)
-		     (eq? *mode* 'symbolic)
 		     (every (lambda (x v)
 			     (prefix-tags? (variable-tags x) (value-tags v)))
 			    (free-variables
@@ -4380,7 +3903,6 @@
 		 (not (some empty-abstract-value?
 			    (get-nonrecursive-closure-values v)))
 		 (or (eq? *mode* 'concrete)
-		     (eq? *mode* 'symbolic)
 		     (every (lambda (x v)
 			     (some-value-tags
 			      (lambda (tags)
@@ -4428,7 +3950,6 @@
 		    (length (recursive-closure-variables u-prime)))
 		 ;; See the note in new-nonrecursive-closure.
 		 (or (eq? *mode* 'abstract)
-		     (eq? *mode* 'symbolic)
 		     (every (lambda (x v)
 			     (prefix-tags? (variable-tags x) (value-tags v)))
 			    (recursive-closure-variables u-prime)
@@ -4436,7 +3957,6 @@
 		 (not (some empty-abstract-value?
 			    (get-recursive-closure-values v)))
 		 (or (eq? *mode* 'concrete)
-		     (eq? *mode* 'symbolic)
 		     (every (lambda (x v)
 			     (some-value-tags
 			      (lambda (tags)
@@ -4569,7 +4089,6 @@
 	       (assert
 		(and
 		 (or (eq? *mode* 'abstract)
-		     (eq? *mode* 'symbolic)
 		     (and (prefix-tags? (tagged-pair-tags u-prime)
 					(value-tags (get-tagged-pair-car v)))
 			  (prefix-tags? (tagged-pair-tags u-prime)
@@ -4577,7 +4096,6 @@
 		 (not (empty-abstract-value? (get-tagged-pair-car v)))
 		 (not (empty-abstract-value? (get-tagged-pair-cdr v)))
 		 (or (eq? *mode* 'concrete)
-		     (eq? *mode* 'symbolic)
 		     (and (some-value-tags
 			   (lambda (tags)
 			    (prefix-tags? (tagged-pair-tags u-prime) tags))
@@ -5506,13 +5024,9 @@
  (let loop ((v v)
 	    (cs '())
 	    (k (lambda (v cs)
-		(if (eq? v 'int)
-		    v
-		    (with-abstract
-		     (lambda ()
-		      (canonize-and-maybe-intern-abstract-value v)))))))
+		(with-abstract
+		 (lambda () (canonize-and-maybe-intern-abstract-value v))))))
   (cond
-   ((unit? v) (k (unit-abstract-value v) cs))
    ;; need work: To use => here and elsewhere.
    ((assq v cs) (k (cdr (assq v cs)) cs))
    ((union? v)
@@ -5608,23 +5122,15 @@
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
   9
-  (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and
-      (eq? *mode* 'symbolic) (not top?) (not (inline-zero? (abstractify v))))
-     (let ((v-abstract (abstractify v)))
-      (k (new-call-unit (with-abstract (lambda () (zero v-abstract)))
-			(c:builtin-name "zero" v-abstract)
-			v))))
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v)) (k 0) (loop (unroll v) top? k)))
     ((union? v)
      (if (union-zero-cache v)
 	 (k (union-zero-cache v))
-	 (let ((v0 (create-tagged-union (union-tag v) 'unfilled)))
+	 (let ((v0 (allocate-union 'unfilled)))
 	  (set-union-zero-cache! v v0)
 	  (set-union-zero-cache! v0 v0)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us0)
 			   (fill-union-values! v0 us0)
@@ -5642,7 +5148,7 @@
 		    'unfilled (nonrecursive-closure-lambda-expression v))))
 	  (set-nonrecursive-closure-zero-cache! v u0)
 	  (set-nonrecursive-closure-zero-cache! u0 u0)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (get-nonrecursive-closure-values v)
 			  (lambda (vs0)
 			   (fill-nonrecursive-closure-values! u0 vs0)
@@ -5658,7 +5164,7 @@
 		    (recursive-closure-index v))))
 	  (set-recursive-closure-zero-cache! v u0)
 	  (set-recursive-closure-zero-cache! u0 u0)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (get-recursive-closure-values v)
 			  (lambda (vs0)
 			   (fill-recursive-closure-values! u0 vs0)
@@ -5670,7 +5176,6 @@
 	  (set-perturbation-tagged-value-zero-cache! v u0)
 	  (set-perturbation-tagged-value-zero-cache! u0 u0)
 	  (loop (get-perturbation-tagged-value-primal v)
-		#f
 		(lambda (v0)
 		 (fill-perturbation-tagged-value-primal! u0 v0)
 		 (k u0))))))
@@ -5681,10 +5186,8 @@
 	  (set-bundle-zero-cache! v u0)
 	  (set-bundle-zero-cache! u0 u0)
 	  (loop (get-bundle-primal v)
-		#f
 		(lambda (v0-primal)
 		 (loop (get-bundle-tangent v)
-		       #f
 		       (lambda (v0-tangent)
 			(fill-bundle! u0 v0-primal v0-tangent)
 			(k u0))))))))
@@ -5695,7 +5198,6 @@
 	  (set-sensitivity-tagged-value-zero-cache! v u0)
 	  (set-sensitivity-tagged-value-zero-cache! u0 u0)
 	  (loop (get-sensitivity-tagged-value-primal v)
-		#f
 		(lambda (v0)
 		 (fill-sensitivity-tagged-value-primal! u0 v0)
 		 (k u0))))))
@@ -5706,7 +5208,6 @@
 	  (set-reverse-tagged-value-zero-cache! v u0)
 	  (set-reverse-tagged-value-zero-cache! u0 u0)
 	  (loop (get-reverse-tagged-value-primal v)
-		#f
 		(lambda (v0)
 		 (fill-reverse-tagged-value-primal! u0 v0)
 		 (k u0))))))
@@ -5718,10 +5219,8 @@
 	  (set-tagged-pair-zero-cache! v u0)
 	  (set-tagged-pair-zero-cache! u0 u0)
 	  (loop (get-tagged-pair-car v)
-		#f
 		(lambda (v0-car)
 		 (loop (get-tagged-pair-cdr v)
-		       #f
 		       (lambda (v0-cdr)
 			(fill-tagged-pair! u0 v0-car v0-cdr)
 			(k u0))))))))
@@ -5812,26 +5311,15 @@
   (check-interned! v))
  (time-it-bucket
   10
-  (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-perturb? (abstractify v))))
-     (let ((v-abstract (abstractify v)))
-      (k (new-call-unit (with-abstract (lambda () (perturb v-abstract)))
-			(c:builtin-name "perturb" v-abstract)
-			v))))
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-perturbation-tagged-value v))
-	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-perturb-cache v)
 	 (k (union-perturb-cache v))
-	 (let ((v-perturbation (create-tagged-union (union-tag v) 'unfilled)))
+	 (let ((v-perturbation (allocate-union 'unfilled)))
 	  (set-union-unperturb-cache! v-perturbation v)
 	  (set-union-perturb-cache! v v-perturbation)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
@@ -5853,7 +5341,7 @@
 	  (set-nonrecursive-closure-unperturb-cache! u-perturbation v)
 	  (set-nonrecursive-closure-perturb-cache! v u-perturbation)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-nonrecursive-closure-values v)
 	   (lambda (vs-perturbation)
 	    (fill-nonrecursive-closure-values! u-perturbation vs-perturbation)
@@ -5873,7 +5361,7 @@
 	  (set-recursive-closure-unperturb-cache! u-perturbation v)
 	  (set-recursive-closure-perturb-cache! v u-perturbation)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-recursive-closure-values v)
 	   (lambda (vs-perturbation)
 	    (fill-recursive-closure-values! u-perturbation vs-perturbation)
@@ -5912,10 +5400,8 @@
 	  (set-tagged-pair-unperturb-cache! u-perturbation v)
 	  (set-tagged-pair-perturb-cache! v u-perturbation)
 	  (loop (get-tagged-pair-car v)
-		#f
 		(lambda (v-car-perturbation)
 		 (loop (get-tagged-pair-cdr v)
-		       #f
 		       (lambda (v-cdr-perturbation)
 			(fill-tagged-pair!
 			 u-perturbation v-car-perturbation v-cdr-perturbation)
@@ -5931,29 +5417,15 @@
  (time-it-bucket
   11
   (let loop ((v-perturbation v-perturbation)
-	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-unperturb? (abstractify v-perturbation))))
-     (let ((v-perturbation-abstract (abstractify v-perturbation)))
-      (k (new-call-unit
-	  (with-abstract (lambda () (unperturb v-perturbation-abstract)))
-	  (c:builtin-name "unperturb" v-perturbation-abstract)
-	  v-perturbation))))
-    ((unit? v-perturbation)
-     (if (vlad-real? (unit-abstract-value v-perturbation))
-	 (k (new-panic-unit
-	     "Argument to unperturb is not a perturbation value"))
-	 (loop (unroll v-perturbation) top? k)))
     ((union? v-perturbation)
      (if (union-unperturb-cache v-perturbation)
 	 (k (union-unperturb-cache v-perturbation))
-	 (let ((v (create-tagged-union (union-tag v-perturbation) 'unfilled)))
+	 (let ((v (allocate-union 'unfilled)))
 	  (set-union-perturb-cache! v v-perturbation)
 	  (set-union-unperturb-cache! v-perturbation v)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v-perturbation)
 			  (lambda (us)
 			   (fill-union-values! v us)
@@ -5985,7 +5457,7 @@
 		  (nonrecursive-closure-lambda-expression v-perturbation)))))
 	(set-nonrecursive-closure-perturb-cache! u v-perturbation)
 	(set-nonrecursive-closure-unperturb-cache! v-perturbation u)
-	(map-cps-non-cs (lambda (v k) (loop v #f k))
+	(map-cps-non-cs loop
 			(get-nonrecursive-closure-values v-perturbation)
 			(lambda (vs)
 			 (fill-nonrecursive-closure-values! u vs)
@@ -6008,7 +5480,7 @@
 		      (recursive-closure-index v-perturbation))))
 	     (set-recursive-closure-perturb-cache! u v-perturbation)
 	     (set-recursive-closure-unperturb-cache! v-perturbation u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-perturbation)
 			     (lambda (vs)
 			      (fill-recursive-closure-values! u vs)
@@ -6038,10 +5510,8 @@
 	(set-tagged-pair-perturb-cache! u v-perturbation)
 	(set-tagged-pair-unperturb-cache! v-perturbation u)
 	(loop (get-tagged-pair-car v-perturbation)
-	      #f
 	      (lambda (v-car)
 	       (loop (get-tagged-pair-cdr v-perturbation)
-		     #f
 		     (lambda (v-cdr)
 		      (fill-tagged-pair! u v-car v-cdr)
 		      (k u)))))))
@@ -6058,27 +5528,14 @@
  (time-it-bucket
   12
   (let loop ((v-forward v-forward)
-	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-primal? (abstractify v-forward))))
-     (let ((v-forward-abstract (abstractify v-forward)))
-      (k (new-call-unit
-	  (with-abstract (lambda () (primal v-forward-abstract)))
-	  (c:builtin-name "primal" v-forward-abstract)
-	  v-forward))))
-    ((unit? v-forward)
-     (if (vlad-real? (unit-abstract-value v-forward))
-	 (k (new-panic-unit "Argument to primal is not a forward value"))
-	 (loop (unroll v-forward) top? k)))
     ((union? v-forward)
      (if (union-primal-cache v-forward)
 	 (k (union-primal-cache v-forward))
-	 (let ((v (create-tagged-union (union-tag v-forward) 'unfilled)))
+	 (let ((v (allocate-union 'unfilled)))
 	  (set-union-primal-cache! v-forward v)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v-forward)
 			  (lambda (us)
 			   (fill-union-values! v us)
@@ -6113,7 +5570,7 @@
 		      (forward-transform-inverse
 		       (nonrecursive-closure-lambda-expression v-forward)))))
 	     (set-nonrecursive-closure-primal-cache! v-forward u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-forward)
 			     (lambda (vs)
 			      (fill-nonrecursive-closure-values! u vs)
@@ -6135,7 +5592,7 @@
 		       (recursive-closure-lambda-expressions v-forward))
 		      (recursive-closure-index v-forward))))
 	     (set-recursive-closure-primal-cache! v-forward u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-forward)
 			     (lambda (vs)
 			      (fill-recursive-closure-values! u vs)
@@ -6159,10 +5616,8 @@
 		      'unfilled)))
 	     (set-tagged-pair-primal-cache! v-forward u)
 	     (loop (get-tagged-pair-car v-forward)
-		   #f
 		   (lambda (v-car)
 		    (loop (get-tagged-pair-cdr v-forward)
-			  #f
 			  (lambda (v-cdr)
 			   (fill-tagged-pair! u v-car v-cdr)
 			   (k u)))))))
@@ -6179,28 +5634,14 @@
  (time-it-bucket
   13
   (let loop ((v-forward v-forward)
-	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-tangent? (abstractify v-forward))))
-     (let ((v-forward-abstract (abstractify v-forward)))
-      (k (new-call-unit
-	  (with-abstract (lambda () (tangent v-forward-abstract)))
-	  (c:builtin-name "tangent" v-forward-abstract)
-	  v-forward))))
-    ((unit? v-forward)
-     (if (vlad-real? (unit-abstract-value v-forward))
-	 (k (new-panic-unit "Argument to tangent is not a forward value"))
-	 (loop (unroll v-forward) top? k)))
     ((union? v-forward)
      (if (union-tangent-cache v-forward)
 	 (k (union-tangent-cache v-forward))
-	 (let ((v-perturbation
-		(create-tagged-union (union-tag v-forward) 'unfilled)))
+	 (let ((v-perturbation (allocate-union 'unfilled)))
 	  (set-union-tangent-cache! v-forward v-perturbation)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v-forward)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
@@ -6238,7 +5679,7 @@
 		     (forward-transform-inverse
 		      (nonrecursive-closure-lambda-expression v-forward))))))
 	     (set-nonrecursive-closure-tangent-cache! v-forward u-perturbation)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-forward)
 			     (lambda (vs-perturbation)
 			      (fill-nonrecursive-closure-values!
@@ -6263,7 +5704,7 @@
 		     (recursive-closure-lambda-expressions v-forward))
 		    (recursive-closure-index v-forward))))
 	     (set-recursive-closure-tangent-cache! v-forward u-perturbation)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-forward)
 			     (lambda (vs-perturbation)
 			      (fill-recursive-closure-values!
@@ -6291,10 +5732,8 @@
 		    'unfilled)))
 	     (set-tagged-pair-tangent-cache! v-forward u-perturbation)
 	     (loop (get-tagged-pair-car v-forward)
-		   #f
 		   (lambda (v-car-perturbation)
 		    (loop (get-tagged-pair-cdr v-forward)
-			  #f
 			  (lambda (v-cdr-perturbation)
 			   (fill-tagged-pair! u-perturbation
 					      v-car-perturbation
@@ -6317,25 +5756,14 @@
  (time-it-bucket
   14
   ;; needs work: v0 naming convention
-  (let loop ((v0 v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v0 v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-bundle? (abstractify v0))))
-     (let ((v-abstract (abstractify v0)))
-      (k (new-call-unit (with-abstract (lambda () (bundle v-abstract)))
-			(c:builtin-name "bundle" v-abstract)
-			v))))
-    ((unit? v0)
-     (if (vlad-real? (unit-abstract-value v0))
-	 (k (new-panic-unit "Argument to bundle is not valid"))
-	 (loop (unroll v0) top? k)))
     ((union? v0)
      (if (union-bundle-cache v0)
 	 (k (union-bundle-cache v0))
-	 (let ((v-forward (create-tagged-union (union-tag v0) 'unfilled)))
+	 (let ((v-forward (allocate-union 'unfilled)))
 	  (set-union-bundle-cache! v0 v-forward)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v0)
 			  (lambda (us-forward)
 			   (fill-union-values! v-forward us-forward)
@@ -6345,58 +5773,20 @@
 	 (k (tagged-pair-bundle-cache v0))
 	 (let ((v (vlad-car v0)) (v-perturbation (vlad-cdr v0)))
 	  (cond
-	   ((and (unit? v) (not (vlad-real? (unit-abstract-value v))))
-	    (loop (vlad-cons (unroll v) v-perturbation) top? k))
-	   ((and (unit? v-perturbation)
-		 (not (vlad-real? (unit-abstract-value v-perturbation))))
-	    (loop (vlad-cons v (unroll v-perturbation)) top? k))
-	   ((and (perturbation-tagged-value? v-perturbation)
-		 (unit? (perturbation-tagged-value-primal v-perturbation))
-		 (not (vlad-real?
-		       (unit-abstract-value
-			(perturbation-tagged-value-primal v-perturbation)))))
-	    (loop (vlad-cons
-		   v
-		   (new-perturbation-tagged-value
-		    (unroll
-		     (perturbation-tagged-value-primal v-perturbation))))
-		  top?
-		  k))
-	   ;; needs work: The symbolic and abstract values will not correspond.
-	   ((and (eq? *mode* 'symbolic)
-		 (perturbation-tagged-value? v-perturbation)
-		 (union? (perturbation-tagged-value-primal v-perturbation)))
-	    (k (create-tagged-union
-		(union-tag (perturbation-tagged-value-primal v-perturbation))
-		(map (lambda (u)
-		      (loop (vlad-cons v (new-perturbation-tagged-value u))
-			    #f
-			    identity))
-		     (get-union-values
-		      (perturbation-tagged-value-primal v-perturbation))))))
-	   ((and (unit? v)
-		 (vlad-real? (unit-abstract-value v))
-		 (perturbation-tagged-value? v-perturbation)
-		 (unit? (perturbation-tagged-value-primal v-perturbation))
-		 (vlad-real?
-		  (unit-abstract-value
-		   (perturbation-tagged-value-primal v-perturbation))))
-	    (k (new-bundle v v-perturbation)))
 	   ((union? v)
-	    (let ((v-forward (create-tagged-union (union-tag v) 'unfilled)))
+	    (let ((v-forward (allocate-union 'unfilled)))
 	     (set-tagged-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs
-	      (lambda (u k) (loop (vlad-cons u v-perturbation) #f k))
+	      (lambda (u k) (loop (vlad-cons u v-perturbation) k))
 	      (union-members v)
 	      (lambda (us-forward)
 	       (fill-union-values! v-forward us-forward)
 	       (k v-forward)))))
 	   ((union? v-perturbation)
-	    (let ((v-forward
-		   (create-tagged-union (union-tag v-perturbation) 'unfilled)))
+	    (let ((v-forward (allocate-union 'unfilled)))
 	     (set-tagged-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs (lambda (u-perturbation k)
-			      (loop (vlad-cons v u-perturbation) #f k))
+			      (loop (vlad-cons v u-perturbation) k))
 			     (union-members v-perturbation)
 			     (lambda (us-forward)
 			      (fill-union-values! v-forward us-forward)
@@ -6452,7 +5842,7 @@
 	     (set-tagged-pair-bundle-cache! v0 u-forward)
 	     (map2-cps-non-cs
 	      (lambda (v v-perturbation k)
-	       (loop (vlad-cons v v-perturbation) #f k))
+	       (loop (vlad-cons v v-perturbation) k))
 	      (get-nonrecursive-closure-values v)
 	      (get-nonrecursive-closure-values v-perturbation)
 	      (lambda (vs-forward)
@@ -6478,7 +5868,7 @@
 	     (set-tagged-pair-bundle-cache! v0 u-forward)
 	     (map2-cps-non-cs
 	      (lambda (v v-perturbation k)
-	       (loop (vlad-cons v v-perturbation) #f k))
+	       (loop (vlad-cons v v-perturbation) k))
 	      (get-recursive-closure-values v)
 	      (get-recursive-closure-values v-perturbation)
 	      (lambda (vs-forward)
@@ -6531,11 +5921,9 @@
 	     (loop
 	      (vlad-cons (get-tagged-pair-car v)
 			 (get-tagged-pair-car v-perturbation))
-	      #f
 	      (lambda (v-car-forward)
 	       (loop (vlad-cons (get-tagged-pair-cdr v)
 				(get-tagged-pair-cdr v-perturbation))
-		     #f
 		     (lambda (v-cdr-forward)
 		      (fill-tagged-pair! u-forward v-car-forward v-cdr-forward)
 		      (k u-forward)))))))
@@ -6551,8 +5939,6 @@
 				     v-perturbation)))
 		    (set-tagged-pair-bundle-cache! v0 u-forward)
 		    (k u-forward)))
-		  ((symbolic)
-		   (k (new-panic-unit "Arguments to bundle do not conform")))
 		  (else (internal-error))))))))
     (else (k (ad-error "Argument to bundle ~a valid" v0)))))))
 
@@ -6916,26 +6302,15 @@
   (check-interned! v))
  (time-it-bucket
   15
-  (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-sensitize? (abstractify v))))
-     (let ((v-abstract (abstractify v)))
-      (k (new-call-unit (with-abstract (lambda () (sensitize v-abstract)))
-			(c:builtin-name "sensitize" v-abstract)
-			v))))
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-sensitivity-tagged-value v))
-	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-sensitize-cache v)
 	 (k (union-sensitize-cache v))
-	 (let ((v-sensitivity (create-tagged-union (union-tag v) 'unfilled)))
+	 (let ((v-sensitivity (allocate-union 'unfilled)))
 	  (set-union-unsensitize-cache! v-sensitivity v)
 	  (set-union-sensitize-cache! v v-sensitivity)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us-sensitivity)
 			   (fill-union-values! v-sensitivity us-sensitivity)
@@ -6956,7 +6331,7 @@
 	  (set-nonrecursive-closure-unsensitize-cache! u-sensitivity v)
 	  (set-nonrecursive-closure-sensitize-cache! v u-sensitivity)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-nonrecursive-closure-values v)
 	   (lambda (vs-sensitivity)
 	    (fill-nonrecursive-closure-values! u-sensitivity vs-sensitivity)
@@ -6976,7 +6351,7 @@
 	  (set-recursive-closure-unsensitize-cache! u-sensitivity v)
 	  (set-recursive-closure-sensitize-cache! v u-sensitivity)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-recursive-closure-values v)
 	   (lambda (vs-sensitivity)
 	    (fill-recursive-closure-values! u-sensitivity vs-sensitivity)
@@ -7015,10 +6390,8 @@
 	  (set-tagged-pair-unsensitize-cache! u-sensitivity v)
 	  (set-tagged-pair-sensitize-cache! v u-sensitivity)
 	  (loop (get-tagged-pair-car v)
-		#f
 		(lambda (v-car-sensitivity)
 		 (loop (get-tagged-pair-cdr v)
-		       #f
 		       (lambda (v-cdr-sensitivity)
 			(fill-tagged-pair!
 			 u-sensitivity v-car-sensitivity v-cdr-sensitivity)
@@ -7099,29 +6472,15 @@
  (time-it-bucket
   17
   (let loop ((v-sensitivity v-sensitivity)
-	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-unsensitize? (abstractify v-sensitivity))))
-     (let ((v-sensitivity-abstract (abstractify v-sensitivity)))
-      (k (new-call-unit
-	  (with-abstract (lambda () (unsensitize v-sensitivity-abstract)))
-	  (c:builtin-name "unsensitize" v-sensitivity-abstract)
-	  v-sensitivity))))
-    ((unit? v-sensitivity)
-     (if (vlad-real? (unit-abstract-value v-sensitivity))
-	 (k (new-panic-unit
-	     "Argument to unperturb is not a sensitivity value"))
-	 (loop (unroll v-sensitivity) top? k)))
     ((union? v-sensitivity)
      (if (union-unsensitize-cache v-sensitivity)
 	 (k (union-unsensitize-cache v-sensitivity))
-	 (let ((v (create-tagged-union (union-tag v-sensitivity) 'unfilled)))
+	 (let ((v (allocate-union 'unfilled)))
 	  (set-union-sensitize-cache! v v-sensitivity)
 	  (set-union-unsensitize-cache! v-sensitivity v)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v-sensitivity)
 			  (lambda (us)
 			   (fill-union-values! v us)
@@ -7153,7 +6512,7 @@
 		  (nonrecursive-closure-lambda-expression v-sensitivity)))))
 	(set-nonrecursive-closure-sensitize-cache! u v-sensitivity)
 	(set-nonrecursive-closure-unsensitize-cache! v-sensitivity u)
-	(map-cps-non-cs (lambda (v k) (loop v #f k))
+	(map-cps-non-cs loop
 			(get-nonrecursive-closure-values v-sensitivity)
 			(lambda (vs)
 			 (fill-nonrecursive-closure-values! u vs)
@@ -7176,7 +6535,7 @@
 		      (recursive-closure-index v-sensitivity))))
 	     (set-recursive-closure-sensitize-cache! u v-sensitivity)
 	     (set-recursive-closure-unsensitize-cache! v-sensitivity u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-sensitivity)
 			     (lambda (vs)
 			      (fill-recursive-closure-values! u vs)
@@ -7206,10 +6565,8 @@
 	(set-tagged-pair-sensitize-cache! u v-sensitivity)
 	(set-tagged-pair-unsensitize-cache! v-sensitivity u)
 	(loop (get-tagged-pair-car v-sensitivity)
-	      #f
 	      (lambda (v-car)
 	       (loop (get-tagged-pair-cdr v-sensitivity)
-		     #f
 		     (lambda (v-cdr)
 		      (fill-tagged-pair! u v-car v-cdr)
 		      (k u)))))))
@@ -7246,25 +6603,14 @@
  (time-it-bucket
   18
   ;; needs work: v0 naming convention
-  (let loop ((v0 v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v0 v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-plus? (abstractify v0))))
-     (let ((v-abstract (abstractify v0)))
-      (k (new-call-unit (with-abstract (lambda () (plus v-abstract)))
-			(c:builtin-name "plus" v-abstract)
-			v))))
-    ((unit? v0)
-     (if (vlad-real? (unit-abstract-value v0))
-	 (k (new-panic-unit "Argument to plus is not valid"))
-	 (loop (unroll v0) top? k)))
     ((union? v0)
      (if (union-plus-cache v0)
 	 (k (union-plus-cache v0))
-	 (let ((v (create-tagged-union (union-tag v0) 'unfilled)))
+	 (let ((v (allocate-union 'unfilled)))
 	  (set-union-plus-cache! v0 v)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v0)
 			  (lambda (us)
 			   (fill-union-values! v us)
@@ -7274,42 +6620,27 @@
 	 (k (tagged-pair-plus-cache v0))
 	 (let ((v1 (vlad-car v0)) (v2 (vlad-cdr v0)))
 	  (cond
-	   ((and (unit? v1) (not (vlad-real? (unit-abstract-value v1))))
-	    (loop (vlad-cons (unroll v1) v2) top? k))
-	   ((and (unit? v2) (not (vlad-real? (unit-abstract-value v2))))
-	    (loop (vlad-cons v1 (unroll v2)) top? k))
-	   ((or (and (unit? v1)
-		     (unit? v2)
-		     (vlad-real? (unit-abstract-value v1))
-		     (vlad-real? (unit-abstract-value v2)))
-		(and (unit? v1)
-		     (vlad-real? (unit-abstract-value v1))
-		     (vlad-real? v2))
-		(and (vlad-real? v1)
-		     (unit? v2)
-		     (vlad-real? (unit-abstract-value v2))))
-	    (k (new-+-unit v1 v2)))
 	   ;; needs work: The following two don't check conformance.
 	   ;; needs work: To figure out how to do this for the new code
 	   ;;             generator.
-	   ((and (not (eq? *mode* 'symbolic)) (is-zero? v1))
+	   ((is-zero? v1)
 	    (set-tagged-pair-plus-cache! v0 v2)
 	    (k v2))
-	   ((and (not (eq? *mode* 'symbolic)) (is-zero? v2))
+	   ((is-zero? v2)
 	    (set-tagged-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((union? v1)
-	    (let ((v (create-tagged-union (union-tag v1) 'unfilled)))
+	    (let ((v (allocate-union 'unfilled)))
 	     (set-tagged-pair-plus-cache! v0 v)
-	     (map-cps-non-cs (lambda (u1 k) (loop (vlad-cons u1 v2) #f k))
+	     (map-cps-non-cs (lambda (u1 k) (loop (vlad-cons u1 v2) k))
 			     (union-members v1)
 			     (lambda (us)
 			      (fill-union-values! v us)
 			      (k v)))))
 	   ((union? v2)
-	    (let ((v (create-tagged-union (union-tag v2) 'unfilled)))
+	    (let ((v (allocate-union 'unfilled)))
 	     (set-tagged-pair-plus-cache! v0 v)
-	     (map-cps-non-cs (lambda (u2 k) (loop (vlad-cons v1 u2) #f k))
+	     (map-cps-non-cs (lambda (u2 k) (loop (vlad-cons v1 u2) k))
 			     (union-members v2)
 			     (lambda (us)
 			      (fill-union-values! v us)
@@ -7344,7 +6675,7 @@
 	    (let ((u (allocate-nonrecursive-closure
 		      'unfilled (nonrecursive-closure-lambda-expression v1))))
 	     (set-tagged-pair-plus-cache! v0 u)
-	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) #f k))
+	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) k))
 			      (get-nonrecursive-closure-values v1)
 			      (get-nonrecursive-closure-values v2)
 			      (lambda (vs)
@@ -7360,7 +6691,7 @@
 		      (recursive-closure-lambda-expressions v1)
 		      (recursive-closure-index v1))))
 	     (set-tagged-pair-plus-cache! v0 u)
-	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) #f k))
+	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) k))
 			      (get-recursive-closure-values v1)
 			      (get-recursive-closure-values v2)
 			      (lambda (vs)
@@ -7372,7 +6703,6 @@
 	     (set-tagged-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-perturbation-tagged-value-primal v1)
 			      (get-perturbation-tagged-value-primal v2))
-		   #f
 		   (lambda (v)
 		    (fill-perturbation-tagged-value-primal! u v)
 		    (k u)))))
@@ -7381,11 +6711,9 @@
 	     (set-tagged-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-bundle-primal v1)
 			      (get-bundle-primal v2))
-		   #f
 		   (lambda (v-primal)
 		    (loop (vlad-cons (get-bundle-tangent v1)
 				     (get-bundle-tangent v2))
-			  #f
 			  (lambda (v-tangent)
 			   (fill-bundle! u v-primal v-tangent)
 			   (k u)))))))
@@ -7395,7 +6723,6 @@
 	     (set-tagged-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-sensitivity-tagged-value-primal v1)
 			      (get-sensitivity-tagged-value-primal v2))
-		   #f
 		   (lambda (v)
 		    (fill-sensitivity-tagged-value-primal! u v)
 		    (k u)))))
@@ -7404,7 +6731,6 @@
 	     (set-tagged-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-reverse-tagged-value-primal v1)
 			      (get-reverse-tagged-value-primal v2))
-		   #f
 		   (lambda (v)
 		    (fill-reverse-tagged-value-primal! u v)
 		    (k u)))))
@@ -7416,11 +6742,9 @@
 	     (set-tagged-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-tagged-pair-car v1)
 			      (get-tagged-pair-car v2))
-		   #f
 		   (lambda (v-car)
 		    (loop (vlad-cons (get-tagged-pair-cdr v1)
 				     (get-tagged-pair-cdr v2))
-			  #f
 			  (lambda (v-cdr)
 			   (fill-tagged-pair! u v-car v-cdr)
 			   (k u)))))))
@@ -7432,8 +6756,6 @@
 			     "Arguments to plus might not conform" v1 v2)))
 		    (set-tagged-pair-plus-cache! v0 u)
 		    (k u)))
-		  ((symbolic)
-		   (k (new-panic-unit "Arguments to plus do not conform")))
 		  (else (internal-error))))))))
     (else (k (ad-error "Argument to plus ~a valid" v0)))))))
 
@@ -7445,24 +6767,15 @@
   (check-interned! v))
  (time-it-bucket
   19
-  (let loop ((v v) (top? #t) (k canonize-and-maybe-intern-abstract-value))
+  (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic) (not top?) (not (inline-*j? (abstractify v))))
-     (let ((v-abstract (abstractify v)))
-      (k (new-call-unit (with-abstract (lambda () (*j v-abstract)))
-			(c:builtin-name "starj" v-abstract)
-			v))))
-    ((unit? v)
-     (if (vlad-real? (unit-abstract-value v))
-	 (k (new-reverse-tagged-value v))
-	 (loop (unroll v) top? k)))
     ((union? v)
      (if (union-*j-cache v)
 	 (k (union-*j-cache v))
-	 (let ((v-reverse (create-tagged-union (union-tag v) 'unfilled)))
+	 (let ((v-reverse (allocate-union 'unfilled)))
 	  (set-union-*j-inverse-cache! v-reverse v)
 	  (set-union-*j-cache! v v-reverse)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us-reverse)
 			   (fill-union-values! v-reverse us-reverse)
@@ -7484,7 +6797,7 @@
 	  (set-nonrecursive-closure-*j-inverse-cache! u-reverse v)
 	  (set-nonrecursive-closure-*j-cache! v u-reverse)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-nonrecursive-closure-values v)
 	   (lambda (vs-reverse)
 	    (fill-nonrecursive-closure-values! u-reverse vs-reverse)
@@ -7510,7 +6823,7 @@
 	  (set-recursive-closure-*j-inverse-cache! u-reverse v)
 	  (set-recursive-closure-*j-cache! v u-reverse)
 	  (map-cps-non-cs
-	   (lambda (v k) (loop v #f k))
+	   loop
 	   (get-recursive-closure-values v)
 	   (lambda (vs-reverse)
 	    (fill-recursive-closure-values! u-reverse vs-reverse)
@@ -7549,10 +6862,8 @@
 	  (set-tagged-pair-*j-cache! v u-reverse)
 	  (loop
 	   (get-tagged-pair-car v)
-	   #f
 	   (lambda (v-car-reverse)
 	    (loop (get-tagged-pair-cdr v)
-		  #f
 		  (lambda (v-cdr-reverse)
 		   (fill-tagged-pair! u-reverse v-car-reverse v-cdr-reverse)
 		   (k u-reverse))))))))
@@ -7567,28 +6878,15 @@
  (time-it-bucket
   20
   (let loop ((v-reverse v-reverse)
-	     (top? #t)
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
-    ((and (eq? *mode* 'symbolic)
-	  (not top?)
-	  (not (inline-*j-inverse? (abstractify v-reverse))))
-     (let ((v-reverse-abstract (abstractify v-reverse)))
-      (k (new-call-unit
-	  (with-abstract (lambda () (*j-inverse v-reverse-abstract)))
-	  (c:builtin-name "starj_inverse" v-reverse-abstract)
-	  v-reverse))))
-    ((unit? v-reverse)
-     (if (vlad-real? (unit-abstract-value v-reverse))
-	 (k (new-panic-unit "Argument to unperturb is not a reverse value"))
-	 (loop (unroll v-reverse) top? k)))
     ((union? v-reverse)
      (if (union-*j-inverse-cache v-reverse)
 	 (k (union-*j-inverse-cache v-reverse))
-	 (let ((v (create-tagged-union (union-tag v-reverse) 'unfilled)))
+	 (let ((v (allocate-union 'unfilled)))
 	  (set-union-*j-cache! v v-reverse)
 	  (set-union-*j-inverse-cache! v-reverse v)
-	  (map-cps-non-cs (lambda (v k) (loop v #f k))
+	  (map-cps-non-cs loop
 			  (union-members v-reverse)
 			  (lambda (us)
 			   (fill-union-values! v us)
@@ -7624,7 +6922,7 @@
 		       (nonrecursive-closure-lambda-expression v-reverse)))))
 	     (set-nonrecursive-closure-*j-cache! u v-reverse)
 	     (set-nonrecursive-closure-*j-inverse-cache! v-reverse u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-reverse)
 			     (lambda (vs)
 			      (fill-nonrecursive-closure-values! u vs)
@@ -7647,7 +6945,7 @@
 		      (recursive-closure-index v-reverse))))
 	     (set-recursive-closure-*j-cache! u v-reverse)
 	     (set-recursive-closure-*j-inverse-cache! v-reverse u)
-	     (map-cps-non-cs (lambda (v k) (loop v #f k))
+	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-reverse)
 			     (lambda (vs)
 			      (fill-recursive-closure-values! u vs)
@@ -7673,10 +6971,8 @@
 	     (set-tagged-pair-*j-cache! u v-reverse)
 	     (set-tagged-pair-*j-inverse-cache! v-reverse u)
 	     (loop (get-tagged-pair-car v-reverse)
-		   #f
 		   (lambda (v-car)
 		    (loop (get-tagged-pair-cdr v-reverse)
-			  #f
 			  (lambda (v-cdr)
 			   (fill-tagged-pair! u v-car v-cdr)
 			   (k u)))))))
@@ -7766,17 +7062,10 @@
   (cond
    ((memq v vs) `(up ,(positionq v vs)))
    ((union? v)
-    (if (eq? (union-tag v) 'unfilled)
-	(if (eq? (union-values v) 'unfilled)
-	    '(union unfilled)
-	    `(union
-	      ,@(map (lambda (u) (loop u (cons v vs))) (union-members v))))
-	(if (eq? (union-values v) 'unfilled)
-	    `(tagged-union ,(loop (union-tag v) (cons v vs)) unfilled)
-	    `(tagged-union ,(loop (union-tag v) (cons v vs))
-			   ,@(map (lambda (u) (loop u (cons v vs)))
-				  (get-union-values v))))))
-   ((eq? v 'int) v)
+    (if (eq? (union-values v) 'unfilled)
+	'(union unfilled)
+	`(union
+	  ,@(map (lambda (u) (loop u (cons v vs))) (union-members v)))))
    ((vlad-empty-list? v) '())
    ((vlad-true? v) #t)
    ((vlad-false? v) #f)
@@ -7830,32 +7119,6 @@
 			    ,(if (eq? (tagged-pair-cdr v) 'unfilled)
 				 'unfilled
 				 (loop (get-tagged-pair-cdr v) vs))))
-   ((name-unit? v) `(name ,(name-unit-code v)))
-   ((slot-unit? v) `(slot ,(loop (slot-unit-v1 v) vs) ,(slot-unit-code v)))
-   ((call-unit? v) `(call ,(call-unit-code v)
-			  ,@(map (lambda (v) (loop v vs)) (call-unit-vs v))))
-   ((panic-unit? v) `(panic ,(panic-unit-code v)))
-   ((+-unit? v) `(+ ,(loop (+-unit-v1 v) vs) ,(loop (+-unit-v2 v) vs)))
-   ((--unit? v) `(- ,(loop (--unit-v1 v) vs) ,(loop (--unit-v2 v) vs)))
-   ((*-unit? v) `(* ,(loop (*-unit-v1 v) vs) ,(loop (*-unit-v2 v) vs)))
-   ((/-unit? v) `(/ ,(loop (/-unit-v1 v) vs) ,(loop (/-unit-v2 v) vs)))
-   ((sqrt-unit? v) `(sqrt ,(loop (sqrt-unit-v1 v) vs)))
-   ((exp-unit? v) `(exp ,(loop (exp-unit-v1 v) vs)))
-   ((log-unit? v) `(log ,(loop (log-unit-v1 v) vs)))
-   ((sin-unit? v) `(sin ,(loop (sin-unit-v1 v) vs)))
-   ((cos-unit? v) `(cos ,(loop (cos-unit-v1 v) vs)))
-   ((atan-unit? v)
-    `(atan ,(loop (atan-unit-v1 v) vs) ,(loop (atan-unit-v2 v) vs)))
-   ((=-unit? v) `(= ,(loop (=-unit-v1 v) vs) ,(loop (=-unit-v2 v) vs)))
-   ((<-unit? v) `(< ,(loop (<-unit-v1 v) vs) ,(loop (<-unit-v2 v) vs)))
-   ((>-unit? v) `(> ,(loop (>-unit-v1 v) vs) ,(loop (>-unit-v2 v) vs)))
-   ((<=-unit? v) `(<= ,(loop (<=-unit-v1 v) vs) ,(loop (<=-unit-v2 v) vs)))
-   ((>=-unit? v) `(>= ,(loop (>=-unit-v1 v) vs) ,(loop (>=-unit-v2 v) vs)))
-   ((zero?-unit? v) `(zero? ,(loop (zero?-unit-v1 v) vs)))
-   ((positive?-unit? v) `(positive? ,(loop (positive?-unit-v1 v) vs)))
-   ((negative?-unit? v) `(negative? ,(loop (negative?-unit-v1 v) vs)))
-   ((read-real-unit? v) `(read-real))
-   ((write-real-unit? v) `(write-real ,(loop (write-real-unit-v1 v) vs)))
    (else (internal-error)))))
 
 (define (externalize v)
@@ -7868,7 +7131,6 @@
 	    (run-time-error "Cannot unabbreviate executably" v))
 	   `(up ,(positionq v vs)))
 	  ((and (union? v)
-		(eq? (union-tag v) 'unfilled)
 		(= (length (get-union-values v)) 2)
 		(some vlad-empty-list? (get-union-values v))
 		(some (lambda (u)
@@ -7893,41 +7155,28 @@
 	    (run-time-error "Cannot unabbreviate executably" v))
 	   (cond ((empty-abstract-value? v) 'bottom)
 		 ((null? (rest (union-members v))) (internal-error))
-		 ((eq? (union-tag v) 'unfilled)
-		  `(union ,@(map (lambda (u) (loop u quote? (cons v vs)))
-				 (union-members v))))
-		 (else `(tagged-union
-			 ,(loop (union-tag v) quote? (cons v vs))
-			 ,@(map (lambda (u) (loop u quote? (cons v vs)))
-				(get-union-values v))))))
+		 (else `(union ,@(map (lambda (u) (loop u quote? (cons v vs)))
+				      (union-members v))))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(perturbation-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  ;; needs work: These calls to unperturb won't work for
-		  ;;             symbolic values.
 		  `(perturb ,(loop (unperturb v) quote? vs)))
 		 (else `(perturbation ,(loop (unperturb v) quote? vs)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(forward-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  ;; needs work: These calls to primal and tangent won't work
-		  ;;             for symbolic values.
 		  `(bundle ,(loop (primal v) quote? vs)
 			   ,(loop (tangent v) quote? vs)))
 		 (else `(forward ,(loop (primal v) quote? vs)
 				 ,(loop (tangent v) quote? vs)))))
 	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
 		(sensitivity-value? v)
-		;; needs work: This call to unsensitize? won't work for
-		;;             symbolic values.
 		;; This is to prevent attempts to unsensitize backpropagators.
 		(unsensitize? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  ;; needs work: These calls to unsensitize won't work for
-		  ;;             symbolic values.
 		  `(sensitize ,(loop (unsensitize v) quote? vs)))
 		 (else `(sensitivity ,(loop (unsensitize v) quote? vs)))))
 	  ;; It may not be possible to apply *j-inverse to a closure whose
@@ -7939,14 +7188,8 @@
 		(reverse-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
-		  ;; needs work: These calls to *j-inverse won't work for
-		  ;;             symbolic values.
 		  `(*j ,(loop (*j-inverse v) quote? vs)))
 		 (else `(reverse ,(loop (*j-inverse v) quote? vs)))))
-	  ((eq? v 'int)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   v)
 	  ((vlad-empty-list? v)
 	   (if (and *unabbreviate-executably?* (not quote?)) ''() '()))
 	  ((vlad-true? v) #t)
@@ -8096,114 +7339,6 @@
 	     `(*j ,(loop (get-reverse-tagged-value-primal v) quote? vs)))
 	    (else `(reverse
 		    ,(loop (get-reverse-tagged-value-primal v) quote? vs)))))
-	  ((name-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(name ,(name-unit-code v)))
-	  ((slot-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(slot ,(loop (slot-unit-v1 v) quote? vs) ,(slot-unit-code v)))
-	  ((call-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(call ,(call-unit-code v)
-		  ,@(map (lambda (v) (loop v quote? vs))
-			 (call-unit-vs v))))
-	  ((panic-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(panic ,(panic-unit-code v)))
-	  ((+-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(+ ,(loop (+-unit-v1 v) quote? vs)
-	       ,(loop (+-unit-v2 v) quote? vs)))
-	  ((--unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(- ,(loop (--unit-v1 v) quote? vs)
-	       ,(loop (--unit-v2 v) quote? vs)))
-	  ((*-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(* ,(loop (*-unit-v1 v) quote? vs)
-	       ,(loop (*-unit-v2 v) quote? vs)))
-	  ((/-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(/ ,(loop (/-unit-v1 v) quote? vs)
-	       ,(loop (/-unit-v2 v) quote? vs)))
-	  ((sqrt-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(sqrt ,(loop (sqrt-unit-v1 v) quote? vs)))
-	  ((exp-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(exp ,(loop (exp-unit-v1 v) quote? vs)))
-	  ((log-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(log ,(loop (log-unit-v1 v) quote? vs)))
-	  ((sin-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(sin ,(loop (sin-unit-v1 v) quote? vs)))
-	  ((cos-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(cos ,(loop (cos-unit-v1 v) quote? vs)))
-	  ((atan-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(atan ,(loop (atan-unit-v1 v) quote? vs)
-		  ,(loop (atan-unit-v2 v) quote? vs)))
-	  ((=-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(= ,(loop (=-unit-v1 v) quote? vs)
-	       ,(loop (=-unit-v2 v) quote? vs)))
-	  ((<-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(< ,(loop (<-unit-v1 v) quote? vs)
-	       ,(loop (<-unit-v2 v) quote? vs)))
-	  ((>-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(> ,(loop (>-unit-v1 v) quote? vs)
-	       ,(loop (>-unit-v2 v) quote? vs)))
-	  ((<=-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(<= ,(loop (<=-unit-v1 v) quote? vs)
-		,(loop (<=-unit-v2 v) quote? vs)))
-	  ((>=-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(>= ,(loop (>=-unit-v1 v) quote? vs)
-		,(loop (>=-unit-v2 v) quote? vs)))
-	  ((zero?-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(zero? ,(loop (zero?-unit-v1 v) quote? vs)))
-	  ((positive?-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(positive? ,(loop (positive?-unit-v1 v) quote? vs)))
-	  ((negative?-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(negative? ,(loop (negative?-unit-v1 v) quote? vs)))
-	  ((read-real-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   '(read-real))
-	  ((write-real-unit? v)
-	   (when *unabbreviate-executably?*
-	    (run-time-error "Cannot unabbreviate executably" v))
-	   `(write-real ,(loop (write-real-unit-v1 v) quote? vs)))
 	  (else (internal-error))))))
   (if *unabbreviate-executably?*
       `(let* ,(map (lambda (b)
@@ -10366,513 +9501,6 @@
    (check-analysis!)
    (when *verbose* (verbosity)))))
 
-;;; Symbolic Evaluator
-
-(define (inline-zero? v)
- (cond
-  ((union? v) (union-inline-zero? v))
-  ((scalar-value? v) #t)
-  ((nonrecursive-closure? v) (nonrecursive-closure-inline-zero? v))
-  ((recursive-closure? v) (recursive-closure-inline-zero? v))
-  ((perturbation-tagged-value? v) (perturbation-tagged-value-inline-zero? v))
-  ((bundle? v) (bundle-inline-zero? v))
-  ((sensitivity-tagged-value? v) (sensitivity-tagged-value-inline-zero? v))
-  ((reverse-tagged-value? v) (reverse-tagged-value-inline-zero? v))
-  ((tagged-pair? v) (tagged-pair-inline-zero? v))
-  (else (internal-error))))
-
-(define (inline-perturb? v)
- (cond
-  ((union? v) (union-inline-perturb? v))
-  ((scalar-value? v) #t)
-  ((nonrecursive-closure? v) (nonrecursive-closure-inline-perturb? v))
-  ((recursive-closure? v) (recursive-closure-inline-perturb? v))
-  ((perturbation-tagged-value? v)
-   (perturbation-tagged-value-inline-perturb? v))
-  ((bundle? v) (bundle-inline-perturb? v))
-  ((sensitivity-tagged-value? v) (sensitivity-tagged-value-inline-perturb? v))
-  ((reverse-tagged-value? v) (reverse-tagged-value-inline-perturb? v))
-  ((tagged-pair? v) (tagged-pair-inline-perturb? v))
-  (else (internal-error))))
-
-(define (inline-unperturb? v)
- (cond ((union? v) (union-inline-unperturb? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) (nonrecursive-closure-inline-unperturb? v))
-       ((recursive-closure? v) (recursive-closure-inline-unperturb? v))
-       ((perturbation-tagged-value? v)
-	(perturbation-tagged-value-inline-unperturb? v))
-       ((bundle? v) (bundle-inline-unperturb? v))
-       ((sensitivity-tagged-value? v)
-	(sensitivity-tagged-value-inline-unperturb? v))
-       ((reverse-tagged-value? v) (reverse-tagged-value-inline-unperturb? v))
-       ((tagged-pair? v) (tagged-pair-inline-unperturb? v))
-       (else (internal-error))))
-
-(define (inline-primal? v)
- (cond
-  ((union? v) (union-inline-primal? v))
-  ((scalar-value? v) #t)
-  ((nonrecursive-closure? v) (nonrecursive-closure-inline-primal? v))
-  ((recursive-closure? v) (recursive-closure-inline-primal? v))
-  ((perturbation-tagged-value? v) (perturbation-tagged-value-inline-primal? v))
-  ((bundle? v) (bundle-inline-primal? v))
-  ((sensitivity-tagged-value? v) (sensitivity-tagged-value-inline-primal? v))
-  ((reverse-tagged-value? v) (reverse-tagged-value-inline-primal? v))
-  ((tagged-pair? v) (tagged-pair-inline-primal? v))
-  (else (internal-error))))
-
-(define (inline-tangent? v)
- (cond
-  ((union? v) (union-inline-tangent? v))
-  ((scalar-value? v) #t)
-  ((nonrecursive-closure? v) (nonrecursive-closure-inline-tangent? v))
-  ((recursive-closure? v) (recursive-closure-inline-tangent? v))
-  ((perturbation-tagged-value? v)
-   (perturbation-tagged-value-inline-tangent? v))
-  ((bundle? v) (bundle-inline-tangent? v))
-  ((sensitivity-tagged-value? v) (sensitivity-tagged-value-inline-tangent? v))
-  ((reverse-tagged-value? v) (reverse-tagged-value-inline-tangent? v))
-  ((tagged-pair? v) (tagged-pair-inline-tangent? v))
-  (else (internal-error))))
-
-(define (inline-bundle? v)
- (cond ((union? v) (union-inline-bundle? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) #t)
-       ((recursive-closure? v) #t)
-       ((perturbation-tagged-value? v) #t)
-       ((bundle? v) #t)
-       ((sensitivity-tagged-value? v) #t)
-       ((reverse-tagged-value? v) #t)
-       ((tagged-pair? v) (tagged-pair-inline-bundle? v))
-       (else (internal-error))))
-
-(define (inline-sensitize? v)
- (cond ((union? v) (union-inline-sensitize? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) (nonrecursive-closure-inline-sensitize? v))
-       ((recursive-closure? v) (recursive-closure-inline-sensitize? v))
-       ((perturbation-tagged-value? v)
-	(perturbation-tagged-value-inline-sensitize? v))
-       ((bundle? v) (bundle-inline-sensitize? v))
-       ((sensitivity-tagged-value? v)
-	(sensitivity-tagged-value-inline-sensitize? v))
-       ((reverse-tagged-value? v) (reverse-tagged-value-inline-sensitize? v))
-       ((tagged-pair? v) (tagged-pair-inline-sensitize? v))
-       (else (internal-error))))
-
-(define (inline-unsensitize? v)
- (cond ((union? v) (union-inline-unsensitize? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) (nonrecursive-closure-inline-unsensitize? v))
-       ((recursive-closure? v) (recursive-closure-inline-unsensitize? v))
-       ((perturbation-tagged-value? v)
-	(perturbation-tagged-value-inline-unsensitize? v))
-       ((bundle? v) (bundle-inline-unsensitize? v))
-       ((sensitivity-tagged-value? v)
-	(sensitivity-tagged-value-inline-unsensitize? v))
-       ((reverse-tagged-value? v) (reverse-tagged-value-inline-unsensitize? v))
-       ((tagged-pair? v) (tagged-pair-inline-unsensitize? v))
-       (else (internal-error))))
-
-(define (inline-plus? v)
- (cond ((union? v) (union-inline-plus? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) #t)
-       ((recursive-closure? v) #t)
-       ((perturbation-tagged-value? v) #t)
-       ((bundle? v) #t)
-       ((sensitivity-tagged-value? v) #t)
-       ((reverse-tagged-value? v) #t)
-       ((tagged-pair? v) (tagged-pair-inline-plus? v))
-       (else (internal-error))))
-
-(define (inline-*j? v)
- (cond
-  ((union? v) (union-inline-*j? v))
-  ((scalar-value? v) #t)
-  ((nonrecursive-closure? v) (nonrecursive-closure-inline-*j? v))
-  ((recursive-closure? v) (recursive-closure-inline-*j? v))
-  ((perturbation-tagged-value? v) (perturbation-tagged-value-inline-*j? v))
-  ((bundle? v) (bundle-inline-*j? v))
-  ((sensitivity-tagged-value? v) (sensitivity-tagged-value-inline-*j? v))
-  ((reverse-tagged-value? v) (reverse-tagged-value-inline-*j? v))
-  ((tagged-pair? v) (tagged-pair-inline-*j? v))
-  (else (internal-error))))
-
-(define (inline-*j-inverse? v)
- (cond ((union? v) (union-inline-*j-inverse? v))
-       ((scalar-value? v) #t)
-       ((nonrecursive-closure? v) (nonrecursive-closure-inline-*j-inverse? v))
-       ((recursive-closure? v) (recursive-closure-inline-*j-inverse? v))
-       ((perturbation-tagged-value? v)
-	(perturbation-tagged-value-inline-*j-inverse? v))
-       ((bundle? v) (bundle-inline-*j-inverse? v))
-       ((sensitivity-tagged-value? v)
-	(sensitivity-tagged-value-inline-*j-inverse? v))
-       ((reverse-tagged-value? v) (reverse-tagged-value-inline-*j-inverse? v))
-       ((tagged-pair? v) (tagged-pair-inline-*j-inverse? v))
-       (else (internal-error))))
-
-(define (unit? v)
- (or (name-unit? v)
-     (slot-unit? v)
-     (call-unit? v)
-     (panic-unit? v)
-     (+-unit? v)
-     (--unit? v)
-     (*-unit? v)
-     (/-unit? v)
-     (sqrt-unit? v)
-     (exp-unit? v)
-     (log-unit? v)
-     (sin-unit? v)
-     (cos-unit? v)
-     (atan-unit? v)
-     (=-unit? v)
-     (<-unit? v)
-     (>-unit? v)
-     (<=-unit? v)
-     (>=-unit? v)
-     (zero?-unit? v)
-     (positive?-unit? v)
-     (negative?-unit? v)
-     (read-real-unit? v)
-     (write-real-unit? v)))
-
-(define (unit-abstract-value v)
- (cond ((name-unit? v) (name-unit-v0 v))
-       ((slot-unit? v) (slot-unit-v0 v))
-       ((call-unit? v) (call-unit-v0 v))
-       ((panic-unit? v) (empty-abstract-value))
-       ((+-unit? v) (abstract-real))
-       ((--unit? v) (abstract-real))
-       ((*-unit? v) (abstract-real))
-       ((/-unit? v) (abstract-real))
-       ((sqrt-unit? v) (abstract-real))
-       ((exp-unit? v) (abstract-real))
-       ((log-unit? v) (abstract-real))
-       ((sin-unit? v) (abstract-real))
-       ((cos-unit? v) (abstract-real))
-       ((atan-unit? v) (abstract-real))
-       ((=-unit? v) (abstract-boolean))
-       ((<-unit? v) (abstract-boolean))
-       ((>-unit? v) (abstract-boolean))
-       ((<=-unit? v) (abstract-boolean))
-       ((>=-unit? v) (abstract-boolean))
-       ((zero?-unit? v) (abstract-boolean))
-       ((positive?-unit? v) (abstract-boolean))
-       ((negative?-unit? v) (abstract-boolean))
-       ((read-real-unit? v) (abstract-real))
-       ((write-real-unit? v) (abstract-real))
-       (else (internal-error))))
-
-(define (create-tagged-union tag vs)
- (let ((v (allocate-union vs)))
-  (set-union-tag! v tag)
-  v))
-
-(define (flatten v)
- (cond ((unit? v) (list v))
-       ((union? v)
-	(append (flatten (union-tag v))
-		(map-reduce append '() flatten (get-union-values v))))
-       ((abstract-real? v) (internal-error))
-       ((scalar-value? v) '())
-       (else (map-reduce append '() flatten (aggregate-value-values v)))))
-
-(define (unitify u)
- (let ((v (unit-abstract-value u)))
-  (cond ((eq? v 'int) u)
-	((void? v) v)
-	((union? v)
-	 (if (boxed? v)
-	     u
-	     (create-tagged-union
-	      (new-slot-unit 'int u "v")
-	      (map (lambda (v code) (unitify (new-slot-unit v u code)))
-		   (get-union-values v)
-		   (generate-slot-names v)))))
-	((abstract-real? v) u)
-	(else (if (boxed? v)
-		  u
-		  (create-aggregate-value-with-new-values
-		   v
-		   (map (lambda (v code) (unitify (new-slot-unit v u code)))
-			(aggregate-value-values v)
-			(generate-slot-names v))))))))
-
-(define (unroll u)
- (let ((v (unit-abstract-value u)))
-  (cond ((void? v) v)
-	((union? v)
-	 (create-tagged-union
-	  (new-slot-unit 'int u "v")
-	  (map (lambda (v code) (unitify (new-slot-unit v u code)))
-	       (get-union-values v)
-	       (generate-slot-names v))))
-	((abstract-real? v) u)
-	(else (create-aggregate-value-with-new-values
-	       v
-	       (map (lambda (v code) (unitify (new-slot-unit v u code)))
-		    (aggregate-value-values v)
-		    (generate-slot-names v)))))))
-
-(define (symbolic-destructure p v k)
- (let outer ((p p) (v v) (alist '()) (k k))
-  (cond
-   ;; This case comes first to avoid the dispatch.
-   ((variable-access-expression? p)
-    (k (cons (cons (variable-access-expression-variable p) v) alist)))
-   ((and (unit? v)
-	 (or (union? (unit-abstract-value v))
-	     (closure? (unit-abstract-value v))
-	     (tagged-pair? (unit-abstract-value v))))
-    (outer p (unroll v) alist k))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (u) (outer p u alist k)) (get-union-values v))))
-   ((constant-expression? p)
-    ;; here I am: We will need to unroll this too.
-    ;; needs work: To generate run-time equivalence check when the constant
-    ;;             expression parameter and/or argument contain abstract
-    ;;             booleans or abstract reals. When we do so, we need to call
-    ;;             c:widen appropriately. These would correspond to the calls A
-    ;;             to widen-abstract-value in abstract-destructure.
-    (if (abstract-value-nondisjoint?
-	 (concrete-value->abstract-value (constant-expression-value p)) v)
-	(k alist)
-	(new-panic-unit
-	 (format #f "Argument is not an equivalent value for ~s"
-		 (externalize-expression p)))))
-   ((lambda-expression? p)
-    (if (and (nonrecursive-closure? v)
-	     (dereferenced-expression-eqv?
-	      p (nonrecursive-closure-lambda-expression v)))
-	(let inner ((xs1 (parameter-variables p))
-		    (xs2 (nonrecursive-closure-variables v))
-		    (vs (get-nonrecursive-closure-values v))
-		    (alist alist)
-		    (k k))
-	 (if (null? xs1)
-	     (k alist)
-	     (outer (new-variable-access-expression (first xs1))
-		    (first vs)
-		    alist
-		    (lambda (alist)
-		     (inner (rest xs1) (rest xs2) (rest vs) alist k)))))
-	(new-panic-unit
-	 (format #f "Argument is not a matching nonrecursive closure for ~s"
-		 (externalize-expression p)))))
-   ((letrec-expression? p)
-    (assert (and (variable-access-expression? (letrec-expression-body p))
-		 (memp variable=?
-		       (variable-access-expression-variable
-			(letrec-expression-body p))
-		       (letrec-expression-procedure-variables p))))
-    (if (and (recursive-closure? v)
-	     (= (recursive-closure-index v)
-		(positionp variable=?
-			   (variable-access-expression-variable
-			    (letrec-expression-body p))
-			   (letrec-expression-procedure-variables p)))
-	     (= (vector-length
-		 (recursive-closure-procedure-variables v))
-		(length (letrec-expression-procedure-variables p)))
-	     (= (vector-length
-		 (recursive-closure-lambda-expressions v))
-		(length (letrec-expression-lambda-expressions p)))
-	     (every dereferenced-expression-eqv?
-		    (vector->list (recursive-closure-lambda-expressions v))
-		    (letrec-expression-lambda-expressions p)))
-	(let inner ((xs1 (parameter-variables p))
-		    (xs2 (recursive-closure-variables v))
-		    (vs (get-recursive-closure-values v))
-		    (alist alist)
-		    (k k))
-	 (if (null? xs1)
-	     (k alist)
-	     (outer (new-variable-access-expression (first xs1))
-		    (first vs)
-		    alist
-		    (lambda (alist)
-		     (inner (rest xs1) (rest xs2) (rest vs) alist k)))))
-	(new-panic-unit
-	 (format #f "Argument is not a matching recursive closure for ~s"
-		 (externalize-expression p)))))
-   ((cons-expression? p)
-    (if (and (tagged-pair? v)
-	     (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-	(outer (cons-expression-car p)
-	       (get-tagged-pair-car v)
-	       alist
-	       (lambda (alist)
-		(outer (cons-expression-cdr p)
-		       (get-tagged-pair-cdr v)
-		       alist
-		       k)))
-	(new-panic-unit
-	 (format #f "Argument is not a matching tagged pair with tags ~s"
-		 (cons-expression-tags p)))))
-   (else (internal-error)))))
-
-(define (symbolic-apply v1 v2 top? function-instances)
- ;; needs work: We don't check the "Argument has wrong type for target"
- ;;             condition.
- (cond
-  ((and (unit? v1)
-	(or (union? (unit-abstract-value v1))
-	    (primitive-procedure? (unit-abstract-value v1))
-	    (closure? (unit-abstract-value v1))))
-   (symbolic-apply (unroll v1) v2 top? function-instances))
-  ((union? v1)
-   (create-tagged-union
-    (union-tag v1)
-    (map (lambda (u1) (symbolic-apply u1 v2 #f function-instances))
-	 (get-union-values v1))))
-  ((primitive-procedure? v1)
-   ((primitive-procedure-symbolic v1) v2 function-instances))
-  ((closure? v1)
-   (let ((v1-abstract (abstractify v1)) (v2-abstract (abstractify v2)))
-    (cond
-     ((and (not top?)
-	   (not (function-instance-inline?
-		 (findp function-instance=?
-			(make-function-instance v1-abstract v2-abstract #t)
-			function-instances))))
-      (new-call-unit
-       (with-abstract (lambda () (abstract-apply v1-abstract v2-abstract)))
-       (c:function-name v1-abstract v2-abstract function-instances)
-       v1
-       v2))
-     ((every-value-tags
-       (lambda (tags2) (prefix-tags? (value-tags v1-abstract) tags2))
-       v2-abstract)
-      (symbolic-destructure
-       (closure-parameter v1)
-       v2
-       (lambda (alist)
-	(symbolic-eval (closure-body v1)
-		       (construct-environment v1 alist)
-		       function-instances))))
-     ((some-value-tags
-       (lambda (tags2) (prefix-tags? (value-tags v1-abstract) tags2))
-       v2-abstract)
-      (symbolic-destructure
-       (closure-parameter v1)
-       v2
-       (lambda (alist)
-	(symbolic-eval (closure-body v1)
-		       (construct-environment v1 alist)
-		       function-instances))))
-     (else (new-panic-unit "Argument has wrong type for target")))))
-  (else (new-panic-unit "Target is not a procedure"))))
-
-(define (symbolic-eval e vs function-instances)
- (cond
-  ((constant-expression? e) (constant-expression-value e))
-  ((variable-access-expression? e) (first vs))
-  ((lambda-expression? e) (new-nonrecursive-closure vs e))
-  ((application? e)
-   (if (lambda-expression? (application-callee e))
-       ;; This handling of LET is an optimization. See the note in
-       ;; concrete-eval.
-       ;; needs work: We don't check the "Argument has wrong type for target"
-       ;;             condition.
-       (let* ((e1 (lambda-expression-body (application-callee e)))
-	      (p (lambda-expression-parameter (application-callee e)))
-	      (tags1 (lambda-expression-tags (application-callee e)))
-	      (v (symbolic-eval
-		  (application-argument e)
-		  (restrict-environment vs (application-argument-indices e))
-		  function-instances))
-	      (v-abstract (abstractify v)))
-	(cond
-	 ((every-value-tags (lambda (tags) (prefix-tags? tags1 tags))
-			    v-abstract)
-	  (symbolic-destructure
-	   p
-	   v
-	   (lambda (alist)
-	    (symbolic-eval e1
-			   (construct-environment-for-let e vs alist)
-			   function-instances))))
-	 ((some-value-tags (lambda (tags) (prefix-tags? tags1 tags))
-			   v-abstract)
-	  (symbolic-destructure
-	   p
-	   v
-	   (lambda (alist)
-	    (symbolic-eval e1
-			   (construct-environment-for-let e vs alist)
-			   function-instances))))
-	 (else (new-panic-unit "Value has wrong type for let binder"))))
-       (symbolic-apply
-	(symbolic-eval
-	 (application-callee e)
-	 (restrict-environment vs (application-callee-indices e))
-	 function-instances)
-	(symbolic-eval
-	 (application-argument e)
-	 (restrict-environment vs (application-argument-indices e))
-	 function-instances)
-	#f
-	function-instances)))
-  ((letrec-expression? e)
-   (symbolic-eval (letrec-expression-body e)
-		  (letrec-nested-environment vs e)
-		  function-instances))
-  ((cons-expression? e)
-   (let* ((v1 (symbolic-eval
-	       (cons-expression-car e)
-	       (restrict-environment vs (cons-expression-car-indices e))
-	       function-instances))
-	  (v2 (symbolic-eval
-	       (cons-expression-cdr e)
-	       (restrict-environment vs (cons-expression-cdr-indices e))
-	       function-instances))
-	  (v1-abstract (abstractify v1))
-	  (v2-abstract (abstractify v2)))
-    ;; needs work: We don't check the "Argument has wrong type for target"
-    ;;             condition.
-    (cond
-     ((every-value-tags
-       (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1))
-       v1-abstract)
-      (cond
-       ((every-value-tags
-	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-	 v2-abstract)
-	(new-tagged-pair (cons-expression-tags e) v1 v2))
-       ((some-value-tags
-	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-	 v2-abstract)
-	(new-tagged-pair (cons-expression-tags e) v1 v2))
-       (else (new-panic-unit
-	      (format #f "CDR argument has wrong type for target with tags ~s"
-		      (cons-expression-tags e))))))
-     ((some-value-tags
-       (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1))
-       v1-abstract)
-      (cond
-       ((every-value-tags
-	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-	 v2-abstract)
-	(new-tagged-pair (cons-expression-tags e) v1 v2))
-       ((some-value-tags
-	 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-	 v2-abstract)
-	(new-tagged-pair (cons-expression-tags e) v1 v2))
-       (else (new-panic-unit
-	      (format #f "CDR argument has wrong type for target with tags ~s"
-		      (cons-expression-tags e))))))
-     (else (new-panic-unit
-	    (format #f "CAR argument has wrong type for target with tags ~s"
-		    (cons-expression-tags e)))))))
-  (else (internal-error))))
-
 ;;; Code Generator
 
 ;;; Identifiers
@@ -10945,8 +9573,6 @@
 (define (void? v)
  (let ((p?
 	(cond
-	 ;; abstraction
-	 ((eq? v 'int) #f)
 	 ((union? v) (union-void? v))
 	 ((abstract-real? v) #f)
 	 ((scalar-value? v) #t)
@@ -10972,7 +9598,7 @@
 	  ;; void parameter/arguments are eliminated and we cannot do that for
 	  ;; code that will issue an error. That is why the following is = and
 	  ;; not <=.
-	  (if ((if *new-code-generator?* <= =) (length (get-union-values v)) 1)
+	  (if (= (length (get-union-values v)) 1)
 	      (every-cps loop (get-union-values v) (cons v cs) k)
 	      (k #f cs)))
 	 ((abstract-real? v) (k #f cs))
@@ -12243,14 +10869,10 @@
 
 (define (c:specifier v)
  ;; abstraction
- (cond ((eq? v 'int)
-	(assert *new-code-generator?*)
-	"int")
-       ((and *new-code-generator?* (void? v)) "void")
-       (else (assert (not (void? v)))
-	     (if (and (not (union? v)) (abstract-real? v))
-		 "double"
-		 (list "struct" " " (list "s" (c:index v)))))))
+ (assert (not (void? v)))
+ (if (and (not (union? v)) (abstract-real? v))
+     "double"
+     (list "struct" " " (list "s" (c:index v)))))
 
 (define (c:pointer-declarator code) (list "*" code))
 
@@ -12402,34 +11024,31 @@
       (reduce (lambda (code1 code2) (list code1 "," code2)) codes '())))))))
 
 (define (c:function-declaration p1? p2? p3? code1 code2)
- (c:newline-after
-  (c:semicolon-after
-   (if p1? (list "static" " ") '())
-   (if p2? (list "INLINE" " ") '())
-   (if p3? (list "NORETURN" " ") '())
-   code1
-   " "
-   code2)))
+ (c:newline-after (c:semicolon-after (if p1? (list "static" " ") '())
+				     (if p2? (list "INLINE" " ") '())
+				     (if p3? (list "NORETURN" " ") '())
+				     code1
+				     " "
+				     code2)))
 
 (define (c:specifier-function-declaration p1? p2? p3? v code)
- (if (and (void? v) (not *new-code-generator?*))
+ (if (void? v)
      '()
      (c:function-declaration
       p1? p2? p3? (c:specifier v)
       (if (boxed? v) (c:pointer-declarator code) code))))
 
 (define (c:function-definition p1? p2? p3? code1 code2 code3)
- (c:newline-after
-  (if p1? (list "static" " ") '())
-  (if p2? (list "INLINE" " ") '())
-  (if p3? (list "NORETURN" " ") '())
-  code1
-  " "
-  code2
-  (c:braces-around code3)))
+ (c:newline-after (if p1? (list "static" " ") '())
+		  (if p2? (list "INLINE" " ") '())
+		  (if p3? (list "NORETURN" " ") '())
+		  code1
+		  " "
+		  code2
+		  (c:braces-around code3)))
 
 (define (c:specifier-function-definition p1? p2? p3? v code1 code2)
- (if (and (void? v) (not *new-code-generator?*))
+ (if (void? v)
      '()
      (c:function-definition p1? p2? p3? (c:specifier v)
 			    (if (boxed? v) (c:pointer-declarator code1) code1)
@@ -14551,1031 +13170,6 @@
 	  ((null? code) #f)
 	  (else (internal-error)))))))
 
-;;; New Code Generator
-
-(define (c:generate-name)
- (set! *name* (+ *name* 1))
- (list "x" *name*))
-
-(define (atomic? u) (or (abstract-real? u) (boxed? u)))
-
-(define (slotted-name-unit? u)
- (or (name-unit? u)
-     (and (slot-unit? u) (slotted-name-unit? (slot-unit-v1 u)))))
-
-(define (unit->name u)
- (cond ((name-unit? u) (name-unit-code u))
-       ((slot-unit? u)
-	(if (name-unit? (slot-unit-v1 u))
-	    (if (null? (name-unit-code (slot-unit-v1 u)))
-		(slot-unit-code u)
-		(list (name-unit-code (slot-unit-v1 u))
-		      (cond ((boxed? (name-unit-v0 (slot-unit-v1 u))) "->")
-			    ((name-unit-top? (slot-unit-v1 u)) ".")
-			    (else "_"))
-		      (slot-unit-code u)))
-	    (list (unit->name (slot-unit-v1 u))
-		  (if (boxed? (unit-abstract-value (slot-unit-v1 u))) "->" "_")
-		  (slot-unit-code u))))
-       (else (internal-error))))
-
-(define (new-generate-struct-and-union-declarations vs1-vs2)
- ;; generate -~-> c:
- ;; abstraction
- (list
-  ;; This generates forward declarations for the struct and union tags.
-  ;; abstraction
-  (map (lambda (v) (c:newline-after (c:semicolon-after (c:specifier v))))
-       (second vs1-vs2))
-  ;; abstraction
-  (map
-   (lambda (v)
-    (if (or (and (not (union? v)) (scalar-value? v)) (void? v))
-	'()
-	(c:newline-after
-	 (c:semicolon-after
-	  (c:specifier v)
-	  (c:braces-around
-	   ;; abstraction
-	   ;; needs work: to sort slots
-	   (map
-	    (lambda (u)
-	     (c:specifier-declaration (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v '())))))))))))
-   (first vs1-vs2))
-  ;; abstraction
-  (map
-   (lambda (v)
-    (c:newline-after
-     (c:semicolon-after
-      (c:specifier v)
-      (c:braces-around
-       ;; abstraction
-       ;; needs work: to sort slots
-       (map (lambda (u)
-	     (c:specifier-declaration (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unroll (new-name-unit #f v '()))))))))))
-   (second vs1-vs2))))
-
-(define (new-generate-unary-ad-declarations s descend? f code)
- ;; here I am: The result of f might violate the syntactic constraints.
- ;; abstraction
- (map (lambda (v)
-       (let ((v0 (f v)))
-	(c:specifier-function-declaration
-	 ;; The call to f might issue "might" warnings and might return an
-	 ;; empty abstract value.
-	 #t #f #f v0
-	 (c:function-declarator*
-	  (c:builtin-name code v)
-	  (map (lambda (u)
-		(c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	       (flatten (with-symbolic
-			 (lambda () (unitify (new-name-unit #f v "x"))))))))))
-      (second (all-sorted-unary-ad s descend?))))
-
-(define (new-generate-binary-ad-declarations
-	 s descend? f? f f-inverse g aggregates-match? before code)
- ;; here I am: The results of f, f-inverse, and g might violate the syntactic
- ;;            constraints.
- ;; abstraction
- (map (lambda (v)
-       (let ((v0 (g v)))
-	(c:specifier-function-declaration
-	 ;; The call to g might issue "might" warnings and might return an
-	 ;; empty abstract value.
-	 #t #f #f v0
-	 (c:function-declarator*
-	  (c:builtin-name code v)
-	  (map (lambda (u)
-		(c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	       (flatten (with-symbolic
-			 (lambda () (unitify (new-name-unit #f v "x"))))))))))
-      (second (all-sorted-binary-ad
-	       s descend? f? f f-inverse aggregates-match? before))))
-
-(define (new-generate-function-declarations
-	 function-instances instances1-instances2)
- ;; abstraction
- (map
-  (lambda (instance)
-   (assert (function-instance? instance))
-   (let* ((v1 (function-instance-v1 instance))
-	  (v2 (function-instance-v2 instance))
-	  (v0 (abstract-apply v1 v2)))
-    (c:specifier-function-declaration
-     #t #f #f v0
-     (c:function-declarator*
-      (c:function-name v1 v2 function-instances)
-      (append
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v1 "x1"))))))
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v2 "x2")))))))))))
-  (second instances1-instances2)))
-
-(define (flat-specifier-declaration v code)
- (if (void? v)
-     '()
-     (map (lambda (u) (c:specifier-declaration (abstractify u) (unit->name u)))
-	  (flatten (unitify (new-name-unit #f v code))))))
-
-(define (new-generate-move v0 v)
- (let ((v0-abstract (abstractify v0)) (v-abstract (abstractify v)))
-  (define (new-generate-real->real-unit f v1)
-   ;; Flow analysis can:
-   ;;  1. migrate to compile time a run-time arithmetic error that wouldn't
-   ;;     actually occur
-   ;;  2. eliminate a write-real of a concrete real
-   ;;  3. eliminate read-real in (zero (read-real))
-   ;;  4. eliminate a panic or divergence in
-   ;;     (if <abstract boolean>
-   ;;         <concrete real>
-   ;;         <something that panics or diverges>)
-   (let* ((code0 (c:generate-name))
-	  (code1 (c:generate-name))
-	  (v1-abstract (abstractify v1)))
-    (assert (and (or (empty-abstract-value? v1-abstract)
-		     (abstract-real? v1-abstract))
-		 (not (eq? v-abstract 'int))
-		 (not (eq? v0-abstract 'int))
-		 ;; needs work: This might not hold if v is a unit that always
-		 ;;             panics.
-		 (abstract-value=? v-abstract v0-abstract)))
-    (c:braces-around
-     (flat-specifier-declaration v0-abstract code0)
-     (flat-specifier-declaration v1-abstract code1)
-     (new-generate-move (unitify (new-name-unit #f v1-abstract code1)) v1)
-     (if (void? v0-abstract)
-	 '()
-	 (c:assignment
-	  code0
-	  ;; This assumes that Scheme inexact numbers are printed as C
-	  ;; doubles.
-	  (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1))))
-     (new-generate-move v0 (unitify (new-name-unit #f v0-abstract code0))))))
-  (define (new-generate-real->boolean-unit f v1)
-   ;; Flow analysis can:
-   ;;  1. migrate to compile time a run-time arithmetic error that wouldn't
-   ;;     actually occur
-   ;;  2. eliminate a write-real of a concrete real
-   ;;  3. eliminate read-real in (zero (read-real))
-   ;;  4. eliminate a panic or divergence in
-   ;;     (if <abstract boolean>
-   ;;         <concrete real>
-   ;;         <something that panics or diverges>)
-   (let* ((code0 (c:generate-name))
-	  (code1 (c:generate-name))
-	  (v1-abstract (abstractify v1)))
-    (assert (and (or (empty-abstract-value? v1-abstract)
-		     (abstract-real? v1-abstract))
-		 (not (eq? v-abstract 'int))
-		 (not (eq? v0-abstract 'int))
-		 ;; needs work: This might not hold if v is a unit that
-		 ;;             always panics.
-		 (abstract-value=? v-abstract v0-abstract)))
-    (c:braces-around
-     (flat-specifier-declaration v0-abstract code0)
-     (flat-specifier-declaration v1-abstract code1)
-     (new-generate-move (unitify (new-name-unit #f v1-abstract code1)) v1)
-     (if (void? v0-abstract)
-	 '()
-	 (c:assignment
-	  ;; abstraction
-	  (list code0 "_" "v")
-	  ;; This assumes that Scheme inexact numbers are printed as C
-	  ;; doubles.
-	  (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1))))
-     (new-generate-move v0 (unitify (new-name-unit #f v0-abstract code0))))))
-  (define (new-generate-real*real->real-unit f v1 v2)
-   (let* ((code0 (c:generate-name))
-	  (code1 (c:generate-name))
-	  (code2 (c:generate-name))
-	  (v1-abstract (abstractify v1))
-	  (v2-abstract (abstractify v2)))
-    (assert
-     (and (or (empty-abstract-value? v1-abstract) (vlad-real? v1-abstract))
-	  (or (empty-abstract-value? v2-abstract) (vlad-real? v2-abstract))
-	  (not (and (real? v1-abstract) (real? v2-abstract)))
-	  (not (eq? v-abstract 'int))
-	  (not (eq? v0-abstract 'int))
-	  ;; needs work: This might not hold if v is a unit that always
-	  ;;             panics.
-	  (abstract-value=? v-abstract v0-abstract)))
-    (c:braces-around
-     (flat-specifier-declaration v0-abstract code0)
-     (flat-specifier-declaration v1-abstract code1)
-     (flat-specifier-declaration v2-abstract code2)
-     (new-generate-move (unitify (new-name-unit #f v1-abstract code1)) v1)
-     (new-generate-move (unitify (new-name-unit #f v2-abstract code2)) v2)
-     (if (void? v0-abstract)
-	 '()
-	 (c:assignment
-	  code0
-	  ;; These assume that Scheme inexact numbers are printed as C
-	  ;; doubles.
-	  (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1)
-	     (if (real? v2-abstract) (exact->inexact v2-abstract) code2))))
-     (new-generate-move v0 (unitify (new-name-unit #f v0-abstract code0))))))
-  (define (new-generate-real*real->boolean-unit f v1 v2)
-   (let* ((code0 (c:generate-name))
-	  (code1 (c:generate-name))
-	  (code2 (c:generate-name))
-	  (v1-abstract (abstractify v1))
-	  (v2-abstract (abstractify v2)))
-    (assert
-     (and (or (empty-abstract-value? v1-abstract) (vlad-real? v1-abstract))
-	  (or (empty-abstract-value? v2-abstract) (vlad-real? v2-abstract))
-	  (not (and (real? v1-abstract) (real? v2-abstract)))
-	  (not (eq? v-abstract 'int))
-	  (not (eq? v0-abstract 'int))
-	  ;; needs work: This might not hold if v is a unit that always
-	  ;;             panics.
-	  (abstract-value=? v-abstract v0-abstract)))
-    (c:braces-around
-     (flat-specifier-declaration v0-abstract code0)
-     (flat-specifier-declaration v1-abstract code1)
-     (flat-specifier-declaration v2-abstract code2)
-     (new-generate-move (unitify (new-name-unit #f v1-abstract code1)) v1)
-     (new-generate-move (unitify (new-name-unit #f v2-abstract code2)) v2)
-     (if (void? v0-abstract)
-	 '()
-	 (c:assignment
-	  ;; abstraction
-	  (list code0 "_" "v")
-	  ;; These assume that Scheme inexact numbers are printed as C
-	  ;; doubles.
-	  (f (if (real? v1-abstract) (exact->inexact v1-abstract) code1)
-	     (if (real? v2-abstract) (exact->inexact v2-abstract) code2))))
-     (new-generate-move v0 (unitify (new-name-unit #f v0-abstract code0))))))
-  (assert (or (and (eq? v-abstract 'int) (eq? v0-abstract 'int))
-	      (and (not (eq? v-abstract 'int))
-		   (not (eq? v0-abstract 'int))
-		   (not (abstract-real? v0))
-		   (not (abstract-real? v))
-		   ;; needs work: This might not hold if v is a unit that
-		   ;;             always panics.
-		   (abstract-value-subset? v-abstract v0-abstract))))
-  (cond
-   ((union? v)
-    (let* ((code (c:generate-name))
-	   (v-tag (union-tag v))
-	   (v-tag-abstract (abstractify v-tag)))
-     (c:braces-around
-      (flat-specifier-declaration v-tag-abstract code)
-      (new-generate-move
-       (unitify (new-name-unit #f v-tag-abstract code)) v-tag)
-      (c:new-dispatch
-       code
-       (map (lambda (v) (new-generate-move v0 v)) (get-union-values v))))))
-   ((or (nonrecursive-closure? v)
-	(recursive-closure? v)
-	(perturbation-tagged-value? v)
-	(bundle? v)
-	(sensitivity-tagged-value? v)
-	(reverse-tagged-value? v)
-	(tagged-pair? v))
-    (cond
-     ((or
-       (and (nonrecursive-closure? v0)
-	    (nonrecursive-closure? v)
-	    (dereferenced-nonrecursive-closure-match? v0 v))
-       (and (recursive-closure? v0)
-	    (recursive-closure? v)
-	    (dereferenced-recursive-closure-match? v0 v))
-       (and (perturbation-tagged-value? v0) (perturbation-tagged-value? v))
-       (and (bundle? v0) (bundle? v))
-       (and (sensitivity-tagged-value? v0) (sensitivity-tagged-value? v))
-       (and (reverse-tagged-value? v0) (reverse-tagged-value? v))
-       (and (tagged-pair? v0)
-	    (tagged-pair? v)
-	    (equal-tags? (tagged-pair-tags v0) (tagged-pair-tags v))))
-      ;; abstraction
-      (map new-generate-move
-	   (aggregate-value-values v0)
-	   (aggregate-value-values v)))
-     ((and (slotted-name-unit? v0)
-	   (or (and (nonrecursive-closure? v0-abstract)
-		    (nonrecursive-closure? v)
-		    (dereferenced-nonrecursive-closure-match? v0-abstract v))
-	       (and (recursive-closure? v0-abstract)
-		    (recursive-closure? v)
-		    (dereferenced-recursive-closure-match? v0-abstract v))
-	       (and (perturbation-tagged-value? v0-abstract)
-		    (perturbation-tagged-value? v))
-	       (and (bundle? v0-abstract) (bundle? v))
-	       (and (sensitivity-tagged-value? v0-abstract)
-		    (sensitivity-tagged-value? v))
-	       (and (reverse-tagged-value? v0-abstract)
-		    (reverse-tagged-value? v))
-	       (and (tagged-pair? v0-abstract)
-		    (tagged-pair? v)
-		    (equal-tags? (tagged-pair-tags v0-abstract)
-				 (tagged-pair-tags v)))
-	       (union? v0-abstract)))
-      ;; abstraction
-      (list
-       (if (void? v0-abstract)
-	   '()
-	   (c:assignment
-	    (unit->name v0)
-	    (c:pointer-cast
-	     (c:specifier v0-abstract)
-	     ;; We don't check for out of memory.
-	     (c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract))))))
-       (new-generate-move (unroll v0) v)))
-     ((union? v0)
-      (assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
-      (let ((i (positionp abstract-value-subset?
-			  v-abstract
-			  (get-union-values v0-abstract))))
-       (assert i)
-       ;; abstraction
-       (list (c:assignment (unit->name (union-tag v0)) i)
-	     (new-generate-move (list-ref (get-union-values v0) i) v))))
-     (else (internal-error))))
-   ((slotted-name-unit? v)
-    (cond
-     ((union? v0)
-      (assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
-      (if (union? v-abstract)
-	  (new-generate-move v0 (unroll v))
-	  (let ((i (positionp abstract-value-subset?
-			      v-abstract
-			      (get-union-values v0-abstract))))
-	   (assert i)
-	   ;; abstraction
-	   (list (c:assignment (unit->name (union-tag v0)) i)
-		 (new-generate-move (list-ref (get-union-values v0) i) v)))))
-     ((or (nonrecursive-closure? v0)
-	  (recursive-closure? v0)
-	  (perturbation-tagged-value? v0)
-	  (bundle? v0)
-	  (sensitivity-tagged-value? v0)
-	  (reverse-tagged-value? v0)
-	  (tagged-pair? v0))
-      (new-generate-move v0 (unroll v)))
-     ((void? v0-abstract)
-      (assert (and (not (eq? v-abstract 'int))
-		   (not (eq? v0-abstract 'int))
-		   (abstract-value=? v-abstract v0-abstract)))
-      '())
-     ((slotted-name-unit? v0)
-      (cond
-       ((or (eq? v-abstract 'int) (eq? v0-abstract 'int))
-	(assert (and (eq? v-abstract 'int) (eq? v0-abstract 'int)))
-	(c:assignment (unit->name v0) (unit->name v)))
-       ((not (atomic? v-abstract)) (new-generate-move v0 (unroll v)))
-       ((or (not (atomic? v0-abstract))
-	    (and (union? v0-abstract)
-		 (not (abstract-value=? v-abstract v0-abstract))))
-	;; abstraction
-	(list (c:assignment
-	       (unit->name v0)
-	       (c:pointer-cast
-		(c:specifier v0-abstract)
-		;; We don't check for out of memory.
-		(c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract)))))
-	      (new-generate-move (unroll v0) v)))
-       (else (assert (abstract-value=? v-abstract v0-abstract))
-	     (c:assignment (unit->name v0) (unit->name v)))))
-     (else (internal-error))))
-   ((slot-unit? v)
-    (let* ((code1 (c:generate-name))
-	   (v1 (slot-unit-v1 v))
-	   (v1-abstract (abstractify v1)))
-     (c:braces-around
-      (flat-specifier-declaration v1-abstract code1)
-      (new-generate-move (unitify (new-name-unit #f v1-abstract code1)) v1)
-      (new-generate-move v0
-			 (unitify
-			  (new-slot-unit v-abstract
-					 (new-name-unit #f v1-abstract code1)
-					 (slot-unit-code v)))))))
-   ((call-unit? v)
-    (assert (and (not (eq? v-abstract 'int)) (not (eq? v0-abstract 'int))))
-    (let* ((code0 (c:generate-name))
-	   (codes (map (lambda (v) (c:generate-name)) (call-unit-vs v)))
-	   (vs-abstract (map abstractify (call-unit-vs v))))
-     (c:braces-around
-      (c:specifier-declaration v-abstract code0)
-      ;; abstraction
-      (map (lambda (v-abstract code)
-	    (flat-specifier-declaration v-abstract code))
-	   vs-abstract
-	   codes)
-      ;; abstraction
-      (map (lambda (v-abstract code v)
-	    (new-generate-move (unitify (new-name-unit #f v-abstract code)) v))
-	   vs-abstract
-	   codes
-	   (call-unit-vs v))
-      (let ((code
-	     (c:call*
-	      (call-unit-code v)
-	      (map-reduce
-	       append
-	       '()
-	       (lambda (v-abstract code v)
-		(map unit->name
-		     (flatten (unitify (new-name-unit #f v-abstract code)))))
-	       vs-abstract
-	       codes
-	       (call-unit-vs v)))))
-       (if (void? v-abstract)
-	   (c:semicolon-after code)
-	   (c:assignment code0 code)))
-      (new-generate-move v0 (unitify (new-name-unit #t v-abstract code0))))))
-   ((panic-unit? v)
-    (c:semicolon-after
-     (c:call "panic" (list "\"" (panic-unit-code v) "\""))))
-   ((+-unit? v)
-    (new-generate-real*real->real-unit
-     (lambda (code1 code2) (c:parenthesize (c:binary code1 "+" code2)))
-     (+-unit-v1 v)
-     (+-unit-v2 v)))
-   ((--unit? v)
-    (new-generate-real*real->real-unit
-     (lambda (code1 code2) (c:parenthesize (c:binary code1 "-" code2)))
-     (--unit-v1 v)
-     (--unit-v2 v)))
-   ((*-unit? v)
-    (new-generate-real*real->real-unit
-     (lambda (code1 code2) (c:parenthesize (c:binary code1 "*" code2)))
-     (*-unit-v1 v)
-     (*-unit-v2 v)))
-   ((/-unit? v)
-    (new-generate-real*real->real-unit
-     (lambda (code1 code2) (c:parenthesize (c:binary code1 "/" code2)))
-     (/-unit-v1 v)
-     (/-unit-v2 v)))
-   ((sqrt-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "sqrt" code)) (sqrt-unit-v1 v)))
-   ((exp-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "exp" code)) (exp-unit-v1 v)))
-   ((log-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "log" code)) (log-unit-v1 v)))
-   ((sin-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "sin" code)) (sin-unit-v1 v)))
-   ((cos-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "cos" code)) (cos-unit-v1 v)))
-   ((atan-unit? v)
-    (new-generate-real*real->real-unit
-     (lambda (code1 code2) (c:call "atan2" code1 code2))
-     (atan-unit-v1 v)
-     (atan-unit-v2 v)))
-   ((=-unit? v)
-    (new-generate-real*real->boolean-unit
-     (c:new-binary-boolean "==") (=-unit-v1 v) (=-unit-v2 v)))
-   ((<-unit? v)
-    (new-generate-real*real->boolean-unit
-     (c:new-binary-boolean "<") (<-unit-v1 v) (<-unit-v2 v)))
-   ((>-unit? v)
-    (new-generate-real*real->boolean-unit
-     (c:new-binary-boolean ">") (>-unit-v1 v) (>-unit-v2 v)))
-   ((<=-unit? v)
-    (new-generate-real*real->boolean-unit
-     (c:new-binary-boolean "<=") (<=-unit-v1 v) (<=-unit-v2 v)))
-   ((>=-unit? v)
-    (new-generate-real*real->boolean-unit
-     (c:new-binary-boolean ">=") (>=-unit-v1 v) (>=-unit-v2 v)))
-   ((zero?-unit? v)
-    (new-generate-real->boolean-unit
-     (c:new-unary-boolean "==") (zero?-unit-v1 v)))
-   ((positive?-unit? v)
-    (new-generate-real->boolean-unit
-     (c:new-unary-boolean ">") (positive?-unit-v1 v)))
-   ((negative?-unit? v)
-    (new-generate-real->boolean-unit
-     (c:new-unary-boolean "<") (negative?-unit-v1 v)))
-   ((read-real-unit? v)
-    (assert (and (not (eq? v-abstract 'int))
-		 (not (eq? v0-abstract 'int))
-		 (abstract-value=? v-abstract v0-abstract)))
-    (c:assignment (unit->name v0) (c:call "read_real")))
-   ((write-real-unit? v)
-    (new-generate-real->real-unit
-     (lambda (code) (c:call "write_real" code)) (write-real-unit-v1 v)))
-   ((scalar-value? v)
-    (cond
-     ((or (eq? v-abstract 'int) (eq? v0-abstract 'int))
-      (assert (and (eq? v-abstract 'int) (eq? v0-abstract 'int)))
-      (c:assignment (unit->name v0) v))
-     ((union? v0)
-      (assert (and (not (void? v0-abstract)) (not (eq? v-abstract 'int))))
-      (let ((i (positionp abstract-value-subset?
-			  v-abstract
-			  (get-union-values v0-abstract))))
-       (assert i)
-       ;; abstraction
-       (list (c:assignment (unit->name (union-tag v0)) i)
-	     (new-generate-move (list-ref (get-union-values v0) i) v))))
-     ((void? v0-abstract)
-      (assert (abstract-value=? v-abstract v0-abstract))
-      '())
-     ((slotted-name-unit? v0)
-      (cond
-       ((union? v0-abstract)
-	(if (void? v0-abstract)
-	    '()
-	    (c:assignment
-	     (unit->name v0)
-	     (c:pointer-cast
-	      (c:specifier v0-abstract)
-	      ;; We don't check for out of memory.
-	      (c:call "GC_malloc" (c:sizeof (c:specifier v0-abstract)))))))
-       (else
-	(assert (and (abstract-real? v0-abstract) (real? v-abstract)))
-	;; This assumes that Scheme inexact numbers are printed as C doubles.
-	(c:assignment (unit->name v0) (exact->inexact v-abstract)))))
-     (else (internal-error))))
-   (else (internal-error)))))
-
-(define (new-generate-body v0 v)
- ;; abstraction
- (list (c:specifier-declaration (abstractify v0) "r")
-       (new-generate-move v0 v)
-       (c:return "r")))
-
-(define (new-generate-unary-ad-definitions s descend? f g code)
- ;; here I am: The result of f might violate the syntactic constraints.
- ;; abstraction
- (let ((vs (second (all-sorted-unary-ad s descend?))))
-  (for-each g vs)
-  (map
-   (lambda (v)
-    (let ((v0 (f v)))
-     (c:specifier-function-definition
-      ;; The call to f might issue "might" warnings and might return an
-      ;; empty abstract value.
-      #t #f #f v0
-      (c:function-declarator*
-       (c:builtin-name code v)
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v "x")))))))
-      (with-symbolic
-       (lambda ()
-	(new-generate-body (unitify (new-name-unit #t v0 "r"))
-			   (f (unitify (new-name-unit #f v "x")))))))))
-   vs)))
-
-(define (new-generate-binary-ad-definitions
-	 s descend? f? f f-inverse g aggregates-match? before h code)
- ;; here I am: The results of f, f-inverse, and g might violate the syntactic
- ;;            constraints.
- ;; abstraction
- (let ((vs (second (all-sorted-binary-ad
-		    s descend? f? f f-inverse aggregates-match? before))))
-  (for-each h vs)
-  (map
-   (lambda (v)
-    (let ((v0 (g v)))
-     (c:specifier-function-definition
-      ;; The call to g might issue "might" warnings and might return an
-      ;; empty abstract value.
-      #t #f #f v0
-      (c:function-declarator*
-       (c:builtin-name code v)
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v "x")))))))
-      (with-symbolic
-       (lambda ()
-	(new-generate-body (unitify (new-name-unit #t v0 "r"))
-			   (g (unitify (new-name-unit #f v "x")))))))))
-   vs)))
-
-(define (new-generate-function-definitions
-	 function-instances instances1-instances2)
- (for-each (lambda (instance)
-	    (assert (function-instance? instance))
-	    (set-function-instance-inline?! instance #f))
-	   (second instances1-instances2))
- ;; abstraction
- (map
-  (lambda (instance)
-   (assert (function-instance? instance))
-   (let* ((v1 (function-instance-v1 instance))
-	  (v2 (function-instance-v2 instance))
-	  (v0 (abstract-apply v1 v2)))
-    (c:specifier-function-definition
-     #t #f #f v0
-     (c:function-declarator*
-      (c:function-name v1 v2 function-instances)
-      (append
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v1 "x1"))))))
-       (map (lambda (u)
-	     (c:specifier-parameter (unit-abstract-value u) (unit->name u)))
-	    (flatten (with-symbolic
-		      (lambda () (unitify (new-name-unit #f v2 "x2"))))))))
-     (with-symbolic
-      (lambda ()
-       (new-generate-body
-	(unitify (new-name-unit #t v0 "r"))
-	(symbolic-apply (unitify (new-name-unit #f v1 "x1"))
-			(unitify (new-name-unit #f v2 "x2"))
-			#t
-			function-instances)))))))
-  (second instances1-instances2)))
-
-(define (debugging x) (write (debugging-externalize x)) (newline) x)
-
-(define (new-generate e)
- (with-abstract
-  (lambda ()
-   (determine-void?!)
-   (for-each-indexed (lambda (x i) (set-variable-index! x i)) *variables*)
-   (let* ((function-instances (all-function-instances))
-	  (widener-instances (all-widener-instances function-instances))
-	  (vs1-vs2 (all-nested-abstract-values widener-instances))
-	  (instances1-instances2
-	   (all-instances1-instances2 function-instances)))
-    (determine-void?!)
-    (set! *frozen?* #t)
-    (for-each-indexed
-     (lambda (v i)
-      (cond ((nonrecursive-closure? v) (set-nonrecursive-closure-c:index! v i))
-	    ((recursive-closure? v) (set-recursive-closure-c:index! v i))
-	    ((perturbation-tagged-value? v)
-	     (set-perturbation-tagged-value-c:index! v i))
-	    ((bundle? v) (set-bundle-c:index! v i))
-	    ((sensitivity-tagged-value? v)
-	     (set-sensitivity-tagged-value-c:index! v i))
-	    ((reverse-tagged-value? v) (set-reverse-tagged-value-c:index! v i))
-	    ((tagged-pair? v) (set-tagged-pair-c:index! v i))
-	    ((union? v) (set-union-c:index! v i))
-	    (else (set! *c:indices* (cons (cons v i) *c:indices*)))))
-     (append (first vs1-vs2) (second vs1-vs2)))
-    (for-each
-     (lambda (v)
-      (cond ((nonrecursive-closure? v) (set-nonrecursive-closure-boxed?! v #t))
-	    ((recursive-closure? v) (set-recursive-closure-boxed?! v #t))
-	    ((perturbation-tagged-value? v)
-	     (set-perturbation-tagged-value-boxed?! v #t))
-	    ((bundle? v) (set-bundle-boxed?! v #t))
-	    ((sensitivity-tagged-value? v)
-	     (set-sensitivity-tagged-value-boxed?! v #t))
-	    ((reverse-tagged-value? v) (set-reverse-tagged-value-boxed?! v #t))
-	    ((tagged-pair? v) (set-tagged-pair-boxed?! v #t))
-	    ((union? v) (set-union-boxed?! v #t))
-	    (else (internal-error))))
-     (second vs1-vs2))
-    ;; abstraction
-    (list
-     (c:newline-after "#include <math.h>")
-     (c:newline-after "#include <stdio.h>")
-     (c:newline-after "#include <stdlib.h>")
-     (c:newline-after "#include <gc/gc.h>")
-     (c:newline-after "#define INLINE inline __attribute__ ((always_inline))")
-     (c:newline-after "#define NORETURN __attribute__ ((noreturn))")
-     (new-generate-struct-and-union-declarations vs1-vs2)
-     (c:specifier-function-declaration
-      #t #t #t (empty-abstract-value)
-      (c:function-declarator "panic"
-			     (c:parameter "char" (c:pointer-declarator "x"))))
-     (c:specifier-function-declaration
-      #t #t #f (abstract-real) (c:function-declarator "read_real"))
-     (c:specifier-function-declaration
-      #t #t #f (abstract-real)
-      (c:function-declarator
-       "write_real" (c:specifier-parameter (abstract-real) "x")))
-     (new-generate-unary-ad-declarations 'zero (lambda (v) #t) zero "zero")
-     (new-generate-unary-ad-declarations
-      'perturb
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      perturb"perturb")
-     (new-generate-unary-ad-declarations
-      'unperturb
-      (lambda (v)
-       (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
-      unperturb "unperturb")
-     (new-generate-unary-ad-declarations
-      'primal (lambda (v) (and (forward-value? v) (not (bundle? v))))
-      primal "primal")
-     (new-generate-unary-ad-declarations
-      'tangent (lambda (v) (and (forward-value? v) (not (bundle? v))))
-      tangent "tangent")
-     (new-generate-binary-ad-declarations
-      'bundle
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      perturbation-tagged-value? perturb unperturb bundle
-      bundle-aggregates-match? bundle-before "bundle")
-     (new-generate-unary-ad-declarations
-      'sensitize
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      sensitize "sensitize")
-     (new-generate-unary-ad-declarations
-      'unsensitize
-      (lambda (v)
-       (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
-      unsensitize "unsensitize")
-     (new-generate-binary-ad-declarations
-      'plus (lambda (v) #t) (lambda (v) #f) identity identity plus
-      plus-aggregates-match? plus-before "plus")
-     (new-generate-unary-ad-declarations
-      '*j
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      *j "starj")
-     (new-generate-unary-ad-declarations
-      '*j-inverse
-      (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
-      *j-inverse "starj_inverse")
-     (new-generate-function-declarations
-      function-instances instances1-instances2)
-     (c:function-declaration #f #f #f "int" (c:function-declarator "main"))
-     (c:specifier-function-definition
-      #t #t #t (empty-abstract-value)
-      (c:function-declarator "panic"
-			     (c:parameter "char" (c:pointer-declarator "x")))
-      ;; abstraction
-      "fputs(x,stderr);fputc('\\n',stderr);exit(EXIT_FAILURE);")
-     (c:specifier-function-definition
-      #t #t #f (abstract-real) (c:function-declarator "read_real")
-      ;; abstraction
-      (list (c:specifier-declaration (abstract-real) "x")
-	    ;; abstraction
-	    "scanf(\"%lf\",&x);"
-	    (c:return "x")))
-     (c:specifier-function-definition
-      #t #t #f (abstract-real)
-      (c:function-declarator
-       "write_real" (c:specifier-parameter (abstract-real) "x"))
-      ;; abstraction
-      (list
-       ;; abstraction
-       "printf(\"%.18lg\\n\",x);"
-       (c:return "x")))
-     (new-generate-unary-ad-definitions
-      'zero (lambda (v) #t) zero
-      (lambda (v)
-       (cond
-	((union? v) (set-union-inline-zero?! v #f))
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-inline-zero?! v #f))
-	((recursive-closure? v) (set-recursive-closure-inline-zero?! v #f))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-inline-zero?! v #f))
-	((bundle? v) (set-bundle-inline-zero?! v #f))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-inline-zero?! v #f))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-inline-zero?! v #f))
-	((tagged-pair? v) (set-tagged-pair-inline-zero?! v #f))
-	(else (internal-error))))
-      "zero")
-     (new-generate-unary-ad-definitions
-      'perturb
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      perturb
-      (lambda (v)
-       (cond
-	((union? v) (set-union-inline-perturb?! v #f))
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-inline-perturb?! v #f))
-	((recursive-closure? v) (set-recursive-closure-inline-perturb?! v #f))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-inline-perturb?! v #f))
-	((bundle? v) (set-bundle-inline-perturb?! v #f))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-inline-perturb?! v #f))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-inline-perturb?! v #f))
-	((tagged-pair? v) (set-tagged-pair-inline-perturb?! v #f))
-	(else (internal-error))))
-      "perturb")
-     (new-generate-unary-ad-definitions
-      'unperturb
-      (lambda (v)
-       (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
-      unperturb
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-unperturb?! v #f))
-	     ((nonrecursive-closure? v)
-	      (set-nonrecursive-closure-inline-unperturb?! v #f))
-	     ((recursive-closure? v)
-	      (set-recursive-closure-inline-unperturb?! v #f))
-	     ((perturbation-tagged-value? v)
-	      (set-perturbation-tagged-value-inline-unperturb?! v #f))
-	     ((bundle? v) (set-bundle-inline-unperturb?! v #f))
-	     ((sensitivity-tagged-value? v)
-	      (set-sensitivity-tagged-value-inline-unperturb?! v #f))
-	     ((reverse-tagged-value? v)
-	      (set-reverse-tagged-value-inline-unperturb?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-unperturb?! v #f))
-	     (else (internal-error))))
-      "unperturb")
-     (new-generate-unary-ad-definitions
-      'primal (lambda (v) (and (forward-value? v) (not (bundle? v))))
-      primal
-      (lambda (v)
-       (cond
-	((union? v) (set-union-inline-primal?! v #f))
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-inline-primal?! v #f))
-	((recursive-closure? v) (set-recursive-closure-inline-primal?! v #f))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-inline-primal?! v #f))
-	((bundle? v) (set-bundle-inline-primal?! v #f))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-inline-primal?! v #f))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-inline-primal?! v #f))
-	((tagged-pair? v) (set-tagged-pair-inline-primal?! v #f))
-	(else (internal-error))))
-      "primal")
-     (new-generate-unary-ad-definitions
-      'tangent (lambda (v) (and (forward-value? v) (not (bundle? v))))
-      tangent
-      (lambda (v)
-       (cond
-	((union? v) (set-union-inline-tangent?! v #f))
-	((nonrecursive-closure? v)
-	 (set-nonrecursive-closure-inline-tangent?! v #f))
-	((recursive-closure? v) (set-recursive-closure-inline-tangent?! v #f))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-inline-tangent?! v #f))
-	((bundle? v) (set-bundle-inline-tangent?! v #f))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-inline-tangent?! v #f))
-	((reverse-tagged-value? v)
-	 (set-reverse-tagged-value-inline-tangent?! v #f))
-	((tagged-pair? v) (set-tagged-pair-inline-tangent?! v #f))
-	(else (internal-error))))
-      "tangent")
-     (new-generate-binary-ad-definitions
-      'bundle
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      perturbation-tagged-value? perturb unperturb bundle
-      bundle-aggregates-match? bundle-before
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-bundle?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-bundle?! v #f))
-	     (else (internal-error))))
-      "bundle")
-     (new-generate-unary-ad-definitions
-      'sensitize
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      sensitize
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-sensitize?! v #f))
-	     ((nonrecursive-closure? v)
-	      (set-nonrecursive-closure-inline-sensitize?! v #f))
-	     ((recursive-closure? v)
-	      (set-recursive-closure-inline-sensitize?! v #f))
-	     ((perturbation-tagged-value? v)
-	      (set-perturbation-tagged-value-inline-sensitize?! v #f))
-	     ((bundle? v) (set-bundle-inline-sensitize?! v #f))
-	     ((sensitivity-tagged-value? v)
-	      (set-sensitivity-tagged-value-inline-sensitize?! v #f))
-	     ((reverse-tagged-value? v)
-	      (set-reverse-tagged-value-inline-sensitize?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-sensitize?! v #f))
-	     (else (internal-error))))
-      "sensitize")
-     (new-generate-unary-ad-definitions
-      'unsensitize
-      (lambda (v)
-       (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
-      unsensitize
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-unsensitize?! v #f))
-	     ((nonrecursive-closure? v)
-	      (set-nonrecursive-closure-inline-unsensitize?! v #f))
-	     ((recursive-closure? v)
-	      (set-recursive-closure-inline-unsensitize?! v #f))
-	     ((perturbation-tagged-value? v)
-	      (set-perturbation-tagged-value-inline-unsensitize?! v #f))
-	     ((bundle? v) (set-bundle-inline-unsensitize?! v #f))
-	     ((sensitivity-tagged-value? v)
-	      (set-sensitivity-tagged-value-inline-unsensitize?! v #f))
-	     ((reverse-tagged-value? v)
-	      (set-reverse-tagged-value-inline-unsensitize?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-unsensitize?! v #f))
-	     (else (internal-error))))
-      "unsensitize")
-     (new-generate-binary-ad-definitions
-      'plus (lambda (v) #t) (lambda (v) #f) identity identity plus
-      plus-aggregates-match? plus-before
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-plus?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-plus?! v #f))
-	     (else (internal-error))))
-      "plus")
-     (new-generate-unary-ad-definitions
-      '*j
-      (lambda (v)
-       (and (not (perturbation-tagged-value? v))
-	    (not (bundle? v))
-	    (not (sensitivity-tagged-value? v))
-	    (not (reverse-tagged-value? v))))
-      *j
-      (lambda (v)
-       (cond
-	((union? v) (set-union-inline-*j?! v #f))
-	((nonrecursive-closure? v) (set-nonrecursive-closure-inline-*j?! v #f))
-	((recursive-closure? v) (set-recursive-closure-inline-*j?! v #f))
-	((perturbation-tagged-value? v)
-	 (set-perturbation-tagged-value-inline-*j?! v #f))
-	((bundle? v) (set-bundle-inline-*j?! v #f))
-	((sensitivity-tagged-value? v)
-	 (set-sensitivity-tagged-value-inline-*j?! v #f))
-	((reverse-tagged-value? v) (set-reverse-tagged-value-inline-*j?! v #f))
-	((tagged-pair? v) (set-tagged-pair-inline-*j?! v #f))
-	(else (internal-error))))
-      "starj")
-     (new-generate-unary-ad-definitions
-      '*j-inverse
-      (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
-      *j-inverse
-      (lambda (v)
-       (cond ((union? v) (set-union-inline-*j-inverse?! v #f))
-	     ((nonrecursive-closure? v)
-	      (set-nonrecursive-closure-inline-*j-inverse?! v #f))
-	     ((recursive-closure? v)
-	      (set-recursive-closure-inline-*j-inverse?! v #f))
-	     ((perturbation-tagged-value? v)
-	      (set-perturbation-tagged-value-inline-*j-inverse?! v #f))
-	     ((bundle? v) (set-bundle-inline-*j-inverse?! v #f))
-	     ((sensitivity-tagged-value? v)
-	      (set-sensitivity-tagged-value-inline-*j-inverse?! v #f))
-	     ((reverse-tagged-value? v)
-	      (set-reverse-tagged-value-inline-*j-inverse?! v #f))
-	     ((tagged-pair? v) (set-tagged-pair-inline-*j-inverse?! v #f))
-	     (else (internal-error))))
-      "starj_inverse")
-     (new-generate-function-definitions
-      function-instances instances1-instances2)
-     (let ((v0 (abstract-eval1
-		e
-		(environment-binding-values
-		 (first (expression-environment-bindings e)))))
-	   (code (c:generate-name)))
-      (c:function-definition
-       #f #f #f
-       "int"
-       (c:function-declarator "main")
-       (with-symbolic
-	(lambda ()
-	 (format #t "debugging 1~%")
-	 ;; debugging
-	 (set! *frozen?* #f)
-	 ;; abstraction
-	 (list (flat-specifier-declaration v0 code)
-	       (new-generate-move
-		(unitify (new-name-unit #f v0 code))
-		(debugging
-		 (symbolic-eval
-		  e
-		  (environment-binding-values
-		   (first (expression-environment-bindings e)))
-		  function-instances)))
-	       (c:return "0")))))))))))
-
 ;;; Serialization
 
 (define (all-subobjects object)
@@ -15825,240 +13419,14 @@
        (compile-time-warning "Argument to if-procedure might be invalid" u)))
   v))
 
-(define (symbolic-read-real v function-instances)
- (cond
-  ((unit? v)
-   (cond
-    ((union? (unit-abstract-value v))
-     (symbolic-read-real (unroll v) function-instances))
-    ((vlad-empty-list? (unit-abstract-value v)) (new-read-real-unit))
-    (else (new-panic-unit "Argument is not an equivalent value for '()"))))
-  ((union? v)
-   (create-tagged-union
-    (union-tag v)
-    (map (lambda (v) (symbolic-read-real v function-instances))
-	 (get-union-values v))))
-  ((vlad-empty-list? v) (new-read-real-unit))
-  (else (new-panic-unit "Argument is not an equivalent value for '()"))))
-
-(define (symbolic-unary f g)
- (lambda (v function-instances)
-  (cond ((unit? v)
-	 (if (union? (unit-abstract-value v))
-	     ((symbolic-unary f g) (unroll v))
-	     (g v)))
-	((union? v)
-	 (create-tagged-union
-	  (union-tag v) (map (symbolic-unary f g) (get-union-values v))))
-	(else (f v)))))
-
-(define (symbolic-ad f) (lambda (v function-instances) (f v)))
-
-(define (symbolic-unary-predicate f)
- (lambda (v function-instances)
-  (cond
-   ((unit? v)
-    (if (union? (unit-abstract-value v))
-	((symbolic-unary-predicate f) (unroll v) function-instances)
-	(if (f (unit-abstract-value v)) (vlad-true) (vlad-false))))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (v) ((symbolic-unary-predicate f) v function-instances))
-	  (get-union-values v))))
-   (else (if (f v) (vlad-true) (vlad-false))))))
-
-(define (symbolic-unary-real f g s)
- (lambda (v function-instances)
-  (cond
-   ((unit? v)
-    (cond ((union? (unit-abstract-value v))
-	   ((symbolic-unary-real f g s) (unroll v) function-instances))
-	  ((vlad-real? (unit-abstract-value v)) (g v))
-	  (else (new-panic-unit (format #f "Argument to ~a is invalid" s)))))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (v) ((symbolic-unary-real f g s) v function-instances))
-	  (get-union-values v))))
-   ((vlad-real? v)
-    (assert (real? v))
-    (f v))
-   (else (new-panic-unit (format #f "Argument to ~a is invalid" s))))))
-
-(define (symbolic-unary-real-predicate f g s)
- (lambda (v function-instances)
-  (cond
-   ((unit? v)
-    (cond
-     ((union? (unit-abstract-value v))
-      ((symbolic-unary-real-predicate f g s) (unroll v) function-instances))
-     ((vlad-real? (unit-abstract-value v)) (g v))
-     (else (new-panic-unit (format #f "Argument to ~a is invalid" s)))))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (v)
-	   ((symbolic-unary-real-predicate f g s) v function-instances))
-	  (get-union-values v))))
-   ((vlad-real? v)
-    (assert (real? v))
-    (if (f v) (vlad-true) (vlad-false)))
-   (else (new-panic-unit (format #f "Argument to ~a is invalid" s))))))
-
-(define (symbolic-binary-real1 f g s v1 v2)
- (cond
-  ((and (unit? v1) (union? (unit-abstract-value v1)))
-   (symbolic-binary-real1 f g s (unroll v1) v2))
-  ((and (unit? v2) (union? (unit-abstract-value v2)))
-   (symbolic-binary-real1 f g s v1 (unroll v2)))
-  ((or (and (unit? v1)
-	    (vlad-real? (unit-abstract-value v1))
-	    (unit? v2)
-	    (vlad-real? (unit-abstract-value v2)))
-       (and (unit? v1)
-	    (vlad-real? (unit-abstract-value v1))
-	    (vlad-real? v2))
-       (and (vlad-real? v1)
-	    (unit? v2)
-	    (vlad-real? (unit-abstract-value v2))))
-   (assert (and (not (abstract-real? v1))
-		(not (abstract-real? v2))))
-   ;; needs work: This may be imprecise for *, /, and atan.
-   (g v1 v2))
-  ((union? v1)
-   (create-tagged-union (union-tag v1)
-			(map (lambda (u1) (symbolic-binary-real1 f g s u1 v2))
-			     (get-union-values v1))))
-  ((union? v2)
-   (create-tagged-union (union-tag v2)
-			(map (lambda (u2) (symbolic-binary-real1 f g s v1 u2))
-			     (get-union-values v2))))
-  ((and (vlad-real? v1) (vlad-real? v2))
-   (assert (and (real? v1) (real? v2)))
-   (f v1 v2))
-  (else (new-panic-unit (format #f "Argument to ~a is invalid" s)))))
-
-(define (symbolic-binary-real f g s)
- (lambda (v function-instances)
-  (cond
-   ((unit? v)
-    (if (or (union? (unit-abstract-value v))
-	    (vlad-pair? (unit-abstract-value v)))
-	((symbolic-binary-real f g s) (unroll v) function-instances)
-	(new-panic-unit (format #f "Argument to ~a is invalid" s))))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (v) ((symbolic-binary-real f g s) v function-instances))
-	  (get-union-values v))))
-   ((vlad-pair? v) (symbolic-binary-real1 f g s (vlad-car v) (vlad-cdr v)))
-   (else (new-panic-unit (format #f "Argument to ~a is invalid" s))))))
-
-(define (symbolic-binary-real-predicate1 f g s v1 v2)
- (cond
-  ((and (unit? v1) (union? (unit-abstract-value v1)))
-   (symbolic-binary-real-predicate1 f g s (unroll v1) v2))
-  ((and (unit? v2) (union? (unit-abstract-value v2)))
-   (symbolic-binary-real-predicate1 f g s v1 (unroll v2)))
-  ((or (and (unit? v1)
-	    (vlad-real? (unit-abstract-value v1))
-	    (unit? v2)
-	    (vlad-real? (unit-abstract-value v2)))
-       (and (unit? v1)
-	    (vlad-real? (unit-abstract-value v1))
-	    (vlad-real? v2))
-       (and (vlad-real? v1)
-	    (unit? v2)
-	    (vlad-real? (unit-abstract-value v2))))
-   (assert (and (not (abstract-real? v1))
-		(not (abstract-real? v2))))
-   (g v1 v2))
-  ((union? v1)
-   (create-tagged-union (union-tag v1)
-			(map (lambda (u1) (symbolic-binary-real1 f g s u1 v2))
-			     (get-union-values v1))))
-  ((union? v2)
-   (create-tagged-union (union-tag v2)
-			(map (lambda (u2) (symbolic-binary-real1 f g s v1 u2))
-			     (get-union-values v2))))
-  ((and (vlad-real? v1) (vlad-real? v2))
-   (assert (and (real? v1) (real? v2)))
-   (if (f v1 v2) (vlad-true) (vlad-false)))
-  (else (new-panic-unit (format #f "Argument to ~a is invalid" s)))))
-
-(define (symbolic-binary-real-predicate f g s)
- (lambda (v function-instances)
-  (cond
-   ((unit? v)
-    (if (or (union? (unit-abstract-value v))
-	    (vlad-pair? (unit-abstract-value v)))
-	((symbolic-binary-real-predicate f g s) (unroll v) function-instances)
-	(new-panic-unit (format #f "Argument to ~a is invalid" s))))
-   ((union? v)
-    (create-tagged-union
-     (union-tag v)
-     (map (lambda (v)
-	   ((symbolic-binary-real-predicate f g s) v function-instances))
-	  (get-union-values v))))
-   ((vlad-pair? v)
-    (symbolic-binary-real-predicate1 f g s (vlad-car v) (vlad-cdr v)))
-   (else (new-panic-unit (format #f "Argument to ~a is invalid" s))))))
-
-(define (symbolic-if-procedure2 v1 v2 function-instances)
- (cond ((unit? v2)
-	(if (or (union? (unit-abstract-value v1))
-		(vlad-pair? (unit-abstract-value v1)))
-	    (symbolic-if-procedure2 v1 (unroll v2) function-instances)
-	    (new-panic-unit "Argument to if-procedure is invalid")))
-       ((union? v2)
-	(create-tagged-union
-	 (union-tag v2)
-	 (map (lambda (u2) (symbolic-if-procedure2 v1 u2 function-instances))
-	      (get-union-values v2))))
-       ((vlad-pair? v2)
-	(symbolic-apply ((if (vlad-false? v1) vlad-cdr vlad-car) v2)
-			(vlad-empty-list)
-			#f
-			function-instances))
-       (else (new-panic-unit "Argument to if-procedure is invalid"))))
-
-(define (symbolic-if-procedure1 v1 v2 function-instances)
- (cond ((unit? v1)
-	(if (union? (unit-abstract-value v1))
-	    (symbolic-if-procedure1 (unroll v1) v2 function-instances)
-	    (symbolic-if-procedure2 v1 v2 function-instances)))
-       ((union? v1)
-	(create-tagged-union
-	 (union-tag v1)
-	 (map (lambda (u1) (symbolic-if-procedure1 u1 v2 function-instances))
-	      (get-union-values v1))))
-       (else (symbolic-if-procedure2 v1 v2 function-instances))))
-
-(define (symbolic-if-procedure v function-instances)
- (cond ((unit? v)
-	(if (or (union? (unit-abstract-value v))
-		(vlad-pair? (unit-abstract-value v)))
-	    (symbolic-if-procedure (unroll v) function-instances)
-	    (new-panic-unit "Argument to if-procedure is invalid")))
-       ((union? v)
-	(create-tagged-union
-	 (union-tag v)
-	 (map (lambda (v) (symbolic-if-procedure v function-instances))
-	      (get-union-values v) function-instances)))
-       ((vlad-pair? v)
-	(symbolic-if-procedure1 (vlad-car v) (vlad-cdr v) function-instances))
-       (else (new-panic-unit "Argument to if-procedure is invalid"))))
-
 (define (define-primitive-procedure
-	 x concrete abstract symbolic generator forward reverse)
+	 x concrete abstract generator forward reverse)
  (set! *value-bindings*
-       (cons
-	(make-value-binding
-	 (new-variable x)
-	 (make-primitive-procedure
-	  x concrete abstract symbolic generator forward reverse 0))
-	*value-bindings*)))
+       (cons (make-value-binding
+	      (new-variable x)
+	      (make-primitive-procedure
+	       x concrete abstract generator forward reverse 0))
+	     *value-bindings*)))
 
 (define (constant-unconvert e)
  ;; This is particular to the way the forward and reverse transforms of the
@@ -16124,7 +13492,6 @@
  (define-primitive-procedure '+
   (concrete-binary-real + "+")
   (abstract-binary-real + "+")
-  (symbolic-binary-real + new-+-unit "+")
   (lambda (v) (c:builtin-name "add" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16141,7 +13508,6 @@
  (define-primitive-procedure '-
   (concrete-binary-real - "-")
   (abstract-binary-real - "-")
-  (symbolic-binary-real - new---unit "-")
   (lambda (v) (c:builtin-name "minus" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16168,7 +13534,6 @@
  (define-primitive-procedure '*
   (concrete-binary-real * "*")
   (abstract-binary-real * "*")
-  (symbolic-binary-real * new-*-unit "*")
   (lambda (v) (c:builtin-name "times" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16187,7 +13552,6 @@
  (define-primitive-procedure '/
   (concrete-binary-real divide "/")
   (abstract-binary-real divide "/")
-  (symbolic-binary-real divide new-/-unit "/")
   (lambda (v) (c:builtin-name "divide" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16220,7 +13584,6 @@
  (define-primitive-procedure 'sqrt
   (concrete-unary-real sqrt "sqrt")
   (abstract-unary-real sqrt "sqrt")
-  (symbolic-unary-real sqrt new-sqrt-unit "sqrt")
   (lambda (v) "sqrt")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16238,7 +13601,6 @@
  (define-primitive-procedure 'exp
   (concrete-unary-real exp "exp")
   (abstract-unary-real exp "exp")
-  (symbolic-unary-real exp new-exp-unit "exp")
   (lambda (v) "exp")
   '(lambda ((forward x))
     (let* ((x (primal (forward x)))
@@ -16256,7 +13618,6 @@
  (define-primitive-procedure 'log
   (concrete-unary-real log "log")
   (abstract-unary-real log "log")
-  (symbolic-unary-real log new-log-unit "log")
   (lambda (v) "log")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16269,7 +13630,6 @@
  (define-primitive-procedure 'sin
   (concrete-unary-real sin "sin")
   (abstract-unary-real sin "sin")
-  (symbolic-unary-real sin new-sin-unit "sin")
   (lambda (v) "sin")
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16283,7 +13643,6 @@
  (define-primitive-procedure 'cos
   (concrete-unary-real cos "cos")
   (abstract-unary-real cos "cos")
-  (symbolic-unary-real cos new-cos-unit "cos")
   (lambda (v) "cos")
   (if *imprecise-inexacts?*
       '(lambda ((forward x))
@@ -16314,7 +13673,6 @@
  (define-primitive-procedure 'atan
   (concrete-binary-real atan "atan")
   (abstract-binary-real atan "atan")
-  (symbolic-binary-real atan new-atan-unit "atan")
   (lambda (v) (c:builtin-name "atantwo" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16349,7 +13707,6 @@
  (define-primitive-procedure '=
   (concrete-binary-real-predicate = "=")
   (abstract-binary-real-predicate = "=")
-  (symbolic-binary-real-predicate = new-=-unit "=")
   (lambda (v) (c:builtin-name "eq" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16363,7 +13720,6 @@
  (define-primitive-procedure '<
   (concrete-binary-real-predicate < "<")
   (abstract-binary-real-predicate < "<")
-  (symbolic-binary-real-predicate < new-<-unit "<")
   (lambda (v) (c:builtin-name "lt" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16377,7 +13733,6 @@
  (define-primitive-procedure '>
   (concrete-binary-real-predicate > ">")
   (abstract-binary-real-predicate > ">")
-  (symbolic-binary-real-predicate > new->-unit ">")
   (lambda (v) (c:builtin-name "gt" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16391,7 +13746,6 @@
  (define-primitive-procedure '<=
   (concrete-binary-real-predicate <= "<=")
   (abstract-binary-real-predicate <= "<=")
-  (symbolic-binary-real-predicate <= new-<=-unit "<=")
   (lambda (v) (c:builtin-name "le" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16405,7 +13759,6 @@
  (define-primitive-procedure '>=
   (concrete-binary-real-predicate >= ">=")
   (abstract-binary-real-predicate >= ">=")
-  (symbolic-binary-real-predicate >= new->=-unit ">=")
   (lambda (v) (c:builtin-name "ge" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16419,7 +13772,6 @@
  (define-primitive-procedure 'zero?
   (concrete-unary-real-predicate zero? "zero?")
   (abstract-unary-real-predicate zero? "zero?")
-  (symbolic-unary-real-predicate zero? new-zero?-unit "zero?")
   (lambda (v) (c:builtin-name "iszero" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16432,7 +13784,6 @@
  (define-primitive-procedure 'positive?
   (concrete-unary-real-predicate positive? "positive?")
   (abstract-unary-real-predicate positive? "positive?")
-  (symbolic-unary-real-predicate positive? new-positive?-unit "positive?")
   (lambda (v) (c:builtin-name "positive" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16445,7 +13796,6 @@
  (define-primitive-procedure 'negative?
   (concrete-unary-real-predicate negative? "negative?")
   (abstract-unary-real-predicate negative? "negative?")
-  (symbolic-unary-real-predicate negative? new-negative?-unit "negative?")
   (lambda (v) (c:builtin-name "negative" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16458,7 +13808,6 @@
  (define-primitive-procedure 'null?
   (concrete-unary-predicate vlad-empty-list?)
   (abstract-unary-predicate vlad-empty-list?)
-  (symbolic-unary-predicate vlad-empty-list?)
   (lambda (v) (c:builtin-name "null" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16471,7 +13820,6 @@
  (define-primitive-procedure 'boolean?
   (concrete-unary-predicate vlad-boolean?)
   (abstract-unary-predicate vlad-boolean?)
-  (symbolic-unary-predicate vlad-boolean?)
   (lambda (v) (c:builtin-name "boolean" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16484,7 +13832,6 @@
  (define-primitive-procedure 'real?
   (concrete-unary-predicate vlad-real?)
   (abstract-unary-predicate vlad-real?)
-  (symbolic-unary-predicate vlad-real?)
   (lambda (v) (c:builtin-name "is_real" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16497,7 +13844,6 @@
  (define-primitive-procedure 'pair?
   (concrete-unary-predicate vlad-pair?)
   (abstract-unary-predicate vlad-pair?)
-  (symbolic-unary-predicate vlad-pair?)
   (lambda (v) (c:builtin-name "pair" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16511,7 +13857,6 @@
   ;; needs work: This should probably return #f for any transformed procedure.
   (concrete-unary-predicate vlad-procedure?)
   (abstract-unary-predicate vlad-procedure?)
-  (symbolic-unary-predicate vlad-procedure?)
   (lambda (v) (c:builtin-name "procedure" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16528,7 +13873,6 @@
  (define-primitive-procedure 'perturbation?
   (concrete-unary-predicate perturbation-value?)
   (abstract-unary-predicate perturbation-value?)
-  (symbolic-unary-predicate perturbation-value?)
   (lambda (v) (c:builtin-name "perturbation" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16542,7 +13886,6 @@
  (define-primitive-procedure 'forward?
   (concrete-unary-predicate forward-value?)
   (abstract-unary-predicate forward-value?)
-  (symbolic-unary-predicate forward-value?)
   (lambda (v) (c:builtin-name "forward" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16555,7 +13898,6 @@
  (define-primitive-procedure 'sensitivity?
   (concrete-unary-predicate sensitivity-value?)
   (abstract-unary-predicate sensitivity-value?)
-  (symbolic-unary-predicate sensitivity-value?)
   (lambda (v) (c:builtin-name "sensitivity" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16569,7 +13911,6 @@
  (define-primitive-procedure 'reverse?
   (concrete-unary-predicate reverse-value?)
   (abstract-unary-predicate reverse-value?)
-  (symbolic-unary-predicate reverse-value?)
   (lambda (v) (c:builtin-name "reverse" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x)))
@@ -16582,7 +13923,6 @@
  (define-primitive-procedure 'if-procedure
   concrete-if-procedure
   abstract-if-procedure
-  symbolic-if-procedure
   (lambda (v) (c:builtin-name "if_procedure" v))
   '(lambda ((forward x))
     (let (((cons* x1 x2 x3) (primal (forward x)))
@@ -16628,7 +13968,6 @@
  (define-primitive-procedure 'read-real
   (concrete-unary concrete-read-real)
   (abstract-unary abstract-read-real)
-  symbolic-read-real
   (lambda (v) "read_real")
   (if *imprecise-inexacts?*
       `(lambda (',(j* (vlad-empty-list))) (bundle (read-real) (perturb 0.0)))
@@ -16639,7 +13978,6 @@
  (define-primitive-procedure 'real
   (concrete-unary-real (lambda (v) v) "real")
   (abstract-unary-real (lambda (v) (abstract-real)) "real")
-  (symbolic-unary-real (lambda (v) (abstract-real)) identity "real")
   (lambda (v) (c:builtin-name "real" v))
   ;; These widen the tangent and cotangent as well. Nothing requires us to do
   ;; so. It is just a design decision.
@@ -16659,7 +13997,6 @@
     v)
    "write-real")
   (abstract-unary-real (lambda (v) v) "write-real")
-  (symbolic-unary-real (lambda (v) v) new-write-real-unit "write-real")
   (lambda (v) (c:builtin-name "write_real" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16676,7 +14013,6 @@
 		   (newline)
 		   v))
   (abstract-unary (lambda (v) v))
-  (symbolic-unary (lambda (v) v) (lambda (v) (unimplemented "write")))
   (lambda (v) (unimplemented "write"))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16690,7 +14026,6 @@
  (define-primitive-procedure 'zero
   (concrete-ad zero)
   (abstract-ad zero)
-  (symbolic-ad zero)
   (lambda (v) (c:builtin-name "zero" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16703,7 +14038,6 @@
  (define-primitive-procedure 'perturb
   (concrete-ad perturb)
   (abstract-ad perturb)
-  (symbolic-ad perturb)
   (lambda (v) (c:builtin-name "perturb" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16722,7 +14056,6 @@
  (define-primitive-procedure 'unperturb
   (concrete-ad unperturb)
   (abstract-ad unperturb)
-  (symbolic-ad unperturb)
   (lambda (v) (c:builtin-name "unperturb" v))
   ;; The argument must be called x-perturbation so as not to confuse the tags.
   '(lambda ((forward x-perturbation))
@@ -16741,7 +14074,6 @@
  (define-primitive-procedure 'primal
   (concrete-ad primal)
   (abstract-ad primal)
-  (symbolic-ad primal)
   (lambda (v) (c:builtin-name "primal" v))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -16763,7 +14095,6 @@
  (define-primitive-procedure 'tangent
   (concrete-ad tangent)
   (abstract-ad tangent)
-  (symbolic-ad tangent)
   (lambda (v) (c:builtin-name "tangent" v))
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -16787,7 +14118,6 @@
  (define-primitive-procedure 'bundle
   (concrete-ad bundle)
   (abstract-ad bundle)
-  (symbolic-ad bundle)
   (lambda (v) (c:builtin-name "bundle" v))
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
@@ -16813,7 +14143,6 @@
  (define-primitive-procedure 'sensitize
   (concrete-ad sensitize)
   (abstract-ad sensitize)
-  (symbolic-ad sensitize)
   (lambda (v) (c:builtin-name "sensitize" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16832,7 +14161,6 @@
  (define-primitive-procedure 'unsensitize
   (concrete-ad unsensitize)
   (abstract-ad unsensitize)
-  (symbolic-ad unsensitize)
   (lambda (v) (c:builtin-name "unsensitize" v))
   ;; The argument must be called x-sensitivity so as not to confuse the tags.
   '(lambda ((forward x-sensitivity))
@@ -16853,7 +14181,6 @@
  (define-primitive-procedure 'plus
   (concrete-ad plus)
   (abstract-ad plus)
-  (symbolic-ad plus)
   (lambda (v) (c:builtin-name "plus" v))
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -16870,7 +14197,6 @@
  (define-primitive-procedure '*j
   (concrete-ad *j)
   (abstract-ad *j)
-  (symbolic-ad *j)
   (lambda (v) (c:builtin-name "starj" v))
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -16887,7 +14213,6 @@
  (define-primitive-procedure '*j-inverse
   (concrete-ad *j-inverse)
   (abstract-ad *j-inverse)
-  (symbolic-ad *j-inverse)
   (lambda (v) (c:builtin-name "starj_inverse" v))
   ;; The argument must be called x-reverse so as not to confuse the tags.
   '(lambda ((forward x-reverse))
