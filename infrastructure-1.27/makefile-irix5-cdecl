@@ -1,0 +1,70 @@
+#
+# This is the header file for constructing make files for SGIMIPS.
+#
+
+# Default flags to use when invoking the C compiler.
+
+CFLAGS = -O2 -non_shared
+CC = cc
+
+# Assembly language object files.
+
+Aruntime = mips.o
+
+# Profiled library
+
+Plib =
+
+# Installation tools
+
+RANLIB = ../ranlib
+
+# X library
+
+XLIB = -lX11
+XLIBCFLAGS = -G0 -non_shared
+
+# Force make to use the right shell
+
+SHELL = /bin/sh
+
+# End of SGIMIPS header.
+.SUFFIXES:
+.SUFFIXES: .sc .c
+
+SCSRC = cdecl.sc const.sc extern.sc typedef.sc
+CSRC = cdecl.c const.c extern.c typedef.c
+MISC = sizeof.c README document load.sc
+
+SRCDIR = ../../cdecl
+
+SCC = ../scsc/scc
+
+.sc.c:
+	${SCC} ${CFLAGS} -C $*.sc
+
+all:	
+	make "SCC=${SCC}" "SRCDIR=${SRCDIR}" "CFLAGS=${CFLAGS}" cdecl sizeof
+
+cdecl:	${CSRC}
+	${SCC} ${CFLAGS} -o cdecl ${CSRC}
+
+sizeof:	sizeof.c
+	${CC} ${CFLAGS} -o sizeof sizeof.c
+
+clean:
+	rm -f *.o *.CKP *.BAK *.S2C core
+
+clean-sc-to-c:
+	rm -f ${CSRC}
+
+noprogs:
+	rm -f cdecl sizeof
+
+srclinks:
+	for x in ${SCSRC} ${MISC}; \
+	   do ln -s ${SRCDIR}/$$x $$x; \
+	done
+
+tarfiles:
+	@echo " cdecl/*.sc cdecl/sizeof.c cdecl/README cdecl/document cdecl/makefile "

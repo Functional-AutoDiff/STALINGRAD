@@ -1,0 +1,1745 @@
+Return-Path: mikpe@ida.liu.se
+Received: by jove.pa.dec.com; id AA20035; Mon, 31 Jan 94 07:53:34 -0800
+Received: from curofix.ida.liu.se by inet-gw-1.pa.dec.com (5.65/13Jan94)id AA19324; Mon, 31 Jan 94 07:17:39 -0800
+Received: from sen13 by ida.liu.se (5.65b/ida.minimaster-V1.0b6d5)id AA09975; Mon, 31 Jan 94 16:17:27 +0100
+Date: Mon, 31 Jan 94 16:17:27 +0100
+From: Mikael Pettersson <mpe@ida.liu.se>
+Message-Id: <9401311517.AA09975@ida.liu.se>
+To: bartlett
+Subject: new SPARC port of Scheme->C
+Content-Length: 51247
+
+[I finally decided to update my SPARC port of `15mar93' to Solaris 2.
+In the process, I also added support for coercing fixnums to
+flonums on overflow, and fixed a few (some serious!) bugs.
+Should you or I send the blurb to comp.lang.scheme?
+
+/Mikael Pettersson, mpe@ida.liu.se]
+
+
+BLURB
+=====
+
+This announces a new port of the `15mar93' release of Scheme->C
+for Sun's SPARC-based machines.
+
+What's new?
+-----------
++ Supports both SunOS 4.1.x and SunOS 5.x (a.k.a. Solaris 2.x)
++ Overflowing fixnums are now coerced to flonums
++ Fixes some bugs in the earlier port that _could_ cause
+  run-time errors (depending on the mood of the C compiler)
++ The `server' now builds and runs (though the testing of
+  it has been minimal)
+
+The port has been tested under the following configurations:
+* SS/10, SunOS 4.1.3, /usr/ucb/cc and gcc 2.4.5
+* SPARCstation LX, SunOS 5.2, /opt/SUNWspro/bin/cc and gcc 2.4.5
+
+
+How To Build It
+===============
+1. cd to the Scheme->C source directory and unpack the shell
+   archive appended below. This creates the SPARC sub-directory
+   which contains some new files, diffs, and building scripts.
+2. cd SPARC
+3. ./build
+   (This creates the mirror source hierarchy and applies the
+    necessary patches)
+4. ./configure sunos4   -or-   ./configure sunos5
+   (This chooses the appropriate set of OS-dependent files, creates
+    new makefiles, and cleans the sub-directories of any left-over
+    binaries or temporaries from an earlier make)
+5. make port
+   (This builds the run-time system and the compiler)
+6. cd test; make all; ./test; ./test50; ./test51; ./test52; ./test53; ./test54
+   (Exercises the port on a number of standard tests)
+7. Let BINDIR be where you want to put the binaries, and LIBDIR
+   be the complete(+) path to where you want the libraries.
+	cd scrt; make BINDIR=$(BINDIR) LIBDIR=$(LIBDIR) install
+	cd scsc; make BINDIR=$(BINDIR) LIBDIR=$(LIBDIR) install
+   (+) Note that this port does not append `schemetoc' to LIBDIR
+   as the other Scheme->C ports normally do.
+8. Repeat from step 4 if you want to build for another configuration.
+
+#! /bin/sh
+# This is a shell archive.  Remove anything before this line, then unpack
+# it by saving it into a file and typing "sh file".  To overwrite existing
+# files, type "sh file -c".  You can also feed this as standard input via
+# unshar, or by typing "sh <file", e.g..  If this archive is complete, you
+# will see the following message at the end:
+#		"End of shell archive."
+# Contents:  SPARC SPARC/build SPARC/config SPARC/configure SPARC/diffs
+#   SPARC/sparc-pragma.h SPARC/sparc.s SPARC/config/sunos4
+#   SPARC/config/sunos5 SPARC/config/sunos4/makefile-head
+#   SPARC/config/sunos4/options-server.h SPARC/config/sunos4/options.h
+#   SPARC/config/sunos5/makefile-head
+#   SPARC/config/sunos5/options-server.h SPARC/config/sunos5/options.h
+# Wrapped by mikpe@sen13 on Mon Jan 31 15:55:30 1994
+PATH=/bin:/usr/bin:/usr/ucb ; export PATH
+if test ! -d SPARC ; then
+    echo shar: Creating directory \"SPARC\"
+    mkdir SPARC
+fi
+if test -f SPARC/build -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/build\"
+else
+echo shar: Extracting \"SPARC/build\" \(2268 characters\)
+sed "s/^X//" >SPARC/build <<'END_OF_SPARC/build'
+X#!/bin/sh
+X#set -x
+X#
+X# copy the generic source tree
+X#
+Xecho "Copying the generic source tree.."
+Xln -s ../ports/makefile makefile
+Xmkdir scsc
+Xln -s ../../scsc/makefile scsc/makefile-tail
+Xcd scsc; make -f makefile-tail srclinks; rm -f scc Xscc; cd ..
+Xmkdir scrt
+Xln -s ../../scrt/makefile scrt/makefile-tail
+Xcd scrt; make -f makefile-tail srclinks; cd ..
+Xmkdir test
+Xln -s ../../test/makefile test/makefile-tail
+Xcd test; make -f makefile-tail srclinks; cd ..
+Xmkdir server
+Xln -s ../scrt/makefile-tail server/makefile-tail
+Xln -s ../scrt/makefile server/makefile
+Xcd server; make -f makefile-tail SRCDIR=../scrt srclinks; cd ..
+Xmkdir cdecl
+Xln -s ../../cdecl/makefile cdecl/makefile-tail
+Xcd cdecl; make -f makefile-tail srclinks; cd ..
+Xmkdir xlib
+Xln -s ../../xlib/makefile xlib/makefile-tail
+Xcd xlib; make -f makefile-tail srclinks; cd ..
+X#
+X# install files specific to this port
+X#
+Xecho "Installing SPARC-specific files.."
+Xln -s ../sparc.s scrt/sparc.s
+Xln -s ../sparc-pragma.h scrt/sparc-pragma.h
+Xln -s ../options.h scrt/options.h
+Xln -s ../sparc.s server/sparc.s
+Xln -s ../sparc-pragma.h server/sparc-pragma.h
+Xln -s ../options-server.h server/options.h
+X#
+X# make copies of files we will change
+X#
+Xecho "Copying files that will be patched.."
+Xcd scsc
+Xcp makefile-tail temp; chmod u+w temp; mv -f temp makefile-tail
+Xcd ..
+Xcd scrt
+Xcp callcc.c temp; chmod u+w temp; mv -f temp callcc.c
+Xcp cio.c temp; chmod u+w temp; mv -f temp cio.c
+Xcp cio.h temp; chmod u+w temp; mv -f temp cio.h
+Xcp heap.c temp; chmod u+w temp; mv -f temp heap.c
+Xcp makefile-tail temp; chmod u+w temp; mv -f temp makefile-tail
+Xcp objects.c temp; chmod u+w temp; mv -f temp objects.c
+Xcp objects.h temp; chmod u+w temp; mv -f temp objects.h
+Xcp scinit.c temp; chmod u+w temp; mv -f temp scinit.c
+Xcp scrt4.c temp; chmod u+w temp; mv -f temp scrt4.c
+Xcp scrt4.sc temp; chmod u+w temp; mv -f temp scrt4.sc
+Xcd ..
+Xcd test
+Xcp makefile-tail temp; chmod u+w temp; mv -f temp makefile-tail
+Xcp test10.sc temp; chmod u+w temp; mv -f temp test10.sc
+Xcp test11.sc temp; chmod u+w temp; mv -f temp test11.sc
+Xcp test54c.c temp; chmod u+w temp; mv -f temp test54c.c
+Xcd ..
+X#
+X# now apply patches
+X#
+Xecho "Applying patches..."
+Xpatch < diffs
+X#
+X# all done
+X#
+Xecho "Build succeeded."
+Xecho "Now do a 'configure sunos4' or 'configure sunos5'."
+Xexit 0
+END_OF_SPARC/build
+if test 2268 -ne `wc -c <SPARC/build`; then
+    echo shar: \"SPARC/build\" unpacked with wrong size!
+fi
+chmod +x SPARC/build
+# end of overwriting check
+fi
+if test ! -d SPARC/config ; then
+    echo shar: Creating directory \"SPARC/config\"
+    mkdir SPARC/config
+fi
+if test -f SPARC/configure -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/configure\"
+else
+echo shar: Extracting \"SPARC/configure\" \(1222 characters\)
+sed "s/^X//" >SPARC/configure <<'END_OF_SPARC/configure'
+X#!/bin/sh
+X# usage: configure {sunos4|sunos5}
+X#set -x
+X#
+X# link configuration files
+X#
+Xecho "Linking configuration files.."
+Xrm -f makefile-head options.h options-server.h
+Xcase "$1" in
+X    "sunos4")	;;
+X    "sunos5")	;;
+X    *)		echo "illegal configuration: $1"
+X		echo "usage: configure {sunos4|sunos5}"
+X		exit 1
+X		;;
+Xesac
+Xln -s config/$1/makefile-head makefile-head
+Xln -s config/$1/options.h options.h
+Xln -s config/$1/options-server.h options-server.h
+X#
+X# build makefiles
+X#
+Xecho "Building makefiles.."
+Xcat makefile-head scrt/makefile-tail > scrt/makefile
+Xcat makefile-head scsc/makefile-tail > scsc/makefile
+Xcat makefile-head test/makefile-tail > test/makefile
+Xcat makefile-head cdecl/makefile-tail > cdecl/makefile
+Xcat makefile-head xlib/makefile-tail > xlib/makefile
+X#
+X# remove old garbage
+X#
+Xecho "Removing garbage.."
+Xcd scrt; make clean; make noprogs; cd ..
+Xcd scsc; make clean; make noprogs; rm -f scc Xscc; cd ..
+Xcd test; make clean; make clean-sc-to-c; make noprogs; cd ..
+Xcd server; make clean; make noprogs; cd ..
+Xcd cdecl; make clean; make clean-sc-to-c; make noprogs; cd ..
+Xcd xlib; make clean; make clean-sc-to-c; make noprogs; cd ..
+X#
+X# all done
+X#
+Xecho "Configuration complete."
+Xecho "Now do a 'make port'."
+Xexit 0
+END_OF_SPARC/configure
+if test 1222 -ne `wc -c <SPARC/configure`; then
+    echo shar: \"SPARC/configure\" unpacked with wrong size!
+fi
+chmod +x SPARC/configure
+# end of overwriting check
+fi
+if test -f SPARC/diffs -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/diffs\"
+else
+echo shar: Extracting \"SPARC/diffs\" \(21716 characters\)
+sed "s/^X//" >SPARC/diffs <<'END_OF_SPARC/diffs'
+X*** scsc/makefile-tail.~1~	Mon Jan 31 12:37:08 1994
+X--- scsc/makefile-tail	Mon Jan 31 12:48:25 1994
+X***************
+X*** 36,42 ****
+X  .SUFFIXES:	.o .sc .c
+X  
+X  .sc.c:
+X! 	${SCC} -C $*.sc
+X  
+X  .c.o:
+X  	${CC} -c ${CFLAGS} -I${RTDIR} $*.c
+X--- 36,42 ----
+X  .SUFFIXES:	.o .sc .c
+X  
+X  .sc.c:
+X! 	${SCC} -C ${SCCFLAGS} $*.sc
+X  
+X  .c.o:
+X  	${CC} -c ${CFLAGS} -I${RTDIR} $*.c
+X***************
+X*** 43,49 ****
+X  
+X  sc-to-c:	${scc}
+X  
+X! Xsccomp:	${scc} ${sco} ${RT}
+X  	${CC} -o Xsccomp ${CFLAGS} ${sco} ${RT} -lm
+X  
+X  Xmv:
+X--- 43,49 ----
+X  
+X  sc-to-c:	${scc}
+X  
+X! Xsccomp:	scc Xscc ${scc} ${sco} ${RT}
+X  	${CC} -o Xsccomp ${CFLAGS} ${sco} ${RT} -lm
+X  
+X  Xmv:
+X***************
+X*** 57,68 ****
+X  	     "OWNER = -o `whoami`" install
+X  
+X  install:
+X! 	echo '#! /bin/csh -f' > ${BINDIR}/scc
+X! 	echo '${BINDIR}/sccomp -scl ${SCL} -scmh ${SCMH} \
+X! 	     -cc ${CC} -LIBDIR ${LIBDIR}/schemetoc $$argv' >> ${BINDIR}/scc
+X  	chmod +x ${BINDIR}/scc
+X  	cp sccomp ${BINDIR}
+X  
+X  clean:
+X  	rm -f ${sco} *.BAK *.CKP scltext.* *.S2C
+X  
+X--- 57,74 ----
+X  	     "OWNER = -o `whoami`" install
+X  
+X  install:
+X! 	echo '#!/bin/sh' > ${BINDIR}/scc
+X! 	echo "exec ${BINDIR}/sccomp -scl ${SCL} -scmh ${SCMH} -cc ${CC} -LIBDIR ${LIBDIR}" '$$*' >> ${BINDIR}/scc
+X  	chmod +x ${BINDIR}/scc
+X  	cp sccomp ${BINDIR}
+X  
+X+ scc Xscc:
+X+ 	echo '#!/bin/sh' > scc
+X+ 	echo "exec `pwd`/sccomp -scl ${SCL} -scmh ${SCMH} -cc ${CC} -LIBDIR `pwd`/${RTDIR}" '$$*' >> scc
+X+ 	chmod +x scc
+X+ 	echo '#!/bin/sh' > Xscc
+X+ 	echo "exec `pwd`/Xsccomp -scl ${SCL} -scmh ${SCMH} -cc ${CC} -LIBDIR `pwd`/${RTDIR}" '$$*' >> Xscc
+X+ 
+X  clean:
+X  	rm -f ${sco} *.BAK *.CKP scltext.* *.S2C
+X  
+X***************
+X*** 80,93 ****
+X  	for x in ${scsc} ${scc} ${scsch}; \
+X  	    do ln -s ${SRCDIR}/$$x $$x;\
+X  	done
+X- 	echo '#! /bin/csh -f' > scc
+X- 	echo `pwd`'/sccomp -scl ${SCL} -scmh ${SCMH} \
+X- 	     -cc ${CC} -LIBDIR ' `pwd`'/${RTDIR} $$argv' >> scc
+X- 	chmod +x scc
+X- 	echo '#! /bin/csh -f' > Xscc
+X- 	echo `pwd`'/Xsccomp -scl ${SCL} -scmh ${SCMH} \
+X- 	     -cc ${CC} -LIBDIR ' `pwd`'/${RTDIR} $$argv' >> Xscc
+X- 	chmod +x Xscc
+X  
+X  tarfiles:
+X  	@echo " scsc/*.sc scsc/*.c scsc/*.sch scsc/README scsc/makefile "
+X--- 86,91 ----
+X*** scrt/callcc.c.~1~	Wed Jan 26 14:57:40 1994
+X--- scrt/callcc.c	Wed Jan 26 15:58:01 1994
+X***************
+X*** 91,96 ****
+X--- 91,108 ----
+X  #define  SETJMP( x )		sc_setjmp( x )
+X  #endif
+X  
+X+ #ifdef SPARC
+X+ extern int sc_setjmp( XAL1(int *) );
+X+ extern void sc_longjmp( XAL2(int *, int) );
+X+ /* The SPARC compilers need a special #pragma for setjmp-like functions, but
+X+  * some compilers generate error messages upon seeing such a directive.
+X+  * Hence this kludge.
+X+  */
+X+ #include "sparc-pragma.h"
+X+ #define LONGJMP( x, y )		sc_longjmp( x, y )
+X+ #define SETJMP( x )		sc_setjmp( x )
+X+ #endif
+X+ 
+X  TSCP  sc_clink;		/* Pointer to inner most continuation on stack. */
+X  
+X  /* Static declarations for data structures internal to the module.  These
+X*** scrt/cio.c.~1~	Wed Jan 26 14:58:21 1994
+X--- scrt/cio.c	Wed Jan 26 23:36:48 1994
+X***************
+X*** 93,99 ****
+X--- 93,102 ----
+X  }
+X  #else
+X  #include <stdlib.h>
+X+ #ifdef SUNOS4
+X+ extern double strtod( XAL2(char*, char**) );
+X  #endif
+X+ #endif
+X  
+X  #ifdef MAC
+X  #include <time.h>
+X***************
+X*** 143,148 ****
+X--- 146,155 ----
+X  #define HAVE_RUSAGE
+X  #endif
+X  
+X+ #ifdef SUNOS4
+X+ #define HAVE_RUSAGE
+X+ #endif
+X+ 
+X  #ifdef SYSV
+X  #define HAVE_TIMES
+X  #else
+X***************
+X*** 159,165 ****
+X  #endif
+X  #endif
+X  
+X! #ifdef VAX
+X  extern int sys_nerr;
+X  
+X  extern char *sys_errlist[];
+X--- 166,172 ----
+X  #endif
+X  #endif
+X  
+X! #if defined(VAX) || defined(SUNOS4)
+X  extern int sys_nerr;
+X  
+X  extern char *sys_errlist[];
+X***************
+X*** 1072,1082 ****
+X  {
+X  	struct sigaction  new_action, old_action;
+X  
+X! 	(new_action.sa_handler) = handler;
+X  	sigemptyset (& (new_action.sa_mask));
+X  	(new_action.sa_flags) = 0;
+X  	sigaction (sig, (&new_action), (&old_action));
+X! 	return (old_action.sa_handler);
+X  }
+X  
+X  #ifdef OLD_FASHIONED_C
+X--- 1079,1089 ----
+X  {
+X  	struct sigaction  new_action, old_action;
+X  
+X! 	*((VOIDP*)&(new_action.sa_handler)) = handler;
+X  	sigemptyset (& (new_action.sa_mask));
+X  	(new_action.sa_flags) = 0;
+X  	sigaction (sig, (&new_action), (&old_action));
+X! 	return *((VOIDP*)&(old_action.sa_handler));
+X  }
+X  
+X  #ifdef OLD_FASHIONED_C
+X***************
+X*** 1141,1151 ****
+X  #endif
+X  #endif
+X  
+X! S2CINT  sc_mutex = 0;			/* Mutual exclusion flag */
+X  
+X! S2CINT  sc_pendingsignals = 0;		/* pending signal mask */
+X  
+X! #define SIGAFTERGC 31			/* Used by Scheme->C */
+X  
+X  #if S2CSIGNALS
+X  #ifdef OLD_FASHIONED_C
+X--- 1148,1164 ----
+X  #endif
+X  #endif
+X  
+X! S2CUINT  sc_mutex = 0;			/* Mutual exclusion flag */
+X  
+X! S2CUINT  sc_pendingsignals = 0;		/* pending signal mask */
+X  
+X! /* These definitions don't quite cover the range of signals in
+X!  * SunOS5.x -- SIGWAITING and SIGLWP cannot be handled.
+X!  * Some other time, perhaps.
+X!  */
+X! #define SIGFIRST 1
+X! #define SIGLAST 31
+X! #define SIGAFTERGC 0			/* Used by Scheme->C */
+X  
+X  #if S2CSIGNALS
+X  #ifdef OLD_FASHIONED_C
+X***************
+X*** 1176,1182 ****
+X  void  sc_dispatchpendingsignals()
+X  {
+X  #if S2CSIGNALS
+X! 	S2CINT  i, mypendingsignals;
+X  	SIGSET_T oldmask;
+X  
+X  	sc_mutex = 0;
+X--- 1189,1196 ----
+X  void  sc_dispatchpendingsignals()
+X  {
+X  #if S2CSIGNALS
+X! 	S2CINT  i;
+X! 	S2CUINT mypendingsignals;
+X  	SIGSET_T oldmask;
+X  
+X  	sc_mutex = 0;
+X***************
+X*** 1187,1193 ****
+X  	   restore_signal_mask (&oldmask);
+X  	   if  (mypendingsignals & 1<<SIGAFTERGC)
+X  	      sc_apply_when_unreferenced();
+X! 	   for  (i = 0; i < SIGAFTERGC; i++)  {
+X  	      if  (mypendingsignals & 1<<i)  {
+X  	         scrt4_callsignalhandler( C_FIXED( i ) );
+X  	      }  
+X--- 1201,1207 ----
+X  	   restore_signal_mask (&oldmask);
+X  	   if  (mypendingsignals & 1<<SIGAFTERGC)
+X  	      sc_apply_when_unreferenced();
+X! 	   for  (i = SIGFIRST; i <= SIGLAST; i++)  {
+X  	      if  (mypendingsignals & 1<<i)  {
+X  	         scrt4_callsignalhandler( C_FIXED( i ) );
+X  	      }  
+X***************
+X*** 1228,1234 ****
+X  				        (__sig_func)signal_handler ) ) );
+X  #else
+X  	   return( S2CINT_TSCP( ossignal( TSCP_S2CINT( sig ),
+X! 				          signal_handler ) ) );
+X  #endif
+X  	else
+X  	   return( S2CINT_TSCP( ossignal( TSCP_S2CINT( sig ),
+X--- 1242,1248 ----
+X  				        (__sig_func)signal_handler ) ) );
+X  #else
+X  	   return( S2CINT_TSCP( ossignal( TSCP_S2CINT( sig ),
+X! 				          (VOIDP)signal_handler ) ) );
+X  #endif
+X  	else
+X  	   return( S2CINT_TSCP( ossignal( TSCP_S2CINT( sig ),
+X*** scrt/cio.h.~1~	Wed Jan 26 23:07:37 1994
+X--- scrt/cio.h	Wed Jan 26 23:09:10 1994
+X***************
+X*** 101,109 ****
+X  
+X  extern void  sc_dispatchpendingsignals();
+X  
+X! extern S2CINT  sc_mutex;
+X  
+X! extern S2CINT  sc_pendingsignals;
+X  
+X  #if TIMESLICE
+X  #define MUTEXON
+X--- 101,109 ----
+X  
+X  extern void  sc_dispatchpendingsignals();
+X  
+X! extern S2CUINT  sc_mutex;
+X  
+X! extern S2CUINT  sc_pendingsignals;
+X  
+X  #if TIMESLICE
+X  #define MUTEXON
+X*** scrt/heap.c.~1~	Wed Jan 26 14:58:39 1994
+X--- scrt/heap.c	Wed Jan 26 23:39:48 1994
+X***************
+X*** 373,378 ****
+X--- 373,393 ----
+X  }
+X  #endif
+X  
+X+ #ifdef SPARC
+X+ /* All processor registers which might contain pointers are traced by the
+X+    following procedure.
+X+ */
+X+ 
+X+ static  trace_stack_and_registers()
+X+ {
+X+ 	S2CINT  *pp;
+X+ 	sc_jmp_buf tmp;
+X+ 
+X+ 	STACKPTR( pp );
+X+ 	while  (pp != sc_stackbase)  move_continuation_ptr( ((SCP)*pp++) );
+X+ }
+X+ #endif
+X+ 
+X  #ifdef WIN16
+X  /* The following code is used to read the stack pointer.  The register
+X     number is passed in to force an argument to be on the stack, which in
+X***************
+X*** 1962,1967 ****
+X--- 1977,1989 ----
+X     the Scheme object with that value.
+X  */
+X  
+X+ #ifdef SPARC
+X+ extern void sc_set_double( XAL2( int* , double ) );
+X+ #define SET_FLOAT_VALUE( scp, val ) sc_set_double(&(scp)->doublefloat.value[0], (val) )
+X+ #else
+X+ #define SET_FLOAT_VALUE( scp, val ) (scp)->doublefloat.value = (val)
+X+ #endif
+X+ 
+X  #ifdef OLD_FASHIONED_C
+X  TSCP sc_makedoublefloat( value )
+X  	double value;
+X***************
+X*** 1982,1988 ****
+X  	}
+X  	else
+X  	   pp = sc_allocateheap( DOUBLEFLOATSIZE, DOUBLEFLOATTAG, 0 );
+X! 	pp->doublefloat.value = value;
+X  	MUTEXOFF;
+X  	return( U_T( pp, EXTENDEDTAG ) );
+X  }
+X--- 2004,2010 ----
+X  	}
+X  	else
+X  	   pp = sc_allocateheap( DOUBLEFLOATSIZE, DOUBLEFLOATTAG, 0 );
+X! 	SET_FLOAT_VALUE( pp, value );
+X  	MUTEXOFF;
+X  	return( U_T( pp, EXTENDEDTAG ) );
+X  }
+X***************
+X*** 2064,2070 ****
+X  TSCP  sc_verifyobject( TSCP any )
+X  #endif
+X  {
+X! 	S2CINT  i;
+X  	struct SEEN  seen, *sp;
+X  
+X  	if  ((S2CINT)any & 1)  {
+X--- 2086,2092 ----
+X  TSCP  sc_verifyobject( TSCP any )
+X  #endif
+X  {
+X! 	S2CUINT  i;
+X  	struct SEEN  seen, *sp;
+X  
+X  	if  ((S2CINT)any & 1)  {
+X*** scrt/makefile-tail.~1~	Mon Jan 31 07:09:31 1994
+X--- scrt/makefile-tail	Mon Jan 31 07:12:02 1994
+X***************
+X*** 96,109 ****
+X  	     "OWNER = -o `whoami`" install
+X  
+X  install:
+X! 	-mkdir ${LIBDIR}/schemetoc
+X! 	cp libsc.a ${LIBDIR}/schemetoc/libsc.a
+X! 	${RANLIB} ${LIBDIR}/schemetoc/libsc.a
+X! 	-cp libsc_p.a ${LIBDIR}/schemetoc/libsc_p.a
+X! 	-${RANLIB} ${LIBDIR}/schemetoc/libsc_p.a
+X! 	cp objects.h ${LIBDIR}/schemetoc
+X! 	cp options.h ${LIBDIR}/schemetoc
+X! 	cp predef.sc ${LIBDIR}/schemetoc
+X  	cp sci ${BINDIR}/sci
+X  
+X  clean:
+X--- 96,109 ----
+X  	     "OWNER = -o `whoami`" install
+X  
+X  install:
+X! 	-mkdir ${LIBDIR}
+X! 	cp libsc.a ${LIBDIR}/libsc.a
+X! 	${RANLIB} ${LIBDIR}/libsc.a
+X! 	-cp libsc_p.a ${LIBDIR}/libsc_p.a
+X! 	-${RANLIB} ${LIBDIR}/libsc_p.a
+X! 	cp objects.h ${LIBDIR}
+X! 	cp options.h ${LIBDIR}
+X! 	cp predef.sc ${LIBDIR}
+X  	cp sci ${BINDIR}/sci
+X  
+X  clean:
+X*** scrt/objects.c.~1~	Wed Jan 26 14:58:59 1994
+X--- scrt/objects.c	Wed Jan 26 23:43:52 1994
+X***************
+X*** 439,460 ****
+X  {
+X  	TSCP  tp, cell;
+X  	SCP  sp, utp;
+X! 	S2CINT  x, *oldp, *newp, *endnewp;
+X  	PATSCP  buckets;  
+X  
+X! 	newp = (S2CINT *)T_U( symbolstring );
+X! 	endnewp = newp+(T_U( symbolstring )->string.length+sizeof(S2CINT))/
+X! 		  sizeof(S2CINT);
+X  	x = 0;
+X  	do  x = x ^ *newp;  while  (newp++ != endnewp);
+X! 	if (x < 0) x = -x;
+X  	x = x % T_U( sc_obarray )->vector.length;
+X  	buckets = &T_U( sc_obarray )->vector.element0;
+X  	tp = buckets[ x ];
+X  	while  (tp != EMPTYLIST)  {
+X  	   utp = T_U( tp );
+X! 	   oldp = (S2CINT *)(T_U( T_U( utp->pair.car )->symbol.name ));
+X! 	   newp = (S2CINT *)(T_U( symbolstring ));
+X  	   while  (*oldp++ == *newp)
+X  	      if  (newp++ == endnewp)  return( utp->pair.car );
+X  	   tp = utp->pair.cdr;
+X--- 439,460 ----
+X  {
+X  	TSCP  tp, cell;
+X  	SCP  sp, utp;
+X! 	S2CUINT x, *oldp, *newp, *endnewp;
+X  	PATSCP  buckets;  
+X  
+X! 	newp = (S2CUINT *)T_U( symbolstring );
+X! 	endnewp = newp+(T_U( symbolstring )->string.length+sizeof(S2CUINT))/
+X! 		  sizeof(S2CUINT);
+X  	x = 0;
+X  	do  x = x ^ *newp;  while  (newp++ != endnewp);
+X! 	/*if (x < 0) x = -x;*/
+X  	x = x % T_U( sc_obarray )->vector.length;
+X  	buckets = &T_U( sc_obarray )->vector.element0;
+X  	tp = buckets[ x ];
+X  	while  (tp != EMPTYLIST)  {
+X  	   utp = T_U( tp );
+X! 	   oldp = (S2CUINT *)(T_U( T_U( utp->pair.car )->symbol.name ));
+X! 	   newp = (S2CUINT *)(T_U( symbolstring ));
+X  	   while  (*oldp++ == *newp)
+X  	      if  (newp++ == endnewp)  return( utp->pair.car );
+X  	   tp = utp->pair.cdr;
+X***************
+X*** 555,561 ****
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)
+X! 		   return( (S2CINT)( TX_U( p )->doublefloat.value ) );
+X  		break;
+X  	}
+X  	sc_error( "TSCP_S2CINT", "Argument cannot be converted to C int",
+X--- 555,561 ----
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)
+X! 		   return( (S2CINT) FLOAT_VALUE( p ) );
+X  		break;
+X  	}
+X  	sc_error( "TSCP_S2CINT", "Argument cannot be converted to C int",
+X***************
+X*** 578,584 ****
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)  {
+X! 		   v = TX_U( p )->doublefloat.value;
+X  		   if  (v <= MAXS2CINTF)
+X  		      return( (S2CUINT)( v ) );
+X  		   else
+X--- 578,584 ----
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)  {
+X! 		   v = FLOAT_VALUE( p );
+X  		   if  (v <= MAXS2CINTF)
+X  		      return( (S2CUINT)( v ) );
+X  		   else
+X***************
+X*** 614,620 ****
+X  		      return( (void*)sc_procedureaddress( p ) );
+X  		      break;
+X  		   case DOUBLEFLOATTAG:
+X! 		      v = TX_U( p )->doublefloat.value;
+X  		      if  (v <= MAXS2CINTF)
+X  		         return( (void*)((S2CUINT)( v )) );
+X  		      else
+X--- 614,620 ----
+X  		      return( (void*)sc_procedureaddress( p ) );
+X  		      break;
+X  		   case DOUBLEFLOATTAG:
+X! 		      v = FLOAT_VALUE( p );
+X  		      if  (v <= MAXS2CINTF)
+X  		         return( (void*)((S2CUINT)( v )) );
+X  		      else
+X***************
+X*** 639,645 ****
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)
+X! 		   return( TX_U( p )->doublefloat.value );
+X  		break;
+X  	}
+X  	sc_error( "TSCP_DOUBLE", "Argument cannot be converted to C double",
+X--- 639,645 ----
+X  		break;
+X  	   case EXTENDEDTAG:
+X  	        if  (TX_U( p )->extendedobj.tag == DOUBLEFLOATTAG)
+X! 		   return( FLOAT_VALUE( p ) );
+X  		break;
+X  	}
+X  	sc_error( "TSCP_DOUBLE", "Argument cannot be converted to C double",
+X*** scrt/objects.h.~1~	Wed Jan 26 14:59:13 1994
+X--- scrt/objects.h	Mon Jan 31 08:23:26 1994
+X***************
+X*** 157,163 ****
+X--- 157,167 ----
+X  	   }  record;
+X  	   struct {	/* DOUBLEFLOAT */
+X  	      S2CUINT_FIELDS2( tag:8, rest:S2CINTBITS-8 );
+X+ #ifdef SPARC
+X+ 	      int value[2];
+X+ #else
+X  	      double  value;
+X+ #endif
+X  	   }  doublefloat;
+X  	   struct {	/* FORWARD */
+X  	      S2CUINT_FIELDS2( tag:8, length:S2CINTBITS-8 );
+X***************
+X*** 510,516 ****
+X  #define UNDEFINED		((TSCP)26)
+X  
+X  #define C_CHAR( i )	 ((TSCP)(((S2CUINT)( i )<< 8)+CHARACTERTAG))
+X! #define CHAR_C( c )	 ((char)(((S2CUINT)( c )) >> 8))
+X  #define CHAR_FIX( c )    ((TSCP)(((S2CUINT)( c )) >> 6))
+X  #define FIX_CHAR( fix )  ((TSCP)(((S2CUINT)( fix ) << 6)+CHARACTERTAG))
+X  
+X--- 514,520 ----
+X  #define UNDEFINED		((TSCP)26)
+X  
+X  #define C_CHAR( i )	 ((TSCP)(((S2CUINT)( i )<< 8)+CHARACTERTAG))
+X! #define CHAR_C( c )	 ((int)(((S2CUINT)( c )) >> 8))
+X  #define CHAR_FIX( c )    ((TSCP)(((S2CUINT)( c )) >> 6))
+X  #define FIX_CHAR( fix )  ((TSCP)(((S2CUINT)( fix ) << 6)+CHARACTERTAG))
+X  
+X***************
+X*** 896,902 ****
+X--- 900,911 ----
+X  	(*((PATSCP)(((char*)( tscp ))+((sizeof(S2CINT)*2)-1)+((S2CINT)n)*2)))
+X  #endif
+X  
+X+ #ifdef SPARC
+X+ extern double sc_get_double( XAL1( int* ) );
+X+ #define FLOAT_VALUE( tscp ) sc_get_double(&(TX_U( tscp )->doublefloat.value[0]))
+X+ #else
+X  #define FLOAT_VALUE( tscp )  (TX_U( tscp )->doublefloat.value)
+X+ #endif
+X   
+X  #define PAIR_CAR( tscp )  (TP_U( tscp )->pair.car)
+X  #define PAIR_CDR( tscp )  (TP_U( tscp )->pair.cdr)
+X***************
+X*** 1064,1070 ****
+X--- 1073,1083 ----
+X  #define FIX_FLT( fix )   MAKEFLOAT( (double)(FIXED_C( fix )) )
+X  #define FIX_FLTV( fix )  ((double)(FIXED_C( fix )))
+X  #define FLTV_FLT( flt )	 MAKEFLOAT( flt )
+X+ #ifdef SPARC
+X+ #define FLTP_FLT( fltp ) MAKEFLOAT( sc_get_double((int*)(fltp)) )
+X+ #else
+X  #define FLTP_FLT( fltp ) MAKEFLOAT( *((double*)( fltp )) )
+X+ #endif
+X  
+X  #define STRING_C( s ) (&T_U( s )->string.char0)
+X  
+X***************
+X*** 1082,1088 ****
+X  #define MS2CUINT(base, bx)    (*((S2CUINT*)( ((char*)base) + bx )))
+X  #define MTSCP( base, bx )     (*((TSCP*)( ((char*)base) + bx )))
+X  #define MFLOAT( base, bx )    (*((float*)( ((char*)base) + bx )))
+X! #define MDOUBLE( base, bx )   (*((double*)( ((char*)base) + bx )))
+X  
+X  /* Low-level builtins */
+X  
+X--- 1095,1107 ----
+X  #define MS2CUINT(base, bx)    (*((S2CUINT*)( ((char*)base) + bx )))
+X  #define MTSCP( base, bx )     (*((TSCP*)( ((char*)base) + bx )))
+X  #define MFLOAT( base, bx )    (*((float*)( ((char*)base) + bx )))
+X! #ifdef SPARC
+X! #define MDOUBLE(base,bx)      sc_get_double( (int*)(((char*)base) + bx) )
+X! #define SETMDOUBLE(base,bx,y) sc_set_double( (int*)(((char*)base) + bx), y )
+X! #else
+X! #define MDOUBLE(base,bx)      (*((double*)(((char*)base) + bx)))
+X! #define SETMDOUBLE(base,bx,y) (*((double*)(((char*)base) + bx)) = y)
+X! #endif
+X  
+X  /* Low-level builtins */
+X  
+X*** scrt/scinit.c.~1~	Wed Jan 26 14:59:30 1994
+X--- scrt/scinit.c	Wed Jan 26 22:52:28 1994
+X***************
+X*** 314,326 ****
+X  {
+X  	S2CINT  bytes;
+X  	char*  addr;
+X  
+X! 	if  ( (*pagegen = sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 				       ~module_initialized )) != NULL  &&
+X!               (*type = sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 				    ~module_initialized )) != NULL  &&
+X!               (*lock = sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 				    ~module_initialized )) != NULL  &&
+X                (*link = (PAGELINK*)sc_gettable( (last-first+2)
+X  					          *sizeof( PAGELINK ),
+X  					         ~module_initialized ))
+X--- 314,327 ----
+X  {
+X  	S2CINT  bytes;
+X  	char*  addr;
+X+ 	typedef unsigned char uchar;
+X  
+X! 	if  ( (*pagegen = (uchar*)sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 					       ~module_initialized )) != NULL  &&
+X!               (*type = (uchar*)sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 					    ~module_initialized )) != NULL  &&
+X!               (*lock = (uchar* )sc_gettable( (last-first+2)*sizeof( unsigned char ),
+X! 					     ~module_initialized )) != NULL  &&
+X                (*link = (PAGELINK*)sc_gettable( (last-first+2)
+X  					          *sizeof( PAGELINK ),
+X  					         ~module_initialized ))
+X***************
+X*** 337,342 ****
+X--- 338,346 ----
+X  }
+X  
+X  /* The following function is called to initialize the heap from scratch. */
+X+ #ifdef STDERR_ISNT_UNBUFFERED
+X+ #include <stdio.h>
+X+ #endif
+X  
+X  sc_newheap()
+X  {
+X***************
+X*** 344,349 ****
+X--- 348,364 ----
+X  	TSCP  unknown;
+X  	SCP  ep;
+X  
+X+ #ifdef STDERR_ISNT_UNBUFFERED
+X+ 	/* Older versions of SunOS (before 4.1.x?) may have a line-buffered
+X+ 	 * stderr. According to "man stdio" on SunOS 4.1.2 and 5.2, stderr
+X+ 	 * _should_ be unbuffered nowadays.
+X+ 	 * If stderr isn't unbuffered, then logging messages written
+X+ 	 * _before_ the heap has been initialized will cause some malloc-ing,
+X+ 	 * which in turn confuses the heap management.
+X+ 	 * This is the place to patch stderr if necessary.
+X+ 	 */
+X+ 	setbuf(stderr, (char*)0);
+X+ #endif
+X  	sc_limit = sclimit;
+X  	sc_heappages = 0;
+X  	sc_maxheappages = scmaxheap*(ONEMB/PAGEBYTES);
+X*** scrt/scrt4.sc.~1~	Fri Jan 28 14:46:09 1994
+X--- scrt/scrt4.sc	Fri Jan 28 15:00:31 1994
+X***************
+X*** 341,347 ****
+X  
+X  (define (C-DOUBLE-SET! struct x v)
+X      ((lap (struct x v)
+X! 	  (SET (MDOUBLE (TSCP_POINTER struct) (TSCP_S2CINT x)) (TSCP_DOUBLE v)))
+X       struct x v)
+X      v)
+X  
+X--- 341,347 ----
+X  
+X  (define (C-DOUBLE-SET! struct x v)
+X      ((lap (struct x v)
+X! 	  (SETMDOUBLE (TSCP_POINTER struct) (TSCP_S2CINT x) (TSCP_DOUBLE v)))
+X       struct x v)
+X      v)
+X  
+X*** scrt/scrt4.c.~1~	Fri Jan 28 14:46:16 1994
+X--- scrt/scrt4.c	Mon Jan 31 07:01:52 1994
+X***************
+X*** 1441,1449 ****
+X          TSCP  s2878, x2879, v2880;
+X  {
+X          PUSHSTACKTRACE( t3608 );
+X!         SET( MDOUBLE( TSCP_POINTER( s2878 ), 
+X!                       TSCP_S2CINT( x2879 ) ), 
+X!              TSCP_DOUBLE( v2880 ) );
+X          POPSTACKTRACE( v2880 );
+X  }
+X  
+X--- 1441,1449 ----
+X          TSCP  s2878, x2879, v2880;
+X  {
+X          PUSHSTACKTRACE( t3608 );
+X!         SETMDOUBLE( TSCP_POINTER( s2878 ), 
+X!                     TSCP_S2CINT( x2879 ), 
+X!                     TSCP_DOUBLE( v2880 ) );
+X          POPSTACKTRACE( v2880 );
+X  }
+X  
+X*** test/makefile-tail.~1~	Fri Jan 28 19:30:17 1994
+X--- test/makefile-tail	Mon Jan 31 07:24:53 1994
+X***************
+X*** 75,84 ****
+X  	${SCC} -i -o test53 ${SCCFLAGS} test53.sc
+X  
+X  test54:	test54.c test54.o test54c.o testchk.o
+X! 	${SCC} -o test54 test54.o test54c.o testchk.o
+X  
+X  clean:
+X! 	rm -f *.o *.BAK *.CKP core *.S2C
+X  
+X  clean-sc-to-c:
+X  	rm -f ${batch-c} test.c testchk.c test50.c test51.c test52.c test53.c \
+X--- 75,84 ----
+X  	${SCC} -i -o test53 ${SCCFLAGS} test53.sc
+X  
+X  test54:	test54.c test54.o test54c.o testchk.o
+X! 	${SCC} -o test54 ${SCCFLAGS} test54.o test54c.o testchk.o
+X  
+X  clean:
+X! 	rm -f *.o *.BAK *.CKP core *.S2C test18.tmp test19.tmp
+X  
+X  clean-sc-to-c:
+X  	rm -f ${batch-c} test.c testchk.c test50.c test51.c test52.c test53.c \
+X*** test/test10.sc.~1~	Fri Jan 28 00:00:55 1994
+X--- test/test10.sc	Fri Jan 28 00:02:13 1994
+X***************
+X*** 135,141 ****
+X      (chk 755 (ABS 1.6) 1.6)
+X      (chk 756 (ABS 2) 2)
+X      (chk 757 (ABS 2.4) 2.4)
+X!     (if (member (list-ref (implementation-information) 3) '("VAX" "R2000"))
+X  	(chk 758 (ABS -536870912) 536870912.))
+X  
+X      (chk 760 (FLOOR -2) -2)
+X--- 135,142 ----
+X      (chk 755 (ABS 1.6) 1.6)
+X      (chk 756 (ABS 2) 2)
+X      (chk 757 (ABS 2.4) 2.4)
+X!     (if (member (list-ref (implementation-information) 3)
+X! 		'("VAX" "R2000" "SPARC"))
+X  	(chk 758 (ABS -536870912) 536870912.))
+X  
+X      (chk 760 (FLOOR -2) -2)
+X*** test/test11.sc.~1~	Fri Jan 28 00:03:43 1994
+X--- test/test11.sc	Fri Jan 28 00:04:21 1994
+X***************
+X*** 55,61 ****
+X  
+X  (define (test11)
+X      (let ((arch (list-ref (implementation-information) 3)))
+X! 	 (when (member arch '("VAX" "R2000"))
+X  	       (chk 01 (+ 268435455 268435456) 536870911)
+X  	       (chk 02 (+ 536870910 1) 536870911)
+X  	       (chk 03 (+ 536870909 2) 536870911)
+X--- 55,61 ----
+X  
+X  (define (test11)
+X      (let ((arch (list-ref (implementation-information) 3)))
+X! 	 (when (member arch '("VAX" "R2000" "SPARC"))
+X  	       (chk 01 (+ 268435455 268435456) 536870911)
+X  	       (chk 02 (+ 536870910 1) 536870911)
+X  	       (chk 03 (+ 536870909 2) 536870911)
+X*** test/test54c.c.~1~	Tue Jan 12 17:49:56 1993
+X--- test/test54c.c	Fri Jan 28 04:31:22 1994
+X***************
+X*** 44,50 ****
+X  
+X  /* Typed function arguments and return */
+X  
+X! #ifdef vax
+X  
+X  char* loop_pointer( x ) char *x; { return x; }
+X  
+X--- 44,50 ----
+X  
+X  /* Typed function arguments and return */
+X  
+X! #ifndef __STDC__
+X  
+X  char* loop_pointer( x ) char *x; { return x; }
+X  
+END_OF_SPARC/diffs
+if test 21716 -ne `wc -c <SPARC/diffs`; then
+    echo shar: \"SPARC/diffs\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/sparc-pragma.h -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/sparc-pragma.h\"
+else
+echo shar: Extracting \"SPARC/sparc-pragma.h\" \(158 characters\)
+sed "s/^X//" >SPARC/sparc-pragma.h <<'END_OF_SPARC/sparc-pragma.h'
+X/* This is the pragma declaration that is necessary to tell the SPARC */
+X/* compiler about the new setjmp routine. */
+X#pragma unknown_control_flow(sc_setjmp)
+END_OF_SPARC/sparc-pragma.h
+if test 158 -ne `wc -c <SPARC/sparc-pragma.h`; then
+    echo shar: \"SPARC/sparc-pragma.h\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/sparc.s -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/sparc.s\"
+else
+echo shar: Extracting \"SPARC/sparc.s\" \(8609 characters\)
+sed "s/^X//" >SPARC/sparc.s <<'END_OF_SPARC/sparc.s'
+X!
+X! SCHEME->C
+X!
+X! SPARC assembly code.
+X
+X! Take care of different conventions for global identifiers,
+X! pseudo-ops, segment/section names, and other declarations.
+X
+X#ifdef __STDC__
+X#define CONCAT(prefix,suffix)	prefix ## suffix
+X#else /* non-portable.. */
+X#define CONCAT(prefix,suffix)	prefix/**/suffix
+X#endif
+X
+X#ifdef SUNOS5
+X
+X#define XID(id) id
+X
+X#define FUNBEGIN(id)		\
+X	.section ".text" ;	\
+X	.align	4 ;		\
+X	.global	XID(id) ;	\
+XXID(id):
+X
+X#define FUNEND(id)			\
+X	.type	XID(id),#function ;	\
+X	.size	XID(id),(.-XID(id))
+X
+X#else	/*!SUNOS5, assume SUNOS4*/
+X
+X#define XID(id) CONCAT(_,id)
+X
+X#define FUNBEGIN(id)		\
+X	.seg	"text" ;	\
+X	.align	4 ;		\
+X	.global	XID(id) ;	\
+XXID(id):
+X
+X#define FUNEND(id)	/*empty*/
+X
+X#endif	/*SUNOS5*/
+X
+X#ifdef SUNOS5
+X	.file	"sparc.s"
+X#define _ASM	/* prevent typedef sysset_t */
+X#endif
+X#include <sys/syscall.h>
+X
+X! This misnamed function is responsible for providing the
+X! top of stack address, via macro STACKPTR, to the continuation
+X! builder and the heap manager. Because both of these functions
+X! immediately begin examining the memory on the stack, the register
+X! windows are flushed to memory so their values will be saved in
+X! heap allocated continuations and seen by the garbage collector.
+X!
+X! extern void *sc_processor_register()
+X
+XFUNBEGIN(sc_processor_register)
+X	ta	3			! flush register windows
+X	retl				! return
+X	mov	%sp, %o0		! ..with stack pointer
+XFUNEND(sc_processor_register)
+X
+X! On the SPARC, doubles are normally aligned on eight-byte boundaries.
+X! Sun's bundled C compiler will, upon seeing a double-typed field in a struct,
+X! make sure the byte offset from the beginning of that struct to the field
+X! is a multiple of 8. The compiler will therefore insert a 4-byte padding
+X! between the header and the f.p. value in struct doublefloat (objects.h).
+X! This means that the object really extends 4 bytes past its allocated memory,
+X! causing garbage to be read when the object is accessed (the last half of
+X! the f.p. value will often be read from the next node's header!). Sun's C
+X! compiler can be tricked into doing this correctly by declaring the field
+X! as "int value[2]" and accessing it as "*(double*)&(.. ->doublefloat.value[0])".
+X! Unfortunately, GCC _insists_ on using the ldd/std instructions when accessing
+X! any "double*". My solution (can you say "kludge"?) is to use the fake
+X! declaration hack, and two assembly-coded routines for safe accesses.
+X! As a consequence, DOUBLE_ALIGN need not be defined for the SPARC.
+X! The two routines below expect the address of the "double" itself, rather
+X! than the base address of the node.
+X
+X! extern double sc_get_double(int*)
+X
+XFUNBEGIN(sc_get_double)
+X	ld	[%o0 + 0], %f0
+X	retl
+X	ld	[%o0 + 4], %f1
+XFUNEND(sc_get_double)
+X
+X! extern void sc_set_double(int*, double)
+X	
+XFUNBEGIN(sc_set_double)
+X	st	%o1, [%o0 + 0]
+X	retl
+X	st	%o2, [%o0 + 4]
+XFUNEND(sc_set_double)
+X
+X! Rules for building continuations on the SPARC:
+X!
+X! 1 - register windows must be flushed to memory before
+X!	the stack is copied to the heap.
+X!
+X! 2 - setjmp must save the caller's local and input register
+X!	frames when saving context, because longjmp will not
+X!	have access to the saved stack to fetch the registers
+X!	from their normal resting place.
+X!
+X! 3 - longjmp must flush register windows so the correct register
+X!	values will be reloaded from memory when execution continues
+X!	on the restored stack.
+X!
+X! 4 - longjmp must restore the caller's local and input register
+X!	frames because the stack hasn't been restored when longjmp
+X!	is called.
+X!
+X
+X!
+X! Save the current environment in a heap allocated continuation.
+X!
+X! extern int sc_setjmp(int *jmpbuf)
+X
+XFUNBEGIN(sc_setjmp)
+X	st	%o6, [%o0 +  0]		! save stack pointer
+X	st	%o7, [%o0 +  4]		! save continuation pointer
+X	st	%g1, [%o0 +  8]		! save global registers
+X	st	%g2, [%o0 + 12]		! these may be allocated for
+X	st	%g3, [%o0 + 16]		! caller saves registers or
+X	st	%g4, [%o0 + 20]		! for global values.
+X	st	%g5, [%o0 + 24]
+X	st	%g6, [%o0 + 28]
+X	st	%g7, [%o0 + 32]
+X	st	%l0, [%o0 + 36]		! save local registers
+X	st	%l1, [%o0 + 40]		! the sunos setjmp uses
+X	st	%l2, [%o0 + 44]		! the register windows to
+X	st	%l3, [%o0 + 48]		! save these, we can't.
+X	st	%l4, [%o0 + 52]
+X	st	%l5, [%o0 + 56]
+X	st	%l6, [%o0 + 60]
+X	st	%l7, [%o0 + 64]
+X	st	%i0, [%o0 + 68]
+X	st	%i1, [%o0 + 72]
+X	st	%i2, [%o0 + 76]
+X	st	%i3, [%o0 + 80]
+X	st	%i4, [%o0 + 84]
+X	st	%i5, [%o0 + 88]
+X	st	%i6, [%o0 + 92]
+X	st	%i7, [%o0 + 96]
+X	mov	%y, %o2			! fetch %y
+X	st	%o2, [%o0 + 100]	! and save it
+X#ifdef SUNOS4
+X	mov	%o0, %o5		! save %o0 in %o5
+X	clr	%o0
+X	mov	SYS_sigblock, %g1	! 0x6d
+X	ta	0			! sigblock(0) --> returns old mask
+X	st	%o0, [%o5 + 104]	! save signal mask
+X#endif
+X#ifdef SUNOS5
+X	add	%o0, 104, %o2		! &jmpbuf[26]
+X	clr	%o1			! NULL
+X	clr	%o0			! <arbitrary>
+X	mov	SYS_sigprocmask, %g1	! 0x5f
+X	ta	8			! sigprocmask(0, NULL, &jmpbuf[26])
+X#endif
+X	retl				! return
+X	mov	%g0, %o0		! ..zero to caller of sc_setjmp()
+XFUNEND(sc_setjmp)
+X
+X!
+X! Restore an environment from a heap allocated continuation.
+X!
+X! extern void sc_longjmp(int *jmpbuf, int)
+X
+XFUNBEGIN(sc_longjmp)
+X	mov	%o0, %i0		! save %o0 in %i0
+X	mov	%o1, %i1		! save %o1 in %i1
+X#ifdef SUNOS4
+X	ld	[%o0 + 104], %o0
+X	mov	SYS_sigsetmask, %g1
+X	ta	0			! sigsetmask(oldmask)
+X#endif
+X#ifdef SUNOS5
+X	clr	%o2			! NULL
+X	add	%o0, 104, %o1		! &jmpbuf[26]
+X	mov	3, %o0			! SIG_SETMASK
+X	mov	SYS_sigprocmask, %g1	! 0x5f
+X	ta	8			! sigprocmask(SIG_SETMASK, &jmpbuf[26], NULL)
+X#endif
+X	mov	%i0, %o0		! restore %o0
+X	mov	%i1, %o1		! restore o1
+X	ta	3			! flush register windows
+X	ld	[%o0 +  0], %o6		! restore stack pointer
+X	ld	[%o0 +  4], %o7		! load continuation pointer
+X	ld	[%o0 +  8], %g1		! restore global registers
+X	ld	[%o0 + 12], %g2
+X	ld	[%o0 + 16], %g3
+X	ld	[%o0 + 20], %g4
+X	ld	[%o0 + 24], %g5
+X	ld	[%o0 + 28], %g6
+X	ld	[%o0 + 32], %g7
+X	ld	[%o0 + 36], %l0		! restore local frame from stack
+X	ld	[%o0 + 40], %l1
+X	ld	[%o0 + 44], %l2
+X	ld	[%o0 + 48], %l3
+X	ld	[%o0 + 52], %l4
+X	ld	[%o0 + 56], %l5
+X	ld	[%o0 + 60], %l6
+X	ld	[%o0 + 64], %l7
+X	ld	[%o0 + 68], %i0
+X	ld	[%o0 + 72], %i1
+X	ld	[%o0 + 76], %i2
+X	ld	[%o0 + 80], %i3
+X	ld	[%o0 + 84], %i4
+X	ld	[%o0 + 88], %i5
+X	ld	[%o0 + 92], %i6
+X	ld	[%o0 + 96], %i7
+X	ld	[%o0 + 100], %o2	! restore %y
+X	mov	%o2, %y
+X	retl				! return
+X	mov	%o1, %o0		! ..value is second arg
+XFUNEND(sc_longjmp)
+X
+X!
+X! Overflow-checking arithmetic functions
+X!
+X! "addcc" and "subcc" always indicate arithmetic overflow by setting the V
+X! (overflow) flag. ".mul" sets Z if it succeeded, clears it otherwise
+X
+X! given two upshifted fixnums in <%o0,%o1>, place in %o0 their sum
+X! either as an upshifted fixnum or as a tagged pointer to a boxed flonum
+X!
+X! extern int sc_iplus(int, int)
+X
+XFUNBEGIN(sc_iplus)
+X	addcc	%o0, %o1, %o2
+X	bvc	0f
+X	nop
+X	save	%sp, -72, %sp
+X	sra	%i0, 2, %i0			! downshift to remove tags
+X	sra	%i1, 2, %i1
+X	std	%i0, [%sp + 64]			! transfer to f.p. regs
+X	ldd	[%sp + 64], %f0
+X	fitod	%f0, %f2			! convert int -> double
+X	fitod	%f1, %f4
+X	faddd	%f2, %f4, %f6			! add'em
+X	std	%f6, [%sp + 64]			! move f.p. num back to arg regs
+X	ldd	[%sp + 64], %i0
+X	call	XID(sc_makedoublefloat), 2	! box & tag result
+X	restore
+X0:	retl					! return fixnum
+X	mov	%o2, %o0
+XFUNEND(sc_iplus)
+X
+X! given two upshifted fixnums in <%o0,%o1>, place in %o0 their difference
+X! either as an upshifted fixnum or as a tagged pointer to a boxed flonum
+X!
+X! extern int sc_idifference(int, int)
+X
+XFUNBEGIN(sc_idifference)
+X	subcc	%o0, %o1, %o2
+X	bvc	0f
+X	nop
+X	save	%sp, -72, %sp
+X	sra	%i0, 2, %i0
+X	sra	%i1, 2, %i1
+X	std	%i0, [%sp + 64]
+X	ldd	[%sp + 64], %f0
+X	fitod	%f0, %f2
+X	fitod	%f1, %f4
+X	fsubd	%f2, %f4, %f6
+X	std	%f6, [%sp + 64]
+X	ldd	[%sp + 64], %i0
+X	call	XID(sc_makedoublefloat), 2
+X	restore
+X0:	retl
+X	mov	%o2, %o0
+XFUNEND(sc_idifference)
+X
+X! given an upshifted fixnum in %o0, place in %o0 its negation
+X! either as an upshifted fixnum or as a tagged pointer to a boxed flonum
+X!
+X! extern int sc_inegate(int)
+X
+XFUNBEGIN(sc_inegate)
+X	subcc	%g0, %o0, %o2
+X	bvc	0f
+X	nop
+X	save	%sp, -72, %sp
+X	sra	%i0, 2, %i0
+X	st	%i0, [%sp + 64]
+X	ld	[%sp + 64], %f0	
+X	fitod	%f0, %f6
+X	fnegs	%f6, %f6
+X	std	%f6, [%sp + 64]
+X	ldd	[%sp + 64], %i0
+X	call	XID(sc_makedoublefloat), 2
+X	restore
+X0:	retl
+X	mov	%o2, %o0
+XFUNEND(sc_inegate)
+X
+X! given a downshifted fixnum in %o0 and an upshifted fixnum in %o1, place in
+X! %o0 their product either as an upshifted fixnum or as a tagged pointer to
+X! a boxed flonum
+X!
+X! extern int sc_itimes(int, int)
+X
+XFUNBEGIN(sc_itimes)
+X	save	%sp, -104, %sp
+X	mov	%i0, %o0
+X	call	.mul, 2
+X	mov	%i1, %o1
+X	bz,a	0f			! Z == no overflow
+X	mov	%o0, %i0
+X	sra	%i1, 2, %i1		! %i0 is already down-shifted
+X	std	%i0, [%sp + 96]
+X	ldd	[%sp + 96], %f0
+X	fitod	%f0, %f2
+X	fitod	%f1, %f4
+X	fmuld	%f2, %f4, %f6
+X	std	%f6, [%sp + 96]
+X	ldd	[%sp + 96], %i0
+X	call	XID(sc_makedoublefloat), 2
+X	restore
+X0:	ret
+X	restore
+XFUNEND(sc_itimes)
+END_OF_SPARC/sparc.s
+if test 8609 -ne `wc -c <SPARC/sparc.s`; then
+    echo shar: \"SPARC/sparc.s\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test ! -d SPARC/config/sunos4 ; then
+    echo shar: Creating directory \"SPARC/config/sunos4\"
+    mkdir SPARC/config/sunos4
+fi
+if test ! -d SPARC/config/sunos5 ; then
+    echo shar: Creating directory \"SPARC/config/sunos5\"
+    mkdir SPARC/config/sunos5
+fi
+if test -f SPARC/config/sunos4/makefile-head -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos4/makefile-head\"
+else
+echo shar: Extracting \"SPARC/config/sunos4/makefile-head\" \(484 characters\)
+sed "s/^X//" >SPARC/config/sunos4/makefile-head <<'END_OF_SPARC/config/sunos4/makefile-head'
+X#
+X# This is the header file for constructing make files for SPARC-SunOS4.1.x.
+X#
+X
+X# Default flags to use when invoking the C compiler.
+X
+XCFLAGS = -O
+XCC = cc
+X
+X# Assembly language object files.
+X
+XAruntime = sparc.o 
+X
+X# need to override the default ".s.o" rule in the generic makefile
+X
+Xsparc.o:	sparc.s
+X	as -o sparc.o -P -DSUNOS4 sparc.s
+X
+X# Profiled library
+X
+XPlib = libsc_p.a
+X
+X# Installation tools
+X
+XRANLIB = ranlib
+X
+X# X library
+X
+XXLIB = -lX11
+XXLIBCFLAGS =
+X
+X# End of SPARC-SunOS4.1.x header.
+END_OF_SPARC/config/sunos4/makefile-head
+if test 484 -ne `wc -c <SPARC/config/sunos4/makefile-head`; then
+    echo shar: \"SPARC/config/sunos4/makefile-head\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/config/sunos4/options-server.h -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos4/options-server.h\"
+else
+echo shar: Extracting \"SPARC/config/sunos4/options-server.h\" \(1526 characters\)
+sed "s/^X//" >SPARC/config/sunos4/options-server.h <<'END_OF_SPARC/config/sunos4/options-server.h'
+X/* SCHEME->C */
+X
+X/****************/
+X/* SPARC-SunOS4 */
+X/****************/
+X
+X#define SPARC
+X#define SUNOS4
+X
+X/* callcc.c */
+X#undef  COPY_STACK_BEFORE_LONGJMP
+X
+X/* cio.c */
+X#undef  POSIX
+X#undef  SYSV
+X#undef  SYSV4
+X#undef  HAVE_TIMES
+X
+X/* objects.h */
+X#define BIGENDIAN 1
+X#undef  COMPACTPUSHTRACE
+X#undef  COMPACTPOPTRACE
+X#undef  NEED_MACROS_ARGS
+X
+X/* scinit.c */
+X#define IMPLEMENTATION_MACHINE	"SPARC"
+X#define IMPLEMENTATION_CPU	"SPARC"
+X#define IMPLEMENTATION_OS	"SunOS 4.x"
+X#undef  IMPLEMENTATION_FS
+X#undef  STDERR_ISNT_UNBUFFERED
+X
+X/*
+X * The sc_jmp_buf buffer contains the following items:
+X * %o6-%o7, %g1-%g7, %l0-%l7, %i0-%i7, %y,  <signal mask -- 1 word>
+X * 0-4,     8-32,    36-64,   68-96,   100, 104
+X */
+Xtypedef int sc_jmp_buf[2+7+8+8+1+1];	/* heap.c, objects.h, sparc.s */
+X
+X#ifdef __STDC__
+X#undef  OLD_FASHIONED_C
+X#else
+X#define OLD_FASHIONED_C 1
+X#endif
+X#undef  DOUBLE_ALIGN			/* heap.h, objects.h */
+X#undef  STACK_GROWS_POSITIVE		/* callcc.c, objects.h, scinit.c */
+X#define MATHTRAPS 1			/* mtraps.c, objects.h, sparc.s */
+X
+Xtypedef int S2CINT;			/* Signed pointer size integer */
+Xtypedef unsigned S2CUINT;		/* Unsigned pointer size interger */
+X
+Xtypedef int PAGELINK;			/* 32-bit sc_pagelink values */
+X#define MAXS2CINT  0x7fffffff		/* Maximum value of an S2CINT */
+X#define MSBS2CUINT 0x80000000		/* S2CUINT with 1 in the MSB */
+X
+X#define STACKPTR(x) ((x) = (sc_processor_register(0)))
+X
+X/* be a server */
+X#define CHECKSTACK 1			/* objects.h */
+X#undef  S2CSIGNALS			/* cio.c */
+X#define TIMESLICE 1			/* cio.c, cio.h, objects.h */
+END_OF_SPARC/config/sunos4/options-server.h
+if test 1526 -ne `wc -c <SPARC/config/sunos4/options-server.h`; then
+    echo shar: \"SPARC/config/sunos4/options-server.h\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/config/sunos4/options.h -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos4/options.h\"
+else
+echo shar: Extracting \"SPARC/config/sunos4/options.h\" \(1525 characters\)
+sed "s/^X//" >SPARC/config/sunos4/options.h <<'END_OF_SPARC/config/sunos4/options.h'
+X/* SCHEME->C */
+X
+X/****************/
+X/* SPARC-SunOS4 */
+X/****************/
+X
+X#define SPARC
+X#define SUNOS4
+X
+X/* callcc.c */
+X#undef  COPY_STACK_BEFORE_LONGJMP
+X
+X/* cio.c */
+X#undef  POSIX
+X#undef  SYSV
+X#undef  SYSV4
+X#undef  HAVE_TIMES
+X
+X/* objects.h */
+X#define BIGENDIAN 1
+X#undef  COMPACTPUSHTRACE
+X#undef  COMPACTPOPTRACE
+X#undef  NEED_MACROS_ARGS
+X
+X/* scinit.c */
+X#define IMPLEMENTATION_MACHINE	"SPARC"
+X#define IMPLEMENTATION_CPU	"SPARC"
+X#define IMPLEMENTATION_OS	"SunOS 4.x"
+X#undef  IMPLEMENTATION_FS
+X#undef  STDERR_ISNT_UNBUFFERED
+X
+X/*
+X * The sc_jmp_buf buffer contains the following items:
+X * %o6-%o7, %g1-%g7, %l0-%l7, %i0-%i7, %y,  <signal mask -- 1 word>
+X * 0-4,     8-32,    36-64,   68-96,   100, 104
+X */
+Xtypedef int sc_jmp_buf[2+7+8+8+1+1];	/* heap.c, objects.h, sparc.s */
+X
+X#ifdef __STDC__
+X#undef  OLD_FASHIONED_C
+X#else
+X#define OLD_FASHIONED_C 1
+X#endif
+X#undef  DOUBLE_ALIGN			/* heap.h, objects.h */
+X#undef  STACK_GROWS_POSITIVE		/* callcc.c, objects.h, scinit.c */
+X#define MATHTRAPS 1			/* mtraps.c, objects.h, sparc.s */
+X
+Xtypedef int S2CINT;			/* Signed pointer size integer */
+Xtypedef unsigned S2CUINT;		/* Unsigned pointer size interger */
+X
+Xtypedef int PAGELINK;			/* 32-bit sc_pagelink values */
+X#define MAXS2CINT  0x7fffffff		/* Maximum value of an S2CINT */
+X#define MSBS2CUINT 0x80000000		/* S2CUINT with 1 in the MSB */
+X
+X#define STACKPTR(x) ((x) = (sc_processor_register(0)))
+X
+X/* not a server */
+X#undef  CHECKSTACK			/* objects.h */
+X#define S2CSIGNALS 1			/* cio.c */
+X#undef  TIMESLICE			/* cio.c, cio.h, objects.h */
+END_OF_SPARC/config/sunos4/options.h
+if test 1525 -ne `wc -c <SPARC/config/sunos4/options.h`; then
+    echo shar: \"SPARC/config/sunos4/options.h\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/config/sunos5/makefile-head -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos5/makefile-head\"
+else
+echo shar: Extracting \"SPARC/config/sunos5/makefile-head\" \(477 characters\)
+sed "s/^X//" >SPARC/config/sunos5/makefile-head <<'END_OF_SPARC/config/sunos5/makefile-head'
+X#
+X# This is the header file for constructing make files for SPARC-SunOS5.x
+X#
+X
+X# Default flags to use when invoking the C compiler.
+X
+XCFLAGS = -O
+XCC = cc
+X
+X# Assembly language object files.
+X
+XAruntime = sparc.o 
+X
+X# need to override the default ".s.o" rule in the generic makefile
+X
+Xsparc.o:	sparc.s
+X	as -o sparc.o -P -DSUNOS5 sparc.s
+X
+X# Profiled library
+X
+XPlib = libsc_p.a
+X
+X# Installation tools
+X
+XRANLIB = echo
+X
+X# X library
+X
+XXLIB = -lX11
+XXLIBCFLAGS =
+X
+X# End of SPARC-SunOS5.x header.
+END_OF_SPARC/config/sunos5/makefile-head
+if test 477 -ne `wc -c <SPARC/config/sunos5/makefile-head`; then
+    echo shar: \"SPARC/config/sunos5/makefile-head\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/config/sunos5/options-server.h -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos5/options-server.h\"
+else
+echo shar: Extracting \"SPARC/config/sunos5/options-server.h\" \(1480 characters\)
+sed "s/^X//" >SPARC/config/sunos5/options-server.h <<'END_OF_SPARC/config/sunos5/options-server.h'
+X/* SCHEME->C */
+X
+X/****************/
+X/* SPARC-SunOS5 */
+X/****************/
+X
+X#define SPARC
+X#define SUNOS5
+X
+X/* callcc.c */
+X#undef  COPY_STACK_BEFORE_LONGJMP
+X
+X/* cio.c */
+X#define POSIX 1
+X#define SYSV 1
+X#define SYSV4 1
+X#undef  HAVE_RUSAGE
+X
+X/* objects.h */
+X#define BIGENDIAN 1
+X#undef  COMPACTPUSHTRACE
+X#undef  COMPACTPOPTRACE
+X#undef  NEED_MACROS_ARGS
+X
+X/* scinit.c */
+X#define IMPLEMENTATION_MACHINE	"SPARC"
+X#define IMPLEMENTATION_CPU	"SPARC"
+X#define IMPLEMENTATION_OS	"SunOS 5.x"
+X#undef  IMPLEMENTATION_FS
+X#undef  STDERR_ISNT_UNBUFFERED
+X
+X/*
+X * The sc_jmp_buf buffer contains the following items:
+X * %o6-%o7, %g1-%g7, %l0-%l7, %i0-%i7, %y,  <sigset_t -- 4 words>
+X * 0-4,     8-32,    36-64,   68-96,   100, 104-116
+X */
+Xtypedef int sc_jmp_buf[2+7+8+8+1+4];	/* heap.c, objects.h, sparc.s */
+X
+X#undef  OLD_FASHIONED_C
+X#undef  DOUBLE_ALIGN			/* heap.h, objects.h */
+X#undef  STACK_GROWS_POSITIVE		/* callcc.c, objects.h, scinit.c */
+X#define MATHTRAPS 1			/* mtraps.c, objects.h, sparc.s */
+X
+Xtypedef int S2CINT;			/* Signed pointer size integer */
+Xtypedef unsigned S2CUINT;		/* Unsigned pointer size interger */
+X
+Xtypedef int PAGELINK;			/* 32-bit sc_pagelink values */
+X#define MAXS2CINT  0x7fffffff		/* Maximum value of an S2CINT */
+X#define MSBS2CUINT 0x80000000		/* S2CUINT with 1 in the MSB */
+X
+X#define STACKPTR(x) ((x) = (sc_processor_register(0)))
+X
+X/* be a server */
+X#define CHECKSTACK 1			/* objects.h */
+X#undef  S2CSIGNALS			/* cio.c */
+X#define TIMESLICE 1			/* cio.c, cio.h, objects.h */
+END_OF_SPARC/config/sunos5/options-server.h
+if test 1480 -ne `wc -c <SPARC/config/sunos5/options-server.h`; then
+    echo shar: \"SPARC/config/sunos5/options-server.h\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+if test -f SPARC/config/sunos5/options.h -a "${1}" != "-c" ; then 
+  echo shar: Will not over-write existing file \"SPARC/config/sunos5/options.h\"
+else
+echo shar: Extracting \"SPARC/config/sunos5/options.h\" \(1479 characters\)
+sed "s/^X//" >SPARC/config/sunos5/options.h <<'END_OF_SPARC/config/sunos5/options.h'
+X/* SCHEME->C */
+X
+X/****************/
+X/* SPARC-SunOS5 */
+X/****************/
+X
+X#define SPARC
+X#define SUNOS5
+X
+X/* callcc.c */
+X#undef  COPY_STACK_BEFORE_LONGJMP
+X
+X/* cio.c */
+X#define POSIX 1
+X#define SYSV 1
+X#define SYSV4 1
+X#undef  HAVE_RUSAGE
+X
+X/* objects.h */
+X#define BIGENDIAN 1
+X#undef  COMPACTPUSHTRACE
+X#undef  COMPACTPOPTRACE
+X#undef  NEED_MACROS_ARGS
+X
+X/* scinit.c */
+X#define IMPLEMENTATION_MACHINE	"SPARC"
+X#define IMPLEMENTATION_CPU	"SPARC"
+X#define IMPLEMENTATION_OS	"SunOS 5.x"
+X#undef  IMPLEMENTATION_FS
+X#undef  STDERR_ISNT_UNBUFFERED
+X
+X/*
+X * The sc_jmp_buf buffer contains the following items:
+X * %o6-%o7, %g1-%g7, %l0-%l7, %i0-%i7, %y,  <sigset_t -- 4 words>
+X * 0-4,     8-32,    36-64,   68-96,   100, 104-116
+X */
+Xtypedef int sc_jmp_buf[2+7+8+8+1+4];	/* heap.c, objects.h, sparc.s */
+X
+X#undef  OLD_FASHIONED_C
+X#undef  DOUBLE_ALIGN			/* heap.h, objects.h */
+X#undef  STACK_GROWS_POSITIVE		/* callcc.c, objects.h, scinit.c */
+X#define MATHTRAPS 1			/* mtraps.c, objects.h, sparc.s */
+X
+Xtypedef int S2CINT;			/* Signed pointer size integer */
+Xtypedef unsigned S2CUINT;		/* Unsigned pointer size interger */
+X
+Xtypedef int PAGELINK;			/* 32-bit sc_pagelink values */
+X#define MAXS2CINT  0x7fffffff		/* Maximum value of an S2CINT */
+X#define MSBS2CUINT 0x80000000		/* S2CUINT with 1 in the MSB */
+X
+X#define STACKPTR(x) ((x) = (sc_processor_register(0)))
+X
+X/* not a server */
+X#undef  CHECKSTACK			/* objects.h */
+X#define S2CSIGNALS 1			/* cio.c */
+X#undef  TIMESLICE			/* cio.c, cio.h, objects.h */
+END_OF_SPARC/config/sunos5/options.h
+if test 1479 -ne `wc -c <SPARC/config/sunos5/options.h`; then
+    echo shar: \"SPARC/config/sunos5/options.h\" unpacked with wrong size!
+fi
+# end of overwriting check
+fi
+echo shar: End of shell archive.
+exit 0

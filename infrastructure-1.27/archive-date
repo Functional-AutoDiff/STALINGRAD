@@ -1,0 +1,7 @@
+#! /bin/csh -f
+set day=`date +%w | tr "0123456" "smtwrfh"` date=`date +%e`
+set month = `date +%m`
+set months = (jan feb mar apr may jun jul aug sep oct nov dec)
+set month = $months[$month]
+
+echo $day$date$month`date +%y`

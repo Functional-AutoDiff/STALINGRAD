@@ -1,0 +1,68 @@
+			 Infrastructure version 1.27
+			 ---------------------------
+
+			     Jeffrey Mark Siskind
+		School of Electrical and Computer Engineering
+			      Purdue University
+		  Electrical Engineering Building, Room 330
+			   465 Northwestern Avenue
+		       West Lafayette IN 47907-2035 USA
+			     voice: 765/496-3197
+			      fax: 765/494-6440
+			       qobi@purdue.edu
+		       http://www.ece.purdue.edu/~qobi
+
+			   Thursday 27 August 2009
+
+We have adopted a new infrastructure for all of the software that we develop
+and distribute.  You must set up an isomorphic infrastructure in order to
+install any of our software releases.  This new infrastructure is designed to
+allow us to support multiple architectures and shared software components with
+minimum effort.
+
+Most of our software is built on top of Scheme->C.  Because it is necessary to
+apply a number of patches to Scheme->C, and because the installation of
+Scheme->C is complex and varies widely from architecture to architecture, we
+now include a virgin 15mar93 Scheme->C distribution with Infrastructure along
+with virgin patches for SPARC, Linux, and FreeBSD, our own patches, and a
+script that automatically builds and installs Scheme->C with the appropriate
+patches for Linux, FreeBSD, SunOS 4, SunOS 5, IRIX 4, IRIX 5, IRIX 6, and
+OSF/1.  You will need to modify this script for other architectures.  If you
+modify the installation script, say to support another architecture, please
+send us your modifications so that we can include them in a future release.
+
+To install, first, unpack this infrastructure distribution:
+
+% uncompress infrastructure-1.27.tar.Z
+% tar xvf infrastructure-1.27.tar
+% rm infrastructure-1.27.tar
+% cd infrastructure-1.27
+
+Second, do the following for each architecture (on a machine of the
+appropriate architecture):
+
+% ./build
+
+Third, define the environment variables QARCHITECTURE_PATH to be
+`architecture-path` and QINSTALLDIR to be your home directory.  For example:
+
+% setenv QARCHITECTURE_PATH `~/bin/architecture-path`
+% setenv QINSTALLDIR ~
+
+These last two lines could be added to your .cshrc.
+
+Fourth, put ~/bin and ~/bin/`~/bin/architecture-path` in your $PATH,
+if they are not already there.  For example:
+
+% set path = (~/bin/${QARCHITECTURE_PATH} ~/bin $path)
+
+This last line could be added to your .cshrc.
+
+Before building on IRIX 5 and IRIX 6 you need to make sure that you have the
+files crt1.o, crtn.o, libc.a, and libm.a in /usr/lib/nonshared.  These files
+are part of IRIX 5 and IRIX 6 but are not installed at some sites.  They are
+included in this distribution for you to install if needed.
+
+Thanks to Marc Feeley for giving me access to an Alpha running OSF/1 and to
+the Computer Science Department at Rice University for giving me access to a
+Pentium Pro running FreeBSD to produce those ports.

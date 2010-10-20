@@ -1,0 +1,5 @@
+#!/bin/sh
+sccomp -scl 40 -scmh 800 -cc cc \
+	-LIBDIR ${QINSTALLDIR}/lib/${QARCHITECTURE_PATH} \
+	-I ${QINSTALLDIR}/include/${QARCHITECTURE_PATH} \
+	-I ${QINSTALLDIR}/include $*

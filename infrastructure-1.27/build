@@ -1,0 +1,1283 @@
+#!/bin/csh -f
+setenv INSTALLDIR `echo ~`
+setenv ARCHITECTURE_PATH `./architecture-path`
+setenv INSTALLLIB ${INSTALLDIR}/lib
+setenv INSTALLLIBA ${INSTALLLIB}/${ARCHITECTURE_PATH}
+setenv INSTALLBIN ${INSTALLDIR}/bin
+setenv INSTALLBINA ${INSTALLBIN}/${ARCHITECTURE_PATH}
+setenv INSTALLINCLUDE ${INSTALLDIR}/include
+setenv INSTALLINCLUDEA ${INSTALLINCLUDE}/${ARCHITECTURE_PATH}
+if (`uname -s` == Linux && `uname -m` == alpha) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  make forAOSF
+  cd AOSF
+  find . -exec chmod +w {} \;
+  cp ../../apply.h scrt/.
+  cp ../../apply.c scrt/.
+  cp ../../objects.h scrt/.
+  cp ../../objects.c scrt/.
+  cp ../../heap-linux.h scrt/heap.h
+  cp ../../cio-linux.c scrt/cio.c
+  cp ../../scinit-linux.c scrt/scinit.c
+  cp ../../alpha-linux.S scrt/.
+  cp ../../makefile-alpha-linux-cdecl cdecl/makefile
+  cp ../../makefile-alpha-linux-scrt scrt/makefile
+  cp ../../makefile-alpha-linux-scsc scsc/makefile
+  cp ../../makefile-alpha-linux-server server/makefile
+  cp ../../makefile-alpha-linux-test test/makefile
+  cp ../../makefile-alpha-linux-xlib xlib/makefile
+  cd scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-linux.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc-egcs ${INSTALLBINA}/scc
+  cd Scheme-to-C/AOSF
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == FreeBSD) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  cp ../FREEBSD-15mar93.patches .
+  uudecode FREEBSD-15mar93.patches
+  zcat FREEBSD-15mar93.patches.tar.gz|tar xf -
+  patch <ports/FREEBSD/15mar93-diffs
+  make forFREEBSD
+  find . -exec chmod +w {} \;
+  cp ../apply.h FREEBSD/scrt/.
+  cp ../apply.c FREEBSD/scrt/.
+  cp ../objects.h FREEBSD/scrt/.
+  cp ../objects.c FREEBSD/scrt/.
+  cd FREEBSD
+  cd scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-freebsd.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/FREEBSD
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  ranlib -t ${INSTALLLIBA}/libsc.a
+  ranlib -t ${INSTALLLIBA}/scxl.a
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == SunOS && `uname -r|cut -d. -f1` == "4") then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  sed <../SOL2-15mar93.patches >SOL2-15mar93.patches "1,64D"
+  sh SOL2-15mar93.patches
+  cd SPARC
+  ./build
+  ./configure sunos4
+  find . -exec chmod +w {} \;
+  cp ../../apply.h scrt/.
+  cp ../../apply.c scrt/.
+  cd scrt
+  make clean noprogs
+  make Xmv
+  cp ../../../scrt4-sparc.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make Xmv
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/SPARC
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  ranlib -t ${INSTALLLIBA}/libsc.a
+  ranlib -t ${INSTALLLIBA}/scxl.a
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == SunOS && `uname -r|cut -d. -f1` == "5") then
+  setenv PATH /usr/bin:$PATH
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  sed <../SOL2-15mar93.patches >SOL2-15mar93.patches "1,64D"
+  sh SOL2-15mar93.patches
+  cd SPARC
+  ./build
+  ./configure sunos5
+  find . -exec chmod +w {} \;
+  cp ../../apply.h scrt/.
+  cp ../../apply.c scrt/.
+  cp ../../cio-sparc.c scrt/cio.c
+  cp ../../makefile-sunos5-scrt scrt/makefile
+  cd scrt
+  make clean noprogs
+  make Xmv
+  cp ../../../scrt4-sparc.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make Xmv
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/SPARC
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == IRIX && `uname -r|cut -d. -f1` == "4") then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  make forSGIMIPS
+  cd SGIMIPS
+  find . -exec chmod +w {} \;
+  cp ../../apply.h scrt/.
+  cp ../../apply.c scrt/.
+  cp ../../objects.h scrt/.
+  cp ../../objects.c scrt/.
+  cd scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-sgimips.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/SGIMIPS
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == IRIX && `uname -r|cut -d. -f1` == "5") then
+  if (! -e /usr/lib/nonshared/crt1.o) then
+    echo You need to install /usr/lib/nonshared/crt1.o
+  else if (! -e /usr/lib/nonshared/crtn.o) then
+    echo You need to install /usr/lib/nonshared/crtn.o
+  else if (! -e /usr/lib/nonshared/libc.a) then
+    echo You need to install /usr/lib/nonshared/libc.a
+  else if (! -e /usr/lib/nonshared/libm.a) then
+    echo You need to install /usr/lib/nonshared/libm.a
+  else
+    rm -rf Scheme-to-C
+    mkdir Scheme-to-C
+    cd Scheme-to-C
+    tar xf ../15mar93.tar
+    make forSGIMIPS
+    cd SGIMIPS
+    find . -exec chmod +w {} \;
+    cp ../../apply.h scrt/.
+    cp ../../apply.c scrt/.
+    cp ../../objects.h scrt/.
+    cp ../../objects.c scrt/.
+    cp ../../makefile-irix5-cdecl cdecl/makefile
+    cp ../../makefile-irix5-scrt scrt/makefile
+    cp ../../makefile-irix5-scsc scsc/makefile
+    cp ../../makefile-irix5-test test/makefile
+    cp ../../makefile-irix5-xlib xlib/makefile
+    cd scrt
+    make clean noprogs
+    make port
+    cp ../../../scrt4-sgimips.sc scrt4.sc
+    cd ../scsc
+    make clean noprogs
+    make port
+    cd ../scrt
+    make sc-to-c
+    make port
+    cd ../scsc
+    make clean noprogs
+    make port
+    cd ../cdecl
+    make clean clean-sc-to-c noprogs
+    make all
+    cd ../xlib
+    make clean clean-sc-to-c clean-cdecl noprogs
+    make scxl.a
+    cd ../test
+    make clean clean-sc-to-c noprogs
+    make all
+    cd ../../..
+    if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+    if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+    if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+    if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+    if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+    if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+    if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+    cp architecture-path ${INSTALLBIN}/.
+    cp archive-date ${INSTALLBIN}/.
+    cp scc ${INSTALLBINA}/.
+    cp libX11.a ${INSTALLLIBA}/.
+    cd Scheme-to-C/SGIMIPS
+    cp xlib/depth.sch ${INSTALLINCLUDE}/.
+    cp xlib/screen.sch ${INSTALLINCLUDE}/.
+    cp xlib/visual.sch ${INSTALLINCLUDE}/.
+    cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+    cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+    cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+    cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+    cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+    cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+    cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+    cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+    cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+    cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+    cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+    cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+    cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+    cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+    cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+    cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+    cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+    cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+    cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+    cp scsc/sccomp ${INSTALLBINA}/.
+    cp scrt/sci ${INSTALLBINA}/.
+    cp scrt/libsc.a ${INSTALLLIBA}/.
+    cp scrt/objects.h ${INSTALLLIBA}/.
+    cp scrt/options.h ${INSTALLLIBA}/.
+    cp scrt/predef.sc ${INSTALLLIBA}/.
+    cp xlib/scxl.a ${INSTALLLIBA}/.
+    cd ../..
+    rm -rf Scheme-to-C
+    echo Infrastructure installed on `./architecture-path`
+    endif
+else if (`uname -s` == IRIX64 && `uname -r|cut -d. -f1` == "6") then
+  if (! -e /usr/lib/nonshared/crt1.o) then
+    echo You need to install /usr/lib/nonshared/crt1.o
+  else if (! -e /usr/lib/nonshared/crtn.o) then
+    echo You need to install /usr/lib/nonshared/crtn.o
+  else if (! -e /usr/lib/nonshared/libc.a) then
+    echo You need to install /usr/lib/nonshared/libc.a
+  else if (! -e /usr/lib/nonshared/libm.a) then
+    echo You need to install /usr/lib/nonshared/libm.a
+  else
+    rm -rf Scheme-to-C
+    mkdir Scheme-to-C
+    cd Scheme-to-C
+    tar xf ../15mar93.tar
+    make forSGIMIPS
+    cd SGIMIPS
+    find . -exec chmod +w {} \;
+    cp ../../apply.h scrt/.
+    cp ../../apply.c scrt/.
+    cp ../../objects.h scrt/.
+    cp ../../objects.c scrt/.
+    cp ../../makefile-irix5-cdecl cdecl/makefile
+    cp ../../makefile-irix5-scrt scrt/makefile
+    cp ../../makefile-irix5-scsc scsc/makefile
+    cp ../../makefile-irix5-test test/makefile
+    cp ../../makefile-irix5-xlib xlib/makefile
+    cd scrt
+    make clean noprogs
+    make port
+    cp ../../../scrt4-sgimips.sc scrt4.sc
+    cd ../scsc
+    make clean noprogs
+    make port
+    cd ../scrt
+    make sc-to-c
+    make port
+    cd ../scsc
+    make clean noprogs
+    make port
+    cd ../cdecl
+    make clean clean-sc-to-c noprogs
+    make all
+    cd ../xlib
+    make clean clean-sc-to-c clean-cdecl noprogs
+    make scxl.a
+    cd ../test
+    make clean clean-sc-to-c noprogs
+    make all
+    cd ../../..
+    if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+    if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+    if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+    if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+    if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+    if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+    if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+    cp architecture-path ${INSTALLBIN}/.
+    cp archive-date ${INSTALLBIN}/.
+    cp scc ${INSTALLBINA}/.
+    cp libX11.a ${INSTALLLIBA}/.
+    cd Scheme-to-C/SGIMIPS
+    cp xlib/depth.sch ${INSTALLINCLUDE}/.
+    cp xlib/screen.sch ${INSTALLINCLUDE}/.
+    cp xlib/visual.sch ${INSTALLINCLUDE}/.
+    cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+    cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+    cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+    cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+    cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+    cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+    cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+    cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+    cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+    cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+    cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+    cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+    cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+    cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+    cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+    cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+    cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+    cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+    cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+    cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+    cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+    cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+    cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+    cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+    cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+    cp scsc/sccomp ${INSTALLBINA}/.
+    cp scrt/sci ${INSTALLBINA}/.
+    cp scrt/libsc.a ${INSTALLLIBA}/.
+    cp scrt/objects.h ${INSTALLLIBA}/.
+    cp scrt/options.h ${INSTALLLIBA}/.
+    cp scrt/predef.sc ${INSTALLLIBA}/.
+    cp xlib/scxl.a ${INSTALLLIBA}/.
+    cd ../..
+    rm -rf Scheme-to-C
+    echo Infrastructure installed on `./architecture-path`
+    endif
+else if (`uname -s` == OSF1) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  make forAOSF
+  cd AOSF
+  find . -exec chmod +w {} \;
+  cp ../../apply.h scrt/.
+  cp ../../apply.c scrt/.
+  cp ../../objects.h scrt/.
+  cp ../../objects.c scrt/.
+  cp ../../makefile-aosf-cdecl cdecl/makefile
+  cp ../../makefile-aosf-scrt scrt/makefile
+  cp ../../makefile-aosf-scsc scsc/makefile
+  cp ../../makefile-aosf-test test/makefile
+  cp ../../makefile-aosf-xlib xlib/makefile
+  cd scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-aosf.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/AOSF
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == Linux &&\
+         -r /etc/redhat-release &&\
+         (`cut -f 2 -d " " /etc/redhat-release` == 5.1 ||\
+          `cut -f 5 -d " " /etc/redhat-release` == 5.2 ||\
+          `cut -f 5 -d " " /etc/redhat-release` == 6.0 ||\
+          `cut -f 5 -d " " /etc/redhat-release` == 6.1 ||\
+          `cut -f 5 -d " " /etc/redhat-release` == 6.2)) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  sed <../LINUX-15mar93.patches >LINUX-15mar93.patches "1,45D"
+  uudecode <LINUX-15mar93.patches
+  zcat LINUX-15mar93.patches.tar.Z|tar xf -
+  patch -p0 <linux.diff
+  make forLINUX
+  find . -exec chmod +w {} \;
+  cp ../apply.h LINUX/scrt/.
+  cp ../apply.c LINUX/scrt/.
+  cp ../objects.h LINUX/scrt/.
+  cp ../objects.c LINUX/scrt/.
+  cp ../heap-linux.h LINUX/scrt/heap.h
+  cp ../cio-linux.c LINUX/scrt/cio.c
+  cp ../heap-linux.c LINUX/scrt/heap.c
+  cp ../scinit-linux.c LINUX/scrt/scinit.c
+  cp ../linux.s LINUX/scrt/.
+  cd LINUX
+  cp ../../makefile-linux-egcs-cdecl cdecl/makefile
+  cp ../../makefile-linux-egcs-scrt scrt/makefile
+  cp ../../makefile-linux-egcs-scsc scsc/makefile
+  cp ../../makefile-linux-egcs-server server/makefile
+  cp ../../makefile-linux-egcs-test test/makefile
+  cp ../../makefile-linux-egcs-xlib xlib/makefile
+  cd scsc
+  make tcshscc
+  cd ../scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-linux.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc-egcs ${INSTALLBINA}/scc
+  cd Scheme-to-C/LINUX
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  ranlib -t ${INSTALLLIBA}/libsc.a
+  ranlib -t ${INSTALLLIBA}/scxl.a
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == Linux &&\
+         -r /etc/redhat-release &&\
+         (`cut -f 2 -d " " /etc/redhat-release` == 7.0 ||\
+          `cut -f 5 -d " " /etc/redhat-release` == 7.1)) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  sed <../LINUX-15mar93.patches >LINUX-15mar93.patches "1,45D"
+  uudecode <LINUX-15mar93.patches
+  zcat LINUX-15mar93.patches.tar.Z|tar xf -
+  patch -p0 <linux.diff
+  make forLINUX
+  find . -exec chmod +w {} \;
+  cp ../apply.h LINUX/scrt/.
+  cp ../apply.c LINUX/scrt/.
+  cp ../objects.h LINUX/scrt/.
+  cp ../objects.c LINUX/scrt/.
+  cp ../heap-linux.h LINUX/scrt/heap.h
+  cp ../cio-linux.c LINUX/scrt/cio.c
+  cp ../heap-linux.c LINUX/scrt/heap.c
+  cp ../scinit-linux.c LINUX/scrt/scinit.c
+  cp ../linux.s LINUX/scrt/.
+  cd LINUX
+  cp ../../makefile-linux-cdecl cdecl/makefile
+  cp ../../makefile-linux-scrt scrt/makefile
+  cp ../../makefile-linux-scsc scsc/makefile
+  cp ../../makefile-linux-server server/makefile
+  cp ../../makefile-linux-test test/makefile
+  cp ../../makefile-linux-xlib xlib/makefile
+  cd scsc
+  make tcshscc
+  cd ../scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-linux.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/scc
+  cd Scheme-to-C/LINUX
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  ranlib -t ${INSTALLLIBA}/libsc.a
+  ranlib -t ${INSTALLLIBA}/scxl.a
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else if (`uname -s` == Linux) then
+  rm -rf Scheme-to-C
+  mkdir Scheme-to-C
+  cd Scheme-to-C
+  tar xf ../15mar93.tar
+  sed <../LINUX-15mar93.patches >LINUX-15mar93.patches "1,45D"
+  uudecode <LINUX-15mar93.patches
+  zcat LINUX-15mar93.patches.tar.Z|tar xf -
+  patch -p0 <linux.diff
+  make forLINUX
+  find . -exec chmod +w {} \;
+  cp ../apply.h LINUX/scrt/.
+  cp ../apply.c LINUX/scrt/.
+  cp ../objects.h LINUX/scrt/.
+  cp ../objects.c LINUX/scrt/.
+  cp ../heap-linux.h LINUX/scrt/heap.h
+  cp ../cio-linux.c LINUX/scrt/cio.c
+  cp ../heap-linux.c LINUX/scrt/heap.c
+  cp ../scinit-linux.c LINUX/scrt/scinit.c
+  cp ../linux.s LINUX/scrt/.
+  cd LINUX
+  cp ../../makefile-linux-cdecl cdecl/makefile
+  cp ../../makefile-linux-scrt scrt/makefile
+  cp ../../makefile-linux-scsc scsc/makefile
+  cp ../../makefile-linux-server server/makefile
+  cp ../../makefile-linux-test test/makefile
+  cp ../../makefile-linux-xlib xlib/makefile
+  cp ../../xwss.sc xlib/.
+  cd scsc
+  make tcshscc
+  cd ../scrt
+  make clean noprogs
+  make port
+  cp ../../../scrt4-linux.sc scrt4.sc
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../scrt
+  make sc-to-c
+  make port
+  cd ../scsc
+  make clean noprogs
+  make port
+  cd ../cdecl
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../xlib
+  make clean clean-sc-to-c clean-cdecl noprogs
+  make scxl.a
+  cd ../test
+  make clean clean-sc-to-c noprogs
+  make all
+  cd ../../..
+  if (! -e ${INSTALLDIR}) mkdir ${INSTALLDIR}
+  if (! -e ${INSTALLLIB}) mkdir ${INSTALLLIB}
+  if (! -e ${INSTALLLIBA}) mkdir ${INSTALLLIBA}
+  if (! -e ${INSTALLBIN}) mkdir ${INSTALLBIN}
+  if (! -e ${INSTALLBINA}) mkdir ${INSTALLBINA}
+  if (! -e ${INSTALLINCLUDE}) mkdir ${INSTALLINCLUDE}
+  if (! -e ${INSTALLINCLUDEA}) mkdir ${INSTALLINCLUDEA}
+  cp architecture-path ${INSTALLBIN}/.
+  cp archive-date ${INSTALLBIN}/.
+  cp scc ${INSTALLBINA}/.
+  cd Scheme-to-C/LINUX
+  cp xlib/depth.sch ${INSTALLINCLUDE}/.
+  cp xlib/screen.sch ${INSTALLINCLUDE}/.
+  cp xlib/visual.sch ${INSTALLINCLUDE}/.
+  cp xlib/xarc.sch ${INSTALLINCLUDE}/.
+  cp xlib/xchar2b.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcharstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xclasshint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcolor.sch ${INSTALLINCLUDE}/.
+  cp xlib/xcomposestatus.sch ${INSTALLINCLUDE}/.
+  cp xlib/xevent.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontprop.sch ${INSTALLINCLUDE}/.
+  cp xlib/xfontstruct.sch ${INSTALLINCLUDE}/.
+  cp xlib/xgcvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xhostaddress.sch ${INSTALLINCLUDE}/.
+  cp xlib/xiconsize.sch ${INSTALLINCLUDE}/.
+  cp xlib/ximage.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardcontrol.sch ${INSTALLINCLUDE}/.
+  cp xlib/xkeyboardstate.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibCONSTANTS.sch ${INSTALLINCLUDE}/.
+  cp xlib/xlibTYPES.sch ${INSTALLINCLUDE}/.
+  cp xlib/xmodifierkeymap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpixmapformatvalues.sch ${INSTALLINCLUDE}/.
+  cp xlib/xpoint.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrectangle.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmoptiondescrec.sch ${INSTALLINCLUDE}/.
+  cp xlib/xrmvalue.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsegment.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsetwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xsizehints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xstandardcolormap.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextitem16.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtextproperty.sch ${INSTALLINCLUDE}/.
+  cp xlib/xtimecoord.sch ${INSTALLINCLUDE}/.
+  cp xlib/xvisualinfo.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowattributes.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwindowchanges.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwmhints.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws10.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws2.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws3.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws4.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws5.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws6.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws7.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws8.sch ${INSTALLINCLUDE}/.
+  cp xlib/xws9.sch ${INSTALLINCLUDE}/.
+  cp xlib/xwsr4.sch ${INSTALLINCLUDE}/.
+  cp scsc/sccomp ${INSTALLBINA}/.
+  cp scrt/sci ${INSTALLBINA}/.
+  cp scrt/libsc.a ${INSTALLLIBA}/.
+  cp scrt/objects.h ${INSTALLLIBA}/.
+  cp scrt/options.h ${INSTALLLIBA}/.
+  cp scrt/predef.sc ${INSTALLLIBA}/.
+  cp xlib/scxl.a ${INSTALLLIBA}/.
+  ranlib -t ${INSTALLLIBA}/libsc.a
+  ranlib -t ${INSTALLLIBA}/scxl.a
+  cd ../..
+  rm -rf Scheme-to-C
+  echo Infrastructure installed on `./architecture-path`
+else
+  echo "Don't know how to install infrastructure on" `./architecture-path`
+  endif
