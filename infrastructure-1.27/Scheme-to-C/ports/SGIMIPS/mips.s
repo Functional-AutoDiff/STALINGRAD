@@ -1,1 +1,0 @@
-../DECMIPS/mips.s

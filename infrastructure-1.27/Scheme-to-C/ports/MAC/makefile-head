@@ -1,9 +1,0 @@
-# Header for the MAC port for Scheme->C
-
-unpack:	unpack.c
-	cc -o unpack unpack.c
-
-sourcefiles:
-	pack sourcefiles
-
-# End of header

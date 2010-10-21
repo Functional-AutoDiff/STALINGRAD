@@ -1,2 +1,0 @@
-#!/bin/csh
-echo "ranlib(1) not implemented on Silicon Graphics Iris"

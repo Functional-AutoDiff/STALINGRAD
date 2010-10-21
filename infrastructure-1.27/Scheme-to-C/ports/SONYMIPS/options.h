@@ -1,1 +1,0 @@
-../DECMIPS/options.h
