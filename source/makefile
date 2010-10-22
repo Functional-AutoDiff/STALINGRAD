@@ -510,25 +510,31 @@ publish: release
 stalingradlib = stalingradlib-stuff.o\
                 stalingradlib-double-c.o
 
+INCLUDES=\
+	-I $(HOME)/git/stalingrad/QobiScheme-1.44/source \
+	-I $(HOME)/git/scheme2c/debian/LINUX/xlib
+
+SCH=/home/drr/git/stalingrad/QobiScheme-1.44/source/i686-Linux-2.6.26-2-686/sch
+
 stalingradlib-double-c.o: stalingradlib-double-c.c
 	$(CC) $(CFLAGS) -o stalingradlib-double-c.o\
 	      -c stalingradlib-double-c.c
 
 stalingradlib-stuff.sch: stalingradlib-*.sc
-	sch stalingradlib-stuff stalingradlib-*.sc
+	$(SCH) stalingradlib-stuff stalingradlib-*.sc
 
 stalingradlib-stuff.o: stalingradlib-stuff.sch c-externals.sc\
 stalingradlib-stuff.sc
-	scc -cc $(CC) $(SCCFLAGS) -c stalingradlib-stuff.sc
+	scc -sch 512 -cc $(CC) $(SCCFLAGS) $(INCLUDES) -c stalingradlib-stuff.sc
 	-rm -f stalingradlib-stuff.c
 
 stalingrad.sch: stalingrad.sc stalingradlib-*.sc
-	sch -main stalingrad stalingradlib-*.sc
+	$(SCH) -main stalingrad  stalingradlib-*.sc
 
 stalingrad.o: stalingrad.sch stalingrad.sc
-	scc -cc $(CC) $(SCCFLAGS) -c stalingrad.sc
+	scc -cc $(CC) $(SCCFLAGS) $(INCLUDES) -c stalingrad.sc
 	-rm -f stalingrad.c
 
 stalingrad: stalingrad.o $(stalingradlib)
-	scc -cc $(CC) $(SCCLDFLAGS) -o stalingrad\
+	scc -sch 512 -cc $(CC) $(SCCLDFLAGS) $(INCLUDES) -o stalingrad\
             stalingrad.o $(LRL)
