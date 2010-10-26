@@ -1,0 +1,158 @@
+VLAD Programmer Manual
+
+Abstract
+
+VLAD is a functional language with a first-class automatic
+differentiation operator and an aggressively optimizing compiler.
+
+Introduction
+
+VLAD is essentially a subset of Scheme, augmented with functions for
+doing automatic differentiation, and implemented with a compiler that
+does very aggressive optimizations.  In particular, VLAD shares
+Scheme's simple syntax and overall execution model.  The most striking
+differences are the automatic differentiation, destructuring of
+procedure arguments, and how fast programs go once you've compiled
+them.
+
+TODO: Getting Started, Examples
+
+
+Are there continuations?
+
+
+Scheme Stuff
+
+semicolon line comments
+
+
+Special forms
+
+(lambda formal-spec expression)
+
+As in Scheme, a lambda expression evaluates to a procedure.  When
+invoked, the procedure will destructure its given arguments according
+to the formal parameter specification given in the lambda expression,
+bind those values to those variables, and evaluate the body
+expression.  Variables that are free in the lambda expression are
+taken from the environment in which the lambda expression is
+evaluated.  VLAD procedures may only have one expression in the body.
+
+TODO The destructuring rules are as follows.
+
+(let ((formals init) ...) expression)
+(let* ((formals init) ...) expression)
+(letrec ((formals init) ...) expression)
+
+VLAD let, let*, and letrec are like Scheme let, let*, and letrec,
+except that the formals forms destructure the results of the init
+expressions, and the body of the let can only be one expression.
+TODO Furthermore, VLAD letrec only supports init forms that evaluate to procedures.
+VLAD does not support the "named let" syntax.
+
+(define (name . formals) expression)
+
+VLAD only supports toplevel definitions, and only of procedures.
+Define defines the given name to the procedure produced by (lambda
+formals expression).  The scope of the definition is the entire
+program, including preceding procedure definitions and the body of the
+procedure being defined.
+
+(quote datum)
+
+Evaluates to datum.  Use quote to include literal constants in VLAD
+code.  VLAD does not support quasiquote.
+
+(if predicate consequent alternate)
+
+Evaluates either the consequent or the alternate, depending on whether
+the predicate were true or false, as in Scheme.
+
+and, or, cond
+as in Scheme
+TODO What about else and => in cond?
+
+Procedures
+
+cons -- this is the only thing that really takes multiple arguments
+
+car cdr -- defined in math.vlad
+
+#t #f ()
+
+list cons*
+
+Numeric Basis
+
+IEEE-64 floating point constants
+- there is no exact/inexact distinction
+
+binary +, *, -, /, atan, =, <, >, <=, >=
+unary sin, cos, exp, log, sqrt, 
+
+real?
+
+Forward AD
+
+bundle, primal, tangent, perturb, unperturb
+
+j*, zero, maybe j*-1
+
+(define (derivative-using-j* f)
+ (let ((f-forward (j* f)))
+  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
+
+(define ((directional-derivative f) x dx)
+  (tangent ((j* f) (bundle x dx))))
+
+(define ((directional-derivative f) x dx)
+  ((derivative (lambda (r) (f (+ x (* r dx))))) 0))
+
+Reverse AD
+
+unary, boolean sensitivity?
+unary constructor sensitize
+accessor unsensitize
+
+*j: al -> (reverse al)
+
+*j: (al -> be) -> (al -> (cons be (sens be -> sens al)))
+
+(define ((grad f) x)
+  ; maybe cdr here?
+  (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1)))
+
+Some symbols to find out about:
+UNSENSITIZE
+X-REVERSE
+UNPERTURB
+Y-REVERSE
+X2-UNPERTURBED
+X1-UNPERTURBED
+X-SENSITIVITY
+Y-SENSITIVITY
+Y-FORWARD
+Y-PERTURBATION
+X-FORWARD
+X-PERTURBATION
+READ-REAL
+Y-BACKPROPAGATOR
+CONS*
+IF-PROCEDURE
+X3-UNPERTURBED
+REVERSE?
+SENSITIVITY?
+FORWARD?
+PERTURBATION?
+NULL?
+NEGATIVE?
+POSITIVE?
+ZERO?
+ATAN
+SQRT
+INEXACT?
+BOTTOM
+-PRIMITIVE
+ELSE
+LETREC
+INCLUDE
