@@ -15,15 +15,48 @@ differences are the automatic differentiation, destructuring of
 procedure arguments, and how fast programs go once you've compiled
 them.
 
-TODO: Getting Started, Examples
+Getting Started
 
+A VLAD program is notionally just a single expression.  For example,
 
-Are there continuations?
+(+ 3 4)
+
+is a perfectly good VLAD program that outputs 7.  The Stalingrad
+program reads a file containing an expression, compiles that
+expression, evaluates it, and prints the result.
+
+As a syntactic convenience, helper procedures can be defined using
+define.  Also, Stalingrad will treat multiple non-definition
+expressions in a single source file as multiple "programs", and
+compile and execute all of them in turn.  The scope of definitions
+introduced with define is the entire contiguous block of definitions
+in which that define appears, and all subsequent expressions.
+
+For example,
+
+(define (double-loop)
+  (let ((x (read-real)))
+    (let ((y (write-real (* 2 x))))
+      (double-loop))))
+
+(double-loop)
+
+is a VLAD program that will read real numbers from standrad input
+write their doubles to standard output.
+
+VLAD has minimal support for multifile programs.  If you have a file
+of definitions named filename, you can use those definitions in
+another program by writing (include "filename") as a toplevel form
+in that program.  This mechanism works recursively.
 
 
 Scheme Stuff
 
 semicolon line comments
+
+TODO Are redefinitions possible?
+
+Apparently, there are no continuations
 
 
 Special forms
@@ -82,77 +115,296 @@ car cdr -- defined in math.vlad
 
 list cons*
 
+null?
+boolean?
+pair?
+procedure?
+
+These do what you expect.
+
+if-procedure
+
 Numeric Basis
 
-IEEE-64 floating point constants
-- there is no exact/inexact distinction
+The numbers in VLAD are all IEEE-64 floating point.  There is no
+provision for integer arithmetic except as a subset of floating point
+arithmetic, and there is no distinction between exact and inexact
+numbers.
 
-binary +, *, -, /, atan, =, <, >, <=, >=
-unary sin, cos, exp, log, sqrt, 
+The following subset of the Scheme numeric basis is provided as
+primitives:
 
++
+-
+*
+/
+sqrt
+exp
+log
+sin
+cos
+atan
+=
+<
+>
+<=
+>=
+zero?
+positive?
+negative?
 real?
+
+These agree with standard Scheme semantics, expect for questions of
+arity.  No VLAD primitive takes variable numbers of arguments, so all
+of the above are either unary or binary, as appropriate.  Notably,
+ATAN is binary; and no unary minus is provided.
+
+Numeric constants are written in the standard way.
+TODO Does VLAD support radix prefixes?
+
+Introducing Imprecision
+
+real
+
+At runtime, REAL is the identity function on real numbers.  However,
+REAL forces the flow analysis to forget the value of its argument, and
+avoid specializing any procedures that use it to its exact value.
+For example, given
+
+(define (fact x)
+  (if (= x 0)
+      1
+      (* x (fact (- x 1)))))
+
+writing
+
+(fact 5)
+
+would cause the flow analysis to unroll the recursion in FACT all the
+way, and completely solve the return value of that form (to 120) at
+compile time.  This could prove prohibitively expensive.
+TODO There are some internal wideners that prevent this absurd behavior;
+how do they work?  Are they good enough that REAL is wizard-only now?
+
+In contrast, writing
+
+(fact (real 5))
+
+would cause the flow analysis to produce a FACT procedure that
+computes the factorials of (positive integer) real numbers, and
+compute the factorial of 5 at runtime.
+
+I/O
+
+VLAD provides two I/O primitives:
+
+read-real
+
+Takes no arguments, reads a real number from the standard input, and
+returns it.
+
+write
+
+Takes a real number argument, writes it to the standard output, and
+returns it.  Since VLAD does not support multiple expressions in
+procedure bodies, if you want to write and then do something else,
+you should:
+
+(let ((ignore (write foo)))
+  do-something-else)
+
+
+TODO structured WRITE ? What is WRITE-REAL supposed to be?
+
+real
 
 Forward AD
 
-bundle, primal, tangent, perturb, unperturb
+The modus operandi for forward AD is:
 
-j*, zero, maybe j*-1
+1) Bundle the primal input value with a tangent value (representing
+   the direction of a directional derivative), with
+   (bundle primal (perturb tangent))
 
-(define (derivative-using-j* f)
- (let ((f-forward (j* f)))
-  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
+2) Transform the function being differentiated to do the right thing
+   with such bundles, with
+   (j* f)
+   which is a non-primitive procedure definable as
+   (define (j* f)
+     (bundle f (perturb (zero f))))
+   more on this below
 
-(define ((directional-derivative f) x dx)
-  (tangent ((j* f) (bundle x dx))))
+3) Push the bundle through the transformed function.
 
-(define ((directional-derivative f) x dx)
-  ((derivative (lambda (r) (f (+ x (* r dx))))) 0))
+4) Extract from the output the primal value and the derivative along
+   that direction with
+   (primal bundle) and (unperturb (tangent bundle))
+
+Here are the details of the VLAD procedures that do this:
+
+(perturb object)
+
+Type-tags the given object as being a perturbation.  This may be done
+with any VLAD object, but it is most useful with real numbers
+directly, or structured objects that contain real numbers inside.
+
+(perturbation? object)
+
+Detects whether the given object is a pertubation constructed with
+PERTURB.
+
+(unperturb perturbation)
+
+Strips the perturbation tag off the given perturbation and returns the
+underlying object.
+
+(bundle primal perturbation)
+
+Bundles a given primal value and a given perturbation into a
+primal-tangent bundle.  The primal and the perturbation have to have
+the same shape, differing only in the real numbers they contain.
+This is useful for constructing inputs to forward-mode functions.
+BUNDLE also operates on functions to transform them to treat bundles
+correctly; see below.
+
+(forward? object)
+
+Detects whether the given object is a bundle constructed with BUNDLE.
+
+(primal bundle)
+
+Extracts the primal component of the given bundle.
+
+(tangent bundle)
+
+Extracts the tangent component of the given bundle.  You probably want
+to call UNPERTURB on the output of TANGENT.
+
+(zero object)
+
+Constructs an object of the same shape as OBJECT, but with all real
+values replaced with zero.
+
+
+TODO This description is factually correct, but may send the wrong
+message.  The reason I wrote it like this is because I haven't thought
+through all the math underlying the reasons why BUNDLE behaves the way
+it does.  In particular, I am not convinced that the operation BUNDLE
+performs on functions is actually the same operation as what it does
+to data, and should have the same name.  Nonetheless, this is how the
+current code works, and of course this is one of the central features
+of VLAD so it better be described in the documentation.
+
+BUNDLE has slightly different behavior on data and on procedures.
+BUNDLE operating on procedures is so arranged that the pushforward
+operator, namely the operator that transforms a primal function into
+one that will operate on bundles and compute derivatives therewith,
+can be defined as:
+
+(define (j* f)
+  (bundle f (perturb (zero f))))
+
+Given such a j*, one can then write forward-mode differentiation
+procedures as follows:
+
+(define (derivative-R->Rn-using-j* f)
+  (let ((f-forward (j* f)))
+    (lambda (x)
+      (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
+
+(define (directional-derivative-using-j* f)
+  (let ((f-forward (j* f)))
+    (lambda (x dx)
+      (unerturb (tangent (f-forward (bundle x (perturb dx))))))))
+
+(define (directional-derivative-via-R->Rn-derivative f)
+  (lambda (x dx)
+    ((derivative-R->Rn-using-j* (lambda (r) (f (+ x (* r dx))))) 0)))
+
+etc, to taste.
 
 Reverse AD
 
-unary, boolean sensitivity?
-unary constructor sensitize
-accessor unsensitize
+The modus operandi for reverse AD is:
 
-*j: al -> (reverse al)
+1) Tag the primal inputs as things for which sensitivity values are
+   desired, with
+   (*j primal)
 
-*j: (al -> be) -> (al -> (cons be (sens be -> sens al)))
+2) Transform the function being differentiated to collect a record of
+   the primal computation it does, and to assemble a procedure that
+   can use that record to compute sensitivity values in reverse, with
+   (*j f)
 
-(define ((grad f) x)
-  ; maybe cdr here?
-  (unsensitize ((cdr ((*j f) (*j x))) (sensitize 1)))
+3) Run the transformed function on the tagged inputs to create that
+   procedure (and also the primal answer)
 
-Some symbols to find out about:
-UNSENSITIZE
-X-REVERSE
-UNPERTURB
-Y-REVERSE
-X2-UNPERTURBED
-X1-UNPERTURBED
-X-SENSITIVITY
-Y-SENSITIVITY
-Y-FORWARD
-Y-PERTURBATION
-X-FORWARD
-X-PERTURBATION
-READ-REAL
-Y-BACKPROPAGATOR
-CONS*
-IF-PROCEDURE
-X3-UNPERTURBED
-REVERSE?
-SENSITIVITY?
-FORWARD?
-PERTURBATION?
-NULL?
-NEGATIVE?
-POSITIVE?
-ZERO?
-ATAN
-SQRT
-INEXACT?
-BOTTOM
--PRIMITIVE
-ELSE
-LETREC
-INCLUDE
+4) Tag a direction in the output space as the initial output
+   sensitivity.
+
+5) Apply the reverse procedure to that tagged direction.
+
+6) Untag the resulting sensitivity object to extract the corresponding
+   change input direction.
+
+Here are the details of the VLAD procedures that do this:
+
+(*j primal)
+
+Transforms the given primal object into reverse-AD form.  In the case
+of data, tags it as being the primal value for a reverse AD
+computation.  In the case of functions, transforms them to accept such
+data and produce reverse procedures.  The resulting transformed
+function, when given a tagged input, will produce a pair of the tagged
+primal output and the procedure for computing sensitivities in
+reverse.  That procedure, when given a sensitivity corresponding to
+the output (and of the same shape), will produce a sensitivity-tagged
+pair of the procedure for doing the original primal computation and a
+sensitivity corresponding to the input.  The type of *j applied to a
+function is:
+
+*j: ((al -> be) -> ((r-tag al) -> (cons (r-tag be) ((sens be) -> (sens (cons (al -> be) al)))))
+
+Also see below.
+
+I can only assume that the procedure for doing the primal computation
+is echoed this way out of a sense of symmetry, or else for debugging
+purposes.
+
+(*j-inverse reverse-transformed-object)
+
+Undoes the transformation done by *j and returns the original object.
+
+(reverse? object)
+
+Returns whether the given object has been transformed by *j.
+
+(sensitize object)
+
+Returns a sensitivity-tagged version of the given object.
+
+(sensitivity? object)
+
+Detects whether the given object is a sensitivity.
+
+(unsensitize sensitivity)
+
+Strips the sensitivity tag off the given sensitivity object and returns
+the underlying object.
+
+(plus object1 object2)
+
+Adds the two given objects pointwise.  They must have the same shape.
+(plus object (zero object)) is an identity operation.  This is
+important in the interior of the reverse computation, because this is
+the reverse transform of the implicit fanout of using the same
+variable more than once.  It is, however, also made available to the
+user.
+
+Given these primitives, one can write procedures for doing
+differentiation in reverse mode such as this:
+
+(define (gradient-Rn->R-using-*j f)
+  (let ((f-reverse (*j f)))
+    (lambda (x)
+      (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
