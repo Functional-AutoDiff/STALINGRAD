@@ -25,9 +25,9 @@
 (abs -3)
 
 ;; (define (double-loop)
-;;   (let ((x (read-real)))
-;;     (let ((y (write (* 2 x))))
-;;       (double-loop))))
+;;   (let* ((x (read-real))
+;;          (y (write (* 3 x))))
+;;     (double-loop)))
 
 ;; (double-loop)
 

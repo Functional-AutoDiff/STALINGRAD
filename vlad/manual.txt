@@ -3,9 +3,12 @@ VLAD Programmer Manual
 Abstract
 
 VLAD is a functional language with a first-class automatic
-differentiation operator and an aggressively optimizing compiler.
+differentiation operator and an aggressively optimizing compiler.  The
+purpose of VLAD is to push the envelope on the speed of numeric
+computing, and to dispel any myths that automatic differentiation
+needs to be hard to use or slow to execute.
 
-Introduction
+Overview
 
 VLAD is essentially a subset of Scheme, augmented with functions for
 doing automatic differentiation, and implemented with a compiler that
@@ -13,7 +16,11 @@ does very aggressive optimizations.  In particular, VLAD shares
 Scheme's simple syntax and overall execution model.  The most striking
 differences are the automatic differentiation, destructuring of
 procedure arguments, and how fast programs go once you've compiled
-them.
+them.  VLAD is designed to compile to efficient code without
+sacrificing any essential expressive power.  Being a research
+prototype, however, VLAD sacrifices various uninteresting
+conveniences, which are left to user-space libraries and to later
+incarnations of these language design ideas.
 
 Getting Started
 
@@ -21,8 +28,8 @@ A VLAD program is notionally just a single expression.  For example,
 
 (+ 3 4)
 
-is a perfectly good VLAD program that outputs 7.  The Stalingrad
-program reads a file containing an expression, compiles that
+is a perfectly good VLAD program whose result is 7.  The Stalingrad
+program reads a file containing a VLAD expression, compiles that
 expression, evaluates it, and prints the result.
 
 As a syntactic convenience, helper procedures can be defined using
@@ -35,85 +42,133 @@ in which that define appears, and all subsequent expressions.
 For example,
 
 (define (double-loop)
-  (let ((x (read-real)))
-    (let ((y (write-real (* 2 x))))
-      (double-loop))))
+  (let* ((x (read-real))
+         (y (write (* 3 x))))
+    (double-loop)))
 
 (double-loop)
 
 is a VLAD program that will read real numbers from standrad input
-write their doubles to standard output.
+write their triples to standard output.
 
-VLAD has minimal support for multifile programs.  If you have a file
-of definitions named filename, you can use those definitions in
-another program by writing (include "filename") as a toplevel form
-in that program.  This mechanism works recursively.
+VLAD has the following support for multifile programs: If you have a
+file of definitions named filename, you can use those definitions in
+another program by writing (include "filename") as a toplevel form in
+that program.  This mechanism works recursively.
+
+You can use Stalingrad to compile but not run a VLAD program by
+passing it the --compile option.  If the program was in file foo.vlad,
+Stalingrad will emit the binary into the file foo, which you can then
+execute.  Stalingrad also has many other options and modes for
+controlling the compilation process, emitting various partial results
+thereof, etc.
 
 
 Scheme Stuff
 
-semicolon line comments
+The basic structure of VLAD code is inherited from Scheme.
+Identifiers are whitespace-delimited.  Expressions are written in
+fully-parenthesized prefix notation.  Comments begin with a semicolon
+character (;) and last until the end of the line.  TODO Does VLAD
+support expression comments with #; and/or block comments with #| |#?
+Variables are lexically scoped.  Objects have unlimited extent.
 
-TODO Are redefinitions possible?
+The basic evaluation model of VLAD is also inherited from Scheme.  The
+first subexpression of an expression determines how that expression
+will be evaluated --- if it's an identifier naming a special form,
+then the whole form will be evaluated that way; otherwise, the first
+subform will be evaluated, treated as a procedure, and applied to the
+evaluated values of the remaining subforms.
 
-Apparently, there are no continuations
+The main difference between Scheme and VLAD at this level is that VLAD
+has automatic destructuring of bound values.  That is, if the procedure
+made by
 
+(lambda (cons x y) ...)
+
+is passed a pair, then in the body of this procedure x and y will be
+bound to the car and cdr of that pair, respectively.  Dually, when a
+procedure is passed syntactically multiple arguments, as with passing
+the procedure foo the three arguments bar, baz, and quux,
+
+(foo bar baz quux)
+
+the three arguments are implicitly collected into a structure with
+cons* and passed to the procedure as a single argument.  Presumably,
+the procedure will destructure that structure to get the pieces;
+for example, if foo were defined with
+
+(lambda (bar baz quux) ...)
+
+that actually represents a destructuring operation.  All this notional
+structuring and destructuring is dealt with at compile time (see
+"Performance Model") and incurs no runtime overhead.  Every binding
+position in VLAD is open to destructuring.  See "Destructuring" for
+the detailed rules.
+
+TODO Detailed lexical syntax of VLAD, differences from Scheme
+
+TODO Destructuring
+
+TODO Performance Model
+
+Literals
+
+#t #f
+
+Literal syntax for booleans: like Scheme.
+
+Literal syntax for numbers is also like Scheme, except that the only
+numbers in VLAD are IEEE-64 floating point.
+
+TODO () ?
 
 Special forms
 
-(lambda formal-spec expression)
+VLAD supports the following special forms.  They are like the
+corresponding Scheme special forms, except for some differences
+pointed out with each one:
 
-As in Scheme, a lambda expression evaluates to a procedure.  When
-invoked, the procedure will destructure its given arguments according
-to the formal parameter specification given in the lambda expression,
-bind those values to those variables, and evaluate the body
-expression.  Variables that are free in the lambda expression are
-taken from the environment in which the lambda expression is
-evaluated.  VLAD procedures may only have one expression in the body.
+lambda
 
-TODO The destructuring rules are as follows.
+Like Scheme, except for destructuring the formal parameters (see
+"Destructuring") and may only have one expression in the body.
 
-(let ((formals init) ...) expression)
-(let* ((formals init) ...) expression)
-(letrec ((formals init) ...) expression)
+define
 
-VLAD let, let*, and letrec are like Scheme let, let*, and letrec,
-except that the formals forms destructure the results of the init
-expressions, and the body of the let can only be one expression.
-TODO Furthermore, VLAD letrec only supports init forms that evaluate to procedures.
-VLAD does not support the "named let" syntax.
+Like Scheme, except may only appear at the top level of a program (no
+internal defines).  Also, via lambda, supports destructuring but does
+not support multi-expression procedure bodies.
+TODO Are redefinitions of names already defined in the same
+define-block acceptable?
 
-(define (name . formals) expression)
+let, let*, letrec
 
-VLAD only supports toplevel definitions, and only of procedures.
-Define defines the given name to the procedure produced by (lambda
-formals expression).  The scope of the definition is the entire
-program, including preceding procedure definitions and the body of the
-procedure being defined.
+Like Scheme except may only have one body expression.  VLAD does
+not support the "named let" Scheme iteration syntax.
+TODO are the destructuring rules different for let, let* and letrec?
+TODO can the initialization forms in letrec not be lambdas?
 
-(quote datum)
+cond
 
-Evaluates to datum.  Use quote to include literal constants in VLAD
-code.  VLAD does not support quasiquote.
+Like Scheme, except the final else clause is required, and
+the syntaxes
+(cond ... (e) ...) or (cond ... (e1 => e2) ...)
+are not supported.  Also, clause bodies must be one expression.
 
-(if predicate consequent alternate)
+quote, if, and, or
 
-Evaluates either the consequent or the alternate, depending on whether
-the predicate were true or false, as in Scheme.
+Like Scheme.
 
-and, or, cond
-as in Scheme
-TODO What about else and => in cond?
+TODO quasiquote and unquote?
+
+cons, cons*, list
+
+These do the same thing as in Scheme, except that they are special
+forms in VLAD, and so may not be passed as function parameters,
+returned from functions, etc.
 
 Procedures
-
-cons -- this is the only thing that really takes multiple arguments
-
-car cdr -- defined in math.vlad
-
-#t #f ()
-
-list cons*
 
 null?
 boolean?
@@ -123,6 +178,16 @@ procedure?
 These do what you expect.
 
 if-procedure
+
+Normally, you would use the if form, but the procedure version is
+provided for completeness.  This is convenient because in VLAD, if is
+a macro that expands as
+(if p c a)  ==>  (if-procedure p (lambda () c) (lambda () a))
+and if-procedure is supplied primitively.  if-procedure does what the
+Scheme procedure
+(define (if-procedure p c a)
+  (if p (c) (a)))
+would do.
 
 Numeric Basis
 
@@ -168,8 +233,8 @@ real
 
 At runtime, REAL is the identity function on real numbers.  However,
 REAL forces the flow analysis to forget the value of its argument, and
-avoid specializing any procedures that use it to its exact value.
-For example, given
+avoid specializing any procedures that use it to its exact value.  See
+"Performance Model".  For example, given
 
 (define (fact x)
   (if (= x 0)
@@ -213,10 +278,7 @@ you should:
 (let ((ignore (write foo)))
   do-something-else)
 
-
 TODO structured WRITE ? What is WRITE-REAL supposed to be?
-
-real
 
 Forward AD
 
