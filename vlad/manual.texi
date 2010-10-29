@@ -4,9 +4,11 @@
 @settitle VLAD Programmer Manual
 @comment %**end of header
 
-@ifnothtml
-@shortcontents
-@end ifnothtml
+@setchapternewpage off
+@macro todo{text}
+@strong{TODO: \text\}
+@end macro
+
 @contents
 
 @ifnottex
@@ -53,42 +55,47 @@ incarnations of these language design ideas.
 
 A VLAD program is notionally just a single expression.  For example,
 
+@lisp
 (+ 3 4)
-
-is a perfectly good VLAD program whose result is 7.  The Stalingrad
-program reads a file containing a VLAD expression, compiles that
-expression, evaluates it, and prints the result.
+@end lisp
+@noindent
+is a perfectly good VLAD program whose result is @code{7}.  The
+Stalingrad program reads a file containing a VLAD expression, compiles
+that expression, evaluates it, and prints the result.
 
 As a syntactic convenience, helper procedures can be defined using
-define.  Also, Stalingrad will treat multiple non-definition
-expressions in a single source file as multiple "programs", and
+@code{define}.  Also, Stalingrad will treat multiple non-definition
+expressions in a single source file as multiple ``programs'', and
 compile and execute all of them in turn.  The scope of definitions
 introduced with define is the entire contiguous block of definitions
 in which that define appears, and all subsequent expressions.
 
 For example,
 
+@lisp
 (define (double-loop)
   (let* ((x (read-real))
          (y (write (* 3 x))))
     (double-loop)))
 
 (double-loop)
-
+@end lisp
+@noindent
 is a VLAD program that will read real numbers from standrad input
 write their triples to standard output.
 
 VLAD has the following support for multifile programs: If you have a
-file of definitions named filename, you can use those definitions in
-another program by writing (include "filename") as a toplevel form in
-that program.  This mechanism works recursively.
+file of definitions named @var{filename}, you can use those
+definitions in another program by writing @code{(include
+"@var{filename}")} as a toplevel form in that program.  This mechanism
+works recursively.
 
 You can use Stalingrad to compile but not run a VLAD program by
-passing it the --compile option.  If the program was in file foo.vlad,
-Stalingrad will emit the binary into the file foo, which you can then
-execute.  Stalingrad also has many other options and modes for
-controlling the compilation process, emitting various partial results
-thereof, etc.
+passing it the @code{--compile} option.  If the program was in file
+@file{foo.vlad}, Stalingrad will emit the binary into the file
+@file{foo}, which you can then execute.  Stalingrad also has many other
+options and modes for controlling the compilation process, emitting
+various partial results thereof, etc.
 
 @node Scheme Stuff
 @chapter Scheme Stuff
@@ -96,13 +103,13 @@ thereof, etc.
 The basic structure of VLAD code is inherited from Scheme.
 Identifiers are whitespace-delimited.  Expressions are written in
 fully-parenthesized prefix notation.  Comments begin with a semicolon
-character (;) and last until the end of the line.  TODO Does VLAD
-support expression comments with #; and/or block comments with #| |#?
+character (@code{;}) and last until the end of the line.  
+@todo Does VLAD support expression comments with #; and/or block comments with #| |#?
 Variables are lexically scoped.  Objects have unlimited extent.
 
 The basic evaluation model of VLAD is also inherited from Scheme.  The
 first subexpression of an expression determines how that expression
-will be evaluated --- if it's an identifier naming a special form,
+will be evaluated---if it's an identifier naming a special form,
 then the whole form will be evaluated that way; otherwise, the first
 subform will be evaluated, treated as a procedure, and applied to the
 evaluated values of the remaining subforms.
@@ -110,36 +117,47 @@ evaluated values of the remaining subforms.
 The main difference between Scheme and VLAD at this level is that VLAD
 has automatic destructuring of bound values.  That is, if the procedure
 made by
-
+@example
 (lambda (cons x y) ...)
+@end example
+@noindent
+is passed a pair, then in the body of this procedure @code{x} and
+@code{y} will be bound to the car and cdr of that pair, respectively.
+Dually, when a procedure is passed syntactically multiple arguments,
+as with passing the procedure @code{foo} the three arguments
+@code{bar}, @code{baz}, and @code{quux},
 
-is passed a pair, then in the body of this procedure x and y will be
-bound to the car and cdr of that pair, respectively.  Dually, when a
-procedure is passed syntactically multiple arguments, as with passing
-the procedure foo the three arguments bar, baz, and quux,
-
+@example
 (foo bar baz quux)
-
+@end example
+@noindent
 the three arguments are implicitly collected into a structure with
-cons* and passed to the procedure as a single argument.  Presumably,
-the procedure will destructure that structure to get the pieces;
-for example, if foo were defined with
-
+@code{cons*} and passed to the procedure as a single argument.
+Presumably, the procedure will destructure that structure to get the
+pieces; for example, if @code{foo} were defined with
+@example
 (lambda (bar baz quux) ...)
-
+@end example
+@noindent
 that actually represents a destructuring operation.  All this notional
 structuring and destructuring is dealt with at compile time (see
-"Performance Model") and incurs no runtime overhead.  Every binding
-position in VLAD is open to destructuring.  See "Destructuring" for
-the detailed rules.
+"Performance Model") and incurs no runtime overhead.  See
+"Destructuring" for the detailed rules.
 
-TODO Detailed lexical syntax of VLAD, differences from Scheme
+@todo Detailed lexical syntax of VLAD, differences from Scheme
 
-TODO Destructuring
+@todo Destructuring
 
-TODO Performance Model
+@todo Performance Model
 
-Literals
+@menu
+* Literals::
+* Special forms::
+* Procedures::
+@end menu
+
+@node Literals
+@section Literals
 
 #t #f
 
@@ -150,7 +168,8 @@ numbers in VLAD are IEEE-64 floating point.
 
 TODO () ?
 
-Special forms
+@node Special forms
+@section Special forms
 
 VLAD supports the following special forms.  They are like the
 corresponding Scheme special forms, except for some differences
@@ -195,7 +214,8 @@ These do the same thing as in Scheme, except that they are special
 forms in VLAD, and so may not be passed as function parameters,
 returned from functions, etc.
 
-Procedures
+@node Procedures
+@section Procedures
 
 null?
 boolean?
