@@ -230,24 +230,30 @@ returned from functions, etc.
 @node Procedures
 @section Procedures
 
-null?
-boolean?
-pair?
-procedure?
+@defun null? thing
+@defunx boolean? thing
+@defunx pair? thing
+@defunx procedure? thing
+Do what you expect.
+@end defun
 
-These do what you expect.
-
-if-procedure
-
-Normally, you would use the if form, but the procedure version is
-provided for completeness.  This is convenient because in VLAD, if is
-a macro that expands as
+@defun if-procedure predicate consequent-thunk alternate-thunk
+Normally, you would use the @code{if} form, but the procedure version
+is provided for completeness.  This is convenient to do because in
+VLAD, @code{if} is a macro that expands as
+@example
 (if p c a)  ==>  (if-procedure p (lambda () c) (lambda () a))
-and if-procedure is supplied primitively.  if-procedure does what the
-Scheme procedure
+@end example
+@noindent
+and @code{if-procedure} is supplied primitively.  @code{if-procedure}
+does what the Scheme procedure
+@example
 (define (if-procedure p c a)
   (if p (c) (a)))
+@end example
+@noindent
 would do.
+@end defun
 
 @node Numeric Basis
 @chapter Numeric Basis
@@ -256,183 +262,194 @@ The numbers in VLAD are all IEEE-64 floating point.  There is no
 provision for integer arithmetic except as a subset of floating point
 arithmetic, and there is no distinction between exact and inexact
 numbers.
+Numeric constants are written in the standard way.
+@todo Does VLAD support radix prefixes?
 
 The following subset of the Scheme numeric basis is provided as
 primitives:
 
-+
--
-*
-/
-sqrt
-exp
-log
-sin
-cos
-atan
-=
-<
->
-<=
->=
-zero?
-positive?
-negative?
-real?
-
-These agree with standard Scheme semantics, expect for questions of
+@defun + x y
+@defunx - x y
+@defunx * x y
+@defunx / x y
+@defunx sqrt x
+@defunx exp x
+@defunx log x
+@defunx sin x
+@defunx cos x
+@defunx atan x y
+@defunx = x y
+@defunx < x y
+@defunx > x y
+@defunx <= x y
+@defunx >= x y
+@defunx zero? x
+@defunx positive? x
+@defunx negative? x
+@defunx real? x
+Agree with standard Scheme semantics, expect for questions of
 arity.  No VLAD primitive takes variable numbers of arguments, so all
-of the above are either unary or binary, as appropriate.  Notably,
-ATAN is binary; and no unary minus is provided.
-
-Numeric constants are written in the standard way.
-TODO Does VLAD support radix prefixes?
+of the above are either unary or binary, as indicated.  Notably,
+@code{atan} is binary; and no unary minus is provided.
+@end defun
 
 @node Introducing Imprecision
 @chapter Introducing Imprecision
 
-real
-
-At runtime, REAL is the identity function on real numbers.  However,
-REAL forces the flow analysis to forget the value of its argument, and
+@defun real
+At runtime, @code{real} is the identity function on real numbers.  However,
+@code{real} forces the flow analysis to forget the value of its argument, and
 avoid specializing any procedures that use it to its exact value.  See
-"Performance Model".  For example, given
+"Performance Model".
+@end defun
 
+@noindent
+For example, given
+@lisp
 (define (fact x)
   (if (= x 0)
       1
       (* x (fact (- x 1)))))
-
+@end lisp
+@noindent
 writing
-
+@lisp
 (fact 5)
-
-would cause the flow analysis to unroll the recursion in FACT all the
-way, and completely solve the return value of that form (to 120) at
-compile time.  This could prove prohibitively expensive.
-TODO There are some internal wideners that prevent this absurd behavior;
-how do they work?  Are they good enough that REAL is wizard-only now?
+@end lisp
+@noindent
+would cause the flow analysis to unroll the recursion in @code{fact}
+all the way, and completely solve the return value of that form (to
+@code{120}) at compile time.  This could prove prohibitively
+expensive.
+@todo{There are some internal wideners that prevent this absurd
+behavior; how do they work?  Are they good enough that @code{real} is
+wizard-only now?}
 
 In contrast, writing
-
+@lisp
 (fact (real 5))
-
-would cause the flow analysis to produce a FACT procedure that
+@end lisp
+@noindent
+would cause the flow analysis to produce a @code{fact} procedure that
 computes the factorials of (positive integer) real numbers, and
-compute the factorial of 5 at runtime.
+compute the factorial of @code{5} at runtime.
 
 @node Input and Output
 @chapter Input and Output
 
 VLAD provides two I/O primitives:
 
-read-real
-
+@deffn Procedure read-real
 Takes no arguments, reads a real number from the standard input, and
 returns it.
+@end deffn
 
-write
-
+@deffn Procedure write x
 Takes a real number argument, writes it to the standard output, and
 returns it.  Since VLAD does not support multiple expressions in
 procedure bodies, if you want to write and then do something else,
 you should:
-
+@example
 (let ((ignore (write foo)))
   do-something-else)
-
-TODO structured WRITE ? What is WRITE-REAL supposed to be?
+@end example
+@end deffn
+@noindent
+@todo structured WRITE ? What is WRITE-REAL supposed to be?
 
 @node Forward AD
 @chapter Forward AD
 
 The modus operandi for forward AD is:
+@enumerate
+@item
+Bundle the primal input value with a tangent value (representing the
+direction of a directional derivative), with
+@code{(bundle @var{primal} (perturb @var{tangent}))}.
 
-1) Bundle the primal input value with a tangent value (representing
-   the direction of a directional derivative), with
-   (bundle primal (perturb tangent))
+@item
+Transform the function being differentiated to do the right thing with
+such bundles, with @code{(j* @var{f})} which is a non-primitive procedure definable
+as @code{(define (j* @var{f}) (bundle @var{f} (perturb (zero @var{f}))))}; more on this below.
 
-2) Transform the function being differentiated to do the right thing
-   with such bundles, with
-   (j* f)
-   which is a non-primitive procedure definable as
-   (define (j* f)
-     (bundle f (perturb (zero f))))
-   more on this below
+@item
+Push the bundle through the transformed function.
 
-3) Push the bundle through the transformed function.
-
-4) Extract from the output the primal value and the derivative along
-   that direction with
-   (primal bundle) and (unperturb (tangent bundle))
-
+@item 
+Extract from the output the primal value and the derivative along that
+direction with @code{(primal @var{bundle})} and @code{(unperturb (tangent @var{bundle}))}, respectively.
+@end enumerate
+@noindent
 Here are the details of the VLAD procedures that do this:
 
-(perturb object)
-
-Type-tags the given object as being a perturbation.  This may be done
-with any VLAD object, but it is most useful with real numbers
+@defun perturb object
+Type-tags the given @var{object} as being a perturbation.  This may be
+done with any VLAD object, but it is most useful with real numbers
 directly, or structured objects that contain real numbers inside.
+@end defun
 
-(perturbation? object)
+@defun perturbation? object
+Detects whether the given @var{object} is a pertubation constructed with
+@code{perturb}.
+@end defun
 
-Detects whether the given object is a pertubation constructed with
-PERTURB.
-
-(unperturb perturbation)
-
-Strips the perturbation tag off the given perturbation and returns the
+@defun unperturb perturbation
+Strips the perturbation tag off the given @var{perturbation} and returns the
 underlying object.
+@end defun
 
-(bundle primal perturbation)
-
-Bundles a given primal value and a given perturbation into a
-primal-tangent bundle.  The primal and the perturbation have to have
-the same shape, differing only in the real numbers they contain.
+@defun bundle primal perturbation
+Bundles a given @var{primal} value and a given @var{perturbation}
+into a primal-tangent bundle.  The primal and the perturbation have to
+have the same shape, differing only in the real numbers they contain.
 This is useful for constructing inputs to forward-mode functions.
-BUNDLE also operates on functions to transform them to treat bundles
-correctly; see below.
+@code{bundle} also operates on functions to transform them to treat
+bundles correctly; see below.
+@end defun
 
-(forward? object)
+@defun forward? object
+Detects whether the given @var{object} is a bundle constructed with
+@code{bundle}.
+@end defun
 
-Detects whether the given object is a bundle constructed with BUNDLE.
+@defun primal bundle
+Extracts the primal component of the given @var{bundle}.
+@end defun
 
-(primal bundle)
+@defun tangent bundle
+Extracts the tangent component of the given @var{bundle}.  You
+probably want to call @code{unperturb} on the output of
+@code{tangent}.
+@end defun
 
-Extracts the primal component of the given bundle.
+@defun zero object
+Constructs an object of the same shape as @var{object}, but with all
+real values replaced with zero.
+@end defun
 
-(tangent bundle)
+@todo{The following description is factually correct, but may send the
+wrong message.  The reason I wrote it like this is because I haven't
+thought through all the math underlying the reasons why @code{bundle}
+behaves the way it does.  In particular, I am not convinced that the
+operation @code{bundle} performs on functions is actually the same
+operation as what it does to data, and should have the same name.
+Nonetheless, this is how the current code works, and of course this is
+one of the central features of VLAD so it better be described in the
+documentation.}
 
-Extracts the tangent component of the given bundle.  You probably want
-to call UNPERTURB on the output of TANGENT.
-
-(zero object)
-
-Constructs an object of the same shape as OBJECT, but with all real
-values replaced with zero.
-
-
-TODO This description is factually correct, but may send the wrong
-message.  The reason I wrote it like this is because I haven't thought
-through all the math underlying the reasons why BUNDLE behaves the way
-it does.  In particular, I am not convinced that the operation BUNDLE
-performs on functions is actually the same operation as what it does
-to data, and should have the same name.  Nonetheless, this is how the
-current code works, and of course this is one of the central features
-of VLAD so it better be described in the documentation.
-
-BUNDLE has slightly different behavior on data and on procedures.
-BUNDLE operating on procedures is so arranged that the pushforward
-operator, namely the operator that transforms a primal function into
-one that will operate on bundles and compute derivatives therewith,
-can be defined as:
-
+@code{bundle} has slightly different behavior on data and on
+procedures.  @code{bundle} operating on procedures is so arranged that
+the pushforward operator, namely the operator that transforms a primal
+function into one that will operate on bundles and compute derivatives
+therewith, can be defined as:
+@example
 (define (j* f)
   (bundle f (perturb (zero f))))
-
-Given such a j*, one can then write forward-mode differentiation
-procedures as follows:
-
+@end example
+@noindent
+Given such a @code{j*}, one can then write forward-mode
+differentiation procedures as follows:
+@example
 (define (derivative-R->Rn-using-j* f)
   (let ((f-forward (j* f)))
     (lambda (x)
@@ -445,41 +462,49 @@ procedures as follows:
 
 (define (directional-derivative-via-R->Rn-derivative f)
   (lambda (x dx)
-    ((derivative-R->Rn-using-j* (lambda (r) (f (+ x (* r dx))))) 0)))
-
+    ((derivative-R->Rn-using-j*
+      (lambda (r) (f (+ x (* r dx)))))
+     0)))
+@end example
+@noindent
 etc, to taste.
 
 @node Reverse AD
 @chapter Reverse AD
 
 The modus operandi for reverse AD is:
+@enumerate
+@item
+Tag the primal inputs as things for which sensitivity values are
+desired, with @code{(*j @var{primal})}.
 
-1) Tag the primal inputs as things for which sensitivity values are
-   desired, with
-   (*j primal)
+@item
+Transform the function being differentiated to collect a record of the
+primal computation it does, and to assemble a procedure that can use
+that record to compute sensitivity values in reverse, with @code{(*j @var{f})}.
 
-2) Transform the function being differentiated to collect a record of
-   the primal computation it does, and to assemble a procedure that
-   can use that record to compute sensitivity values in reverse, with
-   (*j f)
+@item
+Run the transformed function on the tagged inputs to create that
+procedure (and also the primal answer).
 
-3) Run the transformed function on the tagged inputs to create that
-   procedure (and also the primal answer)
+@item
+Tag a direction in the output space as the initial output sensitivity, with
+@code{(sensitize @var{cotangent})}.
 
-4) Tag a direction in the output space as the initial output
-   sensitivity.
+@item
+Apply the reverse procedure to that tagged direction.
 
-5) Apply the reverse procedure to that tagged direction.
-
-6) Untag the resulting sensitivity object to extract the corresponding
-   change input direction.
-
+@item
+Untag the resulting sensitivity object to extract the corresponding
+input change direction, with @code{(cdr (unsensitize @var{result}))}
+(more below).
+@end enumerate
+@noindent
 Here are the details of the VLAD procedures that do this:
 
-(*j primal)
-
-Transforms the given primal object into reverse-AD form.  In the case
-of data, tags it as being the primal value for a reverse AD
+@defun *j primal
+Transforms the given @var{primal} object into reverse-AD form.  In the
+case of data, tags it as being the primal value for a reverse AD
 computation.  In the case of functions, transforms them to accept such
 data and produce reverse procedures.  The resulting transformed
 function, when given a tagged input, will produce a pair of the tagged
@@ -490,50 +515,60 @@ pair of the procedure for doing the original primal computation and a
 sensitivity corresponding to the input.  The type of *j applied to a
 function is:
 
-*j: ((al -> be) -> ((r-tag al) -> (cons (r-tag be) ((sens be) -> (sens (cons (al -> be) al)))))
+@example
+*j: (-> (-> al be)
+        (-> (r-tag al)
+            (cons (r-tag be)
+                  (-> (sens be)
+                      (sens (cons (-> al be) al)))))
+@end example
 
 Also see below.
 
 I can only assume that the procedure for doing the primal computation
 is echoed this way out of a sense of symmetry, or else for debugging
 purposes.
+@end defun
 
-(*j-inverse reverse-transformed-object)
+@defun *j-inverse reverse-transformed-object
+Undoes the transformation done by @code{*j} and returns the original
+object.
+@end defun
 
-Undoes the transformation done by *j and returns the original object.
+@defun reverse? object
+Returns whether the given @var{object} has been transformed by
+@code{*j}.
+@end defun
 
-(reverse? object)
+@defun sensitize object
+Returns a sensitivity-tagged version of the given @var{object}.
+@end defun
 
-Returns whether the given object has been transformed by *j.
+@defun sensitivity? object
+Detects whether the given @var{object} is a sensitivity.
+@end defun
 
-(sensitize object)
-
-Returns a sensitivity-tagged version of the given object.
-
-(sensitivity? object)
-
-Detects whether the given object is a sensitivity.
-
-(unsensitize sensitivity)
-
-Strips the sensitivity tag off the given sensitivity object and returns
+@defun unsensitize sensitivity
+Strips the sensitivity tag off the given @var{sensitivity} and returns
 the underlying object.
+@end defun
 
-(plus object1 object2)
+@defun plus object1 object2
+Adds the two given @var{object}s pointwise.  They must have the same
+shape.  @code{(plus @var{object} (zero @var{object}))} is an identity
+operation.  This is important in the interior of the reverse
+computation, because this is the reverse transform of the implicit
+fanout of using the same variable more than once.  It is also made
+available to the user.
+@end defun
 
-Adds the two given objects pointwise.  They must have the same shape.
-(plus object (zero object)) is an identity operation.  This is
-important in the interior of the reverse computation, because this is
-the reverse transform of the implicit fanout of using the same
-variable more than once.  It is, however, also made available to the
-user.
-
+@noindent
 Given these primitives, one can write procedures for doing
 differentiation in reverse mode such as this:
-
+@example
 (define (gradient-Rn->R-using-*j f)
   (let ((f-reverse (*j f)))
     (lambda (x)
       (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
-
+@end example
 @bye
