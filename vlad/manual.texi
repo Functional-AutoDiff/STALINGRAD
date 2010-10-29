@@ -512,8 +512,8 @@ primal output and the procedure for computing sensitivities in
 reverse.  That procedure, when given a sensitivity corresponding to
 the output (and of the same shape), will produce a sensitivity-tagged
 pair of the procedure for doing the original primal computation and a
-sensitivity corresponding to the input.  The type of *j applied to a
-function is:
+sensitivity corresponding to the input.  The type of @code{*j} applied
+to a function is:
 
 @example
 *j: (-> (-> al be)
