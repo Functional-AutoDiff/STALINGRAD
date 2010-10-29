@@ -159,14 +159,16 @@ structuring and destructuring is dealt with at compile time (see
 @node Literals
 @section Literals
 
-#t #f
-
+@defvr Literal #t
+@defvrx Literal #f
 Literal syntax for booleans: like Scheme.
+@end defvr
 
-Literal syntax for numbers is also like Scheme, except that the only
-numbers in VLAD are IEEE-64 floating point.
+Literal syntax for numbers is also like Scheme, except that all
+numerals are interpreted as constant IEEE-64 floating point numbers,
+because the only numbers in VLAD are IEEE-64 floating point.
 
-TODO () ?
+@todo () ?
 
 @node Special forms
 @section Special forms
@@ -175,44 +177,55 @@ VLAD supports the following special forms.  They are like the
 corresponding Scheme special forms, except for some differences
 pointed out with each one:
 
-lambda
+@defspec lambda formalspec expression
+Like Scheme, except for destructuring the formal parameters given by
+@var{formalspec} (see "Destructuring") and may only have one
+@var{expression} in the body.
+@end defspec
 
-Like Scheme, except for destructuring the formal parameters (see
-"Destructuring") and may only have one expression in the body.
-
-define
-
+@defspec define definiendum definiens
 Like Scheme, except may only appear at the top level of a program (no
-internal defines).  Also, via lambda, supports destructuring but does
-not support multi-expression procedure bodies.
-TODO Are redefinitions of names already defined in the same
-define-block acceptable?
+internal defines).  Also, via @code{lambda}, supports destructuring
+but does not support multi-expression procedure bodies.
+@todo{Are redefinitions of names already defined in the same
+define-block acceptable?}
+@end defspec
 
-let, let*, letrec
+@defspec let bindings@dots{} expression
+@defspecx let* bindings@dots{} expression
+@defspecx letrec bindings@dots{} expression
+Like Scheme except may only have one @var{expression} in the body.
+VLAD does not support the ``named let'' Scheme iteration syntax.
+@todo Are the destructuring rules different for let, let* and letrec?
+@todo Can the initialization forms in letrec not be lambdas?
+@end defspec
 
-Like Scheme except may only have one body expression.  VLAD does
-not support the "named let" Scheme iteration syntax.
-TODO are the destructuring rules different for let, let* and letrec?
-TODO can the initialization forms in letrec not be lambdas?
-
-cond
-
-Like Scheme, except the final else clause is required, and
+@defspec cond clauses@dots{}
+Like Scheme, except the final @code{else} clause is required, and
 the syntaxes
-(cond ... (e) ...) or (cond ... (e1 => e2) ...)
+@code{(cond ... (e) ...)} and @code{(cond ... (e1 => e2) ...)}
 are not supported.  Also, clause bodies must be one expression.
+@end defspec
 
-quote, if, and, or
+@defspec if predicate consequent alternate
+Like Scheme; VLAD does not support the one-armed @code{if} syntax.
+@end defspec
 
+@defspec quote datum
+@defspecx and expressions@dots{}
+@defspecx or expressions@dots{}
 Like Scheme.
+@end defspec
 
 TODO quasiquote and unquote?
 
-cons, cons*, list
-
+@defspec cons car cdr
+@defspecx cons* items@dots{}
+@defspecx list items@dots{}
 These do the same thing as in Scheme, except that they are special
 forms in VLAD, and so may not be passed as function parameters,
 returned from functions, etc.
+@end defspec
 
 @node Procedures
 @section Procedures
