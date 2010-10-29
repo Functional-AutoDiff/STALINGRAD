@@ -24,13 +24,6 @@
 (define (abs x) (if (negative? x) (- 0 x) x))
 (abs -3)
 
-;; (define (double-loop)
-;;   (let* ((x (read-real))
-;;          (y (write (* 3 x))))
-;;     (double-loop)))
-
-;; (double-loop)
-
 (let ((ignore (write (* 2 (real 3)))))
   3)
 
@@ -67,3 +60,11 @@
 ((cdr ((*j sin) (*j 1))) (sensitize 1))
 (reverse? (*j sin))
 (plus (cons 1 2) (cons 2 3))
+
+;; (define (double-loop)
+;;   (let* ((x (read-real))
+;;          (y (write (* 3 x))))
+;;     (double-loop)))
+
+;; (double-loop)
+

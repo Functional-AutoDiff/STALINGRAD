@@ -1,14 +1,40 @@
-VLAD Programmer Manual
+\input texinfo @c -*-texinfo-*-
+@comment %**start of header
+@setfilename manual
+@settitle VLAD Programmer Manual
+@comment %**end of header
 
-Abstract
+@ifnothtml
+@shortcontents
+@end ifnothtml
+@contents
+
+@ifnottex
+@node Top
+@top VLAD Programmer Manual
+
+@end ifnottex
+
+@menu
+* Overview::
+* Getting Started::
+* Scheme Stuff::
+* Numeric Basis::
+* Input and Output::
+* Introducing Imprecision::
+* Forward AD::
+* Reverse AD::
+@end menu
+
+@node Overview
+@chapter Overview
 
 VLAD is a functional language with a first-class automatic
 differentiation operator and an aggressively optimizing compiler.  The
 purpose of VLAD is to push the envelope on the speed of numeric
-computing, and to dispel any myths that automatic differentiation
-needs to be hard to use or slow to execute.
-
-Overview
+computing, without sacrificing any essential expressive power; and to
+dispel any myths that automatic differentiation needs to be hard to
+use or slow to execute.
 
 VLAD is essentially a subset of Scheme, augmented with functions for
 doing automatic differentiation, and implemented with a compiler that
@@ -22,7 +48,8 @@ prototype, however, VLAD sacrifices various uninteresting
 conveniences, which are left to user-space libraries and to later
 incarnations of these language design ideas.
 
-Getting Started
+@node Getting Started
+@chapter Getting Started
 
 A VLAD program is notionally just a single expression.  For example,
 
@@ -63,8 +90,8 @@ execute.  Stalingrad also has many other options and modes for
 controlling the compilation process, emitting various partial results
 thereof, etc.
 
-
-Scheme Stuff
+@node Scheme Stuff
+@chapter Scheme Stuff
 
 The basic structure of VLAD code is inherited from Scheme.
 Identifiers are whitespace-delimited.  Expressions are written in
@@ -189,7 +216,8 @@ Scheme procedure
   (if p (c) (a)))
 would do.
 
-Numeric Basis
+@node Numeric Basis
+@chapter Numeric Basis
 
 The numbers in VLAD are all IEEE-64 floating point.  There is no
 provision for integer arithmetic except as a subset of floating point
@@ -227,7 +255,8 @@ ATAN is binary; and no unary minus is provided.
 Numeric constants are written in the standard way.
 TODO Does VLAD support radix prefixes?
 
-Introducing Imprecision
+@node Introducing Imprecision
+@chapter Introducing Imprecision
 
 real
 
@@ -259,7 +288,8 @@ would cause the flow analysis to produce a FACT procedure that
 computes the factorials of (positive integer) real numbers, and
 compute the factorial of 5 at runtime.
 
-I/O
+@node Input and Output
+@chapter Input and Output
 
 VLAD provides two I/O primitives:
 
@@ -280,7 +310,8 @@ you should:
 
 TODO structured WRITE ? What is WRITE-REAL supposed to be?
 
-Forward AD
+@node Forward AD
+@chapter Forward AD
 
 The modus operandi for forward AD is:
 
@@ -385,7 +416,8 @@ procedures as follows:
 
 etc, to taste.
 
-Reverse AD
+@node Reverse AD
+@chapter Reverse AD
 
 The modus operandi for reverse AD is:
 
@@ -470,3 +502,5 @@ differentiation in reverse mode such as this:
   (let ((f-reverse (*j f)))
     (lambda (x)
       (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
+
+@bye
