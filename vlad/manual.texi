@@ -4,6 +4,7 @@
 @settitle VLAD Programmer Manual
 @comment %**end of header
 
+@syncodeindex vr fn
 @allowcodebreaks false
 @setchapternewpage off
 @macro todo{text}
@@ -50,6 +51,7 @@ use or slow to execute.
 * Input and Output::
 * Forward AD::
 * Reverse AD::
+* Index::
 @end menu
 
 @node Overview
@@ -324,7 +326,7 @@ of the above are either unary or binary, as indicated.  Notably,
 @node Introducing Imprecision
 @chapter Introducing Imprecision
 
-@defun real
+@defun real x
 At runtime, @code{real} is the identity function on real numbers.  However,
 @code{real} forces the flow analysis to forget the value of its argument, and
 avoid specializing any procedures that use it to its exact value.  See
@@ -616,4 +618,9 @@ differentiation in reverse mode such as this:
     (lambda (x)
       (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
 @end example
+
+@node Index
+@unnumbered Binding Index
+
+@printindex fn
 @bye
