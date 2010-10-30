@@ -11,21 +11,29 @@
 @end macro
 
 @macro abstract
-@strong{Abstract}
-Frob
+VLAD is a functional language with a first-class automatic
+differentiation operator and an aggressively optimizing compiler.  The
+purpose of VLAD is to push the envelope on the speed of numeric
+computing, without sacrificing any essential expressive power; and to
+dispel any myths that automatic differentiation needs to be hard to
+use or slow to execute.
 @end macro
 
 @titlepage
 @title VLAD Programmer Manual
 @author Alexey Radul
 @page
+@center{@strong{Abstract}}
+@quotation
 @abstract
+@end quotation
 @end titlepage
 
 @ifnottex
 @node Top
 @top VLAD Programmer Manual
 
+@heading Abstract
 @abstract
 @end ifnottex
 
@@ -46,13 +54,6 @@ Frob
 
 @node Overview
 @chapter Overview
-
-VLAD is a functional language with a first-class automatic
-differentiation operator and an aggressively optimizing compiler.  The
-purpose of VLAD is to push the envelope on the speed of numeric
-computing, without sacrificing any essential expressive power; and to
-dispel any myths that automatic differentiation needs to be hard to
-use or slow to execute.
 
 VLAD is essentially a subset of Scheme, augmented with functions for
 doing automatic differentiation, and implemented with a compiler that
