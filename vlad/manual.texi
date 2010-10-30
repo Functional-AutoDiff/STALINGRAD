@@ -4,6 +4,7 @@
 @settitle VLAD Programmer Manual
 @comment %**end of header
 
+@allowcodebreaks false
 @setchapternewpage off
 @macro todo{text}
 @strong{TODO: \text\}
