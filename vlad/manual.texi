@@ -10,13 +10,28 @@
 @strong{TODO: \text\}
 @end macro
 
-@contents
+@macro abstract
+@strong{Abstract}
+Frob
+@end macro
+
+@titlepage
+@title VLAD Programmer Manual
+@author Alexey Radul
+@page
+@abstract
+@end titlepage
 
 @ifnottex
 @node Top
 @top VLAD Programmer Manual
 
+@abstract
 @end ifnottex
+
+@ifnotinfo
+@contents
+@end ifnotinfo
 
 @menu
 * Overview::
