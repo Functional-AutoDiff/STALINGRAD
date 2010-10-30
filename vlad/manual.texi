@@ -46,8 +46,8 @@ use or slow to execute.
 * Getting Started::
 * Scheme Stuff::
 * Numeric Basis::
-* Input and Output::
 * Introducing Imprecision::
+* Input and Output::
 * Forward AD::
 * Reverse AD::
 @end menu
@@ -75,6 +75,7 @@ A VLAD program is notionally just a single expression.  For example,
 @lisp
 (+ 3 4)
 @end lisp
+
 @noindent
 is a perfectly good VLAD program whose result is @code{7}.  The
 Stalingrad program reads a file containing a VLAD expression, compiles
@@ -97,6 +98,7 @@ For example,
 
 (double-loop)
 @end lisp
+
 @noindent
 is a VLAD program that will read real numbers from standrad input
 write their triples to standard output.
@@ -134,9 +136,11 @@ evaluated values of the remaining subforms.
 The main difference between Scheme and VLAD at this level is that VLAD
 has automatic destructuring of bound values.  That is, if the procedure
 made by
+
 @example
 (lambda (cons x y) ...)
 @end example
+
 @noindent
 is passed a pair, then in the body of this procedure @code{x} and
 @code{y} will be bound to the car and cdr of that pair, respectively.
@@ -147,14 +151,17 @@ as with passing the procedure @code{foo} the three arguments
 @example
 (foo bar baz quux)
 @end example
+
 @noindent
 the three arguments are implicitly collected into a structure with
 @code{cons*} and passed to the procedure as a single argument.
 Presumably, the procedure will destructure that structure to get the
 pieces; for example, if @code{foo} were defined with
+
 @example
 (lambda (bar baz quux) ...)
 @end example
+
 @noindent
 that actually represents a destructuring operation.  All this notional
 structuring and destructuring is dealt with at compile time (see
@@ -251,23 +258,27 @@ returned from functions, etc.
 @defunx boolean? thing
 @defunx pair? thing
 @defunx procedure? thing
-Do what you expect.
+What you expect.
 @end defun
 
 @defun if-procedure predicate consequent-thunk alternate-thunk
 Normally, you would use the @code{if} form, but the procedure version
 is provided for completeness.  This is convenient to do because in
 VLAD, @code{if} is a macro that expands as
+
 @example
-(if p c a)  ==>  (if-procedure p (lambda () c) (lambda () a))
+(if p c a)  @expansion{}  (if-procedure p (lambda () c) (lambda () a))
 @end example
+
 @noindent
 and @code{if-procedure} is supplied primitively.  @code{if-procedure}
 does what the Scheme procedure
+
 @example
 (define (if-procedure p c a)
   (if p (c) (a)))
 @end example
+
 @noindent
 would do.
 @end defun
@@ -322,17 +333,21 @@ avoid specializing any procedures that use it to its exact value.  See
 
 @noindent
 For example, given
+
 @lisp
 (define (fact x)
   (if (= x 0)
       1
       (* x (fact (- x 1)))))
 @end lisp
+
 @noindent
 writing
+
 @lisp
 (fact 5)
 @end lisp
+
 @noindent
 would cause the flow analysis to unroll the recursion in @code{fact}
 all the way, and completely solve the return value of that form (to
@@ -343,9 +358,11 @@ behavior; how do they work?  Are they good enough that @code{real} is
 wizard-only now?}
 
 In contrast, writing
+
 @lisp
 (fact (real 5))
 @end lisp
+
 @noindent
 would cause the flow analysis to produce a @code{fact} procedure that
 computes the factorials of (positive integer) real numbers, and
@@ -366,11 +383,13 @@ Takes a real number argument, writes it to the standard output, and
 returns it.  Since VLAD does not support multiple expressions in
 procedure bodies, if you want to write and then do something else,
 you should:
+
 @example
 (let ((ignore (write foo)))
   do-something-else)
 @end example
 @end deffn
+
 @noindent
 @todo structured WRITE ? What is WRITE-REAL supposed to be?
 
@@ -378,6 +397,7 @@ you should:
 @chapter Forward AD
 
 The modus operandi for forward AD is:
+
 @enumerate
 @item
 Bundle the primal input value with a tangent value (representing the
@@ -396,6 +416,7 @@ Push the bundle through the transformed function.
 Extract from the output the primal value and the derivative along that
 direction with @code{(primal @var{bundle})} and @code{(unperturb (tangent @var{bundle}))}, respectively.
 @end enumerate
+
 @noindent
 Here are the details of the VLAD procedures that do this:
 
@@ -459,13 +480,16 @@ procedures.  @code{bundle} operating on procedures is so arranged that
 the pushforward operator, namely the operator that transforms a primal
 function into one that will operate on bundles and compute derivatives
 therewith, can be defined as:
+
 @example
 (define (j* f)
   (bundle f (perturb (zero f))))
 @end example
+
 @noindent
 Given such a @code{j*}, one can then write forward-mode
 differentiation procedures as follows:
+
 @example
 (define (derivative-R->Rn-using-j* f)
   (let ((f-forward (j* f)))
@@ -483,6 +507,7 @@ differentiation procedures as follows:
       (lambda (r) (f (+ x (* r dx)))))
      0)))
 @end example
+
 @noindent
 etc, to taste.
 
@@ -490,6 +515,7 @@ etc, to taste.
 @chapter Reverse AD
 
 The modus operandi for reverse AD is:
+
 @enumerate
 @item
 Tag the primal inputs as things for which sensitivity values are
@@ -516,6 +542,7 @@ Untag the resulting sensitivity object to extract the corresponding
 input change direction, with @code{(cdr (unsensitize @var{result}))}
 (more below).
 @end enumerate
+
 @noindent
 Here are the details of the VLAD procedures that do this:
 
@@ -582,6 +609,7 @@ available to the user.
 @noindent
 Given these primitives, one can write procedures for doing
 differentiation in reverse mode such as this:
+
 @example
 (define (gradient-Rn->R-using-*j f)
   (let ((f-reverse (*j f)))
