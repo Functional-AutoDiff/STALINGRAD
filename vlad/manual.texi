@@ -1,6 +1,9 @@
 \input texinfo @c -*-texinfo-*-
 @comment %**start of header
 @setfilename manual
+@set EDITION 1.0
+@set VERSION 0.1
+@set UPDATED October 30, 2010
 @settitle VLAD Programmer Manual
 @comment %**end of header
 
@@ -22,6 +25,8 @@ use or slow to execute.
 
 @titlepage
 @title VLAD Programmer Manual
+@subtitle Edition @value{EDITION} for VLAD version @value{VERSION}
+@subtitle @value{UPDATED}
 @author Alexey Radul
 @page
 @center{@strong{Abstract}}
@@ -33,6 +38,9 @@ use or slow to execute.
 @ifnottex
 @node Top
 @top VLAD Programmer Manual
+
+This manual documents VLAD vesion @value{VERSION}.
+This is edition @value{EDITION} of the manual, up to date as of @value{UPDATED}.
 
 @heading Abstract
 @abstract
