@@ -133,7 +133,6 @@ The basic structure of VLAD code is inherited from Scheme.
 Identifiers are whitespace-delimited.  Expressions are written in
 fully-parenthesized prefix notation.  Comments begin with a semicolon
 character (@code{;}) and last until the end of the line.  
-@todo Does VLAD support expression comments with #; and/or block comments with #| |#?
 Variables are lexically scoped.  Objects have unlimited extent.
 
 The basic evaluation model of VLAD is also inherited from Scheme.  The

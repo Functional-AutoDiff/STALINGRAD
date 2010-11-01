@@ -109,3 +109,5 @@
 #x100 ===> 256
 
 (write (cons 1 2)) ===> (multiform (1 . 2) (1 . 2))
+
+;; TODO How do I test #; and #| |# comments? (They are not supported as of this writing)
