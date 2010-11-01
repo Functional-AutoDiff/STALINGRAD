@@ -74,3 +74,38 @@
 
 ;; (double-loop)
 
+'() ===> ()
+() ===> (multiform invalid expression: ()) ;; TODO Fix testing error conditions
+
+(multiform
+ (define x 3)
+ x) ===> (multiform invalid expression: (letrec ((x 3)) x))
+
+(let ((x 3)
+      (x 4))
+  x) ===> (multiform duplicate variables: (lambda ((cons* x x)) x))
+
+(let* ((x 3)
+       (x 4))
+  x) ===> 4
+
+(letrec ((x 3)
+	 (x 4))
+  x) ===> (multiform duplicate variables: (letrec ((x 3) (x 4)) x))
+
+(multiform
+ (define x (lambda () 3))
+ (x)) ===> 3
+
+(letrec ((foo (cons (lambda () 2)
+		    (lambda () 3))))
+  foo) ===> (multiform invalid expression: (letrec ((foo (cons (lambda () 2) (lambda () 3)))) foo))
+
+`(3) ===> (multiform unbound variable: quasiquote)
+
+#b100 ===> 4
+#o100 ===> 64
+#d100 ===> 100
+#x100 ===> 256
+
+(write (cons 1 2)) ===> (multiform (1 . 2) (1 . 2))

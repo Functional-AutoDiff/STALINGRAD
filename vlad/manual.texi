@@ -178,6 +178,8 @@ structuring and destructuring is dealt with at compile time (see
 "Performance Model") and incurs no runtime overhead.  See
 "Destructuring" for the detailed rules.
 
+The empty expression @code{()} is not legal VLAD.
+
 @todo Detailed lexical syntax of VLAD, differences from Scheme
 
 @todo Destructuring
@@ -202,8 +204,6 @@ Literal syntax for numbers is also like Scheme, except that all
 numerals are interpreted as constant IEEE-64 floating point numbers,
 because the only numbers in VLAD are IEEE-64 floating point.
 
-@todo () ?
-
 @node Special forms
 @section Special forms
 
@@ -220,9 +220,13 @@ Like Scheme, except for destructuring the formal parameters given by
 @defspec define definiendum definiens
 Like Scheme, except may only appear at the top level of a program (no
 internal defines).  Also, via @code{lambda}, supports destructuring
-but does not support multi-expression procedure bodies.
-@todo{Are redefinitions of names already defined in the same
-define-block acceptable?}
+but does not support multi-expression procedure bodies.  A name may be
+redefined only if a non-definition separates its redefinition from its
+original definition (otherwise the @code{letrec} that the block of
+definitions is turned into has a duplicate variable).  Also,
+@var{definiens} must be a @code{lambda} expression, either explicitly or
+via the @code{(define (@var{name} @var{formals}@dots{}) @dots{})}
+syntax (which is supported).
 @end defspec
 
 @defspec let bindings@dots{} expression
@@ -230,8 +234,9 @@ define-block acceptable?}
 @defspecx letrec bindings@dots{} expression
 Like Scheme except may only have one @var{expression} in the body.
 VLAD does not support the ``named let'' Scheme iteration syntax.
+The initialization expressions in the @code{letrec} form must
+be @code{lambda} expressions (this is the common case anyway).
 @todo Are the destructuring rules different for let, let* and letrec?
-@todo Can the initialization forms in letrec not be lambdas?
 @end defspec
 
 @defspec cond clauses@dots{}
@@ -248,10 +253,8 @@ Like Scheme; VLAD does not support the one-armed @code{if} syntax.
 @defspec quote datum
 @defspecx and expressions@dots{}
 @defspecx or expressions@dots{}
-Like Scheme.
+Like Scheme.  VLAD does not support @code{quasiquote} or @code{unquote}.
 @end defspec
-
-TODO quasiquote and unquote?
 
 @defspec cons car cdr
 @defspecx cons* items@dots{}
@@ -264,10 +267,10 @@ returned from functions, etc.
 @node Procedures
 @section Procedures
 
-@defun null? thing
-@defunx boolean? thing
-@defunx pair? thing
-@defunx procedure? thing
+@defun null? object
+@defunx boolean? object
+@defunx pair? object
+@defunx procedure? object
 What you expect.
 @end defun
 
@@ -300,8 +303,8 @@ The numbers in VLAD are all IEEE-64 floating point.  There is no
 provision for integer arithmetic except as a subset of floating point
 arithmetic, and there is no distinction between exact and inexact
 numbers.
-Numeric constants are written in the standard way.
-@todo Does VLAD support radix prefixes?
+Numeric constants are written in the standard way (except the literal
+complex number syntax, of course).
 
 The following subset of the Scheme numeric basis is provided as
 primitives:
@@ -401,7 +404,8 @@ you should:
 @end deffn
 
 @noindent
-@todo structured WRITE ? What is WRITE-REAL supposed to be?
+@todo structured WRITE works in the interpreter; what about the compiler?
+@todo What is WRITE-REAL supposed to be?
 
 @node Forward AD
 @chapter Forward AD
@@ -485,7 +489,7 @@ Nonetheless, this is how the current code works, and of course this is
 one of the central features of VLAD so it better be described in the
 documentation.}
 
-@code{bundle} has slightly different behavior on data and on
+The @code{bundle} primitive has slightly different behavior on data and on
 procedures.  @code{bundle} operating on procedures is so arranged that
 the pushforward operator, namely the operator that transforms a primal
 function into one that will operate on bundles and compute derivatives
