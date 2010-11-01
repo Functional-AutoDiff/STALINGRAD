@@ -57,6 +57,7 @@ This is edition @value{EDITION} of the manual, up to date as of @value{UPDATED}.
 * Numerics::
 * Forward AD::
 * Reverse AD::
+* Performance::
 * Index::
 @end menu
 
@@ -154,13 +155,10 @@ has automatic destructuring of bound values.
 works and does what you would expect.  This facility is how VLAD
 implements multiple formal parameters to a procedure, multiple
 arguments passed to a procedure at its call site, and multiple return
-values.  All this notional
-structuring and destructuring is dealt with at compile time (see
-"Performance Model") and incurs no runtime overhead.
+values.  All this notional structuring and destructuring is dealt with
+at compile time (@pxref{Performance}) and incurs no runtime overhead.
 
 @todo Detailed lexical syntax of VLAD, differences from Scheme
-
-@todo Performance Model
 
 @menu
 * Destructuring::
@@ -369,8 +367,8 @@ you should:
 @defun real x
 At runtime, @code{real} is the identity function on real numbers.  However,
 @code{real} forces the flow analysis to forget the value of its argument, and
-avoid specializing any procedures that use it to its exact value.  See
-"Performance Model".
+avoid specializing any procedures that use it to its exact value.
+@xref{Performance}.
 @end defun
 
 @noindent
@@ -671,6 +669,11 @@ differentiation in reverse mode such as this:
     (lambda (x)
       (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
 @end example
+
+@node Performance
+@chapter Performance
+
+@todo Just how thorough is the flow analysis?  How does one control it?
 
 @node Index
 @unnumbered Binding Index
