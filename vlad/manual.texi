@@ -139,43 +139,24 @@ will be evaluated---if it's an identifier naming a special form,
 then the whole form will be evaluated that way; otherwise, the first
 subform will be evaluated, treated as a procedure, and applied to the
 evaluated values of the remaining subforms.
+The empty expression @code{()} is not legal VLAD.
 
-The main difference between Scheme and VLAD at this level is that VLAD
-has automatic destructuring of bound values.  That is, if the procedure
-made by
+The main syntactic difference between Scheme and VLAD is that VLAD
+has automatic destructuring of bound values.
+@xref{Destructuring} for the details, but the gist is that
 
 @example
-(lambda ((cons x y)) ...)
+(let (((cons x y) (cons 1 2)))
+  ... x ... y ...)
 @end example
 
 @noindent
-is passed a pair, then in the body of this procedure @code{x} and
-@code{y} will be bound to the car and cdr of that pair, respectively.
-Dually, when a procedure is passed syntactically multiple arguments,
-as with passing the procedure @code{foo} the three arguments
-@code{bar}, @code{baz}, and @code{quux},
-
-@example
-(foo bar baz quux)
-@end example
-
-@noindent
-the three arguments are implicitly collected into a structure with
-@code{cons*} and passed to the procedure as a single argument.
-Presumably, the procedure will destructure that structure to get the
-pieces; for example, if @code{foo} were defined with
-
-@example
-(lambda (bar baz quux) ...)
-@end example
-
-@noindent
-that actually represents a destructuring operation.  All this notional
+works and does what you would expect.  This facility is how VLAD
+implements multiple formal parameters to a procedure, multiple
+arguments passed to a procedure at its call site, and multiple return
+values.  All this notional
 structuring and destructuring is dealt with at compile time (see
 "Performance Model") and incurs no runtime overhead.
-@xref{Destructuring}, for the detailed rules.
-
-The empty expression @code{()} is not legal VLAD.
 
 @todo Detailed lexical syntax of VLAD, differences from Scheme
 
@@ -222,6 +203,13 @@ multiple formal parameters to a procedure, VLAD supports
 user-specified destructuring by writing @code{cons}, @code{cons*}, or
 @code{list} forms in the formal parameter spec of a procedure.  For example,
 
+@lisp
+((lambda ((cons x y))
+   (+ x y))
+ 1 2)  @result{} 3
+@end lisp
+
+This facility is recursive:
 @lisp
 ((lambda ((cons x y) (list z (cons v w)))
    (+ x (+ y (+ z (+ v w)))))
