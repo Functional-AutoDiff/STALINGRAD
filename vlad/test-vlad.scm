@@ -14,22 +14,25 @@
 (define-structure
   (expectation
    (safe-accessors #t)
+   (constructor %make-expectation)
    (print-procedure
     (simple-unparser-method 'expected
      (lambda (expectation)
-       (list (expectation-form expectation)
+       (list (expectation-forms expectation)
 	     (expectation-answer expectation))))))
-  form
+  forms
   answer)
+
+(define (make-expectation test answer)
+  (if (and (pair? test) (eq? (car test) 'multiform))
+      (%make-expectation (cdr test) answer)
+      (%make-expectation (list test) answer)))
 
 (define (make-expectations forms default)
   (let loop ((answers '())
 	     (forms forms))
     (cond ((null? forms)
-	   (reverse answers))#;
-	  ((multiform? (car forms))
-	   (loop (cons (assemble-multiform (car forms)) answers)
-		 (cdr forms)))
+	   (reverse answers))
 	  ((null? (cdr forms))
 	   (reverse (cons (make-expectation (car forms) default) answers)))
 	  ((eq? '===> (cadr forms))
@@ -40,13 +43,13 @@
 		 (cdr forms))))))
 
 (define (discrepancy expectation)
-  (let* ((form (expectation-form expectation))
+  (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
-	 (reaction (vlad-reaction-to form))
+	 (reaction (vlad-reaction-to forms))
 	 (answers (with-input-from-string reaction read-all)))
     (if (matches? expected answers)
 	#f
-	`(,form produced ,answers via ,reaction expected ,expected))))
+	`(,forms produced ,answers via ,reaction expected ,expected))))
 
 (define (matches? expected result)
   ;; TODO Augment to understand "error", "non-error", etc.
@@ -62,14 +65,14 @@
     (lambda ()
       (run-shell-command command))))
 
-(define (vlad-reaction-to form)
+(define (vlad-reaction-to forms)
   (with-output-to-file "input.vlad"
     (lambda ()
-      (write form)))
+      (for-each write forms)))
   (shell-command-output "../../stalingrad-amd64 input.vlad"))
 
-(define (eval-through-vlad form)
-  (with-input-from-string (vlad-reaction-to form) read))
+(define (eval-through-vlad forms)
+  (with-input-from-string (vlad-reaction-to forms) read))
 
 (in-test-group
  vlad
