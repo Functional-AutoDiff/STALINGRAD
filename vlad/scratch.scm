@@ -75,15 +75,15 @@
 ;; (double-loop)
 
 '() ===> ()
-() ===> (multiform invalid expression: ()) ;; TODO Fix testing error conditions
+() ===> (error "Invalid expression: ()") ;; TODO Fix testing error conditions
 
 (multiform
  (define x 3)
- x) ===> (multiform invalid expression: (letrec ((x 3)) x))
+ x) ===> (error "Invalid expression")
 
 (let ((x 3)
       (x 4))
-  x) ===> (multiform duplicate variables: (lambda ((cons* x x)) x))
+  x) ===> (error "Duplicate variables")
 
 (let* ((x 3)
        (x 4))
@@ -91,7 +91,7 @@
 
 (letrec ((x 3)
 	 (x 4))
-  x) ===> (multiform duplicate variables: (letrec ((x 3) (x 4)) x))
+  x) ===> (error "Duplicate variables")
 
 (multiform
  (define x (lambda () 3))
@@ -99,9 +99,9 @@
 
 (letrec ((foo (cons (lambda () 2)
 		    (lambda () 3))))
-  foo) ===> (multiform invalid expression: (letrec ((foo (cons (lambda () 2) (lambda () 3)))) foo))
+  foo) ===> (error "Invalid expression")
 
-`(3) ===> (multiform unbound variable: quasiquote)
+`(3) ===> (error "Unbound variable: QUASIQUOTE")
 
 #b100 ===> 4
 #o100 ===> 64

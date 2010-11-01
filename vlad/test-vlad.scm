@@ -45,20 +45,22 @@
 (define (discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
-	 (reaction (vlad-reaction-to forms))
-	 (answers (with-input-from-string reaction read-all)))
-    (if (matches? expected answers)
+	 (reaction (vlad-reaction-to forms)))
+    (if (matches? expected reaction)
 	#f
-	`(,forms produced ,answers via ,reaction expected ,expected))))
+	`(,forms produced ,reaction expected ,expected))))
 
-(define (matches? expected result)
-  ;; TODO Augment to understand "error", "non-error", etc.
-  (cond ((and (pair? expected)
-	      (eq? (car expected) 'multiform))
-	 (equal? (cdr expected) result))
-	(else
-	 (and (= 1 (length result))
-	      (equal? expected (car result))))))
+(define (matches? expected reaction)
+  (if (and (pair? expected)
+	   (eq? (car expected) 'error))
+      (re-string-match (cadr expected) reaction)
+      (let ((result (with-input-from-string reaction read-all)))
+	(cond ((and (pair? expected)
+		    (eq? (car expected) 'multiform))
+	       (equal? (cdr expected) result))
+	      (else
+	       (and (= 1 (length result))
+		    (equal? expected (car result))))))))
 
 (define (shell-command-output command)
   (with-output-to-string
