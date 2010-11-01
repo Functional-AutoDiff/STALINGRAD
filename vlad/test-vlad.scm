@@ -32,16 +32,20 @@
 	  ((null? (cdr forms))
 	   (reverse (cons (make-expectation (car forms) default) answers)))
 	  ((eq? '===> (cadr forms))
-	   (loop (cons (make-expectation (car forms) (caddr forms)))
+	   (loop (cons (make-expectation (car forms) (caddr forms)) answers)
 		 (cdddr forms)))
 	  (else
 	   (loop (cons (make-expectation (car forms) default) answers)
 		 (cdr forms))))))
 
-(define (expectation-met? expectation)
-  (let ((form (expectation-form expectation))
-	(expected (expectation-answer expectation)))
-    (matches? expected (eval-through-vlad form))))
+(define (discrepancy expectation)
+  (let* ((form (expectation-form expectation))
+	 (expected (expectation-answer expectation))
+	 (reaction (vlad-reaction-to form))
+	 (answer (with-input-from-string reaction read)))
+    (if (matches? expected answer)
+	#f
+	`(,form produced ,answer via ,reaction expected ,expected))))
 
 (define (matches? expected result)
   ;; TODO Augment to understand "error", "non-error", etc.
@@ -66,5 +70,5 @@
 
  (for-each (lambda (expectation)
 	     (define-test
-	       (check (expectation-met? expectation))))
+	       (check (not (discrepancy expectation)))))
 	   (make-expectations (read-forms "scratch.scm") #t)))
