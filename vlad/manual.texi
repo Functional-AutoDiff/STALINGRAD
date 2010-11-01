@@ -1,9 +1,9 @@
 \input texinfo @c -*-texinfo-*-
 @comment %**start of header
 @setfilename manual
-@set EDITION 0.2
+@set EDITION 0.3
 @set VERSION 0.1
-@set UPDATED October 30, 2010
+@set UPDATED November 1, 2010
 @settitle VLAD Programmer Manual
 @comment %**end of header
 
