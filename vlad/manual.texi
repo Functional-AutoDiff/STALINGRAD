@@ -193,7 +193,57 @@ The empty expression @code{()} is not legal VLAD.
 @node Destructuring
 @section Destructuring
 
-@todo Destructuring
+In VLAD, all procedures take exactly one argument, which they may
+implicitly destructure, depending on the formal parameter
+specification of the procedure.  Dually, all procedure call sites are
+coerced into passing the callee exactly one argument, which is a
+structure that contains all the syntactically apparent arguments.
+
+Syntactically multiple procedure arguments are folded into a
+destructuring that uses @code{cons*}:
+
+@example
+(lambda () @var{e})  @expansion{}  (lambda ((cons*)) @var{e})
+(lambda (x) @var{e})  @expansion{}  (lambda (x) @var{e})
+(lambda (x y z@dots{}) @var{e})  @expansion{}  (lambda ((cons* x y z@dots{})) @var{e})
+@end example
+
+Likewise, syntactically multiple arguments in a procedure call site
+are folded into making a structure with @code{cons*}:
+
+@example
+(@var{f} ())  @expansion{}  (@var{f} (cons*))
+(@var{f} x)  @expansion{}  (@var{f} x)
+(@var{f} x y z@dots{})  @expansion{}  (@var{f} (cons* x y z@dots{}))
+@end example
+
+In addition to the automatic destructuring introduced by syntactically
+multiple formal parameters to a procedure, VLAD supports
+user-specified destructuring by writing @code{cons}, @code{cons*}, or
+@code{list} forms in the formal parameter spec of a procedure.  For example,
+
+@lisp
+((lambda ((cons x y) (list z (cons v w)))
+   (+ x (+ y (+ z (+ v w)))))
+ (cons (cons 1 2) (list 3 (cons 4 5))))  @result{}  15
+@end lisp
+
+@noindent
+because the procedure picks apart the incoming structure and finds the
+numbers inside.  The same destructuring rules apply to bindings
+introduced by @code{let} and @code{let*}, but not @code{letrec}.
+
+@lisp
+(let (((cons (cons x y) (list z (cons v w)))
+       (cons (cons 1 2) (list 3 (cons 4 5)))))
+  (+ x (+ y (+ z (+ v w)))))  @result{}  15
+@end lisp
+
+In principle, VLAD also destructures constants and closures that may
+appear in the formal parameter position of a procedure, but I don't
+know whether this is ever useful outside the internals of AD
+transforms.
+@todo Why does VLAD destructure closures, etc?  What's a @code{variable-access-expression}?
 
 @node Literals
 @section Literals

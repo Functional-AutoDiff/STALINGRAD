@@ -127,3 +127,11 @@
 ((lambda ((list x y z))
    (* x (* y z)))
  (list 2 3 4)) ===> 24
+
+((lambda ((cons x y) (list z (cons v w)))
+   (+ x (+ y (+ z (+ v w)))))
+ (cons (cons 1 2) (list 3 (cons 4 5))))  ===>  15
+
+(let (((cons (cons x y) (list z (cons v w)))
+       (cons (cons 1 2) (list 3 (cons 4 5)))))
+  (+ x (+ y (+ z (+ v w)))))  ===>  15
