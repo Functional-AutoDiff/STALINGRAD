@@ -1,0 +1,11 @@
+make SCC=/usr/bin/scc cdecl
+make SCC=/usr/bin/scc scxl.a
+
+kumoyuki@golconda:~/src/tmp/stalingrad/QobiScheme-1.44/source$ 
+make port
+cd $QARCHITECTURE_PATH
+make SCXL=$HOME/src/scheme2c/LINUX/xlib "AR=ar -r" RANLIB=ranlib "LRL=QobiScheme.a \$(SCXL)/scxl.a -lX11" sch QobiScheme-AD.a
+cd ../../../source
+make port
+cd $QARCHITECTURE_PATH
+make SCXL=$HOME/src/scheme2c/LINUX/xlib "LRL=$QINSTALLDIR/QobiScheme-1.44/source/$QARCHITECTURE_PATH/QobiScheme.a \$(SCXL)/scxl.a -lX11" stalingrad

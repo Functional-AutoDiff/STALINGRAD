@@ -511,10 +511,10 @@ stalingradlib = stalingradlib-stuff.o\
                 stalingradlib-double-c.o
 
 INCLUDES=\
-	-I $(HOME)/git/stalingrad/QobiScheme-1.44/source \
-	-I $(HOME)/git/scheme2c/debian/LINUX/xlib
+	-I $(QINSTALLDIR)/QobiScheme-1.44/source \
+	-I $(SCXL)
 
-SCH=/home/drr/git/stalingrad/QobiScheme-1.44/source/i686-Linux-2.6.26-2-686/sch
+SCH=$(QINSTALLDIR)/QobiScheme-1.44/source/$(QARCHITECTURE_PATH)/sch
 
 stalingradlib-double-c.o: stalingradlib-double-c.c
 	$(CC) $(CFLAGS) -o stalingradlib-double-c.o\
