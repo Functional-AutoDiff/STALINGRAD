@@ -1,14 +1,15 @@
 (load-option 'synchronous-subprocess)
 (load "../../testing/load")
 
+(define (read-all)
+  (let loop ((results '())
+	     (form (read)))
+    (if (eof-object? form)
+	(reverse results)
+	(loop (cons form results) (read)))))
+
 (define (read-forms filename)
-  (with-input-from-file filename
-    (lambda ()
-      (let loop ((results '())
-		 (form (read)))
-	(if (eof-object? form)
-	    (reverse results)
-	    (loop (cons form results) (read)))))))
+  (with-input-from-file filename read-all))
 
 (define-structure
   (expectation
@@ -42,14 +43,15 @@
   (let* ((form (expectation-form expectation))
 	 (expected (expectation-answer expectation))
 	 (reaction (vlad-reaction-to form))
-	 (answer (with-input-from-string reaction read)))
-    (if (matches? expected answer)
+	 (answers (with-input-from-string reaction read-all)))
+    (if (matches? expected answers)
 	#f
-	`(,form produced ,answer via ,reaction expected ,expected))))
+	`(,form produced ,answers via ,reaction expected ,expected))))
 
 (define (matches? expected result)
   ;; TODO Augment to understand "error", "non-error", etc.
-  (equal? expected result))
+  (and (= 1 (length result))
+       (equal? expected (car result))))
 
 (define (shell-command-output command)
   (with-output-to-string
