@@ -21,20 +21,23 @@
 (real? 2.073e-2)
 
 
-;(define (abs x) (if (negative? x) (- 0 x) x))
-;(abs -3)
+(multiform
+ (define (abs x) (if (negative? x) (- 0 x) x))
+ (abs -3))
+===> 3
 
 (let ((ignore (write (* 2 (real 3)))))
   3) ===> (multiform 6 3)
 
+(multiform
+ (define (fact x)
+   (if (= x 0)
+       1
+       (* x (fact (- x 1)))))
 
-;; (define (fact x)
-;;   (if (= x 0)
-;;       1
-;;       (* x (fact (- x 1)))))
-
-;; (fact 5)
-;; (fact (real 5))
+ (fact 5)
+ (fact (real 5)))
+===> (multiform 120 120)
 
 (perturb 1) ===> (perturbation 1)
 (write (perturb 1)) ===> (multiform (perturbation 1) (perturbation 1))
@@ -52,12 +55,15 @@
 (bundle (cons 1 2) (perturb (cons 3 4))) ===> (forward (1 . 2) (perturbation (3 . 4)))
 (*j 1) ===> (reverse 1)
 
-;((*j sin) (*j 1))
-;(define (car (cons x y)) x)
-;(define (cdr (cons x y)) y)
-;(reverse? (car ((*j sin) (*j 1))))
-;(procedure? (cdr ((*j sin) (*j 1))))
-;((cdr ((*j sin) (*j 1))) (sensitize 1))
+(multiform
+ (define (car (cons x y)) x)
+ (define (cdr (cons x y)) y)
+ (reverse? (car ((*j sin) (*j 1))))
+ (procedure? (cdr ((*j sin) (*j 1))))
+ (sensitivity? ((cdr ((*j sin) (*j 1))) (sensitize 1)))
+ (cdr (unsensitize ((cdr ((*j sin) (*j 1))) (sensitize 1)))))
+===> (multiform #t #t #t 0.5403023058681398)
+
 (reverse? (*j sin))
 (plus (cons 1 2) (cons 2 3)) ===> (3 . 5)
 
