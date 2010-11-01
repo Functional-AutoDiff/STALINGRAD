@@ -53,7 +53,7 @@
 (define (matches? expected reaction)
   (if (and (pair? expected)
 	   (eq? (car expected) 'error))
-      (re-string-match (cadr expected) reaction)
+      (re-string-search-forward (cadr expected) reaction)
       (let ((result (with-input-from-string reaction read-all)))
 	(cond ((and (pair? expected)
 		    (eq? (car expected) 'multiform))
@@ -68,9 +68,13 @@
       (run-shell-command command))))
 
 (define (vlad-reaction-to forms)
+  (define (dispatched-write form)
+    (if (and (pair? form) (eq? (car form) 'exact-string))
+	(write-string (cadr form))
+	(write form)))
   (with-output-to-file "input.vlad"
     (lambda ()
-      (for-each write forms)))
+      (for-each dispatched-write forms)))
   (shell-command-output "../../stalingrad-amd64 input.vlad"))
 
 (define (eval-through-vlad forms)

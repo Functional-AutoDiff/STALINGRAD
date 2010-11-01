@@ -75,7 +75,7 @@
 ;; (double-loop)
 
 '() ===> ()
-() ===> (error "Invalid expression: ()") ;; TODO Fix testing error conditions
+() ===> (error "Invalid expression: ()")
 
 (multiform
  (define x 3)
@@ -110,4 +110,10 @@
 
 (write (cons 1 2)) ===> (multiform (1 . 2) (1 . 2))
 
-;; TODO How do I test #; and #| |# comments? (They are not supported as of this writing)
+(exact-string
+ "#;(write 3) 2")
+===> (error "READ Invalid # option: ;")
+
+(exact-string
+ "#|(write 3)|# 2")
+===> (error "READ Invalid # option: |")
