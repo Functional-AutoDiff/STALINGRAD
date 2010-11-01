@@ -53,10 +53,8 @@ This is edition @value{EDITION} of the manual, up to date as of @value{UPDATED}.
 @menu
 * Overview::
 * Getting Started::
-* Scheme Stuff::
-* Numeric Basis::
-* Introducing Imprecision::
-* Input and Output::
+* Scaffolding::
+* Numerics::
 * Forward AD::
 * Reverse AD::
 * Index::
@@ -126,8 +124,8 @@ passing it the @code{--compile} option.  If the program was in file
 options and modes for controlling the compilation process, emitting
 various partial results thereof, etc.
 
-@node Scheme Stuff
-@chapter Scheme Stuff
+@node Scaffolding
+@chapter Scaffolding
 
 The basic structure of VLAD code is inherited from Scheme.
 Identifiers are whitespace-delimited.  Expressions are written in
@@ -188,6 +186,8 @@ The empty expression @code{()} is not legal VLAD.
 * Literals::
 * Special forms::
 * Procedures::
+* Input and Output::
+* Introducing Imprecision::
 @end menu
 
 @node Destructuring
@@ -349,46 +349,34 @@ does what the Scheme procedure
 would do.
 @end defun
 
-@node Numeric Basis
-@chapter Numeric Basis
+@node Input and Output
+@section Input and Output
 
-The numbers in VLAD are all IEEE-64 floating point.  There is no
-provision for integer arithmetic except as a subset of floating point
-arithmetic, and there is no distinction between exact and inexact
-numbers.
-Numeric constants are written in the standard way (except the literal
-complex number syntax, of course).
+VLAD provides two I/O primitives:
 
-The following subset of the Scheme numeric basis is provided as
-primitives:
+@deffn Procedure read-real
+Takes no arguments, reads a real number from the standard input, and
+returns it.
+@end deffn
 
-@defun + x y
-@defunx - x y
-@defunx * x y
-@defunx / x y
-@defunx sqrt x
-@defunx exp x
-@defunx log x
-@defunx sin x
-@defunx cos x
-@defunx atan x y
-@defunx = x y
-@defunx < x y
-@defunx > x y
-@defunx <= x y
-@defunx >= x y
-@defunx zero? x
-@defunx positive? x
-@defunx negative? x
-@defunx real? x
-Agree with standard Scheme semantics, expect for questions of
-arity.  No VLAD primitive takes variable numbers of arguments, so all
-of the above are either unary or binary, as indicated.  Notably,
-@code{atan} is binary; and no unary minus is provided.
-@end defun
+@deffn Procedure write x
+Takes a real number argument, writes it to the standard output, and
+returns it.  Since VLAD does not support multiple expressions in
+procedure bodies, if you want to write and then do something else,
+you should:
+
+@example
+(let ((ignore (write foo)))
+  do-something-else)
+@end example
+@end deffn
+
+@noindent
+@todo structured WRITE works in the interpreter; what about the compiler?
+@todo What is WRITE-REAL supposed to be?
 
 @node Introducing Imprecision
-@chapter Introducing Imprecision
+@section Introducing Imprecision
 
 @defun real x
 At runtime, @code{real} is the identity function on real numbers.  However,
@@ -434,31 +422,43 @@ would cause the flow analysis to produce a @code{fact} procedure that
 computes the factorials of (positive integer) real numbers, and
 compute the factorial of @code{5} at runtime.
 
-@node Input and Output
-@chapter Input and Output
+@node Numerics
+@chapter Numerics
 
-VLAD provides two I/O primitives:
+The numbers in VLAD are all IEEE-64 floating point.  There is no
+provision for integer arithmetic except as a subset of floating point
+arithmetic, and there is no distinction between exact and inexact
+numbers.
+Numeric constants are written in the standard way (except the literal
+complex number syntax, of course).
 
-@deffn Procedure read-real
-Takes no arguments, reads a real number from the standard input, and
-returns it.
-@end deffn
+The following subset of the Scheme numeric basis is provided as
+primitives:
 
-@deffn Procedure write x
-Takes a real number argument, writes it to the standard output, and
-returns it.  Since VLAD does not support multiple expressions in
-procedure bodies, if you want to write and then do something else,
-you should:
-
-@example
-(let ((ignore (write foo)))
-  do-something-else)
-@end example
-@end deffn
-
-@noindent
-@todo structured WRITE works in the interpreter; what about the compiler?
-@todo What is WRITE-REAL supposed to be?
+@defun + x y
+@defunx - x y
+@defunx * x y
+@defunx / x y
+@defunx sqrt x
+@defunx exp x
+@defunx log x
+@defunx sin x
+@defunx cos x
+@defunx atan x y
+@defunx = x y
+@defunx < x y
+@defunx > x y
+@defunx <= x y
+@defunx >= x y
+@defunx zero? x
+@defunx positive? x
+@defunx negative? x
+@defunx real? x
+Agree with standard Scheme semantics, expect for questions of
+arity.  No VLAD primitive takes variable numbers of arguments, so all
+of the above are either unary or binary, as indicated.  Notably,
+@code{atan} is binary; and no unary minus is provided.
+@end defun
 
 @node Forward AD
 @chapter Forward AD
