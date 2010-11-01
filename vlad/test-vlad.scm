@@ -50,8 +50,12 @@
 
 (define (matches? expected result)
   ;; TODO Augment to understand "error", "non-error", etc.
-  (and (= 1 (length result))
-       (equal? expected (car result))))
+  (cond ((and (pair? expected)
+	      (eq? (car expected) 'multiform))
+	 (equal? (cdr expected) result))
+	(else
+	 (and (= 1 (length result))
+	      (equal? expected (car result))))))
 
 (define (shell-command-output command)
   (with-output-to-string

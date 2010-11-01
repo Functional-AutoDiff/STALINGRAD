@@ -24,8 +24,8 @@
 ;(define (abs x) (if (negative? x) (- 0 x) x))
 ;(abs -3)
 
-;(let ((ignore (write (* 2 (real 3)))))
-;  3)
+(let ((ignore (write (* 2 (real 3)))))
+  3) ===> (multiform 6 3)
 
 
 ;; (define (fact x)
@@ -37,7 +37,7 @@
 ;; (fact (real 5))
 
 (perturb 1) ===> (perturbation 1)
-;(write (perturb 1))
+(write (perturb 1)) ===> (multiform (perturbation 1) (perturbation 1))
 (perturbation? (perturb 1))
 (perturbation? 1) ===> #f
 (bundle 1 (perturb 1)) ===> (forward 1 (perturbation 1))
