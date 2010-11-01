@@ -132,7 +132,7 @@ various partial results thereof, etc.
 The basic structure of VLAD code is inherited from Scheme.
 Identifiers are whitespace-delimited.  Expressions are written in
 fully-parenthesized prefix notation.  Comments begin with a semicolon
-character (@code{;}) and last until the end of the line.  
+character (@code{;}) and last until the end of the line.
 Variables are lexically scoped.  Objects have unlimited extent.
 
 The basic evaluation model of VLAD is also inherited from Scheme.  The
@@ -147,7 +147,7 @@ has automatic destructuring of bound values.  That is, if the procedure
 made by
 
 @example
-(lambda (cons x y) ...)
+(lambda ((cons x y)) ...)
 @end example
 
 @noindent
@@ -174,22 +174,26 @@ pieces; for example, if @code{foo} were defined with
 @noindent
 that actually represents a destructuring operation.  All this notional
 structuring and destructuring is dealt with at compile time (see
-"Performance Model") and incurs no runtime overhead.  See
-"Destructuring" for the detailed rules.
+"Performance Model") and incurs no runtime overhead.
+@xref{Destructuring}, for the detailed rules.
 
 The empty expression @code{()} is not legal VLAD.
 
 @todo Detailed lexical syntax of VLAD, differences from Scheme
 
-@todo Destructuring
-
 @todo Performance Model
 
 @menu
+* Destructuring::
 * Literals::
 * Special forms::
 * Procedures::
 @end menu
+
+@node Destructuring
+@section Destructuring
+
+@todo Destructuring
 
 @node Literals
 @section Literals
@@ -212,7 +216,7 @@ pointed out with each one:
 
 @defspec lambda formalspec expression
 Like Scheme, except for destructuring the formal parameters given by
-@var{formalspec} (see "Destructuring") and may only have one
+@var{formalspec} (@pxref{Destructuring}) and may only have one
 @var{expression} in the body.
 @end defspec
 
@@ -425,7 +429,7 @@ as @code{(define (j* @var{f}) (bundle @var{f} (perturb (zero @var{f}))))}; more 
 @item
 Push the bundle through the transformed function.
 
-@item 
+@item
 Extract from the output the primal value and the derivative along that
 direction with @code{(primal @var{bundle})} and @code{(unperturb (tangent @var{bundle}))}, respectively.
 @end enumerate

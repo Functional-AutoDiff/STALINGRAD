@@ -117,3 +117,13 @@
 (exact-string
  "#|(write 3)|# 2")
 ===> (error "READ Invalid # option: |")
+
+((lambda ((cons x y)) (+ x y))
+ (cons 1 2)) ===> 3
+
+(let (((cons x y) (cons 1 2)))
+  (+ x y)) ===> 3
+
+((lambda ((list x y z))
+   (* x (* y z)))
+ (list 2 3 4)) ===> 24
