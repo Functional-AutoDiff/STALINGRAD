@@ -1,1 +1,0 @@
-../stalingrad.sc

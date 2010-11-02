@@ -1,1 +1,0 @@
-../stalingradlib-double-c.c
