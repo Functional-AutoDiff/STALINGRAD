@@ -72,10 +72,19 @@
     (if (and (pair? form) (eq? (car form) 'exact-string))
 	(write-string (cadr form))
 	(write form)))
+  (define (frobnicate string)
+    ;; It appears that the latest binary of Stalingrad I have access
+    ;; to emits an interesting message on startup.
+    (string-tail
+     string
+     (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
+***** INITIALIZEVAR Duplicately defined symbol GENSYM
+")))
   (with-output-to-file "input.vlad"
     (lambda ()
       (for-each dispatched-write forms)))
-  (shell-command-output "../../stalingrad-amd64 input.vlad"))
+  (frobnicate
+   (shell-command-output "../../../bin/stalingrad input.vlad")))
 
 (define (eval-through-vlad forms)
   (with-input-from-string (vlad-reaction-to forms) read))
