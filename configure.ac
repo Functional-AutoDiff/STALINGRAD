@@ -10,6 +10,8 @@ AC_PROG_CC
 AC_PROG_INSTALL
 AC_PROG_LN_S
 
+AC_PATH_PROG([SCH], [sch]
+
 # Checks for typedefs, structures, and compiler characteristics.
 AC_C_INLINE
 AC_TYPE_SIZE_T
