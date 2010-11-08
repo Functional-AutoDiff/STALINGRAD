@@ -14,6 +14,11 @@
 @strong{TODO: \text\}
 @end macro
 
+@c Major TODO: write the Performance Model section
+@c Major TODO: mechanically confirm the various assertions in the manual
+@c Stalingrad build instructions are in the email
+@c ``SUCCESS! (was Re: infrastructure-1.27)'' from David Rush
+
 @macro abstract
 VLAD is a functional language with a first-class automatic
 differentiation operator and an aggressively optimizing compiler.  The
