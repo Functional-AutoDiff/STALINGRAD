@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.67])
-AC_INIT([Stalingrad], [0.0], [barak@cs.nuim.ie])
+AC_INIT([Stalingrad],[0.0],[barak@cs.nuim.ie])
 
 # Checks for programs.
 AC_PROG_CXX
