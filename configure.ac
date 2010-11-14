@@ -42,5 +42,6 @@ AC_FUNC_STRTOD
 AC_CHECK_FUNCS([bzero dup2 floor ftime getcwd gettimeofday memset pow select socket sqrt strerror strrchr])
 
 AC_CONFIG_FILES([QobiScheme/Makefile
-                 source/Makefile])
+                 source/Makefile
+                 Makefile])
 AC_OUTPUT

@@ -1,0 +1,11 @@
+
+targets:
+	@echo QobiScheme
+	@echo stalingrad
+
+
+QobiScheme:
+	$(MAKE) -C QobiScheme all
+
+stalingrad: QobiScheme
+	$(MAKE) -C source all
