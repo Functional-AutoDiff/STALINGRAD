@@ -1,3 +1,4 @@
+all: QobiScheme stalingrad
 
 targets:
 	@echo QobiScheme
@@ -9,3 +10,5 @@ QobiScheme:
 
 stalingrad: QobiScheme
 	$(MAKE) -C source all
+
+.PHONY: all targets QobiScheme stalingrad
