@@ -61,6 +61,10 @@ publish: release
 stalingradlib = stalingradlib-stuff.o\
                 stalingradlib-double-c.o
 
+qslibs=\
+ ../QobiScheme/source/QobiScheme.a\
+ ../QobiScheme/source/QobiScheme-AD.a
+
 INCLUDES=\
 	-I ../QobiScheme/source \
 	-I $(SCXL)
@@ -88,4 +92,4 @@ stalingrad.o: stalingrad.sch stalingrad.sc
 
 stalingrad: stalingrad.o $(stalingradlib)
 	scc -sch 512 -cc $(CC) $(SCCLDFLAGS) $(INCLUDES) -o stalingrad\
-            stalingrad.o $(LRL)
+            $^ $(LRL) $(qslibs) $(SCXL)/scxl.a -lX11
