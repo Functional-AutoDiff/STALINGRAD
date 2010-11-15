@@ -18,7 +18,7 @@ AC_CHECK_PROG([SCH], [sch], [sch], [reject])
 # FIXME: Replace `main' with a function in `-lX11':
 AC_CHECK_LIB([X11], [XHostAddress])
 
-AC_ARG_WITH([scxl], [AS_HELP_STRING([--with-scxl], [use Scheme->C X11 libraries])], [], [with_scxl=/usr/lib/s2c])
+AC_ARG_WITH([scxl], [AS_HELP_STRING([--with-scxl], [use Scheme->C X11 libraries])], [], [with_scxl=/usr/lib/scheme2c])
 
 SCXL=
 AS_IF([test "x$with_scxl" != xno],
