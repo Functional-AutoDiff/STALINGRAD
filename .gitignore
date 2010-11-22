@@ -1,6 +1,10 @@
+*.o
 *~
 .\#*
+/Makefile
 /autom4te.cache/
+/config.log
+/config.status
 /configure
 \#*\#
 i686-Linux-2.6.26-2-686/
