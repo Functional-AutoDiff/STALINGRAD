@@ -57,6 +57,7 @@ This is edition @value{EDITION} of the manual, up to date as of @value{UPDATED}.
 
 @menu
 * Overview::
+* Installation::
 * Getting Started::
 * Scaffolding::
 * Numerics::
@@ -80,6 +81,47 @@ sacrificing any essential expressive power.  Being a research
 prototype, however, VLAD sacrifices various uninteresting
 conveniences, which are left to user-space libraries and to later
 incarnations of these language design ideas.
+
+@node Installation
+@chapter Installation
+
+Stalingrad is the interpreter and compiler for VLAD.  To install
+Stalingrad, you must have access to the Git repositories at
+@code{cvs.bcl.hamilton.ie}, and you must have
+@code{dpkg-checkbuilddeps} and @code{fakeroot} on your system.  The
+latter can be obtained by @code{apt-get install dpkg-dev fakeroot}.  Given
+these, installation is a two-step process.
+
+First, install the development version of @code{scheme2c}:
+
+@example
+git clone ssh://cvs.bcl.hamilton.ie/home/git/scheme2c.git
+cd scheme2c
+dpkg-checkbuilddeps
+apt-get install @var{anything missing indicated by dpkg-checkbuilddeps}
+fakeroot debian/rules binary
+sudo dpkg --install ../scheme2c_@var{xxx}.deb
+@end example
+
+Then compile Stalingrad proper:
+
+@example
+git clone ssh://cvs.bcl.hamilton.ie/home/git/stalingrad.git
+cd stalingrad
+autoconf
+./configure
+make
+@end example
+
+You should now have a working binary of Stalingrad in
+@code{source/stalingrad}, with which you can compile and run VLAD
+programs.
+
+@example
+source/stalingrad @var{foo}.vlad
+@end example
+
+will run the VLAD program in @file{@var{foo}.vlad}.
 
 @node Getting Started
 @chapter Getting Started
