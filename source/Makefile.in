@@ -56,6 +56,9 @@ release:
 publish: release
 	cd ..; publish stalingrad $(RELEASE_VERSION)
 
+test:
+	mit-scheme --compiler -heap 6000 --batch-mode --no-init-file --load ../run-tests.scm
+
 # Compilation rules and dependencies
 # ----------------------------------
 stalingradlib = stalingradlib-stuff.o\
