@@ -92,12 +92,12 @@
      (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
 ***** INITIALIZEVAR Duplicately defined symbol GENSYM
 ")))
-  (with-output-to-file "input.vlad"
+  (with-output-to-file "test-input.vlad"
     (lambda ()
       (for-each dispatched-write forms)))
   (frobnicate
    (shell-command-output
-    (string-append (->namestring my-pathname) "../../../bin/stalingrad input.vlad"))))
+    (string-append (->namestring my-pathname) "../../../bin/stalingrad test-input.vlad"))))
 
 (define (eval-through-vlad forms)
   (with-input-from-string (vlad-reaction-to forms) read))
