@@ -11,4 +11,7 @@ QobiScheme:
 stalingrad: QobiScheme
 	$(MAKE) -C source all
 
-.PHONY: all targets QobiScheme stalingrad
+test:
+	mit-scheme --compiler -heap 6000 --batch-mode --no-init-file --load run-tests.scm
+
+.PHONY: all targets QobiScheme stalingrad test
