@@ -9,7 +9,7 @@
 (define (load-relative filename)
   (self-relatively (lambda () (load filename))))
 
-(load-relative "../../testing/load")
+(load-relative "../testing/load")
 
 (define my-pathname (self-relatively working-directory-pathname))
 
