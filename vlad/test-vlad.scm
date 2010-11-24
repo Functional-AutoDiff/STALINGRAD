@@ -1,5 +1,17 @@
 (load-option 'synchronous-subprocess)
-(load "../../testing/load")
+(define (self-relatively thunk)
+  (if (current-eval-unit #f)
+      (with-working-directory-pathname
+       (directory-namestring (current-load-pathname))
+       thunk)
+      (thunk)))
+
+(define (load-relative filename)
+  (self-relatively (lambda () (load filename))))
+
+(load-relative "../../testing/load")
+
+(define my-pathname (self-relatively working-directory-pathname))
 
 (define (read-all)
   (let loop ((results '())
@@ -84,7 +96,8 @@
     (lambda ()
       (for-each dispatched-write forms)))
   (frobnicate
-   (shell-command-output "../../../bin/stalingrad input.vlad")))
+   (shell-command-output
+    (string-append (->namestring my-pathname) "../../../bin/stalingrad input.vlad"))))
 
 (define (eval-through-vlad forms)
   (with-input-from-string (vlad-reaction-to forms) read))
@@ -95,4 +108,7 @@
  (for-each (lambda (expectation)
 	     (define-test
 	       (check (not (discrepancy expectation)))))
-	   (make-expectations (read-forms "scratch.scm") #t)))
+	   (make-expectations (self-relatively
+			       (lambda ()
+				 (read-forms "scratch.scm")))
+			      #t)))
