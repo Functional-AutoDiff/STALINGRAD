@@ -96,3 +96,5 @@ stalingrad.o: stalingrad.sch stalingrad.sc
 stalingrad: stalingrad.o $(stalingradlib)
 	scc -sch 512 -cc $(CC) $(SCCLDFLAGS) $(INCLUDES) -o stalingrad\
             $^ $(LRL) $(qslibs) $(SCXL)/scxl.a -lX11
+
+.PHONY: all clean real-clean install uninstall release publish test
