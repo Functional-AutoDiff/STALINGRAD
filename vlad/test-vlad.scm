@@ -156,7 +156,8 @@
   (define-test
     (check (not (interpretation-discrepancy expectation)))))
 
-(define (expectation->compiler-test expectation)
+(define (expectation->interpreter-compiler-test expectation)
+  (expectation->test expectation)
   (define-test
     (check (not (compilation-discrepancy expectation)))))
 
@@ -166,8 +167,9 @@
 (define (file->definition-sharing-tests filename)
   (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
 
-(define (file->compiler-tests filename)
-  (for-each expectation->compiler-test (shared-definitions-expectations (read-forms filename))))
+(define (file->interpreter-compiler-tests filename)
+  (for-each expectation->interpreter-compiler-test
+	    (shared-definitions-expectations (read-forms filename))))
 
 (in-test-group
  vlad
@@ -178,6 +180,22 @@
     (with-working-directory-pathname
      "../../stalingrad/examples/"
      (lambda ()
-       (file->definition-sharing-tests "bug0.vlad")
-       (file->definition-sharing-tests "bug-a.vlad")
-       (file->compiler-tests "bug-a.vlad"))))))
+       (for-each
+	file->interpreter-compiler-tests
+	'("factorial.vlad"
+	  "bug-a.vlad"
+	  "bug-b.vlad"
+	  "bug-c.vlad"
+	  "bug0.vlad"
+	  "bug1.vlad"
+	  "bug2.vlad"
+	  ;"bug3.vlad" ; I don't have patterns for anf s-exps :(
+	  ;"bug4.vlad"
+	  ))
+       ;; The compiler doesn't support structured write :(
+       (for-each
+	file->definition-sharing-tests
+	'("even-odd.vlad"
+	  "example.vlad"
+	  "example-forward.vlad"
+	  "prefix.vlad")))))))
