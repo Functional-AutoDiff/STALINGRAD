@@ -189,6 +189,10 @@
 	  "bug0.vlad"
 	  "bug1.vlad"
 	  "bug2.vlad"
+	  "double-agent.vlad"
+	  "marble.vlad"
+	  "secant.vlad"
+	  "sqrt.vlad"
 	  ;"bug3.vlad" ; I don't have patterns for anf s-exps :(
 	  ;"bug4.vlad"
 	  ))
@@ -198,4 +202,5 @@
 	'("even-odd.vlad"
 	  "example.vlad"
 	  "example-forward.vlad"
-	  "prefix.vlad")))))))
+	  "prefix.vlad"
+	  )))))))
