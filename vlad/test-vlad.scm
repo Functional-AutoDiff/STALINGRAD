@@ -23,6 +23,42 @@
 (define (read-forms filename)
   (with-input-from-file filename read-all))
 
+(define (matches? expected reaction)
+  (if (and (pair? expected)
+	   (eq? (car expected) 'error))
+      (re-string-search-forward (cadr expected) reaction)
+      (let ((result (with-input-from-string reaction read-all)))
+	(cond ((and (pair? expected)
+		    (eq? (car expected) 'multiform))
+	       (equal? (cdr expected) result))
+	      (else
+	       (and (= 1 (length result))
+		    (equal? expected (car result))))))))
+
+(define (shell-command-output command)
+  (with-output-to-string
+    (lambda ()
+      (run-shell-command command))))
+
+(define (write-forms forms)
+  (define (dispatched-write form)
+    (if (and (pair? form) (eq? (car form) 'exact-string))
+	(write-string (cadr form))
+	(begin (pp form)
+	       (newline))))
+  (with-output-to-file "test-input.vlad"
+    (lambda ()
+      (for-each dispatched-write forms))))
+
+(define (frobnicate string)
+  ;; It appears that the latest binary of Stalingrad I have access
+  ;; to emits an interesting message on startup.
+  (string-tail
+   string
+   (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
+***** INITIALIZEVAR Duplicately defined symbol GENSYM
+")))
+
 (define-structure
   (expectation
    (safe-accessors #t)
@@ -48,42 +84,34 @@
 	#f
 	`(,forms produced ,reaction expected ,expected))))
 
-(define (matches? expected reaction)
-  (if (and (pair? expected)
-	   (eq? (car expected) 'error))
-      (re-string-search-forward (cadr expected) reaction)
-      (let ((result (with-input-from-string reaction read-all)))
-	(cond ((and (pair? expected)
-		    (eq? (car expected) 'multiform))
-	       (equal? (cdr expected) result))
-	      (else
-	       (and (= 1 (length result))
-		    (equal? expected (car result))))))))
-
-(define (shell-command-output command)
-  (with-output-to-string
-    (lambda ()
-      (run-shell-command command))))
-
 (define (interpreter-reaction-to forms)
-  (define (dispatched-write form)
-    (if (and (pair? form) (eq? (car form) 'exact-string))
-	(write-string (cadr form))
-	(write form)))
-  (define (frobnicate string)
-    ;; It appears that the latest binary of Stalingrad I have access
-    ;; to emits an interesting message on startup.
-    (string-tail
-     string
-     (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
-***** INITIALIZEVAR Duplicately defined symbol GENSYM
-")))
-  (with-output-to-file "test-input.vlad"
-    (lambda ()
-      (for-each dispatched-write forms)))
+  (write-forms forms)
   (frobnicate
    (shell-command-output
     (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad test-input.vlad"))))
+
+(define (compilation-discrepancy expectation)
+  (define (tweak-for-compilation forms)
+    (append (except-last-pair forms)
+	    `((write-real (real ,(car (last-pair forms)))))))
+  (let* ((forms (tweak-for-compilation (expectation-forms expectation)))
+	 (compiler-reaction (compilation-reaction-to forms)))
+    (if (equal? "" compiler-reaction)
+	(let ((run-reaction (execution-reaction))
+	      (expected (expectation-answer expectation)))
+	  (if (matches? expected run-reaction)
+	      #f
+	      `(running ,forms produced ,run-reaction expected ,expected)))
+	`(compiling ,forms produced ,compiler-reaction))))
+
+(define (compilation-reaction-to forms)
+  (write-forms forms)
+  (frobnicate
+   (shell-command-output
+    (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -compile -k test-input.vlad"))))
+
+(define (execution-reaction)
+  (shell-command-output "./test-input"))
 
 (define (independent-expectations forms)
   (let loop ((answers '())
@@ -107,30 +135,36 @@
   (let loop ((answers '())
 	     (forms forms)
 	     (definitions '()))
+    (define (expect answer)
+      (cons (make-expectation `(multiform ,@(reverse definitions) ,(car forms)) answer)
+	    answers))
     (cond ((null? forms)
 	   (reverse answers))
 	  ((definition? (car forms))
 	   (loop answers (cdr forms) (cons (car forms) definitions)))
 	  ((null? (cdr forms))
-	   (reverse (cons (make-expectation `(multiform ,@definitions ,(car forms)) #t) answers)))
+	   (reverse (expect #t)))
 	  ((eq? '===> (cadr forms))
-	   (loop (cons (make-expectation `(multiform ,@definitions ,(car forms)) (caddr forms)) answers)
-		 (cdddr forms)
-		 definitions))
+	   (loop (expect (caddr forms)) (cdddr forms) definitions))
 	  (else
-	   (loop (cons (make-expectation `(multiform ,@definitions ,(car forms)) #t) answers)
-		 (cdr forms)
-		 definitions)))))
+	   (loop (expect #t) (cdr forms) definitions)))))
 
 (define (expectation->test expectation)
   (define-test
     (check (not (interpretation-discrepancy expectation)))))
+
+(define (expectation->compiler-test expectation)
+  (define-test
+    (check (not (compilation-discrepancy expectation)))))
 
 (define (file->independent-tests filename)
   (for-each expectation->test (independent-expectations (read-forms filename))))
 
 (define (file->definition-sharing-tests filename)
   (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
+
+(define (file->compiler-tests filename)
+  (for-each expectation->compiler-test (shared-definitions-expectations (read-forms filename))))
 
 (in-test-group
  vlad
@@ -142,4 +176,5 @@
      "../../stalingrad/examples/"
      (lambda ()
        (file->definition-sharing-tests "bug0.vlad")
-       (file->definition-sharing-tests "bug-a.vlad"))))))
+       (file->definition-sharing-tests "bug-a.vlad")
+       (file->compiler-tests "bug-a.vlad"))))))
