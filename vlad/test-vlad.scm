@@ -40,20 +40,6 @@
       (%make-expectation (cdr test) answer)
       (%make-expectation (list test) answer)))
 
-(define (make-expectations forms default)
-  (let loop ((answers '())
-	     (forms forms))
-    (cond ((null? forms)
-	   (reverse answers))
-	  ((null? (cdr forms))
-	   (reverse (cons (make-expectation (car forms) default) answers)))
-	  ((eq? '===> (cadr forms))
-	   (loop (cons (make-expectation (car forms) (caddr forms)) answers)
-		 (cdddr forms)))
-	  (else
-	   (loop (cons (make-expectation (car forms) default) answers)
-		 (cdr forms))))))
-
 (define (discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
@@ -99,16 +85,61 @@
    (shell-command-output
     (string-append (->namestring my-pathname) "../../../bin/stalingrad test-input.vlad"))))
 
-(define (eval-through-vlad forms)
-  (with-input-from-string (vlad-reaction-to forms) read))
+(define (independent-expectations forms)
+  (let loop ((answers '())
+	     (forms forms))
+    (cond ((null? forms)
+	   (reverse answers))
+	  ((null? (cdr forms))
+	   (reverse (cons (make-expectation (car forms) #t) answers)))
+	  ((eq? '===> (cadr forms))
+	   (loop (cons (make-expectation (car forms) (caddr forms)) answers)
+		 (cdddr forms)))
+	  (else
+	   (loop (cons (make-expectation (car forms) #t) answers)
+		 (cdr forms))))))
+
+(define (shared-definitions-expectations forms)
+  (define (definition? form)
+    (and (pair? form)
+	 (or (eq? (car form) 'define)
+	     (eq? (car form) 'include))))
+  (let loop ((answers '())
+	     (forms forms)
+	     (definitions '()))
+    (cond ((null? forms)
+	   (reverse answers))
+	  ((definition? (car forms))
+	   (loop answers (cdr forms) (cons (car forms) definitions)))
+	  ((null? (cdr forms))
+	   (reverse (cons (make-expectation `(multiform ,@definitions ,(car forms)) #t) answers)))
+	  ((eq? '===> (cadr forms))
+	   (loop (cons (make-expectation `(multiform ,@definitions ,(car forms)) (caddr forms)) answers)
+		 (cdddr forms)
+		 definitions))
+	  (else
+	   (loop (cons (make-expectation `(multiform ,@definitions ,(car forms)) #t) answers)
+		 (cdr forms)
+		 definitions)))))
+
+(define (expectation->test expectation)
+  (define-test
+    (check (not (discrepancy expectation)))))
+
+(define (file->independent-tests filename)
+  (for-each expectation->test (independent-expectations (read-forms filename))))
+
+(define (file->definition-sharing-tests filename)
+  (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
 
 (in-test-group
  vlad
 
- (for-each (lambda (expectation)
-	     (define-test
-	       (check (not (discrepancy expectation)))))
-	   (make-expectations (self-relatively
-			       (lambda ()
-				 (read-forms "scratch.scm")))
-			      #t)))
+ (self-relatively
+  (lambda ()
+    (file->independent-tests "scratch.scm")
+    (with-working-directory-pathname
+     "../../stalingrad/examples/"
+     (lambda ()
+       (file->definition-sharing-tests "bug0.vlad")
+       (file->definition-sharing-tests "bug-a.vlad"))))))
