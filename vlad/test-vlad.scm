@@ -40,10 +40,10 @@
       (%make-expectation (cdr test) answer)
       (%make-expectation (list test) answer)))
 
-(define (discrepancy expectation)
+(define (interpretation-discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
-	 (reaction (vlad-reaction-to forms)))
+	 (reaction (interpreter-reaction-to forms)))
     (if (matches? expected reaction)
 	#f
 	`(,forms produced ,reaction expected ,expected))))
@@ -65,7 +65,7 @@
     (lambda ()
       (run-shell-command command))))
 
-(define (vlad-reaction-to forms)
+(define (interpreter-reaction-to forms)
   (define (dispatched-write form)
     (if (and (pair? form) (eq? (car form) 'exact-string))
 	(write-string (cadr form))
@@ -124,7 +124,7 @@
 
 (define (expectation->test expectation)
   (define-test
-    (check (not (discrepancy expectation)))))
+    (check (not (interpretation-discrepancy expectation)))))
 
 (define (file->independent-tests filename)
   (for-each expectation->test (independent-expectations (read-forms filename))))
