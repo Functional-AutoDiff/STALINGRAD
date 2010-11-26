@@ -83,7 +83,7 @@
       (for-each dispatched-write forms)))
   (frobnicate
    (shell-command-output
-    (string-append (->namestring my-pathname) "../../../bin/stalingrad test-input.vlad"))))
+    (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad test-input.vlad"))))
 
 (define (independent-expectations forms)
   (let loop ((answers '())
