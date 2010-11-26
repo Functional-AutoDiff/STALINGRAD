@@ -10,4 +10,6 @@ manual.fns
 manual.vrs
 manual.info
 manual/
-input.vlad
+test-input.vlad
+test-input.c
+test-input
