@@ -8,4 +8,4 @@
 
 (define (f a) ((g a) 1))
 
-((derivative-using-*j f) 4)
+((derivative-using-*j f) 4) ===> 1

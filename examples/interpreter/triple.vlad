@@ -54,47 +54,47 @@
 ;;;      (all-three (lambda (x) (+ x x)) 4)
 ;;;      (all-three (lambda (x) (car (cons x x))) 4))
 
-(single0 sqrt 4)
-(single1 sqrt 4)
-(single0 (lambda (x) (+ x x)) 4)
-(single1 (lambda (x) (+ x x)) 4)
-(single0 (lambda (x) (car (cons x x))) 4)
-(single1 (lambda (x) (car (cons x x))) 4)
+(single0 sqrt 4) ===> 0.25
+(single1 sqrt 4) ===> 0.25
+(single0 (lambda (x) (+ x x)) 4) ===> 2
+(single1 (lambda (x) (+ x x)) 4) ===> 2
+(single0 (lambda (x) (car (cons x x))) 4) ===> 1
+(single1 (lambda (x) (car (cons x x))) 4) ===> 1
 
-(double00 sqrt 4)
-(double01 sqrt 4)
-(double10 sqrt 4)
-(double11 sqrt 4)
-(double00 (lambda (x) (+ x x)) 4)
-(double01 (lambda (x) (+ x x)) 4)
-(double10 (lambda (x) (+ x x)) 4)
-(double11 (lambda (x) (+ x x)) 4)
-(double00 (lambda (x) (car (cons x x))) 4)
-(double01 (lambda (x) (car (cons x x))) 4)
-(double10 (lambda (x) (car (cons x x))) 4)
-(double11 (lambda (x) (car (cons x x))) 4)
+(double00 sqrt 4) ===> -0.03125
+(double01 sqrt 4) ===> -0.03125
+(double10 sqrt 4) ===> -0.03125
+(double11 sqrt 4) ===> -0.03125
+(double00 (lambda (x) (+ x x)) 4) ===> 0
+(double01 (lambda (x) (+ x x)) 4) ===> 0
+(double10 (lambda (x) (+ x x)) 4) ===> 0
+(double11 (lambda (x) (+ x x)) 4) ===> 0
+(double00 (lambda (x) (car (cons x x))) 4) ===> 0
+(double01 (lambda (x) (car (cons x x))) 4) ===> 0
+(double10 (lambda (x) (car (cons x x))) 4) ===> 0
+(double11 (lambda (x) (car (cons x x))) 4) ===> 0
 
-(triple000 sqrt 4)
-(triple001 sqrt 4)
-(triple010 sqrt 4)
-(triple011 sqrt 4)
-(triple100 sqrt 4)
-(triple101 sqrt 4)
-(triple110 sqrt 4)
-(triple111 sqrt 4)
-(triple000 (lambda (x) (+ x x)) 4)
-(triple001 (lambda (x) (+ x x)) 4)
-(triple010 (lambda (x) (+ x x)) 4)
-(triple011 (lambda (x) (+ x x)) 4)
-(triple100 (lambda (x) (+ x x)) 4)
-(triple101 (lambda (x) (+ x x)) 4)
-(triple110 (lambda (x) (+ x x)) 4)
-(triple111 (lambda (x) (+ x x)) 4)
-(triple000 (lambda (x) (car (cons x x))) 4)
-(triple001 (lambda (x) (car (cons x x))) 4)
-(triple010 (lambda (x) (car (cons x x))) 4)
-(triple011 (lambda (x) (car (cons x x))) 4)
-(triple100 (lambda (x) (car (cons x x))) 4)
-(triple101 (lambda (x) (car (cons x x))) 4)
-(triple110 (lambda (x) (car (cons x x))) 4)
-(triple111 (lambda (x) (car (cons x x))) 4)
+(triple000 sqrt 4) ===> 0.01171875
+(triple001 sqrt 4) ===> 0.01171875
+(triple010 sqrt 4) ===> 0.01171875
+(triple011 sqrt 4) ===> 0.01171875
+(triple100 sqrt 4) ===> 0.01171875
+(triple101 sqrt 4) ===> 0.01171875
+(triple110 sqrt 4) ===> 0.01171875
+(triple111 sqrt 4) ===> 0.01171875
+(triple000 (lambda (x) (+ x x)) 4) ===> 0
+(triple001 (lambda (x) (+ x x)) 4) ===> 0
+(triple010 (lambda (x) (+ x x)) 4) ===> 0
+(triple011 (lambda (x) (+ x x)) 4) ===> 0
+(triple100 (lambda (x) (+ x x)) 4) ===> 0
+(triple101 (lambda (x) (+ x x)) 4) ===> 0
+(triple110 (lambda (x) (+ x x)) 4) ===> 0
+(triple111 (lambda (x) (+ x x)) 4) ===> 0
+(triple000 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple001 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple010 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple011 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple100 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple101 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple110 (lambda (x) (car (cons x x))) 4) ===> 0
+(triple111 (lambda (x) (car (cons x x))) 4) ===> 0

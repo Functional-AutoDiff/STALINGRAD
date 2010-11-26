@@ -20,14 +20,14 @@
 		      (loop y-prime))))))
   (loop 1)))
 
-(sqrt 4)
+(sqrt 4) ===> 2
 
-(nr-sqrt 4)
+(nr-sqrt 4) ===> 2.000000092922295
 
-((derivative-using-j* sqrt) 4)
+((derivative-using-j* sqrt) 4) ===> 0.25
 
-((derivative-using-*j sqrt) 4)
+((derivative-using-*j sqrt) 4) ===> 0.25
 
-((derivative-using-j* nr-sqrt) 4)
+((derivative-using-j* nr-sqrt) 4) ===> 0.2500002594080783
 
-((derivative-using-*j nr-sqrt) 4)
+((derivative-using-*j nr-sqrt) 4) ===> 0.2500002594080784

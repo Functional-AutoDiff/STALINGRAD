@@ -14,8 +14,8 @@
 
 (*j bug)
 
-(bug 4)
+(bug 4) ===> 4
 
-((derivative-using-j* bug) 4)
+((derivative-using-j* bug) 4) ===> 1
 
-((derivative-using-*j bug) 4)
+((derivative-using-*j bug) 4) ===> 1

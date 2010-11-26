@@ -10,4 +10,4 @@
 
 (unsensitize ((cdr ((*j bug) (*j 4))) (sensitize 1)))
 
-((derivative-using-*j bug) 4)
+((derivative-using-*j bug) 4) ===> 1

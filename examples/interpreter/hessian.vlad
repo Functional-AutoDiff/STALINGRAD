@@ -106,22 +106,22 @@
 
 (define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
 
-((hessian-using-j*-j* f) '(3 4))
+((hessian-using-j*-j* f) '(3 4)) ===> ((4 3) (3 8))
 
-((hessian-using-j*-*j f) '(3 4))
+((hessian-using-j*-*j f) '(3 4)) ===> ((4 3) (3 8))
 
-((hessian-using-*j-j* f) '(3 4))
+((hessian-using-*j-j* f) '(3 4)) ===> ((4 3) (3 8))
 
-((hessian-using-*j-*j f) '(3 4))
+((hessian-using-*j-*j f) '(3 4)) ===> ((4 3) (3 8))
 
-(alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10))
+(alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10)) ===> 1318
 
-(hessian-quadratic-form-using-j*-j* f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-j*-j* f '(3 4) '(7 8) '(9 10)) ===> 1318
 
-(hessian-quadratic-form-using-j*-*j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-j*-*j f '(3 4) '(7 8) '(9 10)) ===> 1318
 
-(hessian-quadratic-form-using-*j-j* f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-*j-j* f '(3 4) '(7 8) '(9 10)) ===> 1318
 
-(hessian-quadratic-form-using-*j-*j f '(3 4) '(7 8) '(9 10))
+(hessian-quadratic-form-using-*j-*j f '(3 4) '(7 8) '(9 10)) ===> 1318
 
-((curried-hessian-quadratic-form f) '(3 4) '(7 8) '(9 10))
+((curried-hessian-quadratic-form f) '(3 4) '(7 8) '(9 10)) ===> 1318

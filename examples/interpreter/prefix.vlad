@@ -30,6 +30,6 @@
 		     (let ((a (+ a (first l)))) (cons a (loop a (rest l))))))))
   (loop 0 l)))
 
-((jacobian-using-j* prefix) '(0 1 2 3 4))
-((jacobian-using-*j prefix) '(0 1 2 3 4))
-((j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1))
+((jacobian-using-j* prefix) '(0 1 2 3 4)) ===> ((1 1 1 1 1) (0 1 1 1 1) (0 0 1 1 1) (0 0 0 1 1) (0 0 0 0 1))
+((jacobian-using-*j prefix) '(0 1 2 3 4)) ===> ((1 1 1 1 1) (0 1 1 1 1) (0 0 1 1 1) (0 0 0 1 1) (0 0 0 0 1))
+((j-transpose*v prefix) '(0 1 2 3 4) '(0 0 0 0 1)) ===> (1 1 1 1 1)

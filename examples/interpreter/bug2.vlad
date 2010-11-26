@@ -10,4 +10,4 @@
 
 (define (f a) (h (g a)))
 
-((derivative-using-*j f) 4)
+((derivative-using-*j f) 4) ===> 2
