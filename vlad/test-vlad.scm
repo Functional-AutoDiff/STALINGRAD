@@ -156,16 +156,23 @@
   (define-test
     (check (not (interpretation-discrepancy expectation)))))
 
-(define (expectation->interpreter-compiler-test expectation)
-  (expectation->test expectation)
+(define (expectation->compiler-test expectation)
   (define-test
     (check (not (compilation-discrepancy expectation)))))
+
+(define (expectation->interpreter-compiler-test expectation)
+  (expectation->test expectation)
+  (expectation->compiler-test expectation))
 
 (define (file->independent-tests filename)
   (for-each expectation->test (independent-expectations (read-forms filename))))
 
 (define (file->definition-sharing-tests filename)
   (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
+
+(define (file->compiler-tests filename)
+  (for-each expectation->compiler-test
+	    (shared-definitions-expectations (read-forms filename))))
 
 (define (file->interpreter-compiler-tests filename)
   (for-each expectation->interpreter-compiler-test
