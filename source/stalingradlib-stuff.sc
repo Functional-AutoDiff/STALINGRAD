@@ -4160,17 +4160,19 @@
    (compile-time-error "Cannot find: ~a" pathname))
   (call-with-input-file pathname
    (lambda (input-port)
-    (let loop ((es '()))
+    (let loop ((es '()) (ignore? #f))
      (let ((e (read input-port)))
       (cond
        ((eof-object? e) (reverse es))
+       (ignore? (loop es #f))
+       ((eq? '===> e) (loop es #t))
        ((and (list? e)
 	     (= (length e) 2)
 	     (eq? (first e) 'include)
 	     (string? (second e)))
 	(loop
-	 (append (reverse (read-source (search-include-path (second e)))) es)))
-       (else (loop (cons e es))))))))))
+	 (append (reverse (read-source (search-include-path (second e)))) es) #f))
+       (else (loop (cons e es) #f)))))))))
 
 ;;; Definitions
 
