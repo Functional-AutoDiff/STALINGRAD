@@ -12,6 +12,9 @@
 (load-relative "../testing/load")
 
 (define my-pathname (self-relatively working-directory-pathname))
+(define stalingrad-command
+  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 2000 -I "
+		 (->namestring my-pathname) "../../stalingrad/examples/ "))
 
 (define (read-all)
   (let loop ((results '())
@@ -88,7 +91,7 @@
   (write-forms forms)
   (frobnicate
    (shell-command-output
-    (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad test-input.vlad"))))
+    (string-append stalingrad-command "test-input.vlad"))))
 
 (define (compilation-discrepancy expectation)
   (define (tweak-for-compilation forms)
@@ -108,7 +111,7 @@
   (write-forms forms)
   (frobnicate
    (shell-command-output
-    (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -compile -k test-input.vlad"))))
+    (string-append stalingrad-command "-compile -k test-input.vlad"))))
 
 (define (execution-reaction)
   (shell-command-output "./test-input"))
