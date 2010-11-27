@@ -11,7 +11,16 @@
 
 (load-relative "../testing/load")
 
+(define (ensure-directory filename)
+  (if (file-exists? filename)
+      (if (file-directory? filename)
+	  'ok
+	  (error "Exists and is not a directory" filename))
+      (make-directory filename)))
+
 (define my-pathname (self-relatively working-directory-pathname))
+(define test-directory "test-runs/")
+(ensure-directory test-directory)
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 2000 -I "
 		 (->namestring my-pathname) "../../stalingrad/examples/ "))
@@ -49,7 +58,7 @@
 	(write-string (cadr form))
 	(begin (pp form)
 	       (newline))))
-  (with-output-to-file "test-input.vlad"
+  (with-output-to-file (string-append test-directory "test-input.vlad")
     (lambda ()
       (for-each dispatched-write forms))))
 
@@ -91,7 +100,7 @@
   (write-forms forms)
   (frobnicate
    (shell-command-output
-    (string-append stalingrad-command "test-input.vlad"))))
+    (string-append stalingrad-command test-directory "test-input.vlad"))))
 
 (define (compilation-discrepancy expectation)
   (define (tweak-for-compilation forms)
@@ -111,10 +120,10 @@
   (write-forms forms)
   (frobnicate
    (shell-command-output
-    (string-append stalingrad-command "-compile -k test-input.vlad"))))
+    (string-append stalingrad-command "-compile -k " test-directory "test-input.vlad"))))
 
 (define (execution-reaction)
-  (shell-command-output "./test-input"))
+  (shell-command-output (string-append "./" test-directory "test-input")))
 
 (define (independent-expectations forms)
   (let loop ((answers '())
