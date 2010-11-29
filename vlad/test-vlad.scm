@@ -25,7 +25,6 @@
 
 (define my-pathname (self-relatively working-directory-pathname))
 (define test-directory "test-runs/")
-(ensure-directory test-directory)
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 2000 -I "
 		 (->namestring my-pathname) "../../stalingrad/examples/ "))
@@ -325,6 +324,7 @@
    (for-each register-expectation-test (all-expectations))))
 
 (define (parse-and-run-tests!)
+  (ensure-directory test-directory)
   (parse-and-register-tests)
   (let ((num-failures (show-time run-registered-tests)))
     (newline)
@@ -340,6 +340,7 @@
       (pp (expectation->list expectation)))))
 
 (define (parse-and-record-expectations!)
+  (ensure-directory test-directory)
   (for-each save-expectation (all-expectations))
   (flush-output)
   (%exit 0))
