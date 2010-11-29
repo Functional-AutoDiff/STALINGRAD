@@ -130,7 +130,9 @@ source/stalingrad -compile @var{foo}.vlad
 @end example
 
 will compile the VLAD program in @file{@var{foo}.vlad} into an
-executable named @file{@var{foo}}.
+executable named @file{@var{foo}}.  Stalingrad also has many other
+options and modes for controlling the compilation process, emitting
+various partial results thereof, etc.
 
 @node Getting Started
 @chapter Getting Started
@@ -166,20 +168,16 @@ For example,
 
 @noindent
 is a VLAD program that will read real numbers from standrad input
-write their triples to standard output.
+and write their triples to standard output.
 
 VLAD has the following support for multifile programs: If you have a
 file of definitions named @var{filename}, you can use those
 definitions in another program by writing @code{(include
 "@var{filename}")} as a toplevel form in that program.  This mechanism
-works recursively.
-
-You can use Stalingrad to compile but not run a VLAD program by
-passing it the @code{--compile} option.  If the program was in file
-@file{foo.vlad}, Stalingrad will emit the binary into the file
-@file{foo}, which you can then execute.  Stalingrad also has many other
-options and modes for controlling the compilation process, emitting
-various partial results thereof, etc.
+works recursively.  The search path where Stalingrad looks for include
+files is the working directory, any directories given by @code{-I}
+switches when running Stalingrad, and
+@file{/usr/local/stalingrad/include/}, in that order.
 
 @node Scaffolding
 @chapter Scaffolding
