@@ -212,52 +212,54 @@
 
 ;;; Reading expectation data files into sets of tests
 
-(define (file->independent-tests filename)
-  (for-each expectation->test (independent-expectations (read-forms filename))))
+(define (file->independent-expectations filename)
+  (independent-expectations (read-forms filename)))
 
-(define (file->definition-sharing-tests filename)
-  (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
+(define (file->definition-sharing-expectations filename)
+  (shared-definitions-expectations (read-forms filename)))
 
-(define (file->compiler-tests filename)
-  (for-each expectation->test
-	    (map compiling-version
-		 (shared-definitions-expectations (read-forms filename)))))
+(define (file->compiling-expectations filename)
+  (map compiling-version
+       (file->definition-sharing-expectations filename)))
 
-(define (file->interpreter-compiler-tests filename)
+(define (file->interpreter-compiler-expectations filename)
   (let ((expectations (shared-definitions-expectations (read-forms filename))))
-    (for-each expectation->test expectations)
-    (for-each expectation->test (map compiling-version expectations))))
+    (append expectations (map compiling-version expectations))))
+
+(define (all-expectations)
+  (self-relatively
+   (lambda ()
+     (append
+      (file->independent-expectations "scratch.scm")
+      (with-working-directory-pathname
+       "../../stalingrad/examples/"
+       (lambda ()
+	 (append
+	  (append-map
+	   file->interpreter-compiler-expectations
+	   '("factorial.vlad"
+	     "bug-a.vlad"
+	     "bug-b.vlad"
+	     "bug-c.vlad"
+	     "bug0.vlad"
+	     "bug1.vlad"
+	     "bug2.vlad"
+	     "double-agent.vlad"
+	     "marble.vlad"
+	     "secant.vlad"
+	     "sqrt.vlad"
+					;"bug3.vlad" ; I don't have patterns for anf s-exps :(
+					;"bug4.vlad"
+	     ))
+	  ;; The compiler doesn't support structured write :(
+	  (append-map
+	   file->definition-sharing-expectations
+	   '("even-odd.vlad"
+	     "example.vlad"
+	     "example-forward.vlad"
+	     "prefix.vlad"
+	     )))))))))
 
 (in-test-group
  vlad
-
- (self-relatively
-  (lambda ()
-    (file->independent-tests "scratch.scm")
-    (with-working-directory-pathname
-     "../../stalingrad/examples/"
-     (lambda ()
-       (for-each
-	file->interpreter-compiler-tests
-	'("factorial.vlad"
-	  "bug-a.vlad"
-	  "bug-b.vlad"
-	  "bug-c.vlad"
-	  "bug0.vlad"
-	  "bug1.vlad"
-	  "bug2.vlad"
-	  "double-agent.vlad"
-	  "marble.vlad"
-	  "secant.vlad"
-	  "sqrt.vlad"
-	  ;"bug3.vlad" ; I don't have patterns for anf s-exps :(
-	  ;"bug4.vlad"
-	  ))
-       ;; The compiler doesn't support structured write :(
-       (for-each
-	file->definition-sharing-tests
-	'("even-odd.vlad"
-	  "example.vlad"
-	  "example-forward.vlad"
-	  "prefix.vlad"
-	  )))))))
+ (for-each expectation->test (all-expectations)))
