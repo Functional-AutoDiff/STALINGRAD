@@ -25,7 +25,3 @@
 	 (%exit 1)))))
 
 (load-relative test-driver)
-(let ((num-failures (show-time run-registered-tests)))
-  (newline)
-  (flush-output)
-  (%exit num-failures))

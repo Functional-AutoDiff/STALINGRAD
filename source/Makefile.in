@@ -57,7 +57,7 @@ publish: release
 	cd ..; publish stalingrad $(RELEASE_VERSION)
 
 test:
-	mit-scheme --compiler -heap 6000 --batch-mode --no-init-file --load ../run-tests.scm
+	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --load ../test-driver.scm --eval '(parse-and-run-tests!)'
 
 # Compilation rules and dependencies
 # ----------------------------------
