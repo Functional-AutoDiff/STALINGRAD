@@ -269,7 +269,7 @@
       (map compiling-version expectations)))))
 
 (define (all-expectations)
-  (self-relatively
+  (with-working-directory-pathname my-pathname
    (lambda ()
      (append
       (file->independent-expectations "scratch.scm")
