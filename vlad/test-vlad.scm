@@ -284,6 +284,15 @@
 ;;;; Converting expectations to test-manager tests
 
 (define (expectation->test expectation)
+  (register-test
+   (make-single-test
+    (expectation-name expectation)
+    (lambda ()
+      (check (not (discrepancy expectation))))
+    #f))
+  ;; The above instead of the below because I want to construct the
+  ;; name of the test from the name of the expectation.
+  #;
   (define-test
     (check (not (discrepancy expectation)))))
 
