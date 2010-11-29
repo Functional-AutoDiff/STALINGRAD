@@ -40,13 +40,13 @@
 (define (read-forms filename)
   (with-input-from-file filename read-all))
 
-(define (write-forms forms)
+(define (write-forms forms basename)
   (define (dispatched-write form)
     (if (and (pair? form) (eq? (car form) 'exact-string))
 	(write-string (cadr form))
 	(begin (pp form)
 	       (newline))))
-  (with-output-to-file (string-append test-directory "test-input.vlad")
+  (with-output-to-file (string-append test-directory basename ".vlad")
     (lambda ()
       (for-each dispatched-write forms))))
 
@@ -124,16 +124,16 @@
 (define (interpretation-discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
-	 (reaction (interpreter-reaction-to forms)))
+	 (reaction (interpreter-reaction-to forms (expectation-name expectation))))
     (if (matches? expected reaction)
 	#f
 	`(,forms produced ,reaction expected ,expected))))
 
-(define (interpreter-reaction-to forms)
-  (write-forms forms)
+(define (interpreter-reaction-to forms basename)
+  (write-forms forms basename)
   (frobnicate
    (shell-command-output
-    (string-append stalingrad-command test-directory "test-input.vlad"))))
+    (string-append stalingrad-command test-directory basename ".vlad"))))
 
 ;;; Checking whether the compiler behaved as expected
 
@@ -141,24 +141,25 @@
   (define (tweak-for-compilation forms)
     (append (except-last-pair forms)
 	    `((write-real (real ,(car (last-pair forms)))))))
-  (let* ((forms (tweak-for-compilation (expectation-forms expectation)))
-	 (compiler-reaction (compilation-reaction-to forms)))
+  (let* ((name (expectation-name expectation))
+	 (forms (tweak-for-compilation (expectation-forms expectation)))
+	 (compiler-reaction (compilation-reaction-to forms name)))
     (if (equal? "" compiler-reaction)
-	(let ((run-reaction (execution-reaction))
+	(let ((run-reaction (execution-reaction name))
 	      (expected (expectation-answer expectation)))
 	  (if (matches? expected run-reaction)
 	      #f
 	      `(running ,forms produced ,run-reaction expected ,expected)))
 	`(compiling ,forms produced ,compiler-reaction))))
 
-(define (compilation-reaction-to forms)
-  (write-forms forms)
+(define (compilation-reaction-to forms basename)
+  (write-forms forms basename)
   (frobnicate
    (shell-command-output
-    (string-append stalingrad-command "-compile -k " test-directory "test-input.vlad"))))
+    (string-append stalingrad-command "-compile -k " test-directory basename ".vlad"))))
 
-(define (execution-reaction)
-  (shell-command-output (string-append "./" test-directory "test-input")))
+(define (execution-reaction basename)
+  (shell-command-output (string-append "./" test-directory basename)))
 
 (define (discrepancy expectation)
   (if (expectation-compile? expectation)
