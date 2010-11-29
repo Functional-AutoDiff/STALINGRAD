@@ -238,15 +238,19 @@
 
 (define (file->compiling-expectations filename)
   (expectations-named
-   (file-basename filename)
+   (string-append "compile-" (file-basename filename))
    (map compiling-version
 	(file->definition-sharing-expectations filename))))
 
 (define (file->interpreter-compiler-expectations filename)
   (let ((expectations (shared-definitions-expectations (read-forms filename))))
-    (expectations-named
-     (file-basename filename)
-     (append expectations (map compiling-version expectations)))))
+    (append
+     (expectations-named
+      (file-basename filename)
+      expectations)
+     (expectations-named
+      (string-append "compile-" (file-basename filename))
+      (map compiling-version expectations)))))
 
 (define (all-expectations)
   (self-relatively
