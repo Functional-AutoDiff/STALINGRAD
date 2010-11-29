@@ -288,7 +288,7 @@
 	     "bug2.vlad"
 	     "double-agent.vlad"
 	     "marble.vlad"
-	     "secant.vlad"
+	     "secant.vlad" ; compilation time reduced from 50s to 1s by -imprecise-inexacts
 	     "sqrt.vlad"
 	     ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
 	     ;;"bug4.vlad"
