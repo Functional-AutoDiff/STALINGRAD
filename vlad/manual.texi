@@ -416,28 +416,38 @@ would do.
 @node Input and Output
 @section Input and Output
 
-VLAD provides two I/O primitives:
+VLAD provides three I/O primitives:
 
 @deffn Procedure read-real
 Takes no arguments, reads a real number from the standard input, and
 returns it.
 @end deffn
 
-@deffn Procedure write x
+@deffn Procedure write-real x
 Takes a real number argument, writes it to the standard output, and
 returns it.  Since VLAD does not support multiple expressions in
 procedure bodies, if you want to write and then do something else,
 you should:
 
 @example
-(let ((ignore (write foo)))
+(let ((ignore (write-real foo)))
   do-something-else)
 @end example
+or equivalent.  A particular common pattern would be inserting
+a @code{write-real} between a procedure and its argument:
+@example
+(do-something-with (write-real foo))
+@end example
+In compiled code, a @code{write-real} will only be executed if the
+compiler cannot determine the argument at compile time.  This behavior
+can be used to investigate the behavior of the static analysis.
 @end deffn
 
-@noindent
-@todo structured WRITE works in the interpreter; what about the compiler?
-@todo What is WRITE-REAL supposed to be?
+@deffn Procedure write object
+Takes an arbitrary object argument, writes it to the standard output, and
+returns it.  The same usage caveats apply as for @code{write-real}.
+@strong{It is an error to use @code{write} in compiled code.}
+@end deffn
 
 @node Introducing Imprecision
 @section Introducing Imprecision
