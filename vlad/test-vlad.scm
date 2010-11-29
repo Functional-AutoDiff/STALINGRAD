@@ -324,17 +324,29 @@
    vlad
    (for-each register-expectation-test (all-expectations))))
 
+(define (parse-and-run-tests!)
+  (parse-and-register-tests)
+  (let ((num-failures (show-time run-registered-tests)))
+    (newline)
+    (flush-output)
+    (%exit num-failures)))
+
 ;;; Saving expectations to disk
 
-(define (parse-and-record-expectations)
-  (define (save-expectation expectation)
-    (with-output-to-file
-	(string-append test-directory (expectation-name expectation) ".expect")
-      (lambda ()
-	(pp (expectation->list expectation)))))
-  (for-each save-expectation (all-expectations)))
+(define (save-expectation expectation)
+  (with-output-to-file
+      (string-append test-directory (expectation-name expectation) ".expect")
+    (lambda ()
+      (pp (expectation->list expectation)))))
+
+(define (parse-and-record-expectations!)
+  (for-each save-expectation (all-expectations))
+  (flush-output)
+  (%exit 0))
 
 ;;; Running an expectation loaded from standard input
 
 (define (read-and-try-expectation!)
-  (report-discrepancy (list->expectation (read))))
+  (report-discrepancy (list->expectation (read)))
+  (flush-output)
+  (%exit 0))
