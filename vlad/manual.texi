@@ -383,6 +383,22 @@ forms in VLAD, and so may not be passed as function parameters,
 returned from functions, etc.
 @end defspec
 
+@defspec ===>
+Causes the subsequent form to be ignored.  This is equivalent to the
+@code{#;} comment syntax in Scheme.  The purpose of @code{===>} is to
+be able to write example VLAD programs that are annotated with the
+answers they are supposed to produce but do not trip over said
+answers.  For example
+@example
+(+ 1 2) ===> 3
+@end example
+reads as the single VLAD expression @code{(+ 1 2)}, but the test suite
+@todo which describe
+knows that that expression is supposed to evaluate to @code{3}.
+@strong It is an error to use @code{===>} other than at the top level of a code file.
+@end defspec
+
+
 @node Procedures
 @section Procedures
 
