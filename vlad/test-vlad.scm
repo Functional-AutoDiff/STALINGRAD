@@ -95,8 +95,7 @@
    (print-procedure
     (simple-unparser-method 'expected
      (lambda (expectation)
-       (list (expectation-forms expectation)
-	     (expectation-answer expectation))))))
+       (expectation->list expectation)))))
   name
   compile?
   forms
@@ -118,6 +117,15 @@
   (if (and (pair? test) (eq? (car test) 'multiform))
       (%make-expectation #f #f (cdr test) answer)
       (%make-expectation #f #f (list test) answer)))
+
+(define (expectation->list expectation)
+  (list (expectation-name expectation)
+	(expectation-compile? expectation)
+	(expectation-forms expectation)
+	(expectation-answer expectation)))
+
+(define (list->expectation lst)
+  (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst)))
 
 ;;; Checking whether the interpreter behaved as expected
 
@@ -161,10 +169,18 @@
 (define (execution-reaction basename)
   (shell-command-output (string-append "./" test-directory basename)))
 
+;;; Detecting discrepancies in general
+
 (define (discrepancy expectation)
   (if (expectation-compile? expectation)
       (compilation-discrepancy expectation)
       (interpretation-discrepancy expectation)))
+
+(define (report-discrepancy expectation)
+  (let ((maybe-trouble (discrepancy expectation)))
+    (if maybe-trouble
+	(pp maybe-trouble)
+	'ok)))
 
 ;;;; Parsing expectations from files of examples
 
@@ -286,7 +302,9 @@
 	     "prefix.vlad"
 	     )))))))))
 
-;;;; Converting expectations to test-manager tests
+;;;; Entry points
+
+;;; Converting expectations to test-manager tests
 
 (define (register-expectation-test expectation)
   (register-test
@@ -305,3 +323,18 @@
   (in-test-group
    vlad
    (for-each register-expectation-test (all-expectations))))
+
+;;; Saving expectations to disk
+
+(define (parse-and-record-expectations)
+  (define (save-expectation expectation)
+    (with-output-to-file
+	(string-append test-directory (expectation-name expectation) ".expect")
+      (lambda ()
+	(pp (expectation->list expectation)))))
+  (for-each save-expectation (all-expectations)))
+
+;;; Running an expectation loaded from standard input
+
+(define (read-and-try-expectation!)
+  (report-discrepancy (list->expectation (read))))
