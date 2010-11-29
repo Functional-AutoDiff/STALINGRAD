@@ -1,4 +1,7 @@
+;;; Pulling in dependencies
+
 (load-option 'synchronous-subprocess)
+
 (define (self-relatively thunk)
   (if (current-eval-unit #f)
       (with-working-directory-pathname
@@ -10,6 +13,8 @@
   (self-relatively (lambda () (load filename))))
 
 (load-relative "../testing/load")
+
+;;; File system manipulations
 
 (define (ensure-directory filename)
   (if (file-exists? filename)
@@ -35,6 +40,23 @@
 (define (read-forms filename)
   (with-input-from-file filename read-all))
 
+(define (write-forms forms)
+  (define (dispatched-write form)
+    (if (and (pair? form) (eq? (car form) 'exact-string))
+	(write-string (cadr form))
+	(begin (pp form)
+	       (newline))))
+  (with-output-to-file (string-append test-directory "test-input.vlad")
+    (lambda ()
+      (for-each dispatched-write forms))))
+
+(define (shell-command-output command)
+  (with-output-to-string
+    (lambda ()
+      (run-shell-command command))))
+
+;;; Checking that answers are as expected
+
 (define (matches? expected reaction)
   (if (and (pair? expected)
 	   (eq? (car expected) 'error))
@@ -47,21 +69,6 @@
 	       (and (= 1 (length result))
 		    (equal? expected (car result))))))))
 
-(define (shell-command-output command)
-  (with-output-to-string
-    (lambda ()
-      (run-shell-command command))))
-
-(define (write-forms forms)
-  (define (dispatched-write form)
-    (if (and (pair? form) (eq? (car form) 'exact-string))
-	(write-string (cadr form))
-	(begin (pp form)
-	       (newline))))
-  (with-output-to-file (string-append test-directory "test-input.vlad")
-    (lambda ()
-      (for-each dispatched-write forms))))
-
 (define (frobnicate string)
   ;; It appears that the latest binary of Stalingrad I have access
   ;; to emits an interesting message on startup.
@@ -70,6 +77,16 @@
    (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
 ***** INITIALIZEVAR Duplicately defined symbol GENSYM
 ")))
+
+;;;; Expectations
+
+;;; An expectation object defines a situation that a VLAD
+;;; implementation may be subjected to, and expectations for how it
+;;; should react to that situation.  For example, executing it on a
+;;; file containing certain forms.  An expectation object can be
+;;; turned into a test in the test-manager/ framework's sense, testing
+;;; whether the Stalingrad interpreter or the Stalingrad compiler
+;;; produce the expected results.
 
 (define-structure
   (expectation
@@ -88,6 +105,8 @@
       (%make-expectation (cdr test) answer)
       (%make-expectation (list test) answer)))
 
+;;; Checking whether the interpreter behaved as expected
+
 (define (interpretation-discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
@@ -101,6 +120,8 @@
   (frobnicate
    (shell-command-output
     (string-append stalingrad-command test-directory "test-input.vlad"))))
+
+;;; Checking whether the compiler behaved as expected
 
 (define (compilation-discrepancy expectation)
   (define (tweak-for-compilation forms)
@@ -124,7 +145,13 @@
 
 (define (execution-reaction)
   (shell-command-output (string-append "./" test-directory "test-input")))
+
+;;;; Parsing expectations from files of examples
 
+;;; The procedure INDEPENDENT-EXPECTATIONS parses a file explicitly of
+;;; tests.  Every form in the file is taken to be separate (though
+;;; small bundles of forms can be denoted with the (multiform ...)
+;;; construct) and produces its own expectation.
 (define (independent-expectations forms)
   (let loop ((answers '())
 	     (forms forms))
@@ -139,6 +166,11 @@
 	   (loop (cons (make-expectation (car forms) #t) answers)
 		 (cdr forms))))))
 
+;;; The procedure SHARED-DEFINITIONS-EXPECTATIONS parses a file that
+;;; could be a VLAD program.  Definitions and includes appearing at
+;;; the top level of the file are taken to be shared by all following
+;;; non-definition expressions, but each non-definition expression
+;;; produces its own expectation.
 (define (shared-definitions-expectations forms)
   (define (definition? form)
     (and (pair? form)
@@ -160,6 +192,10 @@
 	   (loop (expect (caddr forms)) (cdddr forms) definitions))
 	  (else
 	   (loop (expect #t) (cdr forms) definitions)))))
+
+;;;; Making tests
+
+;;; Converting expectations to test-manager tests
 
 (define (expectation->test expectation)
   (define-test
@@ -172,6 +208,8 @@
 (define (expectation->interpreter-compiler-test expectation)
   (expectation->test expectation)
   (expectation->compiler-test expectation))
+
+;;; Reading expectation data files into sets of tests
 
 (define (file->independent-tests filename)
   (for-each expectation->test (independent-expectations (read-forms filename))))
