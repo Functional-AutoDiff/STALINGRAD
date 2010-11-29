@@ -97,14 +97,27 @@
      (lambda (expectation)
        (list (expectation-forms expectation)
 	     (expectation-answer expectation))))))
+  name
   compile?
   forms
   answer)
 
+(define (compiling-version expectation)
+  (%make-expectation
+   (expectation-name expectation) #t
+   (expectation-forms expectation) (expectation-answer expectation)))
+
+(define (update-expectation-name expectation new-name)
+  (%make-expectation
+   new-name
+   (expectation-compile? expectation)
+   (expectation-forms expectation)
+   (expectation-answer expectation)))
+
 (define (make-expectation test answer)
   (if (and (pair? test) (eq? (car test) 'multiform))
-      (%make-expectation #f (cdr test) answer)
-      (%make-expectation #f (list test) answer)))
+      (%make-expectation #f #f (cdr test) answer)
+      (%make-expectation #f #f (list test) answer)))
 
 ;;; Checking whether the interpreter behaved as expected
 
@@ -151,9 +164,6 @@
   (if (expectation-compile? expectation)
       (compilation-discrepancy expectation)
       (interpretation-discrepancy expectation)))
-
-(define (compiling-version expectation)
-  (%make-expectation #t (expectation-forms expectation) (expectation-answer expectation)))
 
 ;;;; Parsing expectations from files of examples
 
@@ -202,29 +212,40 @@
 	  (else
 	   (loop (expect #t) (cdr forms) definitions)))))
 
-;;;; Making tests
+;;;; Parsing data files into expectations
 
-;;; Converting expectations to test-manager tests
+(define (file-basename filename)
+  (->namestring (pathname-new-type filename #f)))
 
-(define (expectation->test expectation)
-  (define-test
-    (check (not (discrepancy expectation)))))
-
-;;; Reading expectation data files into sets of tests
+(define (expectations-named basename expectations)
+  (map (lambda (expectation index)
+	 (update-expectation-name
+	  expectation
+	  (string-append basename "-" (number->string index))))
+       expectations
+       (iota (length expectations) 1)))
 
 (define (file->independent-expectations filename)
-  (independent-expectations (read-forms filename)))
+  (expectations-named
+   (file-basename filename)
+   (independent-expectations (read-forms filename))))
 
 (define (file->definition-sharing-expectations filename)
-  (shared-definitions-expectations (read-forms filename)))
+  (expectations-named
+   (file-basename filename)
+   (shared-definitions-expectations (read-forms filename))))
 
 (define (file->compiling-expectations filename)
-  (map compiling-version
-       (file->definition-sharing-expectations filename)))
+  (expectations-named
+   (file-basename filename)
+   (map compiling-version
+	(file->definition-sharing-expectations filename))))
 
 (define (file->interpreter-compiler-expectations filename)
   (let ((expectations (shared-definitions-expectations (read-forms filename))))
-    (append expectations (map compiling-version expectations))))
+    (expectations-named
+     (file-basename filename)
+     (append expectations (map compiling-version expectations)))))
 
 (define (all-expectations)
   (self-relatively
@@ -248,8 +269,8 @@
 	     "marble.vlad"
 	     "secant.vlad"
 	     "sqrt.vlad"
-					;"bug3.vlad" ; I don't have patterns for anf s-exps :(
-					;"bug4.vlad"
+	     ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
+	     ;;"bug4.vlad"
 	     ))
 	  ;; The compiler doesn't support structured write :(
 	  (append-map
@@ -259,6 +280,12 @@
 	     "example-forward.vlad"
 	     "prefix.vlad"
 	     )))))))))
+
+;;;; Converting expectations to test-manager tests
+
+(define (expectation->test expectation)
+  (define-test
+    (check (not (discrepancy expectation)))))
 
 (in-test-group
  vlad
