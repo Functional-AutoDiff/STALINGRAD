@@ -303,6 +303,8 @@ introduced by @code{let} and @code{let*}, but not @code{letrec}.
   (+ x (+ y (+ z (+ v w)))))  @result{}  15
 @end lisp
 
+@todo VLAD also destructures (j* foo) (*j foo) (forward foo (perturb bar)) (sensitivity foo), etc.  Investigate and describe.
+
 In principle, VLAD also destructures constants and closures that may
 appear in the formal parameter position of a procedure, but I don't
 know whether this is ever useful outside the internals of AD
