@@ -144,31 +144,54 @@ A VLAD program is notionally just a single expression.  For example,
 @end lisp
 
 @noindent
-is a perfectly good VLAD program whose result is @code{7}.  The
-Stalingrad program reads a file containing a VLAD expression, compiles
-that expression, evaluates it, and prints the result.
+is a perfectly good VLAD program whose result is @code{7}.  Used as an
+interpreter, the Stalingrad program reads a file containing a VLAD
+expression, evaluates it, and prints the result.
 
 As a syntactic convenience, helper procedures can be defined using
-@code{define}.  Also, Stalingrad will treat multiple non-definition
-expressions in a single source file as multiple ``programs'', and
-compile and execute all of them in turn.  The scope of definitions
-introduced with define is the entire contiguous block of definitions
-in which that define appears, and all subsequent expressions.
+@code{define}.  Also, Stalingrad used as an interpreter will treat
+multiple non-definition expressions in a single source file as
+multiple ``programs'', and execute all of them in turn.  The scope of
+definitions introduced with define is the entire contiguous block of
+definitions in which that define appears, and all subsequent
+expressions.
 
 For example,
 
 @lisp
-(define (double-loop)
-  (let* ((x (read-real))
-         (y (write (* 3 x))))
-    (double-loop)))
+(define (factorial n)
+  (if (= n 0)
+      1
+      (* n (factorial (- n 1)))))
 
-(double-loop)
+(write-real (factorial (read-real)))
 @end lisp
 
 @noindent
-is a VLAD program that will read real numbers from standrad input
-and write their triples to standard output.
+is a VLAD program that will read a real number from standrad input and
+write its factorial to standard output.  (If you run this in the
+interpreter, you will see the answer twice: once because
+@code{write-real} prints it itself and once because
+@code{write-real} returns it and the interpreter prints it).
+
+Stalingrad operating as a compiler differs in a few respects from
+Stalingrad operating as an interpreter:
+@itemize
+@item
+A program to be compiled must have only one non-definition expression.
+@item
+The value of that expression is printed by the interpreter but not
+by the compiled executable.
+@item
+The shape of that expression must have some indeterminacy (otherwise
+the flow analysis decides your program is boring, and doesn't even
+deign to print the answer) but must not defeat the analysis completely.
+@item
+The arguments of any calls to @code{write-real} will only be written
+if they are not completely determined by the analysis.
+@item
+The procedure @code{write} is not implemented for compiled code.
+@end itemize
 
 VLAD has the following support for multifile programs: If you have a
 file of definitions named @var{filename}, you can use those
@@ -178,6 +201,7 @@ works recursively.  The search path where Stalingrad looks for include
 files is the working directory, any directories given by @code{-I}
 switches when running Stalingrad, and
 @file{/usr/local/stalingrad/include/}, in that order.
+
 
 @node Scaffolding
 @chapter Scaffolding
