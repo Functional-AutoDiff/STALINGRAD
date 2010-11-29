@@ -97,13 +97,14 @@
      (lambda (expectation)
        (list (expectation-forms expectation)
 	     (expectation-answer expectation))))))
+  compile?
   forms
   answer)
 
 (define (make-expectation test answer)
   (if (and (pair? test) (eq? (car test) 'multiform))
-      (%make-expectation (cdr test) answer)
-      (%make-expectation (list test) answer)))
+      (%make-expectation #f (cdr test) answer)
+      (%make-expectation #f (list test) answer)))
 
 ;;; Checking whether the interpreter behaved as expected
 
@@ -145,6 +146,14 @@
 
 (define (execution-reaction)
   (shell-command-output (string-append "./" test-directory "test-input")))
+
+(define (discrepancy expectation)
+  (if (expectation-compile? expectation)
+      (compilation-discrepancy expectation)
+      (interpretation-discrepancy expectation)))
+
+(define (compiling-version expectation)
+  (%make-expectation #t (expectation-forms expectation) (expectation-answer expectation)))
 
 ;;;; Parsing expectations from files of examples
 
@@ -199,15 +208,7 @@
 
 (define (expectation->test expectation)
   (define-test
-    (check (not (interpretation-discrepancy expectation)))))
-
-(define (expectation->compiler-test expectation)
-  (define-test
-    (check (not (compilation-discrepancy expectation)))))
-
-(define (expectation->interpreter-compiler-test expectation)
-  (expectation->test expectation)
-  (expectation->compiler-test expectation))
+    (check (not (discrepancy expectation)))))
 
 ;;; Reading expectation data files into sets of tests
 
@@ -218,12 +219,14 @@
   (for-each expectation->test (shared-definitions-expectations (read-forms filename))))
 
 (define (file->compiler-tests filename)
-  (for-each expectation->compiler-test
-	    (shared-definitions-expectations (read-forms filename))))
+  (for-each expectation->test
+	    (map compiling-version
+		 (shared-definitions-expectations (read-forms filename)))))
 
 (define (file->interpreter-compiler-tests filename)
-  (for-each expectation->interpreter-compiler-test
-	    (shared-definitions-expectations (read-forms filename))))
+  (let ((expectations (shared-definitions-expectations (read-forms filename))))
+    (for-each expectation->test expectations)
+    (for-each expectation->test (map compiling-version expectations))))
 
 (in-test-group
  vlad
