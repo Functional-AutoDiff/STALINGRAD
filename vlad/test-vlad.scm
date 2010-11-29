@@ -288,7 +288,7 @@
 
 ;;;; Converting expectations to test-manager tests
 
-(define (expectation->test expectation)
+(define (register-expectation-test expectation)
   (register-test
    (make-single-test
     (expectation-name expectation)
@@ -301,6 +301,7 @@
   (define-test
     (check (not (discrepancy expectation)))))
 
-(in-test-group
- vlad
- (for-each expectation->test (all-expectations)))
+(define (parse-and-register-tests)
+  (in-test-group
+   vlad
+   (for-each register-expectation-test (all-expectations))))
