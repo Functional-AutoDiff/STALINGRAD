@@ -16,8 +16,6 @@
 
 @c Major TODO: write the Performance Model section
 @c Major TODO: mechanically confirm the various assertions in the manual
-@c Stalingrad build instructions are in the email
-@c ``SUCCESS! (was Re: infrastructure-1.27)'' from David Rush
 
 @macro abstract
 VLAD is a functional language with a first-class automatic
@@ -114,14 +112,25 @@ make
 @end example
 
 You should now have a working binary of Stalingrad in
-@code{source/stalingrad}, with which you can compile and run VLAD
-programs.
+@code{source/stalingrad}, with which you can run VLAD
+programs:
 
 @example
 source/stalingrad @var{foo}.vlad
 @end example
 
-will run the VLAD program in @file{@var{foo}.vlad}.
+will run the VLAD program in @file{@var{foo}.vlad}.  To compile VLAD
+programs, you also need to ensure that you have all the libraries that
+VLAD programs are linked against; the only one that is not completely
+standard is the Boehm garbage collector, which you can get on Debian
+with @code{apt-get install libgc-dev}.  Then
+
+@example
+source/stalingrad -compile @var{foo}.vlad
+@end example
+
+will compile the VLAD program in @file{@var{foo}.vlad} into an
+executable named @file{@var{foo}}.
 
 @node Getting Started
 @chapter Getting Started
