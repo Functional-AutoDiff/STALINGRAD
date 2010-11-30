@@ -11,7 +11,7 @@
 (define (load-relative filename)
   (self-relatively (lambda () (load filename))))
 
-(define test-driver "../BCL-AD/vlad/test-vlad.scm")
+(define test-driver "../../BCL-AD/vlad/test-vlad.scm")
 
 (self-relatively
  (lambda ()

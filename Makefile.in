@@ -12,10 +12,10 @@ stalingrad: QobiScheme
 	$(MAKE) -C source all
 
 test:
-	mit-scheme --heap 6000 --batch-mode --no-init-file --load test-driver.scm --eval '(parse-and-run-tests!)'
+	./tools/test-driver '(parse-and-run-tests!)'
 
 par-test:
-	mit-scheme --heap 6000 --batch-mode --no-init-file --load test-driver.scm --eval '(parse-and-record-expectations!)'
+	./tools/test-driver '(parse-and-record-expectations!)'
 	$(MAKE) -C test-runs all
 #	find test-runs -name "*.fail" -empty -delete
 	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
