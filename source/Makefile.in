@@ -59,8 +59,14 @@ publish: release
 test:
 	$(MAKE) -C .. test
 
-par-test:
-	$(MAKE) -C .. par-test
+test-full:
+	$(MAKE) -C .. test-full
+
+test-serially:
+	$(MAKE) -C .. test-serially
+
+test-serially-full:
+	$(MAKE) -C .. test-serially-full
 
 # Compilation rules and dependencies
 # ----------------------------------
@@ -103,4 +109,4 @@ stalingrad: stalingrad.o $(stalingradlib)
 Makefile: Makefile.in
 	cd .. && ./config.status
 
-.PHONY: all clean real-clean install uninstall release publish test par-test
+.PHONY: all clean real-clean install uninstall release publish test test-full test-serially test-serially-full

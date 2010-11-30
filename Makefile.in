@@ -12,15 +12,26 @@ stalingrad: QobiScheme
 	$(MAKE) -C source all
 
 test:
-	./tools/test-driver '(run-tests! (all-expectations))'
+	rm -rf test-runs
+	./tools/test-driver '(record-expectations! (fast-expectations))'
+	$(MAKE) -C test-runs all
+	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
+	@echo `find test-runs -name "*.fail" | wc -l` tests\, `find test-runs -name "*.fail" -not -empty -print | wc -l` failures\.
 
-par-test:
+test-full:
+	rm -rf test-runs
 	./tools/test-driver '(record-expectations! (all-expectations))'
 	$(MAKE) -C test-runs all
 	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
 	@echo `find test-runs -name "*.fail" | wc -l` tests\, `find test-runs -name "*.fail" -not -empty -print | wc -l` failures\.
 
+test-serially:
+	./tools/test-driver '(run-tests! (fast-expectations))'
+
+test-serially-full:
+	./tools/test-driver '(run-tests! (all-expectations))'
+
 Makefile: Makefile.in
 	./config.status
 
-.PHONY: all targets QobiScheme stalingrad test par-test
+.PHONY: all targets QobiScheme stalingrad test test-full test-serially test-serially-full
