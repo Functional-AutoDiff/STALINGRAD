@@ -362,14 +362,14 @@ time-report:
   (define-test
     (check (not (discrepancy expectation)))))
 
-(define (parse-and-register-tests)
+(define (register-tests expectations)
   (in-test-group
    vlad
-   (for-each register-expectation-test (all-expectations))))
+   (for-each register-expectation-test expectations)))
 
-(define (parse-and-run-tests!)
+(define (run-tests! expectations)
   (ensure-directory test-directory)
-  (parse-and-register-tests)
+  (register-tests expectations)
   (let ((num-failures (show-time run-registered-tests)))
     (newline)
     (flush-output)
@@ -383,10 +383,10 @@ time-report:
     (lambda ()
       (pp (expectation->list expectation)))))
 
-(define (parse-and-record-expectations!)
+(define (record-expectations! expectations)
   (ensure-directory test-directory)
   (write-makefile test-directory)
-  (for-each save-expectation (all-expectations))
+  (for-each save-expectation expectations)
   (flush-output)
   (%exit 0))
 
