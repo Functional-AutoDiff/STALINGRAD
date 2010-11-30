@@ -66,7 +66,7 @@ FAILURE_REPORTS=$(EXPECTATIONS:.expect=.fail)
 all: $(FAILURE_REPORTS)
 
 %.fail: %.expect
-	-time -o $*.time mit-scheme --heap 6000 --batch-mode --no-init-file --load ../test-driver.scm --eval '(read-and-try-expectation!)' < $^ > $@
+	-time -o $*.time ../tools/test-driver '(read-and-try-expectation!)' < $^ > $@
 
 time-report:
 	find . -name \"*.time\" -printf '%30f   ' -exec head -1 '{}' \\; | sort -g -t ':' -k 2 | sort -g -k 4 -s
