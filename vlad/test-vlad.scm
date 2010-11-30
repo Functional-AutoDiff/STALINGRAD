@@ -26,7 +26,7 @@
 (define my-pathname (self-relatively working-directory-pathname))
 (define test-directory "test-runs/")
 (define stalingrad-command
-  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 2000 -I "
+  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 4500 -I "
 		 (->namestring my-pathname) "../../stalingrad/examples/ "))
 
 (define (read-all)
@@ -335,9 +335,18 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../../stalingrad/examples/"
       (lambda ()
-	(append-map
-	 file->interpreter-compiler-expectations
-	 '("double-agent.vlad")))))))
+	(append
+	 (append-map
+	  file->interpreter-compiler-expectations
+	  '("double-agent.vlad"
+	    "triple.vlad"
+	    "dn.vlad"
+	    ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
+	    ))
+	 ;; The compiler doesn't support structured write :(
+	 (append-map
+	  file->definition-sharing-expectations
+	  '("hessian.vlad"))))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
