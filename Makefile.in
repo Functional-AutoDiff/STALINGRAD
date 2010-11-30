@@ -18,6 +18,6 @@ par-test:
 	mit-scheme --heap 6000 --batch-mode --no-init-file --load test-driver.scm --eval '(parse-and-record-expectations!)'
 	$(MAKE) -C test-runs all
 #	find test-runs -name "*.fail" -empty -delete
-	find test-runs -name "*.fail" -not -empty -print -exec cat '{}' \;
+	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
 
 .PHONY: all targets QobiScheme stalingrad test par-test
