@@ -54,6 +54,21 @@
     (lambda ()
       (run-shell-command command))))
 
+(define (write-makefile directory)
+  (with-working-directory-pathname directory
+   (lambda ()
+     (with-output-to-file "Makefile"
+       (lambda ()
+	 (display
+"EXPECTATIONS=$(wildcard *.expect)
+FAILURE_REPORTS=$(EXPECTATIONS:.expect=.fail)
+
+all: $(FAILURE_REPORTS)
+
+%.fail: %.expect
+	-mit-scheme --heap 6000 --batch-mode --no-init-file --load ../test-driver.scm --eval '(read-and-try-expectation!)' < $^ > $@
+"))))))
+
 ;;; Checking that answers are as expected
 
 (define (matches? expected reaction)
@@ -341,6 +356,7 @@
 
 (define (parse-and-record-expectations!)
   (ensure-directory test-directory)
+  (write-makefile test-directory)
   (for-each save-expectation (all-expectations))
   (flush-output)
   (%exit 0))
@@ -348,6 +364,7 @@
 ;;; Running an expectation loaded from standard input
 
 (define (read-and-try-expectation!)
+  (set! test-directory "./") ;; This entry point is called from the test-runs/ directory
   (report-discrepancy (list->expectation (read)))
   (flush-output)
   (%exit 0))
