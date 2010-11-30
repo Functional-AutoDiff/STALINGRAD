@@ -298,7 +298,7 @@ time-report:
       (string-append "compile-" (file-basename filename))
       (map compiling-version expectations)))))
 
-(define (all-expectations)
+(define (fast-expectations)
   (with-working-directory-pathname my-pathname
    (lambda ()
      (append
@@ -316,7 +316,6 @@ time-report:
 	     "bug0.vlad"
 	     "bug1.vlad"
 	     "bug2.vlad"
-	     "double-agent.vlad"
 	     "marble.vlad"
 	     "secant.vlad"
 	     "sqrt.vlad"
@@ -331,6 +330,20 @@ time-report:
 	     "example-forward.vlad"
 	     "prefix.vlad"
 	     )))))))))
+
+(define (slow-expectations)
+  (with-working-directory-pathname
+   my-pathname
+   (lambda ()
+     (with-working-directory-pathname
+      "../../stalingrad/examples/"
+      (lambda ()
+	(append-map
+	 file->interpreter-compiler-expectations
+	 '("double-agent.vlad")))))))
+
+(define (all-expectations)
+  (append (fast-expectations) (slow-expectations)))
 
 ;;;; Entry points
 
