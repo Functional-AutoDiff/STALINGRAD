@@ -395,7 +395,7 @@ answers.  For example
 reads as the single VLAD expression @code{(+ 1 2)}, but the test suite
 @todo which describe
 knows that that expression is supposed to evaluate to @code{3}.
-@strong It is an error to use @code{===>} other than at the top level of a code file.
+@strong{It is an error to use @code{===>} other than at the top level of a code file.}
 @end defspec
 
 
