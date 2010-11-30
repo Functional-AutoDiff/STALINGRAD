@@ -1,0 +1,13 @@
+#!/bin/bash
+
+SELFDIR=`dirname $0`
+TEST_DRIVER="${SELFDIR}/test-driver"
+
+/usr/bin/time -o $1.time ${TEST_DRIVER} '(read-and-try-expectation!)' < $1.expect > $1.fail
+
+if [ -s $1.fail ]
+then
+    echo "FAIL" $1
+else
+    echo "ok" $1
+fi
