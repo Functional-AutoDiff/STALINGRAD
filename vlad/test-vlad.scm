@@ -84,6 +84,10 @@ time-report:
 	(cond ((and (pair? expected)
 		    (eq? (car expected) 'multiform))
 	       (equal? (cdr expected) result))
+	      ((and (number? expected) (inexact? expected))
+	       ;; TODO I really should put this in the recursive case
+	       ;; too (and get the numerics right).
+	       (< (abs (- expected (car result))) 1e-10))
 	      (else
 	       (and (= 1 (length result))
 		    (equal? expected (car result))))))))
@@ -183,7 +187,14 @@ time-report:
   (write-forms forms basename)
   (frobnicate
    (shell-command-output
-    (string-append stalingrad-command "-compile -k " test-directory basename ".vlad"))))
+    (string-append
+     stalingrad-command
+     ;; -imprecise-inexacts causes some "Warning: Arguments to bundle
+     ;; might not conform" that's confusing the test suite.
+     "-compile -k -imprecise-inexacts -no-warnings "
+     test-directory
+     basename
+     ".vlad"))))
 
 (define (execution-reaction basename)
   (shell-command-output (string-append "./" test-directory basename)))
@@ -307,7 +318,7 @@ time-report:
 	     "bug2.vlad"
 	     "double-agent.vlad"
 	     "marble.vlad"
-	     "secant.vlad" ; compilation time reduced from 50s to 1s by -imprecise-inexacts
+	     "secant.vlad"
 	     "sqrt.vlad"
 	     ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
 	     ;;"bug4.vlad"
