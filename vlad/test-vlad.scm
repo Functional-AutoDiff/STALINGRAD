@@ -68,10 +68,7 @@ all: $(FAILURE_REPORTS)
 %.fail: %.expect
 	-../tools/one-test $*
 
-time-report:
-	find . -name \"*.time\" -printf '%30f   ' -exec head -1 '{}' \\; | sort -g -t ':' -k 2 | sort -g -k 4 -s
-
-.PHONY: all time-report
+.PHONY: all
 "))))))
 
 ;;; Checking that answers are as expected
