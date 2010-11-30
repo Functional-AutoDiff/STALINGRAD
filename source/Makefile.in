@@ -103,4 +103,7 @@ stalingrad: stalingrad.o $(stalingradlib)
 	scc -sch 512 -cc $(CC) $(SCCLDFLAGS) $(INCLUDES) -o stalingrad\
             $^ $(LRL) $(qslibs) $(SCXL)/scxl.a -lX11
 
+Makefile: Makefile.in
+	cd .. && ./config.status
+
 .PHONY: all clean real-clean install uninstall release publish test par-test

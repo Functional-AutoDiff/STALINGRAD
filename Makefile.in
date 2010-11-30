@@ -20,4 +20,7 @@ par-test:
 #	find test-runs -name "*.fail" -empty -delete
 	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
 
+Makefile: Makefile.in
+	./config.status
+
 .PHONY: all targets QobiScheme stalingrad test par-test
