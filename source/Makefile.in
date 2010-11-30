@@ -57,7 +57,13 @@ publish: release
 	cd ..; publish stalingrad $(RELEASE_VERSION)
 
 test:
-	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --load ../test-driver.scm --eval '(parse-and-run-tests!)'
+	mit-scheme --heap 6000 --batch-mode --no-init-file --load ../test-driver.scm --eval '(parse-and-run-tests!)'
+
+par-test:
+	mit-scheme --heap 6000 --batch-mode --no-init-file --load test-driver.scm --eval '(parse-and-record-expectations!)'
+	$(MAKE) -C test-runs all
+#	find test-runs -name "*.fail" -empty -delete
+	find test-runs -name "*.fail" -not -empty -print -exec cat '{}' \;
 
 # Compilation rules and dependencies
 # ----------------------------------
@@ -97,4 +103,4 @@ stalingrad: stalingrad.o $(stalingradlib)
 	scc -sch 512 -cc $(CC) $(SCCLDFLAGS) $(INCLUDES) -o stalingrad\
             $^ $(LRL) $(qslibs) $(SCXL)/scxl.a -lX11
 
-.PHONY: all clean real-clean install uninstall release publish test
+.PHONY: all clean real-clean install uninstall release publish test par-test
