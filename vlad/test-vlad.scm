@@ -262,12 +262,24 @@ all: $(FAILURE_REPORTS)
   (->namestring (pathname-new-type filename #f)))
 
 (define (expectations-named basename expectations)
-  (map (lambda (expectation index)
-	 (update-expectation-name
-	  expectation
-	  (string-append basename "-" (number->string index))))
-       expectations
-       (iota (length expectations) 1)))
+  (define (integer-log number base)
+    (if (< number base)
+	0
+	(+ 1 (integer-log (quotient number base) base))))
+  (define (pad string length pad-str)
+    (if (>= (string-length string) length)
+	string
+	(pad (string-append pad-str string) length pad-str)))
+  (let* ((count (length expectations))
+	 (index-length (+ 1 (integer-log count 10))))
+    (define (number->uniform-string index)
+       (pad (number->string index) index-length "0"))
+    (map (lambda (expectation index)
+	   (update-expectation-name
+	    expectation
+	    (string-append basename "-" (number->uniform-string index))))
+	 expectations
+	 (iota count 1))))
 
 (define (file->independent-expectations filename)
   (expectations-named
