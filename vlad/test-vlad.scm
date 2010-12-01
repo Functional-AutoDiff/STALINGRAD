@@ -121,7 +121,7 @@ all: $(FAILURE_REPORTS)
   forms
   answer)
 
-(define (compiling-version expectation)
+(define (%compiling-version expectation)
   (%make-expectation
    (expectation-name expectation) #t
    (expectation-forms expectation) (expectation-answer expectation)))
@@ -208,6 +208,21 @@ all: $(FAILURE_REPORTS)
     (if maybe-trouble
 	(pp maybe-trouble)
 	'ok)))
+
+;;; The compiler has some restrictions relative the interpreter, so we
+;;; can autodetect that some examples should not be tested in it.
+(define (suitable-for-compilation? expectation)
+  (let ((expect (expectation-answer expectation)))
+    (or (number? expect)
+	(and (pair? expect)
+	     (or (eq? (car expect) 'error)
+		 (and (eq? (car expect) 'multiform)
+		      (every number? (cdr expect))))))))
+
+(define (compiling-version expectation)
+  (if (suitable-for-compilation? expectation)
+      (%compiling-version expectation)
+      #f))
 
 ;;;; Parsing expectations from files of examples
 
@@ -289,8 +304,8 @@ all: $(FAILURE_REPORTS)
 (define (file->independent-compiling-expectations filename)
   (expectations-named
    (string-append "compile-" (file-basename filename))
-   (map compiling-version
-	(independent-expectations (read-forms filename)))))
+   (filter-map compiling-version
+	       (independent-expectations (read-forms filename)))))
 
 (define (file->independent-interpreter-compiler-expectations filename)
   (let ((expectations (independent-expectations (read-forms filename))))
@@ -300,7 +315,7 @@ all: $(FAILURE_REPORTS)
       expectations)
      (expectations-named
       (string-append "compile-" (file-basename filename))
-      (map compiling-version expectations)))))
+      (filter-map compiling-version expectations)))))
 
 (define (file->definition-sharing-expectations filename)
   (expectations-named
@@ -310,8 +325,8 @@ all: $(FAILURE_REPORTS)
 (define (file->compiling-expectations filename)
   (expectations-named
    (string-append "compile-" (file-basename filename))
-   (map compiling-version
-	(file->definition-sharing-expectations filename))))
+   (filter-map compiling-version
+	       (file->definition-sharing-expectations filename))))
 
 (define (file->interpreter-compiler-expectations filename)
   (let ((expectations (shared-definitions-expectations (read-forms filename))))
@@ -321,7 +336,7 @@ all: $(FAILURE_REPORTS)
       expectations)
      (expectations-named
       (string-append "compile-" (file-basename filename))
-      (map compiling-version expectations)))))
+      (filter-map compiling-version expectations)))))
 
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
