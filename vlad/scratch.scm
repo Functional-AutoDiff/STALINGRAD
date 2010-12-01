@@ -29,16 +29,6 @@
 (let ((ignore (write-real (* 2 (real 3)))))
   3) ===> (multiform 6 3)
 
-(multiform
- (define (fact x)
-   (if (= x 0)
-       1
-       (* x (fact (- x 1)))))
-
- (fact 5)
- (fact (real 5)))
-===> (multiform 120 120)
-
 (perturb 1) ===> (perturbation 1)
 (write (perturb 1)) ===> (multiform (perturbation 1) (perturbation 1))
 (perturbation? (perturb 1))
