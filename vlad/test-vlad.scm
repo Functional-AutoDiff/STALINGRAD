@@ -365,30 +365,24 @@ all: $(FAILURE_REPORTS)
       (with-working-directory-pathname
        "../../stalingrad/examples/"
        (lambda ()
-	 (append
-	  (append-map
-	   file->interpreter-compiler-expectations
-	   '("factorial.vlad"
-	     "bug-a.vlad"
-	     "bug-b.vlad"
-	     "bug-c.vlad"
-	     "bug0.vlad"
-	     "bug1.vlad"
-	     "bug2.vlad"
-	     "marble.vlad"
-	     "secant.vlad"
-	     "sqrt.vlad"
-	     ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
-	     ;;"bug4.vlad"
-	     ))
-	  ;; The compiler doesn't support structured write :(
-	  (append-map
-	   file->definition-sharing-expectations
-	   '("even-odd.vlad"
-	     "example.vlad"
-	     "example-forward.vlad"
-	     "prefix.vlad"
-	     )))))))))
+	 (append-map
+	  file->interpreter-compiler-expectations
+	  '("even-odd.vlad"
+	    "example-forward.vlad"
+	    "factorial.vlad"
+	    "bug-a.vlad"
+	    "bug-b.vlad"
+	    "bug-c.vlad"
+	    "bug0.vlad"
+	    "bug1.vlad"
+	    "bug2.vlad"
+	    "marble.vlad"
+	    "prefix.vlad"
+	    "secant.vlad"
+	    "sqrt.vlad"
+	    ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
+	    ;;"bug4.vlad"
+	    ))))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
@@ -400,7 +394,8 @@ all: $(FAILURE_REPORTS)
 	(append
 	 (append-map
 	  file->interpreter-compiler-expectations
-	  '("double-agent.vlad"
+	  '("example.vlad"
+	    "double-agent.vlad"
 	    "triple.vlad"
 	    "dn.vlad"
 	    ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
