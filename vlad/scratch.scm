@@ -108,6 +108,8 @@
 #d100 ===> 100
 #x100 ===> 256
 
+(- (real 3) -1) ===> 4
+
 (write (cons 1 2)) ===> (multiform (1 . 2) (1 . 2))
 
 (exact-string
