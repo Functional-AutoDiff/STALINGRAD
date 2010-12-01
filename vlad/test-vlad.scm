@@ -391,19 +391,15 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../../stalingrad/examples/"
       (lambda ()
-	(append
-	 (append-map
-	  file->interpreter-compiler-expectations
-	  '("example.vlad"
-	    "double-agent.vlad"
-	    "triple.vlad"
-	    "dn.vlad"
-	    ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
-	    ))
-	 ;; The compiler doesn't support structured write :(
-	 (append-map
-	  file->definition-sharing-expectations
-	  '("hessian.vlad"))))))))
+	(append-map
+	 file->interpreter-compiler-expectations
+	 '("example.vlad"
+	   "double-agent.vlad"
+	   "hessian.vlad"
+	   "triple.vlad"
+	   "dn.vlad"
+	   ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
+	   )))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
