@@ -26,7 +26,7 @@
  (abs -3))
 ===> 3
 
-(let ((ignore (write (* 2 (real 3)))))
+(let ((ignore (write-real (* 2 (real 3)))))
   3) ===> (multiform 6 3)
 
 (multiform
