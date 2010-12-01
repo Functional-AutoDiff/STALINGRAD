@@ -26,7 +26,7 @@
 (define my-pathname (self-relatively working-directory-pathname))
 (define test-directory "test-runs/")
 (define stalingrad-command
-  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 4500 -I "
+  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 1000 -I "
 		 (->namestring my-pathname) "../../stalingrad/examples/ "))
 
 (define (read-all)
