@@ -155,7 +155,7 @@ all: $(FAILURE_REPORTS)
 	 (reaction (interpreter-reaction-to forms (expectation-name expectation))))
     (if (matches? expected reaction)
 	#f
-	`(,forms produced ,reaction expected ,expected))))
+	`(interpreting ,forms produced ,reaction expected ,expected))))
 
 (define (interpreter-reaction-to forms basename)
   (write-forms forms basename)
@@ -207,10 +207,21 @@ all: $(FAILURE_REPORTS)
       (compilation-discrepancy expectation)
       (interpretation-discrepancy expectation)))
 
-(define (report-discrepancy expectation)
+(define (report-discrepancy discrepancy)
+  (for-each
+   (lambda (discrepancy-elt)
+     (cond ((memq discrepancy-elt '(compiling interpreting produced expected))
+	    (display (string-capitalize (symbol->string discrepancy-elt)))
+	    (newline))
+	   ((string? discrepancy-elt)
+	    (display discrepancy-elt))
+	   (else (pp discrepancy-elt))))
+   discrepancy))
+
+(define (report-if-discrepancy expectation)
   (let ((maybe-trouble (discrepancy expectation)))
     (if maybe-trouble
-	(pp maybe-trouble)
+	(report-discrepancy maybe-trouble)
 	'ok)))
 
 ;;; The compiler has some restrictions relative the interpreter, so we
@@ -447,6 +458,6 @@ all: $(FAILURE_REPORTS)
 
 (define (read-and-try-expectation!)
   (set! test-directory "./") ;; This entry point is called from the test-runs/ directory
-  (report-discrepancy (list->expectation (read)))
+  (report-if-discrepancy (list->expectation (read)))
   (flush-output)
   (%exit 0))
