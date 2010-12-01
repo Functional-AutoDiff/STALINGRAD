@@ -286,6 +286,22 @@ all: $(FAILURE_REPORTS)
    (file-basename filename)
    (independent-expectations (read-forms filename))))
 
+(define (file->independent-compiling-expectations filename)
+  (expectations-named
+   (string-append "compile-" (file-basename filename))
+   (map compiling-version
+	(independent-expectations (read-forms filename)))))
+
+(define (file->independent-interpreter-compiler-expectations filename)
+  (let ((expectations (independent-expectations (read-forms filename))))
+    (append
+     (expectations-named
+      (file-basename filename)
+      expectations)
+     (expectations-named
+      (string-append "compile-" (file-basename filename))
+      (map compiling-version expectations)))))
+
 (define (file->definition-sharing-expectations filename)
   (expectations-named
    (file-basename filename)
@@ -311,7 +327,7 @@ all: $(FAILURE_REPORTS)
   (with-working-directory-pathname my-pathname
    (lambda ()
      (append
-      (file->independent-expectations "scratch.scm")
+      (file->independent-interpreter-compiler-expectations "scratch.scm")
       (with-working-directory-pathname
        "../../stalingrad/examples/"
        (lambda ()
