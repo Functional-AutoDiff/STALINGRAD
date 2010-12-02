@@ -396,6 +396,7 @@ all: $(FAILURE_REPORTS)
 	 '("example.vlad"
 	   "double-agent.vlad"
 	   "hessian.vlad"
+	   "saddle.vlad"
 	   "triple.vlad"
 	   "dn.vlad"
 	   ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
