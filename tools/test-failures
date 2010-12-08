@@ -1,5 +1,7 @@
 #!/bin/bash
 
-find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
+dir="${1:-test-runs}"
+
+find $dir -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
 echo ""
-echo `find test-runs -name "*.fail" | wc -l` tests\, `find test-runs -name "*.fail" -not -empty -print | wc -l` failures\, `find test-runs -name "*.time" -exec head -1 '{}' \; | grep "Command exited with non-zero status" | wc -l` crashes\.
+echo `find $dir -name "*.fail" | wc -l` tests\, `find $dir -name "*.fail" -not -empty -print | wc -l` failures\, `find $dir -name "*.time" -exec head -1 '{}' \; | grep "Command exited with non-zero status" | wc -l` crashes\.
