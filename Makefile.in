@@ -29,10 +29,7 @@ test-serially:
 test-serially-full:
 	./tools/test-driver '(run-tests! (all-expectations))'
 
-tests-running:
-	find test-runs -name "*.time" -empty -print | sort
-
 Makefile: Makefile.in
 	./config.status
 
-.PHONY: all targets QobiScheme stalingrad test test-full test-serially test-serially-full tests-running
+.PHONY: all targets QobiScheme stalingrad test test-full test-serially test-serially-full
