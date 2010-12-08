@@ -15,15 +15,13 @@ test:
 	rm -rf test-runs
 	./tools/test-driver '(record-expectations! (fast-expectations))'
 	$(MAKE) -C test-runs all
-	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
-	@echo `find test-runs -name "*.fail" | wc -l` tests\, `find test-runs -name "*.fail" -not -empty -print | wc -l` failures\.
+	./tools/test-failures
 
 test-full:
 	rm -rf test-runs
 	./tools/test-driver '(record-expectations! (all-expectations))'
 	$(MAKE) -C test-runs all
-	find test-runs -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
-	@echo `find test-runs -name "*.fail" | wc -l` tests\, `find test-runs -name "*.fail" -not -empty -print | wc -l` failures\.
+	./tools/test-failures
 
 test-serially:
 	./tools/test-driver '(run-tests! (fast-expectations))'
