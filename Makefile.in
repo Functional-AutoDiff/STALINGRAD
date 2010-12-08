@@ -35,7 +35,7 @@ tests-running:
 	find test-runs -name "*.time" -empty -print | sort
 
 test-timings:
-	find test-runs -name "*.time" -not -empty -printf '%30f   ' -exec head -1 '{}' \; | sort -g -t ':' -k 2 | sort -g -k 4 -s
+	find test-runs -name "*.time" -not -empty -printf '%30f   ' -exec head -1 '{}' \; | sort -g -t ':' -k 2 | sort -g -k 6 -s
 
 Makefile: Makefile.in
 	./config.status

@@ -6,7 +6,8 @@ ulimit -t 3000
 SELFDIR=`dirname $0`
 TEST_DRIVER="${SELFDIR}/test-driver"
 
-/usr/bin/time -o $1.time ${TEST_DRIVER} '(read-and-try-expectation!)' < $1.expect > $1.fail
+/usr/bin/time -o $1.time -f "%U user %S sys %E real %P CPU %Mk maxresident\n(%Xk avgtext + %Dk avgdata)\n%I inputs + %O outputs\n(%F major + %R minor) pagefaults\n%W swaps" \
+    ${TEST_DRIVER} '(read-and-try-expectation!)' < $1.expect > $1.fail
 
 if [ -s $1.fail ]
 then
