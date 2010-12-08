@@ -1,0 +1,10 @@
+#!/bin/bash
+
+dir="${1:-test-runs}"
+
+find $dir -name "*.time" -not -empty -printf '%30f   ' -exec head -1 '{}' \; \
+    | grep -v "Command exited with non-zero status" | sort -g -t ':' -k 2 | sort -g -k 6 -s \
+    | xargs -L 1 env printf "%30s %5s %s %5s %s %8s %s %4s %s %9s %s\n"
+
+find $dir -name "*.time" -not -empty -printf '%30f   ' -exec head -1 '{}' \; \
+    | grep "Command exited with non-zero status"
