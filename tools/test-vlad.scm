@@ -12,7 +12,7 @@
 (define (load-relative filename)
   (self-relatively (lambda () (load filename))))
 
-(load-relative "..../BCL-AD/testing/load")
+(load-relative "../../BCL-AD/testing/load")
 
 ;;; File system manipulations
 
