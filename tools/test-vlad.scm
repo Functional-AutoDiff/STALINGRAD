@@ -361,7 +361,10 @@ all: $(FAILURE_REPORTS)
   (with-working-directory-pathname my-pathname
    (lambda ()
      (append
-      (file->independent-interpreter-compiler-expectations "../vlad/scratch.scm")
+      (with-working-directory-pathname
+       "../vlad"
+       (lambda ()
+	 (file->independent-interpreter-compiler-expectations "scratch.scm")))
       (with-working-directory-pathname
        "../examples/"
        (lambda ()
