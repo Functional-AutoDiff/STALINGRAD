@@ -12,7 +12,7 @@
 (define (load-relative filename)
   (self-relatively (lambda () (load filename))))
 
-(load-relative "../testing/load")
+(load-relative "..../BCL-AD/testing/load")
 
 ;;; File system manipulations
 
@@ -26,8 +26,8 @@
 (define my-pathname (self-relatively working-directory-pathname))
 (define test-directory "test-runs/")
 (define stalingrad-command
-  (string-append (->namestring my-pathname) "../../stalingrad/source/stalingrad -scmh 1000 -I "
-		 (->namestring my-pathname) "../../stalingrad/examples/ "))
+  (string-append (->namestring my-pathname) "../source/stalingrad -scmh 1000 -I "
+		 (->namestring my-pathname) "../examples/ "))
 
 (define (read-all)
   (let loop ((results '())
@@ -361,9 +361,9 @@ all: $(FAILURE_REPORTS)
   (with-working-directory-pathname my-pathname
    (lambda ()
      (append
-      (file->independent-interpreter-compiler-expectations "scratch.scm")
+      (file->independent-interpreter-compiler-expectations "../vlad/scratch.scm")
       (with-working-directory-pathname
-       "../../stalingrad/examples/"
+       "../examples/"
        (lambda ()
 	 (append-map
 	  file->interpreter-compiler-expectations
@@ -389,7 +389,7 @@ all: $(FAILURE_REPORTS)
    my-pathname
    (lambda ()
      (with-working-directory-pathname
-      "../../stalingrad/examples/"
+      "../examples/"
       (lambda ()
 	(append-map
 	 file->interpreter-compiler-expectations
