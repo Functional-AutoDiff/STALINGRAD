@@ -1,3 +1,5 @@
+(declare (usual-integrations))
+
 ;;; Pulling in dependencies
 
 (load-option 'synchronous-subprocess)
