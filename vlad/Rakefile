@@ -1,5 +1,0 @@
-task :doc do
-  sh "makeinfo --html manual.texi"
-  sh "texi2pdf manual.texi"
-  sh "makeinfo --output manual.info manual.texi"
-end
