@@ -64,7 +64,7 @@ FAILURE_REPORTS=$(EXPECTATIONS:.expect=.fail)
 all: $(FAILURE_REPORTS)
 
 %.fail: %.expect
-	-../tools/one-test $*
+	-../tool/one-test $*
 
 .PHONY: all
 "))))))

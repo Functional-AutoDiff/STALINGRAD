@@ -13,15 +13,15 @@ stalingrad: QobiScheme
 
 test:
 	rm -rf test-runs
-	./tools/test-driver '(record-expectations! (fast-expectations))'
+	./tool/test-driver '(record-expectations! (fast-expectations))'
 	$(MAKE) -C test-runs all
-	./tools/test-failures
+	./tool/test-failures
 
 test-full:
 	rm -rf test-runs
-	./tools/test-driver '(record-expectations! (all-expectations))'
+	./tool/test-driver '(record-expectations! (all-expectations))'
 	$(MAKE) -C test-runs all
-	./tools/test-failures
+	./tool/test-failures
 
 Makefile: Makefile.in
 	./config.status
