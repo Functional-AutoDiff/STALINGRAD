@@ -360,14 +360,11 @@ all: $(FAILURE_REPORTS)
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
    (lambda ()
-     (append
-      (with-working-directory-pathname
-       "../vlad"
-       (lambda ()
-	 (file->independent-interpreter-compiler-expectations "scratch.scm")))
-      (with-working-directory-pathname
-       "../examples/"
-       (lambda ()
+     (with-working-directory-pathname
+      "../examples/"
+      (lambda ()
+	(append
+	 (file->independent-interpreter-compiler-expectations "one-offs.vlad")
 	 (append-map
 	  file->interpreter-compiler-expectations
 	  '("even-odd.vlad"
