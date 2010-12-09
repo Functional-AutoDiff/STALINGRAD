@@ -1,3 +1,0 @@
-#!/bin/sh
-
-mit-scheme --compiler -heap 6000 --batch-mode --no-init-file --load "test-vlad" --eval '(run-tests! (all-expectations))'
