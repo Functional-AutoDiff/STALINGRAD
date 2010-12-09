@@ -222,7 +222,7 @@ The empty expression @code{()} is not legal VLAD.
 
 The main syntactic difference between Scheme and VLAD is that VLAD
 has automatic destructuring of bound values.
-@xref{Destructuring} for the details, but the gist is that
+For details, see @xref{Destructuring}, but the gist is that
 
 @example
 (let (((cons x y) (cons 1 2)))
