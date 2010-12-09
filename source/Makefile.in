@@ -62,12 +62,6 @@ test:
 test-full:
 	$(MAKE) -C .. test-full
 
-test-serially:
-	$(MAKE) -C .. test-serially
-
-test-serially-full:
-	$(MAKE) -C .. test-serially-full
-
 # Compilation rules and dependencies
 # ----------------------------------
 stalingradlib = stalingradlib-stuff.o\
@@ -109,4 +103,4 @@ stalingrad: stalingrad.o $(stalingradlib)
 Makefile: Makefile.in
 	cd .. && ./config.status
 
-.PHONY: all clean real-clean install uninstall release publish test test-full test-serially test-serially-full
+.PHONY: all clean real-clean install uninstall release publish test test-full

@@ -23,13 +23,7 @@ test-full:
 	$(MAKE) -C test-runs all
 	./tools/test-failures
 
-test-serially:
-	./tools/test-driver '(run-tests! (fast-expectations))'
-
-test-serially-full:
-	./tools/test-driver '(run-tests! (all-expectations))'
-
 Makefile: Makefile.in
 	./config.status
 
-.PHONY: all targets QobiScheme stalingrad test test-full test-serially test-serially-full
+.PHONY: all targets QobiScheme stalingrad test test-full

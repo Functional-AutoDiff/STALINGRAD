@@ -12,8 +12,6 @@
 (define (load-relative filename)
   (self-relatively (lambda () (load filename))))
 
-(load-relative "../../BCL-AD/testing/load")
-
 ;;; File system manipulations
 
 (define (ensure-directory filename)
@@ -409,34 +407,6 @@ all: $(FAILURE_REPORTS)
   (append (fast-expectations) (slow-expectations)))
 
 ;;;; Entry points
-
-;;; Converting expectations to test-manager tests
-
-(define (register-expectation-test expectation)
-  (register-test
-   (make-single-test
-    (expectation-name expectation)
-    (lambda ()
-      (check (not (discrepancy expectation))))
-    #f))
-  ;; The above instead of the below because I want to construct the
-  ;; name of the test from the name of the expectation.
-  #;
-  (define-test
-    (check (not (discrepancy expectation)))))
-
-(define (register-tests expectations)
-  (in-test-group
-   vlad
-   (for-each register-expectation-test expectations)))
-
-(define (run-tests! expectations)
-  (ensure-directory test-directory)
-  (register-tests expectations)
-  (let ((num-failures (show-time run-registered-tests)))
-    (newline)
-    (flush-output)
-    (%exit num-failures)))
 
 ;;; Saving expectations to disk
 
