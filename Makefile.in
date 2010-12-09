@@ -14,13 +14,13 @@ stalingrad: QobiScheme
 tool/test-driver.com: tool/test-driver.scm
 	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --eval '(cf "tool/test-driver")' < /dev/null
 
-test: tool/test-driver.com
+test: stalingrad tool/test-driver.com
 	rm -rf test-runs
 	./tool/test-driver '(record-expectations! (fast-expectations))'
 	$(MAKE) -C test-runs all
 	./tool/test-failures
 
-test-full: tool/test-driver.com
+test-full: stalingrad tool/test-driver.com
 	rm -rf test-runs
 	./tool/test-driver '(record-expectations! (all-expectations))'
 	$(MAKE) -C test-runs all
