@@ -129,6 +129,7 @@ all: $(FAILURE_REPORTS)
   name
   compile?
   forms
+  inputs
   answer)
 
 (define (update-expectation-name expectation new-name)
@@ -136,21 +137,23 @@ all: $(FAILURE_REPORTS)
    new-name
    (expectation-compile? expectation)
    (expectation-forms expectation)
+   (expectation-inputs expectation)
    (expectation-answer expectation)))
 
 (define (make-expectation test answer)
   (if (multiform? test)
-      (%make-expectation #f #f (multi-forms test) answer)
-      (%make-expectation #f #f (list test) answer)))
+      (%make-expectation #f #f (multi-forms test) '() answer)
+      (%make-expectation #f #f (list test) '() answer)))
 
 (define (expectation->list expectation)
   (list (expectation-name expectation)
 	(expectation-compile? expectation)
 	(expectation-forms expectation)
+	(expectation-inputs expectation)
 	(expectation-answer expectation)))
 
 (define (list->expectation lst)
-  (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst)))
+  (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst) (car (cddddr lst))))
 
 ;;; Varying the expectations for compilation
 
@@ -170,6 +173,7 @@ all: $(FAILURE_REPORTS)
    (expectation-name expectation)
    #t
    (writing-value (expectation-forms expectation))
+   (expectation-inputs expectation)
    (expectation-answer expectation)))
 
 (define (ignoring-value-version expectation)
@@ -182,6 +186,7 @@ all: $(FAILURE_REPORTS)
    (expectation-name expectation)
    #t
    (expectation-forms expectation)
+   (expectation-inputs expectation)
    (ignoring-value (expectation-answer expectation))))
 
 (define (compiling-version expectation)
