@@ -345,18 +345,8 @@ all: $(FAILURE_REPORTS)
 	 expectations
 	 (iota count 1))))
 
-(define (file->independent-interpreter-compiler-expectations filename)
-  (let ((expectations (independent-expectations (read-forms filename))))
-    (append
-     (expectations-named
-      (file-basename filename)
-      expectations)
-     (expectations-named
-      (string-append "compile-" (file-basename filename))
-      (filter-map compiling-version expectations)))))
-
-(define (file->interpreter-compiler-expectations filename)
-  (let ((expectations (shared-definitions-expectations (read-forms filename))))
+(define ((file->expectations parse) filename)
+  (let ((expectations (parse (read-forms filename))))
     (append
      (expectations-named
       (file-basename filename)
@@ -372,9 +362,9 @@ all: $(FAILURE_REPORTS)
       "../examples/"
       (lambda ()
 	(append
-	 (file->independent-interpreter-compiler-expectations "one-offs.vlad")
+	 ((file->expectations independent-expectations) "one-offs.vlad")
 	 (append-map
-	  file->interpreter-compiler-expectations
+	  (file->expectations shared-definitions-expectations)
 	  '("even-odd.vlad"
 	    "example-forward.vlad"
 	    "factorial.vlad"
@@ -400,7 +390,7 @@ all: $(FAILURE_REPORTS)
       "../examples/"
       (lambda ()
 	(append-map
-	 file->interpreter-compiler-expectations
+	 (file->expectations shared-definitions-expectations)
 	 '("example.vlad"
 	   "double-agent.vlad"
 	   "hessian.vlad"
