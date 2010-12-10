@@ -131,11 +131,6 @@ all: $(FAILURE_REPORTS)
   forms
   answer)
 
-(define (%compiling-version expectation)
-  (%make-expectation
-   (expectation-name expectation) #t
-   (expectation-forms expectation) (expectation-answer expectation)))
-
 (define (update-expectation-name expectation new-name)
   (%make-expectation
    new-name
@@ -157,6 +152,53 @@ all: $(FAILURE_REPORTS)
 (define (list->expectation lst)
   (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst)))
 
+;;; Varying the expectations for compilation
+
+;;; The compiler has some differences from and restrictions relative
+;;; the interpreter.  Expectations are written with the interpreter in
+;;; mind, and need to be adjusted for the compiler.  There are two
+;;; ways to get a compilable expectation out of an interpreted one,
+;;; depending on whether the return value of the expression being
+;;; tested can be checked in the compiled program.  Also, some tests
+;;; cannot usefully be converted to testing the compiler at all.
+
+(define (writing-value-version expectation)
+  (define (writing-value forms)
+    (append (except-last-pair forms)
+	    `((write-real (real ,(car (last-pair forms)))))))
+  (%make-expectation
+   (expectation-name expectation)
+   #t
+   (writing-value (expectation-forms expectation))
+   (expectation-answer expectation)))
+
+(define (ignoring-value-version expectation)
+  (define (ignoring-value expect)
+    (cond ((multiform? expect)
+	   `(multiform ,(except-last-pair (multi-forms expect))))
+	  ((error? expect) expect)
+	  (else (error "Can't ignore the only expectation"))))
+  (%make-expectation
+   (expectation-name expectation)
+   #t
+   (expectation-forms expectation)
+   (ignoring-value (expectation-answer expectation))))
+
+(define (compiling-version expectation)
+  (if (any exact-string? (expectation-forms expectation))
+      #f
+      (let ((expect (expectation-answer expectation)))
+	(cond ((or (number? expect)
+		   (error? expect)
+		   (and (multiform? expect)
+			(every number? (multi-forms expect))))
+	       (writing-value-version expectation))
+	      ((and (multiform? expect)
+		    (every number? (except-last-pair (multi-forms expect))))
+	       (ignoring-value-version expectation))
+	      (else
+	       #f)))))
+
 ;;; Checking whether the interpreter behaved as expected
 
 (define (interpretation-discrepancy expectation)
@@ -176,12 +218,9 @@ all: $(FAILURE_REPORTS)
 ;;; Checking whether the compiler behaved as expected
 
 (define (compilation-discrepancy expectation)
-  (define (tweak-for-compilation forms)
-    (append (except-last-pair forms)
-	    `((write-real (real ,(car (last-pair forms)))))))
   (let* ((name (expectation-name expectation))
 	 (expected (expectation-answer expectation))
-	 (forms (tweak-for-compilation (expectation-forms expectation)))
+	 (forms (expectation-forms expectation))
 	 (compiler-reaction (compilation-reaction-to forms name)))
     (if (equal? "" compiler-reaction)
 	(let ((run-reaction (execution-reaction name)))
@@ -233,22 +272,6 @@ all: $(FAILURE_REPORTS)
     (if maybe-trouble
 	(report-discrepancy maybe-trouble)
 	'ok)))
-
-;;; The compiler has some restrictions relative the interpreter, so we
-;;; can autodetect that some examples should not be tested in it.
-(define (suitable-for-compilation? expectation)
-  (and (every (lambda (form) (not (exact-string? form)))
-	      (expectation-forms expectation))
-       (let ((expect (expectation-answer expectation)))
-	 (or (number? expect)
-	     (error? expect)
-	     (and (multiform? expect)
-		  (every number? (multi-forms expect)))))))
-
-(define (compiling-version expectation)
-  (if (suitable-for-compilation? expectation)
-      (%compiling-version expectation)
-      #f))
 
 ;;;; Parsing expectations from files of examples
 
