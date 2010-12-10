@@ -90,6 +90,10 @@ all: $(FAILURE_REPORTS)
 (define error? (tagged-list? 'error))
 (define error-message cadr)
 
+(define with-input? (tagged-list? 'with-input))
+(define input-forms cadr)
+(define answer-form caddr)
+
 ;;; Checking that answers are as expected
 
 (define (matches? expected reaction)
@@ -148,9 +152,16 @@ all: $(FAILURE_REPORTS)
    (expectation-answer expectation)))
 
 (define (make-expectation test answer)
-  (if (multiform? test)
-      (%make-expectation #f #f (multi-forms test) '() answer)
-      (%make-expectation #f #f (list test) '() answer)))
+  (define test-forms (if (multiform? test)
+			 (multi-forms test)
+			 (list test)))
+  (define input-forms (if (with-input? answer)
+			  (input-forms answer)
+			  '()))
+  (define answer-form (if (with-input? answer)
+			  (answer-forms answer)
+			  answer))
+  (%make-expectation #f #f test-forms input-forms answer-form))
 
 (define (expectation->list expectation)
   (list (expectation-name expectation)
