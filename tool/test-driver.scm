@@ -97,18 +97,19 @@ all: $(FAILURE_REPORTS)
 ;;; Checking that answers are as expected
 
 (define (matches? expected reaction)
+  (define (structure-matches? expected gotten)
+    (if (number? expected)
+	;; TODO I really should put this in the recursive case
+	;; too (and get the numerics right).
+	(< (abs (- expected gotten)) 1e-10)
+	(equal? expected gotten)))
   (if (error? expected)
       (re-string-search-forward (error-message expected) reaction)
       (let ((result (with-input-from-string reaction read-all)))
-	(cond ((multiform? expected)
-	       (equal? (multi-forms expected) result))
-	      ((and (number? expected) (inexact? expected))
-	       ;; TODO I really should put this in the recursive case
-	       ;; too (and get the numerics right).
-	       (< (abs (- expected (car result))) 1e-10))
-	      (else
-	       (and (= 1 (length result))
-		    (equal? expected (car result))))))))
+	(if (multiform? expected)
+	    (structure-matches? (multi-forms expected) result)
+	    (and (= 1 (length result))
+		 (structure-matches? expected (car result)))))))
 
 (define (frobnicate string)
   ;; It appears that the latest binary of Stalingrad I have access
@@ -197,7 +198,7 @@ all: $(FAILURE_REPORTS)
 (define (ignoring-value-version expectation)
   (define (ignoring-value expect)
     (cond ((multiform? expect)
-	   `(multiform ,(except-last-pair (multi-forms expect))))
+	   `(multiform ,@(except-last-pair (multi-forms expect))))
 	  ((error? expect) expect)
 	  (else (error "Can't ignore the only expectation"))))
   (%make-expectation

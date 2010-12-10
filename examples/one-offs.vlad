@@ -1,3 +1,4 @@
+5.0 ===> 5.0
 (+ 1 2) ===> 3
 (- 1 2) ===> -1
 ; (- 1)
@@ -128,4 +129,94 @@
        (cons (cons 1 2) (list 3 (cons 4 5)))))
   (+ x (+ y (+ z (+ v w)))))  ===>  15
 
-(write-real (read-real)) ===> (with-inputs (5) (multiform 5 5))
+(read-real) ===> (with-inputs (5) 5)
+(sqrt (read-real)) ===> (with-inputs (2) 1.41421356237309515)
+(+ (read-real) (read-real)) ===> (with-inputs (3 4) 7)
+(+ (read-real) 3) ===> (with-inputs (4) 7)
+(+ (read-real) 3.0) ===> (with-inputs (4) 7)
+
+(write-real (+ '(3 . 4))) ===> (multiform 7 7)
+(write-real (real (+ '(3 . 4)))) ===> (multiform 7 7)
+
+(if (null? '())
+    (sin (read-real))
+    (cos (read-real)))
+===> (with-inputs (0) 0)
+
+(if 1
+    (sin (read-real))
+    (cos (read-real)))
+===> (with-inputs (0) 0)
+
+(if (null? 0)
+    (sin (read-real))
+    (cos (read-real)))
+===> (with-inputs (0) 1)
+
+(if (= (read-real) (read-real))
+    (sin (read-real))
+    (cos (read-real)))
+===> (with-inputs (3 4 0) 1)
+
+(letrec ((f (lambda (x)
+	      (if (zero? x)
+		  x
+		  (f (- x 1.0))))))
+  (f (read-real)))  ===> (with-inputs (5) 0)
+
+(let ((y (read-real)))
+  (letrec ((f (lambda (x)
+		(if (zero? x)
+		    y
+		    (f (- x 1.0))))))
+    (f (read-real)))) ===> (with-inputs (3 4) 3)
+
+(multiform
+ (include "math")
+ (dot (list (read-real) (read-real)) (list (read-real) (read-real))))
+===> (with-inputs (3 4 5 6) 39)
+
+(multiform
+ (include "math")
+ ((derivative sqr) (read-real)))
+===> (with-inputs (7) 14)
+
+;;; TODO This one is too slow when compiled for the fast test suite
+;; (multiform
+;;  (include "math")
+;;  ((derivative (derivative sqr)) (read-real)))
+;; ===> (with-inputs (7) 2)
+
+;; TODO What are examples/generator-tests/t16 and t17 supposed to test?
+
+(multiform
+ (include "math")
+ ((derivative-using-*j sqr) (read-real)))
+===> (with-inputs (7) 14)
+
+(multiform
+ (include "math")
+ (let (((cons x y)
+	((gradient (lambda (x y) (+ (* x x) (* x y))))
+	 (read-real) (read-real))))
+   (list (write-real x) (write-real y))))
+===> (with-inputs (3 4) (multiform 10 3 (10 3)))
+
+(multiform
+ (define (car (cons x y)) x)
+ (define (cdr (cons x y)) y)
+ (define (sum l) (if (null? l) 0.0 (+ (car l) (sum (cdr l)))))
+ (define (f l) (sum l))
+ (car
+  (cdr
+   (unsensitize ((cdr ((*j f) (*j (list (read-real))))) (sensitize 1.0))))))
+===> (with-inputs (3) 1)
+
+;;; TODO This one needs -widen-lists to run
+;; (multiform
+;;  (define (first (cons x y)) x)
+;;  (define (rest (cons x y)) y)
+;;  (define (enumerate n) (if (zero? n) '() (cons n (enumerate (- n 1)))))
+;;  (define (length n) (if (null? n) 0 (+ (length (rest n)) 1)))
+;;  (length (enumerate (read-real))))
+;; ===> (with-inputs (4) 4)
