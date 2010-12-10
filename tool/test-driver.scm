@@ -238,12 +238,14 @@ all: $(FAILURE_REPORTS)
   (let* ((name (expectation-name expectation))
 	 (expected (expectation-answer expectation))
 	 (forms (expectation-forms expectation))
+	 (inputs (expectation-inputs expectation))
+	 (input-report-slot (if (null? inputs) '() `(on ,inputs)))
 	 (compiler-reaction (compilation-reaction-to forms name)))
     (if (equal? "" compiler-reaction)
-	(let ((run-reaction (execution-reaction name)))
+	(let ((run-reaction (execution-reaction inputs name)))
 	  (if (matches? expected run-reaction)
 	      #f
-	      `(running ,forms produced ,run-reaction expected ,expected)))
+	      `(running ,forms ,@input-report-slot produced ,run-reaction expected ,expected)))
 	(if (error? expected)
 	    (if (matches? expected compiler-reaction)
 		#f
@@ -263,8 +265,10 @@ all: $(FAILURE_REPORTS)
      basename
      ".vlad"))))
 
-(define (execution-reaction basename)
-  (shell-command-output (string-append "./" test-directory basename)))
+(define (execution-reaction forms basename)
+  (let ((input-string (with-output-to-string
+			(lambda () (for-each pp forms)))))
+    (shell-command-output (string-append "./" test-directory basename) input-string)))
 
 ;;; Detecting discrepancies in general
 
