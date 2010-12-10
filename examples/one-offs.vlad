@@ -127,3 +127,5 @@
 (let (((cons (cons x y) (list z (cons v w)))
        (cons (cons 1 2) (list 3 (cons 4 5)))))
   (+ x (+ y (+ z (+ v w)))))  ===>  15
+
+(write-real (read-real)) ===> (with-inputs (5) (multiform 5 5))
