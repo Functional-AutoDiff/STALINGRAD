@@ -1,0 +1,10 @@
+(include "math")
+
+(define (series x) (if (< x 1e-5) x (+ x (series (/ x 2)))))
+
+((derivative-using-j* series) 1.0) ===> 1.999992370605469
+((derivative-using-*j series) 2.0) ===> 1.999996185302734
+((derivative-using-j* (derivative-using-j* series)) 3.0) ===> 0
+((derivative-using-j* (derivative-using-*j series)) 4.0) ===> 0
+((derivative-using-*j (derivative-using-j* series)) 5.0) ===> 0
+((derivative-using-*j (derivative-using-*j series)) 6.0) ===> 0

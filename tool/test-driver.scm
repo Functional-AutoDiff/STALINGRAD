@@ -430,6 +430,7 @@ all: $(FAILURE_REPORTS)
 	   "saddle.vlad"
 	   "triple.vlad"
 	   "dn.vlad"
+	   "series.vlad"
 	   ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
 	   )))))))
 
