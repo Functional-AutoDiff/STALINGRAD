@@ -431,7 +431,7 @@ all: $(FAILURE_REPORTS)
 	   "triple.vlad"
 	   "dn.vlad"
 	   "series.vlad"
-	   "sqrt-slow.vlad"
+	   "slow-sqrt.vlad"
 	   )))))))
 
 (define (all-expectations)
