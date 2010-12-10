@@ -12,7 +12,7 @@
 
 (define (bug x) (letrec ((g (lambda (y) x)) (f (lambda (y) (g 0)))) (f 0)))
 
-(*j bug)
+;(*j bug)
 
 (bug 4) ===> 4
 

@@ -407,12 +407,12 @@ all: $(FAILURE_REPORTS)
 	    "bug0.vlad"
 	    "bug1.vlad"
 	    "bug2.vlad"
+	    "bug3.vlad"
+	    "bug4.vlad"
 	    "marble.vlad"
 	    "prefix.vlad"
 	    "secant.vlad"
 	    "sqrt.vlad"
-	    ;;"bug3.vlad" ; I don't have patterns for anf s-exps :(
-	    ;;"bug4.vlad"
 	    ))))))))
 
 (define (slow-expectations)
@@ -432,7 +432,6 @@ all: $(FAILURE_REPORTS)
 	   "dn.vlad"
 	   "series.vlad"
 	   "sqrt-slow.vlad"
-	   ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
 	   )))))))
 
 (define (all-expectations)
