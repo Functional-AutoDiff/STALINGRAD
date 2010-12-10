@@ -11,9 +11,6 @@
        thunk)
       (thunk)))
 
-(define (load-relative filename)
-  (self-relatively (lambda () (load filename))))
-
 ;;; File system manipulations
 
 (define (ensure-directory filename)
@@ -41,8 +38,8 @@
 
 (define (write-forms forms basename)
   (define (dispatched-write form)
-    (if (and (pair? form) (eq? (car form) 'exact-string))
-	(write-string (cadr form))
+    (if (exact-string? form)
+	(write-string (exact-string form))
 	(begin (pp form)
 	       (newline))))
   (with-output-to-file (string-append test-directory basename ".vlad")
@@ -71,16 +68,29 @@ all: $(FAILURE_REPORTS)
 .PHONY: all
 "))))))
 
+;;; Special syntax
+
+(define ((tagged-list? tag) thing)
+  (and (pair? thing)
+       (eq? tag (car thing))))
+
+(define multiform? (tagged-list? 'multiform))
+(define multi-forms cdr)
+
+(define exact-string? (tagged-list? 'exact-string))
+(define exact-string cadr)
+
+(define error? (tagged-list? 'error))
+(define error-message cadr)
+
 ;;; Checking that answers are as expected
 
 (define (matches? expected reaction)
-  (if (and (pair? expected)
-	   (eq? (car expected) 'error))
-      (re-string-search-forward (cadr expected) reaction)
+  (if (error? expected)
+      (re-string-search-forward (error-message expected) reaction)
       (let ((result (with-input-from-string reaction read-all)))
-	(cond ((and (pair? expected)
-		    (eq? (car expected) 'multiform))
-	       (equal? (cdr expected) result))
+	(cond ((multiform? expected)
+	       (equal? (multi-forms expected) result))
 	      ((and (number? expected) (inexact? expected))
 	       ;; TODO I really should put this in the recursive case
 	       ;; too (and get the numerics right).
@@ -134,8 +144,8 @@ all: $(FAILURE_REPORTS)
    (expectation-answer expectation)))
 
 (define (make-expectation test answer)
-  (if (and (pair? test) (eq? (car test) 'multiform))
-      (%make-expectation #f #f (cdr test) answer)
+  (if (multiform? test)
+      (%make-expectation #f #f (multi-forms test) answer)
       (%make-expectation #f #f (list test) answer)))
 
 (define (expectation->list expectation)
@@ -178,7 +188,7 @@ all: $(FAILURE_REPORTS)
 	  (if (matches? expected run-reaction)
 	      #f
 	      `(running ,forms produced ,run-reaction expected ,expected)))
-	(if (and (pair? expected) (eq? 'error (car expected)))
+	(if (error? expected)
 	    (if (matches? expected compiler-reaction)
 		#f
 		`(compiling ,forms produced ,compiler-reaction expected ,expected))
@@ -227,16 +237,13 @@ all: $(FAILURE_REPORTS)
 ;;; The compiler has some restrictions relative the interpreter, so we
 ;;; can autodetect that some examples should not be tested in it.
 (define (suitable-for-compilation? expectation)
-  (and (every (lambda (form)
-		(not (and (pair? form)
-			  (eq? (car form) 'exact-string))))
+  (and (every (lambda (form) (not (exact-string? form)))
 	      (expectation-forms expectation))
        (let ((expect (expectation-answer expectation)))
 	 (or (number? expect)
-	     (and (pair? expect)
-		  (or (eq? (car expect) 'error)
-		      (and (eq? (car expect) 'multiform)
-			   (every number? (cdr expect)))))))))
+	     (error? expect)
+	     (and (multiform? expect)
+		  (every number? (multi-forms expect)))))))
 
 (define (compiling-version expectation)
   (if (suitable-for-compilation? expectation)
