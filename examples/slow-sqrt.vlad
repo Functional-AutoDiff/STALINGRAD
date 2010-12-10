@@ -1,0 +1,14 @@
+(include "math")
+
+(define (nr-sqrt x)
+ (letrec ((loop (lambda (y)
+		 (let ((y-prime (- y (/ (- (* y y) x) (+ y y)))))
+		  (if (<= (abs (- y y-prime)) 1e-5)
+		      y
+		      (loop y-prime))))))
+  (loop 1.0)))
+
+((derivative-using-j* (derivative-using-j* nr-sqrt)) 4.0) ===> -0.03125
+((derivative-using-j* (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03125
+((derivative-using-*j (derivative-using-j* nr-sqrt)) 4.0) ===> -0.03125
+((derivative-using-*j (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03125

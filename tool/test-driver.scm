@@ -431,6 +431,7 @@ all: $(FAILURE_REPORTS)
 	   "triple.vlad"
 	   "dn.vlad"
 	   "series.vlad"
+	   "sqrt-slow.vlad"
 	   ;;"factor16.vlad" ; I don't have patterns for anf s-exps :(
 	   )))))))
 
