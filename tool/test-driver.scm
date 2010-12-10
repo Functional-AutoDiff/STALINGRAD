@@ -345,17 +345,6 @@ all: $(FAILURE_REPORTS)
 	 expectations
 	 (iota count 1))))
 
-(define (file->independent-expectations filename)
-  (expectations-named
-   (file-basename filename)
-   (independent-expectations (read-forms filename))))
-
-(define (file->independent-compiling-expectations filename)
-  (expectations-named
-   (string-append "compile-" (file-basename filename))
-   (filter-map compiling-version
-	       (independent-expectations (read-forms filename)))))
-
 (define (file->independent-interpreter-compiler-expectations filename)
   (let ((expectations (independent-expectations (read-forms filename))))
     (append
@@ -365,17 +354,6 @@ all: $(FAILURE_REPORTS)
      (expectations-named
       (string-append "compile-" (file-basename filename))
       (filter-map compiling-version expectations)))))
-
-(define (file->definition-sharing-expectations filename)
-  (expectations-named
-   (file-basename filename)
-   (shared-definitions-expectations (read-forms filename))))
-
-(define (file->compiling-expectations filename)
-  (expectations-named
-   (string-append "compile-" (file-basename filename))
-   (filter-map compiling-version
-	       (file->definition-sharing-expectations filename))))
 
 (define (file->interpreter-compiler-expectations filename)
   (let ((expectations (shared-definitions-expectations (read-forms filename))))
