@@ -46,10 +46,17 @@
     (lambda ()
       (for-each dispatched-write forms))))
 
-(define (shell-command-output command)
-  (with-output-to-string
-    (lambda ()
-      (run-shell-command command))))
+(define (shell-command-output command #!optional input)
+  ;; It seems the micro-optimization of not bothering with an empty
+  ;; input port actually makes a big difference to the speed of the
+  ;; fast test suite.
+  (if (or (default-object? input) (equal? input ""))
+      (with-output-to-string
+	(lambda ()
+	  (run-shell-command command)))
+      (with-output-to-string
+	(lambda ()
+	  (run-shell-command command 'input (open-input-string input))))))
 
 (define (write-makefile directory)
   (with-working-directory-pathname directory
@@ -209,16 +216,21 @@ all: $(FAILURE_REPORTS)
 (define (interpretation-discrepancy expectation)
   (let* ((forms (expectation-forms expectation))
 	 (expected (expectation-answer expectation))
-	 (reaction (interpreter-reaction-to forms (expectation-name expectation))))
+	 (inputs (expectation-inputs expectation))
+	 (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+	 (reaction (interpreter-reaction-to forms inputs (expectation-name expectation))))
     (if (matches? expected reaction)
 	#f
-	`(interpreting ,forms produced ,reaction expected ,expected))))
+	`(interpreting ,forms ,@input-report-slot produced ,reaction expected ,expected))))
 
-(define (interpreter-reaction-to forms basename)
+(define (interpreter-reaction-to forms inputs basename)
   (write-forms forms basename)
-  (frobnicate
-   (shell-command-output
-    (string-append stalingrad-command test-directory basename ".vlad"))))
+  (let ((input-string (with-output-to-string
+			(lambda () (for-each pp inputs)))))
+    (frobnicate
+     (shell-command-output
+      (string-append stalingrad-command test-directory basename ".vlad")
+      input-string))))
 
 ;;; Checking whether the compiler behaved as expected
 
