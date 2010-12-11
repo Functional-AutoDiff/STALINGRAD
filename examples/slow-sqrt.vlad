@@ -8,7 +8,7 @@
 		      (loop y-prime))))))
   (loop 1.0)))
 
-((derivative-using-j* (derivative-using-j* nr-sqrt)) 4.0) ===> -0.03125
-((derivative-using-j* (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03125
-((derivative-using-*j (derivative-using-j* nr-sqrt)) 4.0) ===> -0.03125
-((derivative-using-*j (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03125
+((derivative-using-j* (derivative-using-j* nr-sqrt)) 4.0) ===> -0.0312493922946009937
+((derivative-using-j* (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03124939229460099
+((derivative-using-*j (derivative-using-j* nr-sqrt)) 4.0) ===> -0.031249392294601
+((derivative-using-*j (derivative-using-*j nr-sqrt)) 4.0) ===> -0.03124939229460099
