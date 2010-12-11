@@ -2,6 +2,7 @@
 
 dir="${1:-test-runs}"
 
-find $dir -name "*.fail" -not -empty -printf '\n\n%f:\n\n' -exec cat '{}' \;
+for file in `find $dir -name "*.fail" -not -empty -print | sort`;\
+do printf '\n\n%s:\n\n' $file; cat $file; done
 echo ""
 echo `find $dir -name "*.fail" | wc -l` tests\, `find $dir -name "*.fail" -not -empty -print | wc -l` failures\, `find $dir -name "*.time" -exec head -1 '{}' \; | grep "Command exited with non-zero status" | wc -l` crashes\.
