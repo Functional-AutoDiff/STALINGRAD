@@ -1,6 +1,7 @@
 #!/bin/bash
 
-SELFDIR=`dirname $0`
+SELFDIR=$(dirname $0)
 TEST_DRIVER="${SELFDIR}/test-driver"
 
-exec mit-scheme --heap 6000 --batch-mode --no-init-file --load ${TEST_DRIVER} --eval "$@"
+exec mit-scheme --heap 6000 --batch-mode --no-init-file \
+    --load ${TEST_DRIVER} --eval "$@"
