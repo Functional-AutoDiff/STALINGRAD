@@ -3,8 +3,9 @@
 dir="${1:-test-runs/last/}"
 
 for file in $(find $dir -name "*.fail" -not -empty -print | sort); do
-    printf '\n\n%s:\n\n' $file
-    cat $file
+    printf -- '----- %s:\n\n' $file
+    awk 1 $file # Like cat $file, but forces trailing newline if absent from $file
+    echo
 done
 
 n_tests=$(find $dir -name "*.fail" | wc -l)
@@ -12,5 +13,4 @@ n_fails=$(find $dir -name "*.fail" -not -empty -print | wc -l)
 n_crash=$(find $dir -name "*.time" -exec head -1 '{}' \; \
     | grep "Command exited with non-zero status" | wc -l)
 
-echo
 echo ${n_tests} tests, ${n_fails} failures, ${n_crash} crashes.
