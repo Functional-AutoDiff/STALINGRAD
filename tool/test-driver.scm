@@ -21,7 +21,7 @@
       (make-directory filename)))
 
 (define my-pathname (self-relatively working-directory-pathname))
-(define test-directory "test-runs/")
+(define test-directory "test-runs/last/")
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../source/stalingrad -scmh 1000 -I "
 		 (->namestring my-pathname) "../examples/ "))
@@ -70,7 +70,7 @@ FAILURE_REPORTS=$(EXPECTATIONS:.expect=.fail)
 all: $(FAILURE_REPORTS)
 
 %.fail: %.expect
-	-../tool/one-test $*
+	-../../tool/one-test $*
 
 .PHONY: all
 "))))))
@@ -457,7 +457,7 @@ all: $(FAILURE_REPORTS)
 ;;; Running an expectation loaded from standard input
 
 (define (read-and-try-expectation!)
-  (set! test-directory "./") ;; This entry point is called from the test-runs/ directory
+  (set! test-directory "./") ;; This entry point is called from the directory where its data is
   (report-if-discrepancy (list->expectation (read)))
   (flush-output)
   (%exit 0))
