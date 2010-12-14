@@ -9,5 +9,7 @@ dirname="$mode-$(date +"%F-at-%H-%M-%S")"
 link="$testdir/last-$mode"
 
 mkdir -p $testdir/$dirname
+rm -f $link
 ln -sf $dirname $link
+rm -f $testdir/last
 ln -sf $dirname $testdir/last
