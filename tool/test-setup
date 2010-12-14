@@ -1,0 +1,16 @@
+#!/bin/bash
+
+selfdir=$(dirname $0)
+testdir="$selfdir/../test-runs"
+
+mode="${1:-fast}"
+
+dirname="$mode-$(date +"%F-at-%H-%M-%S")"
+link="$testdir/last-$mode"
+
+echo "$dirname"
+echo "$link"
+
+mkdir -p $testdir/$dirname
+ln -sf $dirname $link
+ln -sf $dirname $testdir/last

@@ -13,13 +13,6 @@
 
 ;;; File system manipulations
 
-(define (ensure-directory filename)
-  (if (file-exists? filename)
-      (if (file-directory? filename)
-	  'ok
-	  (error "Exists and is not a directory" filename))
-      (make-directory filename)))
-
 (define my-pathname (self-relatively working-directory-pathname))
 (define test-directory "test-runs/last/")
 (define stalingrad-command
@@ -448,7 +441,6 @@ all: $(FAILURE_REPORTS)
       (pp (expectation->list expectation)))))
 
 (define (record-expectations! expectations)
-  (ensure-directory test-directory)
   (write-makefile test-directory)
   (for-each save-expectation expectations)
   (flush-output)
