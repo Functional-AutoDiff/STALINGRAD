@@ -1,10 +1,9 @@
 (MODULE STALINGRAD (WITH QOBISCHEME XLIB STALINGRADLIB-STUFF) (MAIN MAIN))
 ;;; LaHaShem HaAretz U'Mloah
-;;; $Id$
 
 ;;; Stalingrad 0.1 - AD for VLAD, a functional language.
-;;; Copyright 2004, 2005, 2006, 2007, and 2008 Purdue University. All rights
-;;; reserved.
+;;; Copyright 2004, 2005, 2006, 2007, 2008, 2009, and 2010 Purdue University.
+;;; All rights reserved.
 
 ;;; This program is free software; you can redistribute it and/or
 ;;; modify it under the terms of the GNU General Public License
@@ -30,7 +29,7 @@
 ;;;    FAX:   +1 765 494-6440
 ;;;    qobi@purdue.edu
 ;;;    ftp://ftp.ecn.purdue.edu/qobi
-;;;    http://www.ece.purdue.edu/~qobi
+;;;    http://engineering.purdue.edu/~qobi
 ;;;             and
 ;;;    Barak A. Pearlmutter
 ;;;    Hamilton Institute
@@ -140,8 +139,8 @@
 			       (reverse-tagged-value-width-limit
 				"n" integer-argument 1)))
 		 (at-most-one
-		  ("no-tagged-pair-width-limit" no-tagged-pair-width-limit?)
-		  ("tagged-pair-width-limit"
+		  ("no-pair-width-limit" no-tagged-pair-width-limit?)
+		  ("pair-width-limit"
 		   tagged-pair-width-limit?
 		   (tagged-pair-width-limit "n" integer-argument 1)))
 		 (at-most-one
@@ -179,8 +178,8 @@
 			       (reverse-tagged-value-depth-limit
 				"n" integer-argument 1)))
 		 (at-most-one
-		  ("no-tagged-pair-depth-limit" no-tagged-pair-depth-limit?)
-		  ("tagged-pair-depth-limit"
+		  ("no-pair-depth-limit" no-tagged-pair-depth-limit?)
+		  ("pair-depth-limit"
 		   tagged-pair-depth-limit?
 		   (tagged-pair-depth-limit "n" integer-argument 1)))
 		 (at-most-one ("no-order-limit" no-order-limit?)
@@ -188,6 +187,22 @@
 			       order-limit?
 			       (order-limit "n" integer-argument 1)))
 		 (at-most-one ("widen-lists" widen-lists?))
+		 (at-most-one ("alias" alias?))
+		 (at-most-one ("inline" inline?))
+		 (at-most-one ("number-of-call-sites"
+			       number-of-call-sites?
+			       (number-of-call-sites "n" integer-argument 1)))
+		 (at-most-one ("anf-convert" anf-convert?))
+		 (at-most-one ("sra" sra?))
+		 (at-most-one ("il" il?))
+		 (at-most-one ("no-multiply-out-dispatches-cost-limit"
+			       no-multiply-out-dispatches-cost-limit?)
+			      ("multiply-out-dispatches-cost-limit"
+			       multiply-out-dispatches-cost-limit?
+			       (multiply-out-dispatches-cost-limit
+				"n"
+				integer-argument
+				1)))
 		 (required (pathname "pathname" string-argument)))
  (when #f (initialize-time-buckets 39))	;debugging
  (when (and unabbreviate-executably? unabbreviate-nonrecursive-closures?)
@@ -208,7 +223,7 @@
   (compile-time-error "Can't specify -cc with -c"))
  (set! *include-path*
        (append '(".") include-path '("/usr/local/stalingrad/include")))
- (set! *assert?* (not no-assert?))
+ (set! *assert?* (not (or no-assert? (getenv "STALINGRAD_NO_ASSERT"))))
  (set! *wizard?* wizard?)
  (set! *flow-analysis?* (or flow-analysis? flow-analysis-result? compile?))
  (set! *compile?* compile?)
@@ -311,6 +326,22 @@
  ;; parse need to have these set.
  (set! *canonized?* *flow-analysis?*)
  (set! *interned?* (or interned? *flow-analysis?*))
+ (set! *alias?* (or alias? (getenv "STALINGRAD_ALIAS")))
+ (set! *inline?* (or inline? (getenv "STALINGRAD_INLINE")))
+ (set! *number-of-call-sites*
+       (cond (number-of-call-sites? number-of-call-sites)
+	     ((getenv "STALINGRAD_NUMBER_OF_CALL_SITES")
+	      (getenv "STALINGRAD_NUMBER_OF_CALL_SITES"))
+	     (else #f)))
+ (set! *anf-convert?* (or anf-convert? (getenv "STALINGRAD_ANF_CONVERT")))
+ (set! *sra?* (or sra? (getenv "STALINGRAD_SRA")))
+ (set! *il?* (or il? (getenv "STALINGRAD_IL")))
+ (set! *profile?* (getenv "STALINGRAD_PROFILE"))
+ (set! *il:multiply-out-dispatches-cost-limit*
+       (cond (no-multiply-out-dispatches-cost-limit? #f)
+	     (multiply-out-dispatches-cost-limit?
+	      multiply-out-dispatches-cost-limit)
+	     (else 64)))
  (with-concrete (lambda () (initialize-basis!)))
  (let loop ((es (read-source pathname)) (ds '()))
   (unless (null? es)
@@ -324,26 +355,31 @@
 	   ;; needs work: With the new formulation, can't run flow analysis
 	   ;;             more than once.
 	   (flow-analysis! e bs)
-	   (let* ((bs (expression-environment-bindings e)))
-	    (unless (= (length bs) 1) (internal-error))
-	    (pp (externalize (environment-binding-value (first bs))))
-	    (newline)
-	    (pp (externalize-analysis))
-	    (newline)))
+	   (with-abstract
+	    (lambda ()
+	     (let ((bs (environment-bindings e)))
+	      (unless (= (length bs) 1) (internal-error))
+	      (pp (externalize (environment-binding-value (first bs))))
+	      (newline)
+	      (pp (externalize-analysis))
+	      (newline)))))
 	  (flow-analysis-result?
 	   ;; needs work: With the new formulation, can't run flow analysis
 	   ;;             more than once.
 	   (flow-analysis! e bs)
-	   (let ((bs (expression-environment-bindings e)))
-	    (unless (= (length bs) 1) (internal-error))
-	    (pp (externalize (environment-binding-value (first bs))))
-	    (newline)))
+	   (with-abstract
+	    (lambda ()
+	     (let ((bs (environment-bindings e)))
+	      (unless (= (length bs) 1) (internal-error))
+	      (pp (externalize (environment-binding-value (first bs))))
+	      (newline)))))
 	  (compile?
 	   ;; needs work: With the new formulation, can't run flow analysis
 	   ;;             more than once.
 	   (flow-analysis! e bs)
 	   ;; needs work: to update call to generate
-	   (generate-file (generate e 'needs-work) pathname)
+	   (c:generate-file
+	    ((if *sra?* c:sra-generate c:generate) e 'needs-work) pathname)
 	   (unless disable-run-cc?
 	    (system (reduce (lambda (s1 s2) (string-append s1 " " s2))
 			    `(,cc
