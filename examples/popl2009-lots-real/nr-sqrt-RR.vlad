@@ -1,0 +1,13 @@
+(include "common-stalingrad")
+
+(define (abs x) (if (negative? x) (- 0 x) x))
+
+(define (nr-sqrt x)
+ (letrec ((loop (lambda (y)
+		 (let ((y-prime (- y (/ (- (* y y) x) (+ y y)))))
+		  (if (<= (abs (- y y-prime)) 1e-5)
+		      y
+		      (loop y-prime))))))
+  (loop 1.0)))
+
+(write-real ((derivative-using-*j (derivative-using-*j nr-sqrt)) (read-real)))

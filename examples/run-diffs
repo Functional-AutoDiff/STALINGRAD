@@ -1,0 +1,27 @@
+#!/bin/tcsh -f
+
+echo diff forward a b
+./run-diff2 forward a b
+echo diff forward b c
+./run-diff2 forward b c
+echo diff interpreter a b
+./run-diff2 interpreter a b
+echo diff interpreter b c
+./run-diff2 interpreter b c
+echo diff generator-tests a b
+./run-diff1 generator-tests a b
+echo diff generator-tests b c
+./run-diff2 generator-tests b c
+echo diff ad2008 a b
+./run-diff1 ad2008 a b
+echo diff ad2008 b c
+./run-diff2 ad2008 b c|uniq
+echo diff backprop a b
+./run-diff1 backprop a b
+echo diff backprop b c
+./run-diff2 backprop b c
+echo diff popl2009-lots-real a b
+./run-diff1 popl2009-lots-real a b
+echo diff popl2009-lots-real b c
+# uniq only because things haven't finished
+./run-diff2 popl2009-lots-real b c|uniq

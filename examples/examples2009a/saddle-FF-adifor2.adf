@@ -1,0 +1,10 @@
+AD_TOP               = outer
+AD_PMAX              = 2
+AD_IVARS             = x1
+AD_DVARS             = r
+AD_PROG              = saddle-FF-adifor2.cmp
+AD_OUTPUT_DIR        = .
+AD_PREFIX            = h
+AD_SUPPRESS_LDG      = true
+AD_SUPPRESS_NUM_COLS = true
+AD_EXCEPTION_FLAVOR  = performance

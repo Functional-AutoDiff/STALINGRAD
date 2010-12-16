@@ -1,3 +1,0 @@
-(define (box a) (lambda (m) a))
-
-(j* (box (box 1)))

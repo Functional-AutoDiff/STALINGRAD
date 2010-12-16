@@ -1,0 +1,257 @@
+#!/bin/tcsh -f
+set options = "-verbose 0 -compile -all-limits 1 -pair-depth-limit 2 -no-warnings"
+echo Compiling t1
+../stalingrad ${options} -imprecise-inexacts t1
+./t1
+echo Compiling t2
+../stalingrad ${options} -imprecise-inexacts t2
+./t2 <<EOF
+2
+EOF
+echo Compiling t3
+../stalingrad ${options} -imprecise-inexacts t3
+./t3 <<EOF
+2
+EOF
+echo Compiling t4
+../stalingrad ${options} -imprecise-inexacts t4
+./t4 <<EOF
+3
+4
+EOF
+echo Compiling t5
+../stalingrad ${options} -imprecise-inexacts t5
+./t5 <<EOF
+4
+EOF
+echo Compiling t5a
+../stalingrad ${options} -imprecise-inexacts t5a
+./t5a <<EOF
+4
+EOF
+echo Compiling t6
+../stalingrad ${options} -imprecise-inexacts t6
+./t6
+echo Compiling t6a
+../stalingrad ${options} -imprecise-inexacts t6a
+./t6a
+echo Compiling t7
+../stalingrad ${options} -imprecise-inexacts t7
+./t7 <<EOF
+0
+EOF
+echo Compiling t8
+../stalingrad ${options} -imprecise-inexacts t8
+./t8 <<EOF
+0
+EOF
+echo Compiling t9
+../stalingrad ${options} -imprecise-inexacts t9
+./t9 <<EOF
+0
+EOF
+echo Compiling t10
+../stalingrad ${options} -imprecise-inexacts t10
+./t10 <<EOF
+3
+4
+0
+EOF
+echo Compiling t11
+../stalingrad ${options} -imprecise-inexacts t11
+./t11 <<EOF
+5
+EOF
+echo Compiling t12
+../stalingrad ${options} -imprecise-inexacts t12
+./t12 <<EOF
+3
+4
+EOF
+echo Compiling t13
+../stalingrad ${options} -imprecise-inexacts t13
+./t13 <<EOF
+3
+4
+5
+6
+EOF
+echo Compiling t14
+../stalingrad ${options} -imprecise-inexacts t14
+./t14 <<EOF
+7
+EOF
+#echo Compiling t15
+#../stalingrad ${options} -order-limit 2 -imprecise-inexacts t15
+#./t15 <<EOF
+#7
+#EOF
+echo Compiling t16
+../stalingrad ${options} -order-limit 2 -imprecise-inexacts t16
+./t16
+echo Compiling t17
+../stalingrad ${options} -imprecise-inexacts t17
+./t17 <<EOF
+1
+1
+1
+1
+1
+1
+EOF
+echo Compiling t18
+../stalingrad ${options} -imprecise-inexacts t18
+./t18 <<EOF
+7
+EOF
+echo Compiling t19
+../stalingrad ${options} -imprecise-inexacts t19
+./t19 <<EOF
+3
+4
+EOF
+#echo Compiling t20
+#../stalingrad ${options} -imprecise-inexacts t20
+#./t20 <<EOF
+#4
+#EOF
+echo Compiling t21
+../stalingrad ${options} -imprecise-inexacts t21
+./t21 <<EOF
+4
+EOF
+#echo Compiling t22
+#../stalingrad ${options} -imprecise-inexacts t22
+#./t22 <<EOF
+#3
+#EOF
+echo Compiling t23
+../stalingrad ${options} -imprecise-inexacts t23
+./t23 <<EOF
+100
+EOF
+echo Compiling t1
+../stalingrad ${options} t1
+./t1
+echo Compiling t2
+../stalingrad ${options} t2
+./t2 <<EOF
+2
+EOF
+echo Compiling t3
+../stalingrad ${options} t3
+./t3 <<EOF
+2
+EOF
+echo Compiling t4
+../stalingrad ${options} t4
+./t4 <<EOF
+3
+4
+EOF
+echo Compiling t5
+../stalingrad ${options} t5
+./t5 <<EOF
+4
+EOF
+echo Compiling t5a
+../stalingrad ${options} t5a
+./t5a <<EOF
+4
+EOF
+echo Compiling t6
+../stalingrad ${options} t6
+./t6
+echo Compiling t6a
+../stalingrad ${options} t6a
+./t6a
+echo Compiling t7
+../stalingrad ${options} t7
+./t7 <<EOF
+0
+EOF
+echo Compiling t8
+../stalingrad ${options} t8
+./t8 <<EOF
+0
+EOF
+echo Compiling t9
+../stalingrad ${options} t9
+./t9 <<EOF
+0
+EOF
+echo Compiling t10
+../stalingrad ${options} t10
+./t10 <<EOF
+3
+4
+0
+EOF
+echo Compiling t11
+../stalingrad ${options} t11
+./t11 <<EOF
+5
+EOF
+echo Compiling t12
+../stalingrad ${options} t12
+./t12 <<EOF
+3
+4
+EOF
+echo Compiling t13
+../stalingrad ${options} t13
+./t13 <<EOF
+3
+4
+5
+6
+EOF
+echo Compiling t14
+../stalingrad ${options} t14
+./t14 <<EOF
+7
+EOF
+#echo Compiling t15
+#../stalingrad ${options} -order-limit 2 t15
+#./t15 <<EOF
+#7
+#EOF
+echo Compiling t16
+../stalingrad ${options} -order-limit 2 t16
+./t16
+echo Compiling t17
+../stalingrad ${options} t17
+./t17 <<EOF
+1
+1
+1
+1
+1
+1
+EOF
+echo Compiling t18
+../stalingrad ${options} t18
+./t18 <<EOF
+7
+EOF
+echo Compiling t19
+../stalingrad ${options} t19
+./t19 <<EOF
+3
+4
+EOF
+#echo Compiling t20
+#../stalingrad ${options} t20
+#./t20 <<EOF
+#4
+#EOF
+#echo Compiling t22
+#../stalingrad ${options} t22
+#./t22 <<EOF
+#3
+#EOF
+echo Compiling t23
+../stalingrad ${options} t23
+./t23 <<EOF
+100
+EOF

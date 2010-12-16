@@ -1,0 +1,69 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (not x) (if x #f #t))
+
+(define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
+
+(define (length l) (if (null? l) 0 (+ (length (rest l)) 1)))
+
+(define (list-ref l i) (if (zero? i) (first l) (list-ref (rest l) (- i 1))))
+
+(define (map f l) (if (null? l) '() (cons (f (first l)) (map f (rest l)))))
+
+(define (equal? x y)
+ ;; This doesn't compare procedures or transformed values.
+ (or
+  (and (null? x) (null? y))
+  (and (boolean? x) (boolean? y) (or (and x y) (and (not x) (not y))))
+  (and (real? x) (real? y) (= x y))
+  (and (pair? x) (pair? y) (equal? (car x) (car y)) (equal? (cdr x) (cdr y)))))
+
+(define (max x y) (if (>= x y) x y))
+
+(define (first x) (car x))
+
+(define (second x) (car (cdr x)))
+
+(define (third x) (car (cdr (cdr x))))
+
+(define (fourth x) (car (cdr (cdr (cdr x)))))
+
+(define (rest x) (cdr x))
+
+(define (j* x) (bundle x (perturb (zero x))))
+
+(define (e i n)
+ (if (zero? n) '() (cons (if (zero? i) 1.0 0.0) (e (- i 1) (- n 1)))))
+
+(define (map2 f l1 l2)
+ (if (null? l1)
+     '()
+     (cons (f (first l1) (first l2)) (map2 f (rest l1) (rest l2)))))
+
+(define (map-n f n)
+ (if (zero? n) '() (append (map-n f (- n 1)) (list (f (- n 1))))))
+
+(define ((gradient f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (unperturb (tangent ((j* f) (bundle x (perturb (e i n)))))))
+	 n)))
+
+(define (gradient-ascent f x0 n eta)
+ (if (zero? n)
+     (list x0 (f x0) ((gradient f) x0))
+     (gradient-ascent
+      f
+      (map2 (lambda (xi gi) (+ xi (* eta gi))) x0 ((gradient f) x0))
+      (- n 1)
+      eta)))
+
+(define (map-reduce g i f l)
+ (if (null? l) i (g (f (first l)) (map-reduce g i f (rest l)))))
+
+(define (remove-if-not p l)
+ (cond ((null? l) '())
+       ((p (first l)) (cons (first l) (remove-if-not p (rest l))))
+       (else (remove-if-not p (rest l)))))

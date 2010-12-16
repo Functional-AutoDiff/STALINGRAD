@@ -1,0 +1,16 @@
+#!/bin/tcsh -f
+rm -f forward/run.text
+rm -f interpreter/run.text
+rm -f generator-tests/run.text
+rm -f ad2008/run.text
+rm -f ad2008/cannon{,1000}-{F,R}{,.{c,s}}
+rm -f backprop/run.text
+rm -f backprop/backprop-{F,R}{,.{c,s}}
+rm -f popl2009-lots-real/run.text
+rm -f popl2009-lots-real/{series-tail,nr-sqrt}-{F,R}{,.{c,s}}
+rm -f popl2009-lots-real/{series,nr-sqrt}-{F,R}{F,R}{,.{c,s}}
+rm -f popl2009-lots-real/{saddle,particle}-{F,R}{F,R}-stalingrad1000{,.{c,s}}
+rm -f probabilistic-programming/run.text
+rm -f probabilistic-programming/probabilistic-{lambda-calculus,prolog}-{F,R}{,.{c,s}}
+rm -f ../tools/unbuff
+rm -f stalingrad

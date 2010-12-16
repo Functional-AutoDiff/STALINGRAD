@@ -1,0 +1,6 @@
+(define (cdr (cons x y)) y)
+
+(define (multiply m n) (if (zero? m) (real 0) (+ (multiply (- m 1) n) n)))
+
+(cdr (unsensitize ((cdr ((*j multiply) (*j (read-real) (read-real))))
+		   (sensitize (real 1)))))

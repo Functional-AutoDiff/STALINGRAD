@@ -1,0 +1,74 @@
+#!/bin/tcsh -f
+rm -rf ~/public-web/stalingrad-examples2009
+mkdir ~/public-web/stalingrad-examples2009
+cp -i {common,{saddle,particle}-FF}-{stalingrad.vlad,{adifor,tapenade}.f,fadbad++.cpp,{mlton,smlnj}.sml,ocaml.ml,ghc.hs,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme,scmutils}.scm,{mzc,mzscheme}.ss} ~/public-web/stalingrad-examples2009/.
+cp -i {{saddle,particle}-{FR,RF,RR},probabilistic-{lambda-calculus,prolog}-{F,R}}-{stalingrad.vlad,{mlton,smlnj}.sml,ocaml.ml,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme}.scm,{mzc,mzscheme}.ss} ~/public-web/stalingrad-examples2009/.
+cp -i probabilistic-{lambda-calculus,prolog}-F-scmutils.scm ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-{stalingrad.vlad,{adifor,tapenade}.f,adic.c,{adolc,cppad,fadbad++}.cpp,{mlton,smlnj}.sml,ocaml.ml,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme,scmutils}.scm,{mzc,mzscheme}.ss} ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-{{adifor,tapenade}.f,adic.c,{adolc,fadbad++}.cpp} ~/public-web/stalingrad-examples2009/.
+cp -i backprop-R-{stalingrad.vlad,tapenade.f,{adolc,cppad,fadbad++}.cpp,{mlton,smlnj}.sml,ocaml.ml,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme}.scm,{mzc,mzscheme}.ss} ~/public-web/stalingrad-examples2009/.
+cp -i {{saddle,particle}-{F,R}{F,R},probabilistic-{lambda-calculus,prolog}-{F,R},backprop-{Fs,R}}-stalingrad.c ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-adic-f.c ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-adic-f.h ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-adifor.adf ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-adifor.cmp ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-adifor-f.f ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fs-tapenade-f.f ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-adic-f.c ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-adic-f.h ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-adifor.adf ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-adifor.cmp ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-adifor-f.f ~/public-web/stalingrad-examples2009/.
+cp -i backprop-Fv-tapenade-f.f ~/public-web/stalingrad-examples2009/.
+cp -i backprop-R-tapenade-f.f ~/public-web/stalingrad-examples2009/.
+cp -i backprop-tapenade-DIFFSIZES.inc ~/public-web/stalingrad-examples2009/.
+cp -i common-adifor.inc ~/public-web/stalingrad-examples2009/.
+cp -i common-tapenade.inc ~/public-web/stalingrad-examples2009/.
+cp -i compile-and-run-examples ~/public-web/stalingrad-examples2009/.
+cp -i compile-examples ~/public-web/stalingrad-examples2009/.
+cp -i compile-stalingrad-examples ~/public-web/stalingrad-examples2009/.
+cp -i count-lines ~/public-web/stalingrad-examples2009/.
+cp -i diffscript ~/public-web/stalingrad-examples2009/.
+cp -i index.html ~/public-web/stalingrad-examples2009/.
+cp -i make-clean ~/public-web/stalingrad-examples2009/.
+cp -i make-enscript ~/public-web/stalingrad-examples2009/.
+cp -i make-tgz ~/public-web/stalingrad-examples2009/.
+cp -i make-web ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor1.adf ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor1.cmp ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor1.f ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor2.adf ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor2.cmp ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor2.f ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-adifor.inc ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-tapenade-DIFFSIZES1.inc ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-tapenade-DIFFSIZES2.inc ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-tapenade.inc ~/public-web/stalingrad-examples2009/.
+cp -i particle-FF-tapenade.sed ~/public-web/stalingrad-examples2009/.
+cp -i run-examples ~/public-web/stalingrad-examples2009/.
+cp -i run-examples1 ~/public-web/stalingrad-examples2009/.
+cp -i run.text ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor1.adf ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor1.cmp ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor1.f ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor2.adf ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor2.cmp ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor2.f ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-adifor.inc ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-tapenade-DIFFSIZES1.inc ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-tapenade-DIFFSIZES2.inc ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-tapenade.inc ~/public-web/stalingrad-examples2009/.
+cp -i saddle-FF-tapenade.sed ~/public-web/stalingrad-examples2009/.
+cp -i tables.tex ~/public-web/stalingrad-examples2009/.
+cp -i tables.pdf ~/public-web/stalingrad-examples2009/.
+cp -i tabulate.sc ~/public-web/stalingrad-examples2009/.
+cp -i ../../documentation/lecture-circuit2009/talk.pdf ~/public-web/stalingrad-examples2009/.
+cp -i ~/bin/i686-Linux-2.6.26-2-686/stalingrad ~/public-web/stalingrad-examples2009/stalingrad-i686
+cp -i ~/bin/x86_64-Linux-2.6.26-2-amd64/stalingrad ~/public-web/stalingrad-examples2009/stalingrad-amd64
+cd ~/public-web/stalingrad-examples2009
+~/stalingrad-triple/examples/examples2009/make-enscript
+~/stalingrad-triple/examples/examples2009/make-tgz
+chmod go+rx ~/public-web/stalingrad-examples2009
+chmod go+r ~/public-web/stalingrad-examples2009/*
+chmod go+rx ~/public-web/stalingrad-examples2009/stalingrad-{i686,amd64}
+rsync-to-dynamo

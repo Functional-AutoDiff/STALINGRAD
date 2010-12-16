@@ -1,0 +1,3 @@
+(define (multiply m n) (if (zero? m) (real 0) (+ (multiply (- m 1) n) n)))
+
+(multiply 1 (read-real))

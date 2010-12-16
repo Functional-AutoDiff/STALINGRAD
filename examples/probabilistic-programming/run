@@ -1,0 +1,12 @@
+#!/bin/tcsh -f
+unlimit stack
+setenv SCMAXHEAP 57000
+set options = "-compile -c -verbose 0 -backpropagator-depth-limit 1 -imprecise-inexacts"
+foreach f (F R)
+  foreach g (lambda-calculus prolog)
+    echo Compiling probabilistic-$g-$f
+    time ../stalingrad ${options} probabilistic-$g-$f
+    ../post-compile-link-density probabilistic-$g-$f
+    time ./probabilistic-$g-$f
+    end
+  end

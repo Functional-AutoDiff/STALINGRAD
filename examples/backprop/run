@@ -1,0 +1,10 @@
+#!/bin/tcsh -f
+unlimit stack
+setenv SCMAXHEAP 57000
+set options = "-compile -c -verbose 0 -backpropagator-depth-limit 1"
+foreach f (F R)
+  echo Compiling backprop-$f
+  time ../stalingrad ${options} backprop-$f
+  ../post-compile-link-density backprop-$f
+  time ./run-backprop-$f
+  end

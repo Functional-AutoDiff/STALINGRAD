@@ -1,0 +1,6 @@
+#!/bin/tcsh -f 
+rm -f /tmp/$2.text /tmp/$3.text
+fgrep -v swaps /net/jalitusteabe/aux/qobi/stalingrad-triple-$2/examples/$1/run.text|fgrep -v pf|fgrep -v system >/tmp/$2.text
+fgrep -v swaps /net/jalitusteabe/aux/qobi/stalingrad-triple-$3/examples/$1/run.text|fgrep -v pf|fgrep -v system >/tmp/$3.text
+diff /tmp/$2.text /tmp/$3.text
+rm -f /tmp/$2.text /tmp/$3.text

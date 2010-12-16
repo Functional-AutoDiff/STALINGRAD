@@ -1,0 +1,40 @@
+#!/bin/tcsh -f
+unlimit stack
+setenv SCMAXHEAP 57000
+set options = "-compile -c -verbose 0 -backpropagator-depth-limit 1"
+foreach f (F R)
+  echo Compiling series-tail-$f
+  time ../stalingrad ${options} series-tail-$f
+  ../post-compile-link-density series-tail-$f
+  time ./series-tail-$f <<EOF
+2
+EOF
+  echo Compiling nr-sqrt-$f
+  time ../stalingrad ${options} nr-sqrt-$f
+  ../post-compile-link-density nr-sqrt-$f
+  time ./nr-sqrt-$f <<EOF
+2
+EOF
+  end
+foreach f (FF FR RF RR)
+  echo Compiling series-$f
+  time ../stalingrad ${options} series-$f
+  ../post-compile-link-density series-$f
+  time ./series-$f <<EOF
+2
+EOF
+  echo Compiling nr-sqrt-$f
+  time ../stalingrad ${options} nr-sqrt-$f
+  ../post-compile-link-density nr-sqrt-$f
+  time ./nr-sqrt-$f <<EOF
+2
+EOF
+  echo Compiling saddle-$f-stalingrad1000
+  time ../stalingrad ${options} saddle-$f-stalingrad1000
+  ../post-compile-link-density saddle-$f-stalingrad1000
+  time ./saddle-$f-stalingrad1000
+  echo Compiling particle-$f-stalingrad1000
+  time ../stalingrad ${options} particle-$f-stalingrad1000
+  ../post-compile-link-density particle-$f-stalingrad1000
+  time ./particle-$f-stalingrad1000
+  end

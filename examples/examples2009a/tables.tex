@@ -1,0 +1,98 @@
+\documentclass{article}
+\usepackage{fullpage}
+\usepackage{color}
+\usepackage{paralist}
+\usepackage{graphicx}
+\definecolor{Red}{rgb}{1,0,0}
+\definecolor{Green}{rgb}{0,0.69,0}
+\definecolor{Blue}{rgb}{0,0,1}
+\newcommand{\red}{\color{Red}}
+\newcommand{\green}{\color{Green}}
+\newcommand{\blue}{\color{Blue}}
+\newcommand{\VLAD}{\textsc{vlad}}
+\newcommand{\Stalingrad}{\textsc{Stalin$\nabla$}}
+\newcommand{\Fortran}{{\mbox{\sc Fortran}}}
+\newcommand{\ADIFOR}{{\mbox{\sc adifor}}}
+\newcommand{\Tapenade}{{\mbox{\sc Tapenade}}}
+\newcommand{\Clang}{{\mbox{\sc c}}}
+\newcommand{\ADIC}{{\mbox{\sc adic}}}
+\newcommand{\Cplusplus}{{\mbox{\sc c\symbol{43}\symbol{43}}}}
+\newcommand{\ADOLC}{{\mbox{\sc adol--c}}}
+\newcommand{\CppAD}{\textsc{CppAD}}
+\newcommand{\FADBADplusplus}{{\mbox{\sc fadbad\symbol{43}\symbol{43}}}}
+\newcommand{\ML}{{\mbox{\sc ml}}}
+\newcommand{\MLton}{{\mbox{\sc MLton}}}
+\newcommand{\OCaml}{{\mbox{\sc OCaml}}}
+\newcommand{\SMLNJ}{{\mbox{\sc sml/nj}}}
+\newcommand{\Haskell}{{\mbox{\sc Haskell}}}
+\newcommand{\GHC}{{\mbox{\sc ghc}}}
+\newcommand{\Scheme}{{\mbox{\sc Scheme}}}
+\newcommand{\Bigloo}{{\mbox{\sc Bigloo}}}
+\newcommand{\Chicken}{{\mbox{\sc Chicken}}}
+\newcommand{\Gambit}{{\mbox{\sc Gambit}}}
+\newcommand{\Ikarus}{{\mbox{\sc Ikarus}}}
+\newcommand{\Larceny}{{\mbox{\sc Larceny}}}
+\newcommand{\MITScheme}{{\mbox{\sc MIT~Scheme}}}
+\newcommand{\MzC}{{\mbox{\sc MzC}}}
+\newcommand{\MzScheme}{{\mbox{\sc MzScheme}}}
+\newcommand{\SchemeToC}{{\mbox{\sc Scheme-$\symbol{62}$C}}}
+\newcommand{\SCMUTILS}{\mbox{\textsc{scmutils}}}
+\newcommand{\Stalin}{{\mbox{\sc Stalin}}}
+\begin{document}
+\begin{center}
+\resizebox{\linewidth}{!}{\input{run1}}
+\end{center}
+All run times normalized relative to a unit run time for \Stalingrad\ on
+the corresponding example except that run times for \texttt{backprop-Fv}
+are normalized relative to a unit run time for \Stalingrad\ on
+\texttt{backprop-Fs}.\\
+Pre-existing AD tools are named in {\blue blue}.
+Others were implemented by us.
+\begin{compactdesc}
+\item[{\green\rule{1ex}{1ex}}] not implemented but could implement
+\item[{\blue\rule{1ex}{1ex}}] not implemented in pre-existing AD tool
+\item[{\red\rule{1ex}{1ex}}] can't implement
+\end{compactdesc}
+\newpage
+\begin{center}
+\resizebox{\linewidth}{!}{\input{run2}}
+\end{center}
+All run times normalized relative to a unit run time for \Stalingrad\ on
+the corresponding example.\\
+Pre-existing AD tools are named in {\blue blue}.
+Others were implemented by us.
+\begin{compactdesc}
+\item[{\green\rule{1ex}{1ex}}] not implemented but could implement
+\item[{\blue\rule{1ex}{1ex}}] not implemented in pre-existing AD tool
+\item[{\red\rule{1ex}{1ex}}] can't implement
+\end{compactdesc}
+\newpage
+\begin{center}
+\resizebox{\linewidth}{!}{\input{run3}}
+\end{center}
+All run times normalized relative to a unit run time for \Stalingrad\ on
+the corresponding example.\\
+Pre-existing AD tools are named in {\blue blue}.
+Others were implemented by us.
+\begin{compactdesc}
+\item[{\green\rule{1ex}{1ex}}] not implemented but could implement,
+including \Fortran, \Clang, and \Cplusplus
+\item[{\blue\rule{1ex}{1ex}}] not implemented in pre-existing AD tool
+\item[{\red\rule{1ex}{1ex}}] can't implement
+\end{compactdesc}
+\newpage
+\begin{center}
+\resizebox{0.8\linewidth}{!}{\input{run4}}
+\end{center}
+All run times normalized relative to a unit run time for \Stalingrad\ on
+the corresponding example except that run times for \texttt{backprop-Fv}
+are normalized relative to a unit run time for \Stalingrad\ on
+\texttt{backprop-Fs}.\\
+Pre-existing AD tools are named in {\blue blue}.
+Others were implemented by us.
+\begin{compactdesc}
+\item[{\green\rule{1ex}{1ex}}] not implemented but could implement
+\item[{\blue\rule{1ex}{1ex}}] not implemented in pre-existing AD tool
+\item[{\red\rule{1ex}{1ex}}] can't implement
+\end{compactdesc}
+\end{document}

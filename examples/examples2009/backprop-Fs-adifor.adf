@@ -1,0 +1,10 @@
+AD_TOP               = error_on_dataset
+AD_PMAX              = 1
+AD_IVARS             = ws_layers
+AD_DVARS             = error
+AD_PROG              = backprop-Fs-adifor.cmp
+AD_OUTPUT_DIR        = .
+AD_SUPPRESS_LDG      = true
+AD_SUPPRESS_NUM_COLS = true
+AD_EXCEPTION_FLAVOR  = performance
+AD_SCALAR_GRADIENTS  = true

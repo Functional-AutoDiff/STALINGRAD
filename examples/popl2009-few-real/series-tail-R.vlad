@@ -1,0 +1,8 @@
+(include "common-stalingrad")
+
+(define (series x)
+ (letrec ((loop (lambda (x result)
+		 (if (< x 1e-5) result (loop (/ x 2) (+ result x))))))
+  (loop x 0)))
+
+(write-real ((derivative-using-*j series) (read-real)))

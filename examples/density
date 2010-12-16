@@ -1,0 +1,9 @@
+#!/bin/bash -f
+lines=$(egrep --count -v '([:]|[.](file|section|align|long|p2align|type|text|globl|size|string))' $1.s)
+adds=$(fgrep --count addsd  $1.s)
+subs=$(fgrep --count subsd  $1.s)
+muls=$(fgrep --count mulsd  $1.s)
+divs=$(fgrep --count divsd  $1.s)
+sqrts=$(fgrep --count sqrtsd $1.s)
+density=$(dc -e "$adds $subs + $muls + $divs + $sqrts + 100 * $lines 1 k / p")
+echo $lines lines $adds adds $subs subs $muls muls $divs divs $sqrts sqrts $density\% density

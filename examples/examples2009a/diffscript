@@ -1,0 +1,40 @@
+#!/bin/tcsh -f
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff common-{bigloo.sc,$i}
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff probabilistic-lambda-calculus-{F,R}-$i
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff probabilistic-prolog-{F,R}-$i
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff saddle-{FF,FR}-$i
+  diff saddle-{FF,RF}-$i
+  diff saddle-{FF,RR}-$i
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff particle-{FF,FR}-$i
+  diff particle-{FF,RF}-$i
+  diff particle-{FF,RR}-$i
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff probabilistic-lambda-calculus-F-{bigloo.sc,$i}
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff probabilistic-prolog-F-{bigloo.sc,$i}
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff saddle-FF-{bigloo.sc,$i}
+  end
+
+foreach i (bigloo.sc chicken.sc gambit.sc ikarus.scm larceny.scm mitscheme.scm mzc.ss mzscheme.ss s2c.sc scmutils.scm stalin.sc stalingrad.vlad)
+  diff particle-FF-{bigloo.sc,$i}
+  end

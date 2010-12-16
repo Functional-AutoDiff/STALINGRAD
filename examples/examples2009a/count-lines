@@ -1,0 +1,32 @@
+#!/bin/tcsh -f
+echo `ls compile-and-run-examples\
+         compile-examples\
+         compile-stalingrad-examples\
+	 count-lines\
+	 diffscript\
+	 index.html\
+	 make-clean\
+	 make-enscript\
+	 make-tgz\
+	 make-web\
+	 run-examples\
+	 run-examples1\
+	 tables.tex\
+	 *.{scm,sc,vlad,sml,inc,ss,cpp,adf,cmp,sed,f,hs,ml,h} *-adic*.c|wc -l`\
+     "files"
+echo `wc -l compile-and-run-examples\
+            compile-examples\
+	    compile-stalingrad-examples\
+	    count-lines\
+	    diffscript\
+	    index.html\
+	    make-clean\
+	    make-enscript\
+	    make-tgz\
+	    make-web\
+	    run-examples\
+	    run-examples1\
+	    tables.tex\
+	    *.{scm,sc,vlad,sml,inc,ss,cpp,adf,cmp,sed,f,hs,ml,h} *-adic*.c|\
+            tail -n 1`\
+     "lines"

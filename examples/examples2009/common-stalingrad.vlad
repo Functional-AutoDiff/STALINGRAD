@@ -1,0 +1,145 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (not x) (if x #f #t))
+
+(define (append x y) (if (null? x) y (cons (first x) (append (rest x) y))))
+
+(define (length l) (if (null? l) 0 (+ (length (cdr l)) 1)))
+
+(define (list-ref l i) (if (zero? i) (car l) (list-ref (cdr l) (- i 1))))
+
+(define ((map f) l) (if (null? l) '() (cons (f (car l)) ((map f) (cdr l)))))
+
+(define ((map2 f) l1 l2)
+ (if (null? l1) '() (cons (f (car l1) (car l2)) ((map2 f) (cdr l1) (cdr l2)))))
+
+(define (equal? x y)
+ ;; This doesn't compare procedures or transformed values.
+ (or
+  (and (null? x) (null? y))
+  (and (boolean? x) (boolean? y) (or (and x y) (and (not x) (not y))))
+  (and (real? x) (real? y) (= x y))
+  (and (pair? x) (pair? y) (equal? (car x) (car y)) (equal? (cdr x) (cdr y)))))
+
+(define (max x y) (if (>= x y) x y))
+
+(define (e i n) ((map-n (lambda (j) (if (= j i) (real 1) (real 0)))) n))
+
+(define (j* x) (bundle x (perturb (zero x))))
+
+(define ((derivative-F f) x)
+ (unperturb (tangent ((j* f) (bundle x (perturb (real 1)))))))
+
+(define ((gradient-F f) x)
+ (let ((n (length x)))
+  ((map-n (lambda (i)
+	   (unperturb (tangent ((j* f) (bundle x (perturb (e i n))))))))
+   n)))
+
+(define ((gradient-R f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize (real 1))))))
+
+(define ((derivative-R f) x)
+ (cdr (unsensitize ((cdr ((*j f) (*j x))) (sensitize (real 1))))))
+
+(define (first x) (car x))
+
+(define (second x) (car (cdr x)))
+
+(define (third x) (car (cdr (cdr x))))
+
+(define (fourth x) (car (cdr (cdr (cdr x)))))
+
+(define (rest x) (cdr x))
+
+(define (sqr x) (* x x))
+
+(define ((map-n f) n)
+ (letrec ((loop (lambda (i) (if (= i n) '() (cons (f i) (loop (+ i 1)))))))
+  (loop 0)))
+
+(define ((reduce f i) l) (if (null? l) i (f (car l) ((reduce f i) (cdr l)))))
+
+(define (map-reduce g i f l)
+ (if (null? l) i (g (f (first l)) (map-reduce g i f (rest l)))))
+
+(define (remove-if p l)
+ (cond ((null? l) '())
+       ((p (first l)) (remove-if p (rest l)))
+       (else (cons (first l) (remove-if p (rest l))))))
+
+(define (v+ u v) ((map2 +) u v))
+
+(define (v- u v) ((map2 -) u v))
+
+(define (k*v k v) ((map (lambda (x) (* k x))) v))
+
+(define (magnitude-squared x) ((reduce + (real 0)) ((map sqr) x)))
+
+(define (magnitude x) (sqrt (magnitude-squared x)))
+
+(define (distance-squared u v) (magnitude-squared (v- v u)))
+
+(define (distance u v) (sqrt (distance-squared u v)))
+
+(define (gradient-ascent-F f x0 n eta)
+ (if (zero? n)
+     (list x0 (f x0) ((gradient-F f) x0))
+     (gradient-ascent-F
+      f
+      ((map2 (lambda (xi gi) (+ xi (* eta gi)))) x0 ((gradient-F f) x0))
+      (- n 1)
+      eta)))
+
+(define (gradient-ascent-R f x0 n eta)
+ (if (zero? n)
+     (list x0 (f x0) ((gradient-R f) x0))
+     (gradient-ascent-R
+      f
+      ((map2 (lambda (xi gi) (+ xi (* eta gi)))) x0 ((gradient-R f) x0))
+      (- n 1)
+      eta)))
+
+(define (multivariate-argmin-F f x)
+ (let ((g (gradient-F f)))
+  (letrec ((loop
+	    (lambda (x fx gx eta i)
+	     (cond ((<= (magnitude gx) (real 1e-5)) x)
+		   ((= i (real 10)) (loop x fx gx (* (real 2) eta) (real 0)))
+		   (else
+		    (let ((x-prime (v- x (k*v eta gx))))
+		     (if (<= (distance x x-prime) (real 1e-5))
+			 x
+			 (let ((fx-prime (f x-prime)))
+			  (if (< fx-prime fx)
+			      (loop x-prime fx-prime (g x-prime) eta (+ i 1))
+			      (loop x fx gx (/ eta (real 2)) (real 0)))))))))))
+   (loop x (f x) (g x) (real 1e-5) (real 0)))))
+
+(define (multivariate-argmax-F f x)
+ (multivariate-argmin-F (lambda (x) (- (real 0) (f x))) x))
+
+(define (multivariate-max-F f x) (f (multivariate-argmax-F f x)))
+
+(define (multivariate-argmin-R f x)
+ (let ((g (gradient-R f)))
+  (letrec ((loop
+	    (lambda (x fx gx eta i)
+	     (cond ((<= (magnitude gx) (real 1e-5)) x)
+		   ((= i (real 10)) (loop x fx gx (* (real 2) eta) (real 0)))
+		   (else
+		    (let ((x-prime (v- x (k*v eta gx))))
+		     (if (<= (distance x x-prime) (real 1e-5))
+			 x
+			 (let ((fx-prime (f x-prime)))
+			  (if (< fx-prime fx)
+			      (loop x-prime fx-prime (g x-prime) eta (+ i 1))
+			      (loop x fx gx (/ eta (real 2)) (real 0)))))))))))
+   (loop x (f x) (g x) (real 1e-5) (real 0)))))
+
+(define (multivariate-argmax-R f x)
+ (multivariate-argmin-R (lambda (x) (- (real 0) (f x))) x))
+
+(define (multivariate-max-R f x) (f (multivariate-argmax-R f x)))

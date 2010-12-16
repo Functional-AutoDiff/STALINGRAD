@@ -1,0 +1,25 @@
+#!/bin/tcsh -f
+setenv SCMAXHEAP 57000
+unlimit stack
+set options = "-no-assert -compile -c -alias -inline -sra -backpropagator-depth-limit 1"
+foreach b (particle saddle)
+  foreach d (FF FR RF RR)
+    rm -f $b-$d-stalingrad.text
+    unbuff >$b-$d-stalingrad.text time stalingrad ${options} $b-$d-stalingrad&
+    end
+  end
+
+set options = "-no-assert -compile -c -alias -inline -sra -backpropagator-depth-limit 1 -imprecise-inexacts"
+foreach b (probabilistic-lambda-calculus probabilistic-prolog)
+  foreach d (F R)
+    rm -f $b-$d-stalingrad.text
+    unbuff >$b-$d-stalingrad.text time stalingrad ${options} $b-$d-stalingrad&
+    end
+  end
+
+set options = "-no-assert -compile -c -alias -inline -sra -backpropagator-depth-limit 1"
+foreach d (Fs R)
+  rm -f backprop-$d-stalingrad.text
+  unbuff >backprop-$d-stalingrad.text time stalingrad ${options}\
+    backprop-$d-stalingrad&
+  end

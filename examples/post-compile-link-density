@@ -1,0 +1,4 @@
+#!/bin/tcsh -f
+../post-compile $1:r
+../post-link $1:r
+../density $1:r

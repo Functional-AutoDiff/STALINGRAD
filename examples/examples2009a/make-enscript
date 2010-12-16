@@ -1,0 +1,90 @@
+#!/bin/bash
+
+function lang () {
+    case $1 in
+	*.f) echo fortran ;;
+        *.c) echo c ;;
+	*.cpp) echo cpp ;;
+	*.ml | *.sml) echo sml ;;
+	*.hs) echo haskell ;;
+	*.sc | *.scm | *.ss | *.vlad) echo scheme ;;
+        *.tex) echo tex ;;
+	*) echo text ;;
+    esac
+}
+
+function tohtmll () {
+    enscript --color --language=html	\
+	--highlight=$1			\
+	--title=$2			\
+	--output=$(echo $2 | cut --delimiter=. --field=1).html	\
+	$2
+}
+
+function tohtml () {
+    tohtmll $(lang $1) $1
+}
+
+for p in common {saddle,particle}-FF ; do
+    for q in stalingrad.vlad\
+             {adifor,tapenade}.f\
+             fadbad++.cpp {mlton,smlnj}.sml\
+             ocaml.ml ghc.hs\
+             {bigloo,chicken,gambit,s2c,stalin}.sc\
+             {ikarus,larceny,mitscheme,scmutils}.scm\
+             {mzc,mzscheme}.ss ; do
+	tohtml ${p}-${q}
+    done
+done
+
+for p in {saddle,particle}-{FR,RF,RR}\
+         probabilistic-{lambda-calculus,prolog}-{F,R} ; do
+    for q in stalingrad.vlad\
+             {mlton,smlnj}.sml\
+             ocaml.ml\
+             {bigloo,chicken,gambit,s2c,stalin}.sc\
+             {ikarus,larceny,mitscheme}.scm\
+             {mzc,mzscheme}.ss ; do
+	tohtml ${p}-${q}
+    done
+done
+
+for p in probabilistic-{lambda-calculus,prolog}-F-scmutils.scm ; do
+    tohtml ${p}
+done
+
+for p in backprop-Fs-{stalingrad.vlad,{adifor,tapenade}.f,adic.c,{adolc,cppad,fadbad++}.cpp,{mlton,smlnj}.sml,ocaml.ml,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme,scmutils}.scm,{mzc,mzscheme}.ss} ; do
+    tohtml ${p}
+done
+
+for p in backprop-Fv-{{adifor,tapenade}.f,adic.c,{adolc,fadbad++}.cpp} ; do
+    tohtml ${p}
+done
+
+for p in backprop-R-{stalingrad.vlad,tapenade.f,{adolc,cppad,fadbad++}.cpp,{mlton,smlnj}.sml,ocaml.ml,{bigloo,chicken,gambit,s2c,stalin}.sc,{ikarus,larceny,mitscheme}.scm,{mzc,mzscheme}.ss} ; do
+    tohtml ${p}
+done
+
+tohtml backprop-Fs-adic-f.c
+tohtml backprop-Fs-adifor-f.f
+tohtml backprop-Fs-tapenade-f.f
+tohtml backprop-Fv-adic-f.c
+tohtml backprop-Fv-adifor-f.f
+tohtml backprop-Fv-tapenade-f.f
+tohtml backprop-R-tapenade-f.f
+tohtmll tcsh compile-and-run-examples
+tohtmll tcsh compile-examples
+tohtmll tcsh compile-stalingrad-examples
+tohtmll tcsh count-lines
+tohtmll tcsh diffscript
+tohtmll tcsh make-clean
+tohtmll bash make-enscript
+tohtmll tcsh make-tgz
+tohtmll tcsh make-web
+tohtml particle-FF-adifor1.f
+tohtml particle-FF-adifor2.f
+tohtmll tcsh run-examples
+tohtmll tcsh run-examples1
+tohtml saddle-FF-adifor1.f
+tohtml saddle-FF-adifor2.f
+tohtml tabulate.sc

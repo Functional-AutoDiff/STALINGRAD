@@ -1,0 +1,14 @@
+#!/bin/tcsh -f
+unlimit stack
+setenv SCMAXHEAP 57000
+set options = "-compile -c -verbose 0 -backpropagator-depth-limit 1"
+foreach f (F R)
+   echo Compiling cannon-$f
+   time ../stalingrad ${options} cannon-$f
+   ../post-compile-link-density cannon-$f
+   time ./cannon-$f
+   echo Compiling cannon1000-$f
+   time ../stalingrad ${options} cannon1000-$f
+   ../post-compile-link-density cannon1000-$f
+   time ./cannon1000-$f
+   end

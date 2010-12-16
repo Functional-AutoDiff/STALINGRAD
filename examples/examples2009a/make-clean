@@ -1,0 +1,19 @@
+#!/bin/tcsh -f
+rm -f {particle,saddle}-{F,R}{F,R}-{bigloo,chicken,gambit,mlton,mzc,ocaml,s2c,stalin,stalingrad}
+rm -f {common,{particle,saddle}-{F,R}{F,R}}-larceny.fasl
+rm -f {common,{particle,saddle}-{F,R}{F,R}}-mitscheme.{bci,bin,com}
+rm -f {common,{particle,saddle}-FF}-scmutils.{bci,bin,com}
+rm -f {particle,saddle}-FF-{adifor,fadbad++,ghc,tapenade}
+rm -f {particle,saddle}-{F,R}{F,R}-smlnj.x86-linux
+
+rm -f probabilistic-{lambda-calculus,prolog}-{F,R}-{bigloo,chicken,gambit,mlton,mzc,ocaml,s2c,stalin,stalingrad}
+rm -f probabilistic-{lambda-calculus,prolog}-{F,R}-larceny.fasl
+rm -f probabilistic-{lambda-calculus,prolog}-{F,R}-mitscheme.{bci,bin,com}
+rm -f probabilistic-{lambda-calculus,prolog}-F-scmutils.{bci,bin,com}
+rm -f probabilistic-{lambda-calculus,prolog}-{F,R}-smlnj.x86-linux
+
+rm -f backprop-{F{s,v},R}-{adic,adifor,adolc,bigloo,chicken,cppad,fadbad++,gambit,mlton,mzc,ocaml,s2c,stalin,stalingrad,tapenade}
+rm -f backprop-{Fs,R}-larceny.fasl
+rm -f backprop-{Fs,R}-mitscheme.{bci,bin,com}
+rm -f backprop-Fs-scmutils.{bci,bin,com}
+rm -f backprop-{Fs,R}-smlnj.x86-linux

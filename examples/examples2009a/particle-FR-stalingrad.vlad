@@ -1,0 +1,33 @@
+(include "common-stalingrad")
+
+(define (naive-euler w)
+ (let* ((charges
+	 (list (list (real 10) (- (real 10) w)) (list (real 10) (real 0))))
+	(x-initial (list (real 0) (real 8)))
+	(xdot-initial (list (real 0.75) (real 0)))
+	(delta-t (real 1e-1))
+	(p (lambda (x)
+	    ((reduce + (real 0))
+	     ((map (lambda (c) (/ (real 1) (distance x c)))) charges)))))
+  (letrec ((loop (lambda (x xdot)
+		  (let* ((xddot (k*v (real -1) ((gradient-R p) x)))
+			 (x-new (v+ x (k*v delta-t xdot))))
+		   (if (positive? (list-ref x-new 1))
+		       (loop x-new (v+ xdot (k*v delta-t xddot)))
+		       (let* ((delta-t-f (/ (- (real 0) (list-ref x 1))
+					    (list-ref xdot 1)))
+			      (x-t-f (v+ x (k*v delta-t-f xdot))))
+			(sqr (list-ref x-t-f 0))))))))
+   (loop x-initial xdot-initial))))
+
+(letrec ((loop
+	  (lambda (i r)
+	   (if (zero? i)
+	       r
+	       (loop (- i 1)
+		     (let* ((w0 (real 0))
+			    ((list w*)
+			     (multivariate-argmin-F
+			      (lambda ((list w)) (naive-euler w)) (list w0))))
+		      (write-real w*)))))))
+ (loop (real 1000) (real 0)))

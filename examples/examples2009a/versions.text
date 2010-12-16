@@ -1,0 +1,27 @@
+gcc        lenny 4.3.2 (Debian 4.3.2-1.1)
+g++        lenny 4.3.2 (Debian 4.3.2-1.1)
+gfortran   lenny 4.3.2 (Debian 4.3.2-1.1)
+Stalingrad
+ADIFOR           2.0D 2.1.8
+Tapenade         2.2.2
+ADIC             1.2.0
+ADOLC            1.10.0 (could use lenny version)
+CppAD            20080626
+FADBAD++         1.4
+MLton      lenny 20070826
+OCaml      lenny 3.10.2
+SML/NJ     lenny v110.67
+GHC        lenny 6.8.2
+Bigloo           2.8c (from etch but not in lenny)
+Chicken    lenny 3.2.7
+Gambit           4.0b22
+Ikarus           0.0.2
+Larceny          0.93
+MITScheme        scmutils-20060906
+MzC        lenny v4.0.1 [3m]
+MzScheme   lenny v4.0.1 [3m]
+Scheme->C        15mar93jfb
+SCMUTILS         scmutils-20060906
+Stalin     lenny 0.11
+
+Shuttle SN25P with FX-60 and 2G RAM

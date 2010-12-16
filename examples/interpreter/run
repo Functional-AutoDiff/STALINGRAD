@@ -1,0 +1,36 @@
+#!/bin/tcsh -f
+setenv SCMAXHEAP 8192
+echo Running factorial
+time ../stalingrad $1 factorial
+echo Running even-odd
+time ../stalingrad $1 even-odd
+echo Running bug-a
+time ../stalingrad $1 bug-a
+echo Running bug-b
+time ../stalingrad $1 bug-b
+echo Running bug-c
+time ../stalingrad $1 bug-c
+echo Running bug0
+time ../stalingrad $1 bug0
+echo Running bug1
+time ../stalingrad $1 bug1
+echo Running bug2
+time ../stalingrad $1 bug2
+echo Running bug3
+time ../stalingrad $1 bug3
+echo Running bug4
+time ../stalingrad $1 bug4
+echo Running example
+time ../stalingrad $1 example
+echo Running example-forward
+time ../stalingrad $1 example-forward
+echo Running prefix
+time ../stalingrad $1 prefix
+echo Running sqrt
+time ../stalingrad $1 sqrt
+echo Running triple
+time ../stalingrad $1 triple
+echo Running factor16
+time ../stalingrad $1 factor16
+echo Running hessian
+time ../stalingrad $1 hessian

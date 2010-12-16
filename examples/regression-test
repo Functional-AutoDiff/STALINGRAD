@@ -1,0 +1,30 @@
+#!/bin/tcsh -f
+
+# This is intended to run on amd64
+
+rm -f forward/run.text
+rm -f interpreter/run.text
+rm -f generator-tests/run.text
+rm -f ad2008/run.text
+rm -f backprop/run.text
+rm -f popl2009-lots-real/run.text
+rm -f probabilistic-programming/run.text
+
+# Choose either a, b, or c
+
+(cd ../tools;gcc -o unbuff unbuff.c -lutil)
+(cd ../a/source;make port;cd `architecture-path`;make;cp stalingrad ../../../examples/.;cd ..;rm -rf `architecture-path`)
+
+setenv STALINGRAD_INLINE
+unsetenv STALINGRAD_ANF_CONVERT
+setenv STALINGRAD_ALIAS
+setenv STALINGRAD_SRA
+setenv STALINGRAD_NO_ASSERT
+
+(cd forward;../../tools/unbuff >run.text time ./run)
+(cd interpreter;../../tools/unbuff >run.text time ./run)
+(cd generator-tests;../../tools/unbuff >run.text time ./run)
+(cd ad2008;../../tools/unbuff >run.text time ./run)
+(cd backprop;../../tools/unbuff >run.text time ./run)
+(cd popl2009-lots-real;../../tools/unbuff >run.text time ./run)
+(cd probabilistic-programming;../../tools/unbuff >run.text time ./run)

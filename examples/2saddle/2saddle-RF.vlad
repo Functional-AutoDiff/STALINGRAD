@@ -1,0 +1,12 @@
+(include "common-stalingrad")
+
+(let* ((n 2)
+       (start ((map-n (lambda (i) (real 1))) n))
+       (f (lambda (x1 x2)
+	   (- ((reduce + 0) ((map sqr) x1)) ((reduce + 0) ((map sqr) x2)))))
+       (x1* (multivariate-argmin-using-*j
+	     (lambda (x1)
+	      (multivariate-max-using-j* (lambda (x2) (f x1 x2)) start))
+	     start))
+       (x2* (multivariate-argmax-using-j* (lambda (x2) (f x1* x2)) start)))
+ (list ((map write) x1*) ((map write) x2*)))

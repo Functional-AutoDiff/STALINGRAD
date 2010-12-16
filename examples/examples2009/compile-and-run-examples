@@ -1,0 +1,4 @@
+#!/bin/tcsh -f
+./compile-examples
+./run-examples
+./make-clean

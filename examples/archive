@@ -1,0 +1,22 @@
+#!/bin/tcsh -f
+rm -rf $1
+mkdir $1/forward
+mkdir $1/interpreter
+mkdir $1/generator-tests
+mkdir $1/ad2008
+mkdir $1/backprop
+mkdir $1/popl2009-lots-real
+mkdir $1/probabilistic-programming
+mv -i forward/run.text $1/forward/.
+mv -i interpreter/run.text $1/interpreter/.
+mv -i generator-tests/run.text $1/generator-tests/.
+mv -i ad2008/run.text $1/ad2008/.
+mv -i ad2008/cannon{,1000}-{F,R}{,.{c,s}} $1/ad2008/.
+mv -i backprop/run.text $1/backprop/.
+mv -i backprop/backprop-{F,R}{,.{c,s}} $1/backprop/.
+mv -i popl2009-lots-real/run.text $1/popl2009-lots-real/.
+mv -i popl2009-lots-real/{series-tail,nr-sqrt}-{F,R}{,.{c,s}} $1/popl2009-lots-real/.
+mv -i popl2009-lots-real/{series,nr-sqrt}-{F,R}{F,R}{,.{c,s}} $1/popl2009-lots-real/.
+mv -i popl2009-lots-real/{saddle,particle}-{F,R}{F,R}-stalingrad1000{,.{c,s}} $1/popl2009-lots-real/.
+mv -i probabilistic-programming/run.text $1/probabilistic-programming/.
+mv -i probabilistic-programming/probabilistic-{lambda-calculus,prolog}-{F,R}{,.{c,s}} $1/probabilistic-programming/.

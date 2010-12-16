@@ -1,0 +1,23 @@
+(include "common")
+
+(define (naive-euler w)
+ (let* ((x-initial (list (real 0) (real 0)))
+	(x-target (list 10000 0))
+	(xddot (list 0 -9.8))
+	(xdot-initial (list w w))
+	(delta-t 1e-1))
+  (letrec ((loop
+	    (lambda (x xdot)
+	     (let ((x-new (v+ x (k*v delta-t xdot))))
+	      (if (positive? (list-ref x-new 1))
+		  (loop x-new (v+ xdot (k*v delta-t xddot)))
+		  (let* ((delta-t-f (/ (- 0 (list-ref x 1)) (list-ref xdot 1)))
+			 (x-t-f (v+ x (k*v delta-t-f xdot))))
+		   (distance-squared x-t-f x-target)))))))
+   (loop x-initial xdot-initial))))
+
+(let* ((w0 (real 1))
+       ((list w*)
+	(multivariate-argmin-using-j*
+	 (lambda ((list w)) (naive-euler w)) (list w0))))
+ (write-real w*))

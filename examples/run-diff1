@@ -1,0 +1,10 @@
+#!/bin/tcsh -f 
+
+# a and b have different flow analysis so should differ in expressions:,
+# unions:, reals:, UNION, conform, #T, #F, and SENSITVITY
+
+rm -f /tmp/$2.text /tmp/$3.text
+fgrep -v swaps /net/jalitusteabe/aux/qobi/stalingrad-triple-$2/examples/$1/run.text|fgrep -v pf|fgrep -v system|fgrep -v expressions:|fgrep -v unions:|fgrep -v reals:|fgrep -v UNION|fgrep -v conform|fgrep -v \#T|fgrep -v \#F|fgrep -v SENSITIVITY >/tmp/$2.text
+fgrep -v swaps /net/jalitusteabe/aux/qobi/stalingrad-triple-$3/examples/$1/run.text|fgrep -v pf|fgrep -v system|fgrep -v expressions:|fgrep -v unions:|fgrep -v reals:|fgrep -v UNION|fgrep -v conform|fgrep -v \#T|fgrep -v \#F|fgrep -v SENSITIVITY >/tmp/$3.text
+diff /tmp/$2.text /tmp/$3.text
+rm -f /tmp/$2.text /tmp/$3.text

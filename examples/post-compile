@@ -1,0 +1,5 @@
+#!/bin/tcsh -f
+#gcc -S -O3 -march=k8 -mfpmath=sse -fomit-frame-pointer -ffast-math\
+#    --param sra-field-structure-ratio=0 $1.c
+#gcc -S -O3 -march=k8 -mfpmath=sse -fomit-frame-pointer -ffast-math $1.c
+gcc -S -O3 -ffast-math $1.c
