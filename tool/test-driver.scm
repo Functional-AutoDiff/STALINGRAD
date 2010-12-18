@@ -392,6 +392,7 @@ all: $(FAILURE_REPORTS)
 	 (append-map
 	  (file->expectations shared-definitions-expectations)
 	  '("addition.vlad"
+	    "list-of-unknown-length.vlad"
 	    "even-odd.vlad"
 	    "example-forward.vlad"
 	    "factorial.vlad"

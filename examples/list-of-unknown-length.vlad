@@ -1,0 +1,15 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (gen-list len f)
+  (if (<= len 0)
+      '()
+      (cons (f len) (gen-list (- len 1) f))))
+
+(define (list-ref lst ind)
+  (if (<= ind 0)
+      (car lst)
+      (list-ref (cdr lst) (- ind 1))))
+
+(list-ref (gen-list (read-real) (lambda (x) x)) (read-real)) ===> (with-inputs (5 3) 2)
