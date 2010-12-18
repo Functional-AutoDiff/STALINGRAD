@@ -391,7 +391,8 @@ all: $(FAILURE_REPORTS)
 	 ((file->expectations independent-expectations) "one-offs.vlad")
 	 (append-map
 	  (file->expectations shared-definitions-expectations)
-	  '("even-odd.vlad"
+	  '("addition.vlad"
+	    "even-odd.vlad"
 	    "example-forward.vlad"
 	    "factorial.vlad"
 	    "bug-a.vlad"

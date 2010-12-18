@@ -1,0 +1,28 @@
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (addn n)
+  (lambda (x)
+    (+ x n)))
+
+(let ((add5 (addn 5)))
+ (add5 3)) ===> 8
+
+(let ((add5 (addn 5)))
+  (*j-inverse (car ((*j add5) (*j 3))))) ===> 8
+
+(let ((add5 (addn 5)))
+  (procedure? (cdr ((*j add5) (*j 3)))))
+
+(let ((add5 (addn 5)))
+  (sensitivity? ((cdr ((*j add5) (*j 3))) (sensitize 1))))
+
+(let ((add5 (addn 5)))
+  ;; TODO This procedure contains the sensitivity to the 5 that's
+  ;; bound in add5.  But how do I test that?
+  (procedure? (car (unsensitize ((cdr ((*j add5) (*j 3))) (sensitize 1))))))
+
+(let ((add5 (addn 5)))
+  (cdr (unsensitize ((cdr ((*j add5) (*j 3))) (sensitize 1))))) ===> 1
+
