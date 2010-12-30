@@ -11,16 +11,16 @@ QobiScheme:
 stalingrad: QobiScheme
 	$(MAKE) -C source all
 
-tool/test-driver.com: tool/test-driver.scm
-	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --eval '(cf "tool/test-driver")' < /dev/null
+tool/test-driver-scm.com: tool/test-driver-scm.scm
+	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --eval '(cf "tool/test-driver-scm")' < /dev/null
 
-test: stalingrad tool/test-driver.com
+test: stalingrad tool/test-driver-scm.com
 	./tool/test-setup
 	./tool/test-driver '(record-expectations! (fast-expectations))'
 	$(MAKE) -C test-runs/last all
 	./tool/test-failures
 
-test-full: stalingrad tool/test-driver.com
+test-full: stalingrad tool/test-driver-scm.com
 	./tool/test-setup full
 	./tool/test-driver '(record-expectations! (all-expectations))'
 	$(MAKE) -C test-runs/last all

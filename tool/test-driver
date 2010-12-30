@@ -1,7 +1,8 @@
 #!/bin/bash
 
 SELFDIR=$(dirname $0)
-TEST_DRIVER="${SELFDIR}/test-driver"
+TEST_DRIVER="${SELFDIR}/test-driver-scm"
 
 exec mit-scheme --heap 6000 --batch-mode --no-init-file \
+    --eval '(set! load/suppress-loading-message? #t)' \
     --load ${TEST_DRIVER} --eval "$@"
