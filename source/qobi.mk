@@ -21,7 +21,7 @@ all: error$(ERROR_OK) $(TARGETS)
 port:
 	-rm -rf $(ARCHITECTURE_PATH)
 	mkdir $(ARCHITECTURE_PATH)
-	cd $(ARCHITECTURE_PATH); ln -s ../*.sc ../*.c ../*.h .
+	cd $(ARCHITECTURE_PATH); ln -s ../*.sc .
 	$(MAKE) port-makefile
 
 port-makefile:
@@ -357,6 +357,14 @@ error_no_error:
 #i686-Linux-2.6.18-6-686       $(INSTALLLIBA)/scxl.a\
 #i686-Linux-2.6.18-6-686       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#i686-Linux-2.6.26-2-686 CC = gcc
+#i686-Linux-2.6.26-2-686 CFLAGS = -O2 -DLINUX
+#i686-Linux-2.6.26-2-686 SCCFLAGS = -O2
+#i686-Linux-2.6.26-2-686 SCCLDFLAGS =
+#i686-Linux-2.6.26-2-686 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#i686-Linux-2.6.26-2-686       $(INSTALLLIBA)/scxl.a\
+#i686-Linux-2.6.26-2-686       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 #i686-Linux-2.6.18-5-k7 CC = gcc
 #i686-Linux-2.6.18-5-k7 CFLAGS = -O2 -DLINUX
 #i686-Linux-2.6.18-5-k7 SCCFLAGS = -O2
@@ -412,6 +420,14 @@ error_no_error:
 #x86_64-Linux-2.6.18-6-amd64       $(INSTALLLIBA)/scxl.a\
 #x86_64-Linux-2.6.18-6-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
+#x86_64-Linux-2.6.26-2-amd64 CC = gcc
+#x86_64-Linux-2.6.26-2-amd64 CFLAGS = -O2 -mno-sse2 -mno-sse3 -DLINUX
+#x86_64-Linux-2.6.26-2-amd64 SCCFLAGS = -O2
+#x86_64-Linux-2.6.26-2-amd64 SCCLDFLAGS =
+#x86_64-Linux-2.6.26-2-amd64 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#x86_64-Linux-2.6.26-2-amd64       $(INSTALLLIBA)/scxl.a\
+#x86_64-Linux-2.6.26-2-amd64       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
 #armv6l-Linux-2.6.21-omap1 CC = gcc
 #armv6l-Linux-2.6.21-omap1 CFLAGS = -O2 -DLINUX
 #armv6l-Linux-2.6.21-omap1 SCCFLAGS =
@@ -419,6 +435,14 @@ error_no_error:
 #armv6l-Linux-2.6.21-omap1 LRL = $(INSTALLLIBA)/QobiScheme.a\
 #armv6l-Linux-2.6.21-omap1       $(INSTALLLIBA)/scxl.a\
 #armv6l-Linux-2.6.21-omap1       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
+
+#armv7l-Linux-2.6.28-omap1 CC = gcc
+#armv7l-Linux-2.6.28-omap1 CFLAGS = -O2 -DLINUX
+#armv7l-Linux-2.6.28-omap1 SCCFLAGS =
+#armv7l-Linux-2.6.28-omap1 SCCLDFLAGS =
+#armv7l-Linux-2.6.28-omap1 LRL = $(INSTALLLIBA)/QobiScheme.a\
+#armv7l-Linux-2.6.28-omap1       $(INSTALLLIBA)/scxl.a\
+#armv7l-Linux-2.6.28-omap1       stalingradlib-*.o -L/usr/X11R6/lib -lX11 -lm
 
 # missing i386-FreeBSD-2.2-STABLE
 
@@ -496,7 +520,7 @@ uninstall:
 release:
 	-rm -rf $(RELEASE_FILE) $(RELEASE_FILE).tar*
 	mkdir $(RELEASE_FILE)
-	cp makefile *.{sc,c,h} $(RELEASE_FILE)/.
+	cp makefile *.sc $(RELEASE_FILE)/.
 	tar cvf $(RELEASE_FILE).tar ./$(RELEASE_FILE)
 	compress $(RELEASE_FILE).tar
 	-rm -rf $(RELEASE_FILE)
@@ -507,8 +531,7 @@ publish: release
 
 # Compilation rules and dependencies
 # ----------------------------------
-stalingradlib = stalingradlib-stuff.o\
-                stalingradlib-double-c.o
+stalingradlib = stalingradlib-stuff.o
 
 INCLUDES=\
 	-I $(QINSTALLDIR)/QobiScheme-1.44/source \
@@ -516,15 +539,10 @@ INCLUDES=\
 
 SCH=$(QINSTALLDIR)/QobiScheme-1.44/source/$(QARCHITECTURE_PATH)/sch
 
-stalingradlib-double-c.o: stalingradlib-double-c.c
-	$(CC) $(CFLAGS) -o stalingradlib-double-c.o\
-	      -c stalingradlib-double-c.c
-
 stalingradlib-stuff.sch: stalingradlib-*.sc
 	$(SCH) stalingradlib-stuff stalingradlib-*.sc
 
-stalingradlib-stuff.o: stalingradlib-stuff.sch c-externals.sc\
-stalingradlib-stuff.sc
+stalingradlib-stuff.o: stalingradlib-stuff.sch stalingradlib-stuff.sc
 	scc -sch 512 -cc $(CC) $(SCCFLAGS) $(INCLUDES) -c stalingradlib-stuff.sc
 	-rm -f stalingradlib-stuff.c
 
