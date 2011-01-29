@@ -1,5 +1,6 @@
 #!/bin/bash
 
+ulimit -s unlimited # khazad-dum imposes a default soft limit of 8192??
 ulimit -d 1200000
 ulimit -t 3000
 
