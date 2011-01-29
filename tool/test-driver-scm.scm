@@ -17,7 +17,7 @@
 (define test-directory "test-runs/last/")
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../source/stalingrad -scmh 1000 -I "
-		 (->namestring my-pathname) "../examples/ "))
+		 (->namestring my-pathname) "../examples/interpreter/ "))
 
 (define (read-all)
   (let loop ((results '())
@@ -397,22 +397,26 @@ all: $(FAILURE_REPORTS)
 	  (file->expectations shared-definitions-expectations)
 	  '("addition.vlad"
 	    "list-of-unknown-length.vlad"
-	    "even-odd.vlad"
-	    "example-forward.vlad"
-	    "factorial.vlad"
-	    "bug-a.vlad"
-	    "bug-b.vlad"
-	    "bug-c.vlad"
-	    "bug0.vlad"
-	    "bug1.vlad"
-	    "bug2.vlad"
-	    "bug3.vlad"
-	    "bug4.vlad"
 	    "marble.vlad"
-	    "prefix.vlad"
-	    "secant.vlad"
-	    "sqrt.vlad"
-	    ))))))))
+	    "secant.vlad"))
+	 (with-working-directory-pathname
+	  "interpreter/"
+	  (lambda ()
+	    (append-map
+	     (file->expectations shared-definitions-expectations)
+	     '("even-odd.vlad"
+	       "example-forward.vlad"
+	       "factorial.vlad"
+	       "bug-a.vlad"
+	       "bug-b.vlad"
+	       "bug-c.vlad"
+	       "bug0.vlad"
+	       "bug1.vlad"
+	       "bug2.vlad"
+	       "bug3.vlad"
+	       "bug4.vlad"
+	       "prefix.vlad"
+	       "sqrt.vlad"))))))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
