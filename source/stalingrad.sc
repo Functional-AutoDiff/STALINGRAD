@@ -138,11 +138,10 @@
 			       reverse-tagged-value-width-limit?
 			       (reverse-tagged-value-width-limit
 				"n" integer-argument 1)))
-		 (at-most-one
-		  ("no-pair-width-limit" no-tagged-pair-width-limit?)
-		  ("pair-width-limit"
-		   tagged-pair-width-limit?
-		   (tagged-pair-width-limit "n" integer-argument 1)))
+		 (at-most-one ("no-pair-width-limit" no-pair-width-limit?)
+			      ("pair-width-limit"
+			       pair-width-limit?
+			       (pair-width-limit "n" integer-argument 1)))
 		 (at-most-one
 		  ("no-closure-depth-limit" no-closure-depth-limit?)
 		  ("closure-depth-limit"
@@ -177,11 +176,10 @@
 			       reverse-tagged-value-depth-limit?
 			       (reverse-tagged-value-depth-limit
 				"n" integer-argument 1)))
-		 (at-most-one
-		  ("no-pair-depth-limit" no-tagged-pair-depth-limit?)
-		  ("pair-depth-limit"
-		   tagged-pair-depth-limit?
-		   (tagged-pair-depth-limit "n" integer-argument 1)))
+		 (at-most-one ("no-pair-depth-limit" no-pair-depth-limit?)
+			      ("pair-depth-limit"
+			       pair-depth-limit?
+			       (pair-depth-limit "n" integer-argument 1)))
 		 (at-most-one ("no-order-limit" no-order-limit?)
 			      ("order-limit"
 			       order-limit?
@@ -268,9 +266,9 @@
 	      reverse-tagged-value-width-limit)
 	     (no-reverse-tagged-value-width-limit? #f)
 	     (else all-limits)))
- (set! *tagged-pair-width-limit*
-       (cond (tagged-pair-width-limit? tagged-pair-width-limit)
-	     (no-tagged-pair-width-limit? #f)
+ (set! *pair-width-limit*
+       (cond (pair-width-limit? pair-width-limit)
+	     (no-pair-width-limit? #f)
 	     (else all-limits)))
  (set! *closure-depth-limit*
        (cond (closure-depth-limit? closure-depth-limit)
@@ -299,9 +297,9 @@
 	      reverse-tagged-value-depth-limit)
 	     (no-reverse-tagged-value-depth-limit? #f)
 	     (else all-limits)))
- (set! *tagged-pair-depth-limit*
-       (cond (tagged-pair-depth-limit? tagged-pair-depth-limit)
-	     (no-tagged-pair-depth-limit? #f)
+ (set! *pair-depth-limit*
+       (cond (pair-depth-limit? pair-depth-limit)
+	     (no-pair-depth-limit? #f)
 	     (else all-limits)))
  (set! *order-limit*
        (cond (order-limit? order-limit)
@@ -315,13 +313,13 @@
 	    (not *bundle-width-limit*)
 	    (not *sensitivity-tagged-value-width-limit*)
 	    (not *reverse-tagged-value-width-limit*)
-	    (not *tagged-pair-width-limit*)
+	    (not *pair-width-limit*)
 	    (not *closure-depth-limit*)
 	    (not *perturbation-tagged-value-depth-limit*)
 	    (not *bundle-depth-limit*)
 	    (not *sensitivity-tagged-value-depth-limit*)
 	    (not *reverse-tagged-value-depth-limit*)
-	    (not *tagged-pair-depth-limit*)))
+	    (not *pair-depth-limit*)))
  ;; Cannot rely on the with-* procedures since syntax-check-expression! and
  ;; parse need to have these set.
  (set! *canonized?* *flow-analysis?*)

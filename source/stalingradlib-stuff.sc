@@ -148,6 +148,18 @@
  body-free-variable-indices1
  body-free-variable-indices2)
 
+;;; We can determine that a constant expression has been transformed by looking
+;;; at its value. (Only because we don't allow transformed constants in the
+;;; source program.) We can determine that a variable access expression is
+;;; transformed by looking at the variable tags. We can determine that a lambda
+;;; expression is transformed by looking at the parameter tags. We can
+;;; determine that a letrec expression is transformed by looking at the
+;;; parameter tags of some lambda expression. And we can determine that a cons
+;;; expression is transformed by looking at its tag. We need to have such tags
+;;; to know to do a transformed cons. (This is only because cons is syntax, not
+;;; a primitive procedure.) But we don't have a way to determine that an
+;;; application is transformed.
+
 (define-structure application
  parents
  environment-bindings
@@ -203,6 +215,9 @@
  reverse
  meter
  instances)
+
+;;; debugging: might be able to remove {zero,perturb,unperturb,primal,tangent,
+;;             bundle-sensitize,unsensitize,*j,*j-inverse}-cache
 
 (define-structure nonrecursive-closure
  values
@@ -332,23 +347,17 @@
  widener-instances
  flag?)
 
-(define-structure tagged-pair
- tags
+(define-structure vlad-pair
  car
  cdr
  canonize-cache
  intern-cache
  zero-cache
  perturb-cache
- unperturb-cache
- primal-cache
- tangent-cache
  bundle-cache
  sensitize-cache
- unsensitize-cache
  plus-cache
  *j-cache
- *j-inverse-cache
  widen
  c:index
  boxed?
@@ -545,7 +554,7 @@
 
 (define *reverse-tagged-values* '())
 
-(define *tagged-pairs* '())
+(define *vlad-pairs* '())
 
 (define *unions* '())
 
@@ -621,7 +630,7 @@
 
 (define *reverse-tagged-value-width-limit* #f)
 
-(define *tagged-pair-width-limit* #f)
+(define *pair-width-limit* #f)
 
 (define *closure-depth-limit* #f)
 
@@ -635,7 +644,7 @@
 
 (define *reverse-tagged-value-depth-limit* #f)
 
-(define *tagged-pair-depth-limit* #f)
+(define *pair-depth-limit* #f)
 
 (define *order-limit* #f)
 
@@ -766,6 +775,8 @@
 	 unabbreviate-nonrecursive-closures?)
    (set! *unabbreviate-recursive-closures?* unabbreviate-recursive-closures?)
    result)))
+
+;;; debugging: might be able to eliminate some cps variants
 
 (define (some-cps p l cs k)
  (if (null? l)
@@ -958,35 +969,23 @@
 
 (define (empty-tags) '())
 
-(define (empty-tags? tags) (or (eq? tags 'unknown) (null? tags)))
+(define (empty-tags? tags) (null? tags))
 
 (define (add-tag tag tags) (cons tag tags))
 
 (define (tagged? tag tags)
- (or (eq? tags 'unknown)
-     (and (not (empty-tags? tags)) (eq? (first tags) tag))))
+ (and (not (empty-tags? tags)) (eq? (first tags) tag)))
 
 (define (remove-tag tag tags)
  (assert (tagged? tag tags))
- (if (eq? tags 'unknown) tags (rest tags)))
+ (rest tags))
 
 (define (prefix-tags? tags1 tags2)
- (or (eq? tags1 'unknown)
-     (eq? tags2 'unknown)
-     (empty-tags? tags1)
+ (or (empty-tags? tags1)
      (and (not (empty-tags? tags1))
 	  (not (empty-tags? tags2))
 	  (eq? (first tags1) (first tags2))
 	  (prefix-tags? (rest tags1) (rest tags2)))))
-
-(define (equal-tags? tags1 tags2)
- (or (eq? tags1 'unknown)
-     (eq? tags2 'unknown)
-     (and (empty-tags? tags1) (empty-tags? tags2))
-     (and (not (empty-tags? tags1))
-	  (not (empty-tags? tags2))
-	  (eq? (first tags1) (first tags2))
-	  (equal-tags? (rest tags1) (rest tags2)))))
 
 ;;; Variables
 
@@ -1766,29 +1765,6 @@
 ;;; This used to (assert (not (union? u)))
 (define (vlad-empty-list? u) (null? u))
 
-(define (tagged-empty-list? tags u)
- (and
-  (not (union? u))
-  (or (and (empty-tags? tags) (vlad-empty-list? u))
-      (and (tagged? 'perturbation tags)
-	   (perturbation-tagged-value? u)
-	   (tagged-empty-list? (remove-tag 'perturbation tags)
-			       (perturbation-tagged-value-primal u)))
-      (and (tagged? 'forward tags)
-	   (bundle? u)
-	   (tagged-empty-list? (remove-tag 'forward tags) (bundle-primal u))
-	   (tagged-empty-list?
-	    (add-tag 'perturbation (remove-tag 'forward tags))
-	    (bundle-tangent u)))
-      (and (tagged? 'sensitivity tags)
-	   (sensitivity-tagged-value? u)
-	   (tagged-empty-list? (remove-tag 'sensitivity tags)
-			       (sensitivity-tagged-value-primal u)))
-      (and (tagged? 'reverse tags)
-	   (reverse-tagged-value? u)
-	   (tagged-empty-list? (remove-tag 'reverse tags)
-			       (reverse-tagged-value-primal u))))))
-
 ;;; Booleans
 
 (define (vlad-true) #t)
@@ -1810,12 +1786,10 @@
 (define (abstract-real) 'abstract-real)
 
 ;;; This used to (assert (not (union? u)))
-(define (abstract-real? u)
- (eq? u 'abstract-real))
+(define (abstract-real? u) (eq? u 'abstract-real))
 
 ;;; This used to (assert (not (union? u)))
-(define (vlad-real? u)
- (or (real? u) (abstract-real? u)))
+(define (vlad-real? u) (or (real? u) (abstract-real? u)))
 
 ;;; Closures
 
@@ -2170,6 +2144,113 @@
  (assert (not (union? u)))
  (or (primitive-procedure? u) (closure? u)))
 
+(define (tagged-new-nonrecursive-closure tags vs e)
+ (if (empty-tags? tags)
+     (new-nonrecursive-closure vs e)
+     (case (first tags)
+      ((perturbation)
+       (perturb (tagged-new-nonrecursive-closure
+		 (remove-tag 'perturbation tags)
+		 (map unperturb vs)
+		 (perturbation-transform-inverse e))))
+      ((forward)
+       (bundle (vlad-cons (tagged-new-nonrecursive-closure
+			   (remove-tag 'forward tags)
+			   (map primal vs)
+			   (forward-transform-inverse e))
+			  (perturb (tagged-new-nonrecursive-closure
+				    (remove-tag 'forward tags)
+				    (map unperturb (map tangent vs))
+				    (forward-transform-inverse e))))))
+      ((sensitivity)
+       (sensitize (tagged-new-nonrecursive-closure
+		   (remove-tag 'sensitivity tags)
+		   (map unsensitize vs)
+		   (sensitivity-transform-inverse e))))
+      ((reverse)
+       (*j (tagged-new-nonrecursive-closure
+	    (remove-tag 'reverse tags)
+	    (map *j-inverse vs)
+	    (reverse-transform-inverse e))))
+      (else (internal-error)))))
+
+(define (tagged-new-recursive-closure tags vs xs es i)
+ (if (empty-tags? tags)
+     (new-recursive-closure vs xs es i)
+     (case (first tags)
+      ((perturbation)
+       (perturb (tagged-new-recursive-closure
+		 (remove-tag 'perturbation tags)
+		 (map unperturb vs)
+		 (map-vector unperturbationify xs)
+		 (map-vector perturbation-transform-inverse es)
+		 i)))
+      ((forward)
+       (bundle (vlad-cons (tagged-new-recursive-closure
+			   (remove-tag 'forward tags)
+			   (map primal vs)
+			   (map-vector unforwardify xs)
+			   (map-vector forward-transform-inverse es)
+			   i)
+			  (perturb (tagged-new-recursive-closure
+				    (remove-tag 'forward tags)
+				    (map unperturb (map tangent vs))
+				    (map-vector unforwardify xs)
+				    (map-vector forward-transform-inverse es)
+				    i)))))
+      ((sensitivity)
+       (sensitize (tagged-new-recursive-closure
+		   (remove-tag 'sensitivity tags)
+		   (map unsensitize vs)
+		   (map-vector unsensitivityify xs)
+		   (map-vector sensitivity-transform-inverse es)
+		   i)))
+      ((reverse)
+       (*j (tagged-new-recursive-closure
+	    (remove-tag 'reverse tags)
+	    (map *j-inverse vs)
+	    (map-vector unreverseify xs)
+	    (map-vector reverse-transform-inverse es)
+	    i)))
+      (else (internal-error)))))
+
+(define (tagged-closure-ref tags v x)
+ (if (empty-tags? tags)
+     (cond
+      ((union? v)
+       ;; foo: to generate wideners for this case
+       ;; widening case M3
+       (unionize
+	(map (lambda (u)
+	      (if (closure? u)
+		  (closure-ref u x)
+		  (compile-time-warning "Argument might not be a closure" u)))
+	     (get-union-values v))))
+      ((closure? v) (closure-ref v x))
+      (else (ad-error "Argument ~a a closure" v)))
+     (case (first tags)
+      ((perturbation)
+       (perturb (tagged-closure-ref (remove-tag 'perturbation tags)
+				    (unperturb v)
+				    (unperturbationify x))))
+      ((forward)
+       (bundle
+	(vlad-cons (tagged-closure-ref (remove-tag 'forward tags)
+				       (unperturb v)
+				       (unforwardify x))
+		   (perturb (tagged-closure-ref (remove-tag 'forward tags)
+						(unperturb (tangent v))
+						(unforwardify x))))))
+      ((sensitivity)
+       (sensitize (tagged-closure-ref (remove-tag 'sensitivity tags)
+				      (unsensitize v)
+				      (unsensitivityify x))))
+      ((reverse)
+       (*j (tagged-closure-ref (remove-tag 'reverse tags)
+			       (*j-inverse v)
+			       (unreverseify x))))
+      (else (internal-error)))))
+
 ;;; Perturbation tagged values
 
 (define (allocate-perturbation-tagged-value v)
@@ -2287,13 +2368,33 @@
 			   (get-perturbation-tagged-value-primal
 			    v-perturbation)))))
 	   (k #t cs))
+	  ((and (nonrecursive-closure? v)
+		(nonrecursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (nonrecursive-closure-parameter v-perturbation))
+		(nonrecursive-closure-match? v (unperturb v-perturbation)))
+	   (every2-cps loop
+		       (get-nonrecursive-closure-values v)
+		       (get-nonrecursive-closure-values v-perturbation)
+		       cs
+		       k))
+	  ((and (recursive-closure? v)
+		(recursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (recursive-closure-parameter v-perturbation))
+		(recursive-closure-match? v (unperturb v-perturbation)))
+	   (every2-cps loop
+		       (get-recursive-closure-values v)
+		       (get-recursive-closure-values v-perturbation)
+		       cs
+		       k))
 	  ((and (perturbation-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
 	   (some-cps
 	    (lambda (u-perturbation cs k)
 	     (if (perturbation-tagged-value? u-perturbation)
 		 (loop (get-perturbation-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-perturbation-tagged-value-primal u-perturbation))
 		       cs
 		       k)
@@ -2307,14 +2408,12 @@
 	    (lambda (u-perturbation cs k)
 	     (if (bundle? u-perturbation)
 		 (loop (get-bundle-primal v)
-		       (create-perturbation-tagged-value
-			(get-bundle-primal u-perturbation))
+		       (perturb (get-bundle-primal u-perturbation))
 		       cs
 		       (lambda (r? cs)
 			(if r?
 			    (loop (get-bundle-tangent v)
-				  (create-perturbation-tagged-value
-				   (get-bundle-tangent u-perturbation))
+				  (perturb (get-bundle-tangent u-perturbation))
 				  cs
 				  k)
 			    (k #f cs))))
@@ -2329,7 +2428,7 @@
 	    (lambda (u-perturbation cs k)
 	     (if (sensitivity-tagged-value? u-perturbation)
 		 (loop (get-sensitivity-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-sensitivity-tagged-value-primal u-perturbation))
 		       cs
 		       k)
@@ -2344,10 +2443,29 @@
 	    (lambda (u-perturbation cs k)
 	     (if (reverse-tagged-value? u-perturbation)
 		 (loop (get-reverse-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-reverse-tagged-value-primal u-perturbation))
 		       cs
 		       k)
+		 (k #f cs)))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((and (vlad-pair? v) (perturbation-tagged-value? v-perturbation))
+	   (some-cps
+	    (lambda (u-perturbation cs k)
+	     (if (vlad-pair? u-perturbation)
+		 (loop (vlad-car v)
+		       (perturb (vlad-car u-perturbation))
+		       cs
+		       (lambda (r? cs)
+			(if r?
+			    (loop (vlad-cdr v)
+				  (perturb (vlad-cdr u-perturbation))
+				  cs
+				  k)
+			    (k #f cs))))
 		 (k #f cs)))
 	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
@@ -2420,13 +2538,33 @@
 		    (union-members
 		     (get-perturbation-tagged-value-primal v-perturbation)))))
 	   (k #t cs))
+	  ((and (nonrecursive-closure? v)
+		(nonrecursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (nonrecursive-closure-parameter v-perturbation))
+		(nonrecursive-closure-match? v (unperturb v-perturbation)))
+	   (every2-cps loop
+		       (get-nonrecursive-closure-values v)
+		       (get-nonrecursive-closure-values v-perturbation)
+		       cs
+		       k))
+	  ((and (recursive-closure? v)
+		(recursive-closure? v-perturbation)
+		(perturbation-parameter?
+		 (recursive-closure-parameter v-perturbation))
+		(recursive-closure-match? v (unperturb v-perturbation)))
+	   (every2-cps loop
+		       (get-recursive-closure-values v)
+		       (get-recursive-closure-values v-perturbation)
+		       cs
+		       k))
 	  ((and (perturbation-tagged-value? v)
 		(perturbation-tagged-value? v-perturbation))
 	   (every-cps
 	    (lambda (u-perturbation cs k)
 	     (if (perturbation-tagged-value? u-perturbation)
 		 (loop (get-perturbation-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-perturbation-tagged-value-primal u-perturbation))
 		       cs
 		       k)
@@ -2440,14 +2578,12 @@
 	    (lambda (u-perturbation cs k)
 	     (if (bundle? u-perturbation)
 		 (loop (get-bundle-primal v)
-		       (create-perturbation-tagged-value
-			(get-bundle-primal u-perturbation))
+		       (perturb (get-bundle-primal u-perturbation))
 		       cs
 		       (lambda (r? cs)
 			(if r?
 			    (loop (get-bundle-tangent v)
-				  (create-perturbation-tagged-value
-				   (get-bundle-tangent u-perturbation))
+				  (perturb (get-bundle-tangent u-perturbation))
 				  cs
 				  k)
 			    (k #f cs))))
@@ -2462,7 +2598,7 @@
 	    (lambda (u-perturbation cs k)
 	     (if (sensitivity-tagged-value? u-perturbation)
 		 (loop (get-sensitivity-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-sensitivity-tagged-value-primal u-perturbation))
 		       cs
 		       k)
@@ -2477,10 +2613,29 @@
 	    (lambda (u-perturbation cs k)
 	     (if (reverse-tagged-value? u-perturbation)
 		 (loop (get-reverse-tagged-value-primal v)
-		       (create-perturbation-tagged-value
+		       (perturb
 			(get-reverse-tagged-value-primal u-perturbation))
 		       cs
 		       k)
+		 (k #f cs)))
+	    (union-members
+	     (get-perturbation-tagged-value-primal v-perturbation))
+	    cs
+	    k))
+	  ((and (vlad-pair? v) (perturbation-tagged-value? v-perturbation))
+	   (every-cps
+	    (lambda (u-perturbation cs k)
+	     (if (vlad-pair? u-perturbation)
+		 (loop (vlad-car v)
+		       (perturb (vlad-car u-perturbation))
+		       cs
+		       (lambda (r? cs)
+			(if r?
+			    (loop (vlad-cdr v)
+				  (perturb (vlad-cdr u-perturbation))
+				  cs
+				  k)
+			    (k #f cs))))
 		 (k #f cs)))
 	    (union-members
 	     (get-perturbation-tagged-value-primal v-perturbation))
@@ -2655,105 +2810,146 @@
 
 ;;; Pairs
 
-(define (allocate-tagged-pair tags v1 v2)
- (make-tagged-pair tags
-		   v1
-		   v2
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   #f
-		   'unfilled
-		   #f
-		   #f
-		   'unfilled
-		   '()
-		   #f))
+(define (allocate-vlad-pair v1 v2)
+ (make-vlad-pair v1
+		 v2
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 #f
+		 'unfilled
+		 #f
+		 #f
+		 'unfilled
+		 '()
+		 #f))
 
-(define (create-tagged-pair tags v1 v2)
- (assert (or (eq? *mode* 'abstract)
-	     (and (prefix-tags? tags (value-tags v1))
-		  (prefix-tags? tags (value-tags v2)))))
- (if (or
-      (empty-abstract-value? v1)
-      (empty-abstract-value? v2)
-      (and
-       (eq? *mode* 'abstract)
-       (or (every-value-tags (lambda (tags) (not (prefix-tags? tags tags))) v1)
-	   (every-value-tags (lambda (tags) (not (prefix-tags? tags tags)))
-			     v2))))
+(define (create-vlad-pair v1 v2)
+ (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
-     (allocate-tagged-pair tags v1 v2)))
+     (allocate-vlad-pair v1 v2)))
 
-(define (new-tagged-pair tags v1 v2)
- (assert (or (eq? *mode* 'abstract)
-	     (and (prefix-tags? tags (value-tags v1))
-		  (prefix-tags? tags (value-tags v2)))))
- (if (or
-      (empty-abstract-value? v1)
-      (empty-abstract-value? v2)
-      (and
-       (eq? *mode* 'abstract)
-       (or (every-value-tags (lambda (tags) (not (prefix-tags? tags tags))) v1)
-	   (every-value-tags (lambda (tags) (not (prefix-tags? tags tags)))
-			     v2))))
+(define (fill-vlad-pair! u v1 v2)
+ ;; We can't do the full checks of vlad-cons at this point because there may
+ ;; be residual unfilled slots so the checks are delayed until
+ ;; canonize-abstract-value.
+ (assert (and (eq? (vlad-pair-car u) 'unfilled)
+	      (eq? (vlad-pair-cdr u) 'unfilled)))
+ (set-vlad-pair-car! u v1)
+ (set-vlad-pair-cdr! u v2))
+
+(define (vlad-cons v1 v2)
+ (if (or (empty-abstract-value? v1) (empty-abstract-value? v2))
      (empty-abstract-value)
      (if *interned?*
 	 (or (find-if (lambda (v0)
-		       (and (abstract-value=? v1 (get-tagged-pair-car v0))
-			    (abstract-value=? v2 (get-tagged-pair-cdr v0))
-			    (equal-tags? tags (tagged-pair-tags v0))))
-		      *tagged-pairs*)
-	     (let ((v0 (allocate-tagged-pair tags v1 v2)))
+		       (and (abstract-value=? v1 (vlad-car v0))
+			    (abstract-value=? v2 (vlad-cdr v0))))
+		      *vlad-pairs*)
+	     (let ((v0 (allocate-vlad-pair v1 v2)))
 	      (assert (not *frozen?*))
-	      (set! *tagged-pairs* (cons v0 *tagged-pairs*))
-	      (set-tagged-pair-canonize-cache! v0 v0)
-	      (set-tagged-pair-intern-cache! v0 v0)
+	      (set! *vlad-pairs* (cons v0 *vlad-pairs*))
+	      (set-vlad-pair-canonize-cache! v0 v0)
+	      (set-vlad-pair-intern-cache! v0 v0)
 	      v0))
-	 (allocate-tagged-pair tags v1 v2))))
-
-(define (fill-tagged-pair! u v1 v2)
- ;; We can't do the full checks of new-tagged-pair at this point because there
- ;; may be residual unfilled slots so the checks are delayed until
- ;; canonize-abstract-value.
- (assert (and (eq? (tagged-pair-car u) 'unfilled)
-	      (eq? (tagged-pair-cdr u) 'unfilled)))
- (set-tagged-pair-car! u v1)
- (set-tagged-pair-cdr! u v2))
-
-(define (get-tagged-pair-car v)
- (assert (not (eq? (tagged-pair-car v) 'unfilled)))
- (tagged-pair-car v))
-
-(define (get-tagged-pair-cdr v)
- (assert (not (eq? (tagged-pair-cdr v) 'unfilled)))
- (tagged-pair-cdr v))
-
-;;; This used to (assert (not (union? u)))
-(define (vlad-pair? u)
- (and (tagged-pair? u) (empty-tags? (tagged-pair-tags u))))
+	 (allocate-vlad-pair v1 v2))))
 
 (define (vlad-car u)
- (assert (vlad-pair? u))
- (get-tagged-pair-car u))
+ (assert (and (vlad-pair? u) (not (eq? (vlad-pair-car u) 'unfilled))))
+ (vlad-pair-car u))
 
 (define (vlad-cdr u)
- (assert (vlad-pair? u))
- (get-tagged-pair-cdr u))
+ (assert (and (vlad-pair? u) (not (eq? (vlad-pair-cdr u) 'unfilled))))
+ (vlad-pair-cdr u))
 
-(define (vlad-cons v1 v2) (new-tagged-pair (empty-tags) v1 v2))
+(define (tagged-vlad-cons tags v1 v2)
+ (if (empty-tags? tags)
+     (vlad-cons v1 v2)
+     (case (first tags)
+      ((perturbation)
+       (perturb
+	(tagged-vlad-cons
+	 (remove-tag 'perturbation tags) (unperturb v1) (unperturb v2))))
+      ((forward)
+       (bundle
+	(vlad-cons (tagged-vlad-cons
+		    (remove-tag 'forward tags) (primal v1) (primal v2))
+		   (perturb (tagged-vlad-cons (remove-tag 'forward tags)
+					      (unperturb (tangent v1))
+					      (unperturb (tangent v2)))))))
+      ((sensitivity)
+       (sensitize
+	(tagged-vlad-cons
+	 (remove-tag 'sensitivity tags) (unsensitize v1) (unsensitize v2))))
+      ((reverse)
+       (*j (tagged-vlad-cons
+	    (remove-tag 'reverse tags) (*j-inverse v1) (*j-inverse v2))))
+      (else (internal-error)))))
+
+(define (tagged-vlad-car tags u)
+ (if (empty-tags? tags)
+     (cond
+      ((union? u)
+       ;; widening case M1
+       (unionize
+	(map (lambda (u)
+	      (if (vlad-pair? u)
+		  (vlad-car u)
+		  (compile-time-warning "Argument might not be a pair" u)))
+	     (get-union-values u))))
+      ((vlad-pair? u) (vlad-car u))
+      (else (ad-error "Argument ~a a pair" u)))
+     (case (first tags)
+      ((perturbation)
+       (perturb
+	(tagged-vlad-car (remove-tag 'perturbation tags) (unperturb u))))
+      ((forward)
+       (bundle
+	(vlad-cons (tagged-vlad-car (remove-tag 'forward tags) (primal u))
+		   (perturb (tagged-vlad-car (remove-tag 'forward tags)
+					     (unperturb (tangent u)))))))
+      ((sensitivity)
+       (sensitize
+	(tagged-vlad-car (remove-tag 'sensitivity tags) (unsensitize u))))
+      ((reverse)
+       (*j (tagged-vlad-car (remove-tag 'reverse tags) (*j-inverse u))))
+      (else (internal-error)))))
+
+(define (tagged-vlad-cdr tags u)
+ (if (empty-tags? tags)
+     (cond
+      ((union? u)
+       ;; widening case M2
+       (unionize
+	(map (lambda (u)
+	      (if (vlad-pair? u)
+		  (vlad-cdr u)
+		  (compile-time-warning "Argument might not be a pair" u)))
+	     (get-union-values u))))
+      ((vlad-pair? u) (vlad-cdr u))
+      (else (ad-error "Argument ~a a pair" u)))
+     (case (first tags)
+      ((perturbation)
+       (perturb
+	(tagged-vlad-cdr (remove-tag 'perturbation tags) (unperturb u))))
+      ((forward)
+       (bundle
+	(vlad-cons (tagged-vlad-cdr (remove-tag 'forward tags) (primal u))
+		   (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+					     (unperturb (tangent u)))))))
+      ((sensitivity)
+       (sensitize
+	(tagged-vlad-cdr (remove-tag 'sensitivity tags) (unsensitize u))))
+      ((reverse)
+       (*j (tagged-vlad-cdr (remove-tag 'reverse tags) (*j-inverse u))))
+      (else (internal-error)))))
 
 ;;; Unions
 
@@ -2831,8 +3027,10 @@
 ;;; Environment bindings
 
 (define (new-environment-binding vs v)
- (assert (and (every meets-syntactic-constraints? vs)
-	      (meets-syntactic-constraints? v)))
+ ;; debugging
+ (when #f
+  (assert (and (every meets-syntactic-constraints? vs)
+	       (meets-syntactic-constraints? v))))
  (make-environment-binding vs v))
 
 ;;; Instances
@@ -2874,9 +3072,8 @@
    ((bundle? v1) (bundle-widener-instances v1))
    ((sensitivity-tagged-value? v1)
     (sensitivity-tagged-value-widener-instances v1))
-   ((reverse-tagged-value? v1)
-    (reverse-tagged-value-widener-instances v1))
-   ((tagged-pair? v1) (tagged-pair-widener-instances v1))
+   ((reverse-tagged-value? v1) (reverse-tagged-value-widener-instances v1))
+   ((vlad-pair? v1) (vlad-pair-widener-instances v1))
    ((union? v1) (union-widener-instances v1))
    (else *scalar-widener-instances*))))
 
@@ -2903,9 +3100,9 @@
        ((reverse-tagged-value? v1)
 	(set-reverse-tagged-value-widener-instances!
 	 v1 (cons instance (reverse-tagged-value-widener-instances v1))))
-       ((tagged-pair? v1)
-	(set-tagged-pair-widener-instances!
-	 v1 (cons instance (tagged-pair-widener-instances v1))))
+       ((vlad-pair? v1)
+	(set-vlad-pair-widener-instances!
+	 v1 (cons instance (vlad-pair-widener-instances v1))))
        ((union? v1)
 	(set-union-widener-instances!
 	 v1 (cons instance (union-widener-instances v1))))
@@ -2919,10 +3116,13 @@
 	    (eq? (primitive-procedure-symbol (value-binding-value b)) s))
 	   *value-bindings*)))
 
-(define (lookup-instance s v)
+(define (find-instance s v)
  (find-if (lambda (instance)
 	   (abstract-value=? (primitive-procedure-instance-v instance) v))
 	  (primitive-procedure-instances (lookup-primitive-procedure s))))
+
+(define (lookup-instance s v)
+ (let ((instance (find-instance s v))) (assert instance) instance))
 
 (define (new-instance s v)
  (let ((primitive-procedure (lookup-primitive-procedure s)))
@@ -3100,14 +3300,182 @@
 
 ;;; Generic
 
+(define (perturb-cache v)
+ ((cond
+   ((nonrecursive-closure? v) nonrecursive-closure-perturb-cache)
+   ((recursive-closure? v) recursive-closure-perturb-cache)
+   ((perturbation-tagged-value? v) perturbation-tagged-value-perturb-cache)
+   ((bundle? v) bundle-perturb-cache)
+   ((sensitivity-tagged-value? v) sensitivity-tagged-value-perturb-cache)
+   ((reverse-tagged-value? v) reverse-tagged-value-perturb-cache)
+   ((vlad-pair? v) vlad-pair-perturb-cache)
+   ((union? v) union-perturb-cache)
+   (else (internal-error)))
+  v))
+
+(define (set-perturb-cache! v v-perturbation)
+ ((cond
+   ((nonrecursive-closure? v) set-nonrecursive-closure-perturb-cache!)
+   ((recursive-closure? v) set-recursive-closure-perturb-cache!)
+   ((perturbation-tagged-value? v)
+    set-perturbation-tagged-value-perturb-cache!)
+   ((bundle? v) set-bundle-perturb-cache!)
+   ((sensitivity-tagged-value? v) set-sensitivity-tagged-value-perturb-cache!)
+   ((reverse-tagged-value? v) set-reverse-tagged-value-perturb-cache!)
+   ((vlad-pair? v) set-vlad-pair-perturb-cache!)
+   ((union? v) set-union-perturb-cache!)
+   (else (internal-error)))
+  v
+  v-perturbation))
+
+(define (unperturb-cache v-perturbation)
+ ((cond ((nonrecursive-closure? v-perturbation)
+	 nonrecursive-closure-unperturb-cache)
+	((recursive-closure? v-perturbation) recursive-closure-unperturb-cache)
+	((union? v-perturbation) union-unperturb-cache)
+	(else (internal-error)))
+  v-perturbation))
+
+(define (set-unperturb-cache! v-perturbation v)
+ ((cond ((nonrecursive-closure? v-perturbation)
+	 set-nonrecursive-closure-unperturb-cache!)
+	((recursive-closure? v-perturbation)
+	 set-recursive-closure-unperturb-cache!)
+	((union? v-perturbation) set-union-unperturb-cache!)
+	(else (internal-error)))
+  v-perturbation
+  v))
+
+(define (primal-cache v-forward)
+ ((cond ((nonrecursive-closure? v-forward) nonrecursive-closure-primal-cache)
+	((recursive-closure? v-forward) recursive-closure-primal-cache)
+	((union? v-forward) union-primal-cache)
+	(else (internal-error)))
+  v-forward))
+
+(define (set-primal-cache! v-forward v)
+ ((cond
+   ((nonrecursive-closure? v-forward) set-nonrecursive-closure-primal-cache!)
+   ((recursive-closure? v-forward) set-recursive-closure-primal-cache!)
+   ((union? v-forward) set-union-primal-cache!)
+   (else (internal-error)))
+  v-forward
+  v))
+
+(define (tangent-cache v-forward)
+ ((cond ((nonrecursive-closure? v-forward) nonrecursive-closure-tangent-cache)
+	((recursive-closure? v-forward) recursive-closure-tangent-cache)
+	((union? v-forward) union-tangent-cache)
+	(else (internal-error)))
+  v-forward))
+
+(define (set-tangent-cache! v-forward v)
+ ((cond
+   ((nonrecursive-closure? v-forward) set-nonrecursive-closure-tangent-cache!)
+   ((recursive-closure? v-forward) set-recursive-closure-tangent-cache!)
+   ((union? v-forward) set-union-tangent-cache!)
+   (else (internal-error)))
+  v-forward
+  v))
+
+(define (sensitize-cache v)
+ ((cond
+   ((nonrecursive-closure? v) nonrecursive-closure-sensitize-cache)
+   ((recursive-closure? v) recursive-closure-sensitize-cache)
+   ((perturbation-tagged-value? v) perturbation-tagged-value-sensitize-cache)
+   ((bundle? v) bundle-sensitize-cache)
+   ((sensitivity-tagged-value? v) sensitivity-tagged-value-sensitize-cache)
+   ((reverse-tagged-value? v) reverse-tagged-value-sensitize-cache)
+   ((vlad-pair? v) vlad-pair-sensitize-cache)
+   ((union? v) union-sensitize-cache)
+   (else (internal-error)))
+  v))
+
+(define (set-sensitize-cache! v v-sensitivity)
+ ((cond ((nonrecursive-closure? v) set-nonrecursive-closure-sensitize-cache!)
+	((recursive-closure? v) set-recursive-closure-sensitize-cache!)
+	((perturbation-tagged-value? v)
+	 set-perturbation-tagged-value-sensitize-cache!)
+	((bundle? v) set-bundle-sensitize-cache!)
+	((sensitivity-tagged-value? v)
+	 set-sensitivity-tagged-value-sensitize-cache!)
+	((reverse-tagged-value? v) set-reverse-tagged-value-sensitize-cache!)
+	((vlad-pair? v) set-vlad-pair-sensitize-cache!)
+	((union? v) set-union-sensitize-cache!)
+	(else (internal-error)))
+  v
+  v-sensitivity))
+
+(define (unsensitize-cache v-sensitivity)
+ ((cond ((nonrecursive-closure? v-sensitivity)
+	 nonrecursive-closure-unsensitize-cache)
+	((recursive-closure? v-sensitivity)
+	 recursive-closure-unsensitize-cache)
+	((union? v-sensitivity) union-unsensitize-cache)
+	(else (internal-error)))
+  v-sensitivity))
+
+(define (set-unsensitize-cache! v-sensitivity v)
+ ((cond ((nonrecursive-closure? v-sensitivity)
+	 set-nonrecursive-closure-unsensitize-cache!)
+	((recursive-closure? v-sensitivity)
+	 set-recursive-closure-unsensitize-cache!)
+	((union? v-sensitivity) set-union-unsensitize-cache!)
+	(else (internal-error)))
+  v-sensitivity
+  v))
+
+(define (*j-cache v)
+ ((cond ((nonrecursive-closure? v) nonrecursive-closure-*j-cache)
+	((recursive-closure? v) recursive-closure-*j-cache)
+	((perturbation-tagged-value? v) perturbation-tagged-value-*j-cache)
+	((bundle? v) bundle-*j-cache)
+	((sensitivity-tagged-value? v) sensitivity-tagged-value-*j-cache)
+	((reverse-tagged-value? v) reverse-tagged-value-*j-cache)
+	((vlad-pair? v) vlad-pair-*j-cache)
+	((union? v) union-*j-cache)
+	(else (internal-error)))
+  v))
+
+(define (set-*j-cache! v v-reverse)
+ ((cond
+   ((nonrecursive-closure? v) set-nonrecursive-closure-*j-cache!)
+   ((recursive-closure? v) set-recursive-closure-*j-cache!)
+   ((perturbation-tagged-value? v) set-perturbation-tagged-value-*j-cache!)
+   ((bundle? v) set-bundle-*j-cache!)
+   ((sensitivity-tagged-value? v) set-sensitivity-tagged-value-*j-cache!)
+   ((reverse-tagged-value? v) set-reverse-tagged-value-*j-cache!)
+   ((vlad-pair? v) set-vlad-pair-*j-cache!)
+   ((union? v) set-union-*j-cache!)
+   (else (internal-error)))
+  v
+  v-reverse))
+
+(define (*j-inverse-cache v-reverse)
+ ((cond
+   ((nonrecursive-closure? v-reverse) nonrecursive-closure-*j-inverse-cache)
+   ((recursive-closure? v-reverse) recursive-closure-*j-inverse-cache)
+   ((union? v-reverse) union-*j-inverse-cache)
+   (else (internal-error)))
+  v-reverse))
+
+(define (set-*j-inverse-cache! v-reverse v)
+ ((cond ((nonrecursive-closure? v-reverse)
+	 set-nonrecursive-closure-*j-inverse-cache!)
+	((recursive-closure? v-reverse)
+	 set-recursive-closure-*j-inverse-cache!)
+	((union? v-reverse) set-union-*j-inverse-cache!)
+	(else (internal-error)))
+  v-reverse
+  v))
+
 (define (perturbation-value? u)
  (assert (not (union? u)))
  (or (and (nonrecursive-closure? u)
 	  (perturbation-parameter? (nonrecursive-closure-parameter u)))
      (and (recursive-closure? u)
 	  (perturbation-parameter? (recursive-closure-parameter u)))
-     (perturbation-tagged-value? u)
-     (and (tagged-pair? u) (tagged? 'perturbation (tagged-pair-tags u)))))
+     (perturbation-tagged-value? u)))
 
 (define (forward-value? u)
  (assert (not (union? u)))
@@ -3115,8 +3483,7 @@
 	  (forward-parameter? (nonrecursive-closure-parameter u)))
      (and (recursive-closure? u)
 	  (forward-parameter? (recursive-closure-parameter u)))
-     (bundle? u)
-     (and (tagged-pair? u) (tagged? 'forward (tagged-pair-tags u)))))
+     (bundle? u)))
 
 (define (sensitivity-value? u)
  ;; Backpropagators will be considered as sensitivity values. But you can't
@@ -3128,8 +3495,7 @@
 	  (sensitivity-parameter? (nonrecursive-closure-parameter u)))
      (and (recursive-closure? u)
 	  (sensitivity-parameter? (recursive-closure-parameter u)))
-     (sensitivity-tagged-value? u)
-     (and (tagged-pair? u) (tagged? 'sensitivity (tagged-pair-tags u)))))
+     (sensitivity-tagged-value? u)))
 
 (define (reverse-value? u)
  (assert (not (union? u)))
@@ -3137,8 +3503,7 @@
 	  (reverse-parameter? (nonrecursive-closure-parameter u)))
      (and (recursive-closure? u)
 	  (reverse-parameter? (recursive-closure-parameter u)))
-     (reverse-tagged-value? u)
-     (and (tagged-pair? u) (tagged? 'reverse (tagged-pair-tags u)))))
+     (reverse-tagged-value? u)))
 
 (define (scalar-value? u)
  (assert (not (union? u)))
@@ -3148,17 +3513,16 @@
      (primitive-procedure? u)))
 
 (define (aggregate-value-values u)
- (cond
-  ((nonrecursive-closure? u) (get-nonrecursive-closure-values u))
-  ((recursive-closure? u) (get-recursive-closure-values u))
-  ((perturbation-tagged-value? u)
-   (list (get-perturbation-tagged-value-primal u)))
-  ((bundle? u) (list (get-bundle-primal u) (get-bundle-tangent u)))
-  ((sensitivity-tagged-value? u)
-   (list (get-sensitivity-tagged-value-primal u)))
-  ((reverse-tagged-value? u) (list (get-reverse-tagged-value-primal u)))
-  ((tagged-pair? u) (list (get-tagged-pair-car u) (get-tagged-pair-cdr u)))
-  (else (internal-error))))
+ (cond ((nonrecursive-closure? u) (get-nonrecursive-closure-values u))
+       ((recursive-closure? u) (get-recursive-closure-values u))
+       ((perturbation-tagged-value? u)
+	(list (get-perturbation-tagged-value-primal u)))
+       ((bundle? u) (list (get-bundle-primal u) (get-bundle-tangent u)))
+       ((sensitivity-tagged-value? u)
+	(list (get-sensitivity-tagged-value-primal u)))
+       ((reverse-tagged-value? u) (list (get-reverse-tagged-value-primal u)))
+       ((vlad-pair? u) (list (vlad-car u) (vlad-cdr u)))
+       (else (internal-error))))
 
 (define (aggregate-value-alias-values u a)
  (assert (compatible-alias? u a))
@@ -3171,7 +3535,7 @@
 	(list (get-sensitivity-tagged-value-primal-alias u a)))
        ((reverse-tagged-value? u)
 	(list (get-reverse-tagged-value-primal-alias u a)))
-       ((tagged-pair? u) (get-tagged-pair-aliases u a))
+       ((vlad-pair? u) (get-vlad-pair-aliases u a))
        (else (internal-error))))
 
 (define (create-aggregate-value-with-new-values u vs)
@@ -3195,9 +3559,9 @@
   ((reverse-tagged-value? u)
    (assert (= (length vs) 1))
    (create-reverse-tagged-value (first vs)))
-  ((tagged-pair? u)
+  ((vlad-pair? u)
    (assert (= (length vs) 2))
-   (create-tagged-pair (tagged-pair-tags u) (first vs) (second vs)))
+   (create-vlad-pair (first vs) (second vs)))
   (else (internal-error))))
 
 (define (value-tags u)
@@ -3217,7 +3581,7 @@
 		 (value-tags (get-sensitivity-tagged-value-primal u))))
        ((reverse-tagged-value? u)
 	(add-tag 'reverse (value-tags (get-reverse-tagged-value-primal u))))
-       ((tagged-pair? u) (tagged-pair-tags u))
+       ((vlad-pair? u) '())
        (else (internal-error))))
 
 (define (some-value-tags p v)
@@ -3239,7 +3603,7 @@
     (loop (cons 'sensitivity tags) (get-sensitivity-tagged-value-primal v) vs))
    ((reverse-tagged-value? v)
     (loop (cons 'reverse tags) (get-reverse-tagged-value-primal v) vs))
-   ((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
+   ((vlad-pair? v) (p (reverse tags)))
    (else (internal-error)))))
 
 (define (every-value-tags p v)
@@ -3262,7 +3626,7 @@
     (loop (cons 'sensitivity tags) (get-sensitivity-tagged-value-primal v) vs))
    ((reverse-tagged-value? v)
     (loop (cons 'reverse tags) (get-reverse-tagged-value-primal v) vs))
-   ((tagged-pair? v) (p (append (reverse tags) (tagged-pair-tags v))))
+   ((vlad-pair? v) (p (reverse tags)))
    (else (internal-error)))))
 
 (define (c:index thing)
@@ -3275,7 +3639,7 @@
   ((bundle? thing) (bundle-c:index thing))
   ((sensitivity-tagged-value? thing) (sensitivity-tagged-value-c:index thing))
   ((reverse-tagged-value? thing) (reverse-tagged-value-c:index thing))
-  ((tagged-pair? thing) (tagged-pair-c:index thing))
+  ((vlad-pair? thing) (vlad-pair-c:index thing))
   ((union? thing) (union-c:index thing))
   ((function-instance? thing) (function-instance-c:index thing))
   ((widener-instance? thing) (widener-instance-c:index thing))
@@ -3294,7 +3658,7 @@
   ((sensitivity-tagged-value? thing)
    (set-sensitivity-tagged-value-c:index! thing i))
   ((reverse-tagged-value? thing) (set-reverse-tagged-value-c:index! thing i))
-  ((tagged-pair? thing) (set-tagged-pair-c:index! thing i))
+  ((vlad-pair? thing) (set-vlad-pair-c:index! thing i))
   ((union? thing) (set-union-c:index! thing i))
   ((function-instance? thing) (set-function-instance-c:index! thing i))
   ((widener-instance? thing) (set-widener-instance-c:index! thing i))
@@ -3308,7 +3672,7 @@
        ((bundle? v) (bundle-boxed? v))
        ((sensitivity-tagged-value? v) (sensitivity-tagged-value-boxed? v))
        ((reverse-tagged-value? v) (reverse-tagged-value-boxed? v))
-       ((tagged-pair? v) (tagged-pair-boxed? v))
+       ((vlad-pair? v) (vlad-pair-boxed? v))
        ((union? v) (union-boxed? v))
        (else #f)))
 
@@ -3319,7 +3683,7 @@
 	((bundle? v) set-bundle-boxed?!)
 	((sensitivity-tagged-value? v) set-sensitivity-tagged-value-boxed?!)
 	((reverse-tagged-value? v) set-reverse-tagged-value-boxed?!)
-	((tagged-pair? v) set-tagged-pair-boxed?!)
+	((vlad-pair? v) set-vlad-pair-boxed?!)
 	((union? v) set-union-boxed?!)
 	(else (internal-error)))
   v
@@ -3332,7 +3696,7 @@
 	((bundle? v) bundle-alias)
 	((sensitivity-tagged-value? v) sensitivity-tagged-value-alias)
 	((reverse-tagged-value? v) reverse-tagged-value-alias)
-	((tagged-pair? v) tagged-pair-alias)
+	((vlad-pair? v) vlad-pair-alias)
 	((union? v) union-alias)
 	(else (internal-error)))
   v))
@@ -3344,23 +3708,22 @@
 	((bundle? v) set-bundle-alias!)
 	((sensitivity-tagged-value? v) set-sensitivity-tagged-value-alias!)
 	((reverse-tagged-value? v) set-reverse-tagged-value-alias!)
-	((tagged-pair? v) set-tagged-pair-alias!)
+	((vlad-pair? v) set-vlad-pair-alias!)
 	((union? v) set-union-alias!)
 	(else (internal-error)))
   v
   a))
 
 (define (new-aliases v)
- ((cond
-   ((nonrecursive-closure? v) nonrecursive-closure-new-aliases)
-   ((recursive-closure? v) recursive-closure-new-aliases)
-   ((perturbation-tagged-value? v) perturbation-tagged-value-new-aliases)
-   ((bundle? v) bundle-new-aliases)
-   ((sensitivity-tagged-value? v) sensitivity-tagged-value-new-aliases)
-   ((reverse-tagged-value? v) reverse-tagged-value-new-aliases)
-   ((tagged-pair? v) tagged-pair-new-aliases)
-   ((union? v) union-new-aliases)
-   (else (internal-error)))
+ ((cond ((nonrecursive-closure? v) nonrecursive-closure-new-aliases)
+	((recursive-closure? v) recursive-closure-new-aliases)
+	((perturbation-tagged-value? v) perturbation-tagged-value-new-aliases)
+	((bundle? v) bundle-new-aliases)
+	((sensitivity-tagged-value? v) sensitivity-tagged-value-new-aliases)
+	((reverse-tagged-value? v) reverse-tagged-value-new-aliases)
+	((vlad-pair? v) vlad-pair-new-aliases)
+	((union? v) union-new-aliases)
+	(else (internal-error)))
   v))
 
 (define (set-new-aliases! v as)
@@ -3371,7 +3734,7 @@
    ((bundle? v) set-bundle-new-aliases!)
    ((sensitivity-tagged-value? v) set-sensitivity-tagged-value-new-aliases!)
    ((reverse-tagged-value? v) set-reverse-tagged-value-new-aliases!)
-   ((tagged-pair? v) set-tagged-pair-new-aliases!)
+   ((vlad-pair? v) set-vlad-pair-new-aliases!)
    ((union? v) set-union-new-aliases!)
    (else (internal-error)))
   v
@@ -3384,7 +3747,7 @@
        ((bundle? v) (bundle-flag? v))
        ((sensitivity-tagged-value? v) (sensitivity-tagged-value-flag? v))
        ((reverse-tagged-value? v) (reverse-tagged-value-flag? v))
-       ((tagged-pair? v) (tagged-pair-flag? v))
+       ((vlad-pair? v) (vlad-pair-flag? v))
        ((union? v) (union-flag? v))
        (else (memp abstract-value=? v *flagged-abstract-values*))))
 
@@ -3396,7 +3759,7 @@
   ((bundle? v) (set-bundle-flag?! v p?))
   ((sensitivity-tagged-value? v) (set-sensitivity-tagged-value-flag?! v p?))
   ((reverse-tagged-value? v) (set-reverse-tagged-value-flag?! v p?))
-  ((tagged-pair? v) (set-tagged-pair-flag?! v p?))
+  ((vlad-pair? v) (set-vlad-pair-flag?! v p?))
   ((union? v) (set-union-flag?! v p?))
   (p? (unless (memp abstract-value=? v *flagged-abstract-values*)
        (set! *flagged-abstract-values* (cons v *flagged-abstract-values*))))
@@ -3512,19 +3875,12 @@
 		 (get-reverse-tagged-value-primal v2)
 		 cs
 		 k))
-	  ((and (tagged-pair? v1)
-		(tagged-pair? v2)
-		(equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	   (loop (get-tagged-pair-car v1)
-		 (get-tagged-pair-car v2)
+	  ((and (vlad-pair? v1) (vlad-pair? v2))
+	   (loop (vlad-car v1)
+		 (vlad-car v2)
 		 cs
 		 (lambda (r? cs)
-		  (if r?
-		      (loop (get-tagged-pair-cdr v1)
-			    (get-tagged-pair-cdr v2)
-			    cs
-			    k)
-		      (k #f cs)))))
+		  (if r? (loop (vlad-cdr v1) (vlad-cdr v2) cs k) (k #f cs)))))
 	  (else (k #f cs)))))))))
 
 (define (deep-abstract-value=? v1 v2)
@@ -3646,23 +4002,17 @@
 		 (get-reverse-tagged-value-primal v2)
 		 cs
 		 k))
-	  ((and (tagged-pair? v1)
-		(tagged-pair? v2)
-		(not (eq? (tagged-pair-car v1) 'unfilled))
-		(not (eq? (tagged-pair-cdr v1) 'unfilled))
-		(not (eq? (tagged-pair-car v2) 'unfilled))
-		(not (eq? (tagged-pair-cdr v2) 'unfilled))
-		(equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	   (loop (get-tagged-pair-car v1)
-		 (get-tagged-pair-car v2)
+	  ((and (vlad-pair? v1)
+		(vlad-pair? v2)
+		(not (eq? (vlad-pair-car v1) 'unfilled))
+		(not (eq? (vlad-pair-cdr v1) 'unfilled))
+		(not (eq? (vlad-pair-car v2) 'unfilled))
+		(not (eq? (vlad-pair-cdr v2) 'unfilled)))
+	   (loop (vlad-car v1)
+		 (vlad-car v2)
 		 cs
 		 (lambda (r? cs)
-		  (if r?
-		      (loop (get-tagged-pair-cdr v1)
-			    (get-tagged-pair-cdr v2)
-			    cs
-			    k)
-		      (k #f cs)))))
+		  (if r? (loop (vlad-cdr v1) (vlad-cdr v2) cs k) (k #f cs)))))
 	  (else (k #f cs)))))))))
 
 (define (filled-deep-abstract-value=? v1 v2)
@@ -3768,19 +4118,12 @@
 		 (get-reverse-tagged-value-primal v2)
 		 cs
 		 k))
-	  ((and (tagged-pair? v1)
-		(tagged-pair? v2)
-		(equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	   (loop (get-tagged-pair-car v1)
-		 (get-tagged-pair-car v2)
+	  ((and (vlad-pair? v1) (vlad-pair? v2))
+	   (loop (vlad-car v1)
+		 (vlad-car v2)
 		 cs
 		 (lambda (r? cs)
-		  (if r?
-		      (loop (get-tagged-pair-cdr v1)
-			    (get-tagged-pair-cdr v2)
-			    cs
-			    k)
-		      (k #f cs)))))
+		  (if r? (loop (vlad-cdr v1) (vlad-cdr v2) cs k) (k #f cs)))))
 	  (else (k #f cs)))))))))
 
 (define (abstract-value-unionable? p? v1 v2)
@@ -3846,25 +4189,21 @@
 		   ;;             processes the result of union-internal. This
 		   ;;             whole mess needs to be cleaned up.
 		   (and (not p?)
-			(tagged-pair? v2)
-			(tagged-empty-list? (tagged-pair-tags v2) v1)
-			(union? (tagged-pair-cdr v2))
-			(= (length (union-members (tagged-pair-cdr v2))) 2)
-			(some (lambda (u2)
-			       (tagged-empty-list? (tagged-pair-tags v2) u2))
-			      (union-members (tagged-pair-cdr v2)))
+			(vlad-pair? v2)
+			(vlad-empty-list? v1)
+			(union? (vlad-cdr v2))
+			(= (length (union-members (vlad-cdr v2))) 2)
+			(some vlad-empty-list? (union-members (vlad-cdr v2)))
 			(some (lambda (u2) (deep-abstract-value=? u2 v2))
-			      (union-members (tagged-pair-cdr v2))))
+			      (union-members (vlad-cdr v2))))
 		   (and (not p?)
-			(tagged-pair? v1)
-			(tagged-empty-list? (tagged-pair-tags v1) v2)
-			(union? (tagged-pair-cdr v1))
-			(= (length (union-members (tagged-pair-cdr v1))) 2)
-			(some (lambda (u1)
-			       (tagged-empty-list? (tagged-pair-tags v1) u1))
-			      (union-members (tagged-pair-cdr v1)))
+			(vlad-pair? v1)
+			(vlad-empty-list? v2)
+			(union? (vlad-cdr v1))
+			(= (length (union-members (vlad-cdr v1))) 2)
+			(some vlad-empty-list? (union-members (vlad-cdr v1)))
 			(some (lambda (u1) (deep-abstract-value=? u1 v1))
-			      (union-members (tagged-pair-cdr v1)))))
+			      (union-members (vlad-cdr v1)))))
 	       (k #t cs))
 	      ((and (nonrecursive-closure? v1)
 		    (nonrecursive-closure? v2)
@@ -3919,20 +4258,14 @@
 		     (get-reverse-tagged-value-primal v2)
 		     cs
 		     k))
-	      ((and (tagged-pair? v1)
-		    (tagged-pair? v2)
-		    (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
+	      ((and (vlad-pair? v1) (vlad-pair? v2))
 	       (loop #f
-		     (get-tagged-pair-car v1)
-		     (get-tagged-pair-car v2)
+		     (vlad-car v1)
+		     (vlad-car v2)
 		     cs
 		     (lambda (r? cs)
 		      (if r?
-			  (loop #f
-				(get-tagged-pair-cdr v1)
-				(get-tagged-pair-cdr v2)
-				cs
-				k)
+			  (loop #f (vlad-cdr v1) (vlad-cdr v2) cs k)
 			  (k #f cs)))))
 	      (else (k #f cs))))))))))
 
@@ -4041,28 +4374,22 @@
 	 ((and (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
 	  (let ((u v1)) (k u (cons (cons (cons v1 v2) u) cs))))
 	 ;; See note in abstract-value-unionable?.
-	 ((and (tagged-pair? v2)
-	       (tagged-empty-list? (tagged-pair-tags v2) v1)
-	       (union? (tagged-pair-cdr v2))
-	       (= (length (union-members (tagged-pair-cdr v2))) 2)
-	       (some (lambda (u2)
-		      (tagged-empty-list? (tagged-pair-tags v2) u2))
-		     (union-members (tagged-pair-cdr v2)))
+	 ((and (vlad-pair? v2)
+	       (vlad-empty-list? v1)
+	       (union? (vlad-cdr v2))
+	       (= (length (union-members (vlad-cdr v2))) 2)
+	       (some vlad-empty-list? (union-members (vlad-cdr v2)))
 	       (some (lambda (u2) (deep-abstract-value=? u2 v2))
-		     (union-members (tagged-pair-cdr v2))))
-	  (let ((u (tagged-pair-cdr v2)))
-	   (k u (cons (cons (cons v1 v2) u) cs))))
-	 ((and (tagged-pair? v1)
-	       (tagged-empty-list? (tagged-pair-tags v1) v2)
-	       (union? (tagged-pair-cdr v1))
-	       (= (length (union-members (tagged-pair-cdr v1))) 2)
-	       (some (lambda (u1)
-		      (tagged-empty-list? (tagged-pair-tags v1) u1))
-		     (union-members (tagged-pair-cdr v1)))
+		     (union-members (vlad-cdr v2))))
+	  (let ((u (vlad-cdr v2))) (k u (cons (cons (cons v1 v2) u) cs))))
+	 ((and (vlad-pair? v1)
+	       (vlad-empty-list? v2)
+	       (union? (vlad-cdr v1))
+	       (= (length (union-members (vlad-cdr v1))) 2)
+	       (some vlad-empty-list? (union-members (vlad-cdr v1)))
 	       (some (lambda (u1) (deep-abstract-value=? u1 v1))
-		     (union-members (tagged-pair-cdr v1))))
-	  (let ((u (tagged-pair-cdr v1)))
-	   (k u (cons (cons (cons v1 v2) u) cs))))
+		     (union-members (vlad-cdr v1))))
+	  (let ((u (vlad-cdr v1))) (k u (cons (cons (cons v1 v2) u) cs))))
 	 ((and (nonrecursive-closure? v1)
 	       (nonrecursive-closure? v2)
 	       ;; This used to use a nondereferencing closure match.
@@ -4138,20 +4465,17 @@
 		 (lambda (v cs)
 		  (fill-reverse-tagged-value-primal! u v)
 		  (k u cs)))))
-	 ((and (tagged-pair? v1)
-	       (tagged-pair? v2)
-	       (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	  (let ((u (allocate-tagged-pair
-		    (tagged-pair-tags v1) 'unfilled 'unfilled)))
-	   (loop (get-tagged-pair-car v1)
-		 (get-tagged-pair-car v2)
+	 ((and (vlad-pair? v1) (vlad-pair? v2))
+	  (let ((u (allocate-vlad-pair 'unfilled 'unfilled)))
+	   (loop (vlad-car v1)
+		 (vlad-car v2)
 		 (cons (cons (cons v1 v2) u) cs)
 		 (lambda (v-car cs)
-		  (loop (get-tagged-pair-cdr v1)
-			(get-tagged-pair-cdr v2)
+		  (loop (vlad-cdr v1)
+			(vlad-cdr v2)
 			cs
 			(lambda (v-cdr cs)
-			 (fill-tagged-pair! u v-car v-cdr)
+			 (fill-vlad-pair! u v-car v-cdr)
 			 (k u cs)))))))
 	 ;; needs work: See note above.
 	 (else (compile-time-error "Program is not almost union free: ~s ~s"
@@ -4218,7 +4542,7 @@
 	       ;; This used to add (cons v (first us)) to the cs cache but
 	       ;; that caused a nested union bug in t22 without
 	       ;; -imprecise-inexact when doing -all-limits 1
-	       ;; -tagged-pair-depth-limit 3. I now believe that the
+	       ;; -pair-depth-limit 3. I now believe that the
 	       ;; following is correct.
 	       ((null? (rest us)) (loop (first us) cs k))
 	       (else (let ((v-prime (allocate-union 'unfilled)))
@@ -4399,43 +4723,25 @@
 	       (lambda (v-prime cs)
 		(fill-reverse-tagged-value-primal! u-prime v-prime)
 		(k u-prime cs)))))))
-     ((tagged-pair? v)
-      (cond
-       ((tagged-pair-canonize-cache v) (k (tagged-pair-canonize-cache v) cs))
-       ((deep-empty-abstract-value? v)
-	(let ((u-prime (empty-abstract-value)))
-	 (k u-prime (cons (cons v u-prime) cs))))
-       (else
-	(let ((u-prime (allocate-tagged-pair
-			(tagged-pair-tags v) 'unfilled 'unfilled)))
-	 (assert
-	  (and
-	   (or (eq? *mode* 'abstract)
-	       (and (prefix-tags? (tagged-pair-tags u-prime)
-				  (value-tags (get-tagged-pair-car v)))
-		    (prefix-tags? (tagged-pair-tags u-prime)
-				  (value-tags (get-tagged-pair-cdr v)))))
-	   (not (empty-abstract-value? (get-tagged-pair-car v)))
-	   (not (empty-abstract-value? (get-tagged-pair-cdr v)))
-	   (or
-	    (eq? *mode* 'concrete)
-	    (and
-	     (some-value-tags
-	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
-	      (get-tagged-pair-car v))
-	     (some-value-tags
-	      (lambda (tags) (prefix-tags? (tagged-pair-tags u-prime) tags))
-	      (get-tagged-pair-cdr v))))))
-	 (set-tagged-pair-canonize-cache! v u-prime)
-	 (set-tagged-pair-canonize-cache! u-prime u-prime)
-	 (loop (get-tagged-pair-car v)
-	       (cons (cons v u-prime) cs)
-	       (lambda (v-car-prime cs)
-		(loop (get-tagged-pair-cdr v)
-		      cs
-		      (lambda (v-cdr-prime cs)
-		       (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
-		       (k u-prime cs)))))))))
+     ((vlad-pair? v)
+      (cond ((vlad-pair-canonize-cache v) (k (vlad-pair-canonize-cache v) cs))
+	    ((deep-empty-abstract-value? v)
+	     (let ((u-prime (empty-abstract-value)))
+	      (k u-prime (cons (cons v u-prime) cs))))
+	    (else
+	     (let ((u-prime (allocate-vlad-pair 'unfilled 'unfilled)))
+	      (assert (and (not (empty-abstract-value? (vlad-car v)))
+			   (not (empty-abstract-value? (vlad-cdr v)))))
+	      (set-vlad-pair-canonize-cache! v u-prime)
+	      (set-vlad-pair-canonize-cache! u-prime u-prime)
+	      (loop (vlad-car v)
+		    (cons (cons v u-prime) cs)
+		    (lambda (v-car-prime cs)
+		     (loop (vlad-cdr v)
+			   cs
+			   (lambda (v-cdr-prime cs)
+			    (fill-vlad-pair! u-prime v-car-prime v-cdr-prime)
+			    (k u-prime cs)))))))))
      (else (internal-error)))))))
 
 (define (intern-abstract-value v)
@@ -4669,47 +4975,30 @@
 			    (cons u-prime *reverse-tagged-values*))
 		      (fill-reverse-tagged-value-primal! u-prime v-prime)
 		      (k u-prime cs))))))))
-    ((tagged-pair? v)
-     (if (tagged-pair-intern-cache v)
-	 (k (tagged-pair-intern-cache v) cs)
+    ((vlad-pair? v)
+     (if (vlad-pair-intern-cache v)
+	 (k (vlad-pair-intern-cache v) cs)
 	 (let ((u-prime (find-if (lambda (u-prime)
 				  (filled-deep-abstract-value=? u-prime v))
-				 *tagged-pairs*)))
+				 *vlad-pairs*)))
 	  (if u-prime
 	      (k u-prime (cons (cons v u-prime) cs))
-	      (let ((u-prime (allocate-tagged-pair
-			      (tagged-pair-tags v) 'unfilled 'unfilled)))
-	       (assert
-		(and
-		 (or (eq? *mode* 'abstract)
-		     (and (prefix-tags? (tagged-pair-tags u-prime)
-					(value-tags (get-tagged-pair-car v)))
-			  (prefix-tags? (tagged-pair-tags u-prime)
-					(value-tags (get-tagged-pair-cdr v)))))
-		 (not (empty-abstract-value? (get-tagged-pair-car v)))
-		 (not (empty-abstract-value? (get-tagged-pair-cdr v)))
-		 (or (eq? *mode* 'concrete)
-		     (and (some-value-tags
-			   (lambda (tags)
-			    (prefix-tags? (tagged-pair-tags u-prime) tags))
-			   (get-tagged-pair-car v))
-			  (some-value-tags
-			   (lambda (tags)
-			    (prefix-tags? (tagged-pair-tags u-prime) tags))
-			   (get-tagged-pair-cdr v))))
-		 (not *frozen?*)))
-	       (set-tagged-pair-canonize-cache! u-prime u-prime)
-	       (set-tagged-pair-intern-cache! v u-prime)
-	       (set-tagged-pair-intern-cache! u-prime u-prime)
+	      (let ((u-prime (allocate-vlad-pair 'unfilled 'unfilled)))
+	       (assert (and (not (empty-abstract-value? (vlad-car v)))
+			    (not (empty-abstract-value? (vlad-cdr v)))
+			    (not *frozen?*)))
+	       (set-vlad-pair-canonize-cache! u-prime u-prime)
+	       (set-vlad-pair-intern-cache! v u-prime)
+	       (set-vlad-pair-intern-cache! u-prime u-prime)
 	       (loop
-		(get-tagged-pair-car v)
+		(vlad-car v)
 		(cons (cons v u-prime) cs)
 		(lambda (v-car-prime cs)
-		 (loop (get-tagged-pair-cdr v)
+		 (loop (vlad-cdr v)
 		       cs
 		       (lambda (v-cdr-prime cs)
-			(set! *tagged-pairs* (cons u-prime *tagged-pairs*))
-			(fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+			(set! *vlad-pairs* (cons u-prime *vlad-pairs*))
+			(fill-vlad-pair! u-prime v-car-prime v-cdr-prime)
 			(k u-prime cs))))))))))
     (else (internal-error))))))
 
@@ -5647,7 +5936,8 @@
     ((vlad-empty-list? v) (k v))
     ((vlad-true? v) (k v))
     ((vlad-false? v) (k v))
-    ((vlad-real? v) (k 0))
+    ;; debugging
+    ((vlad-real? v) (if #t (k 0) (k (abstract-real))))
     ((primitive-procedure? v) (k v))
     ((nonrecursive-closure? v)
      (if (nonrecursive-closure-zero-cache v)
@@ -5720,18 +6010,17 @@
 		(lambda (v0)
 		 (fill-reverse-tagged-value-primal! u0 v0)
 		 (k u0))))))
-    ((tagged-pair? v)
-     (if (tagged-pair-zero-cache v)
-	 (k (tagged-pair-zero-cache v))
-	 (let ((u0 (allocate-tagged-pair
-		    (tagged-pair-tags v) 'unfilled 'unfilled)))
-	  (set-tagged-pair-zero-cache! v u0)
-	  (set-tagged-pair-zero-cache! u0 u0)
-	  (loop (get-tagged-pair-car v)
+    ((vlad-pair? v)
+     (if (vlad-pair-zero-cache v)
+	 (k (vlad-pair-zero-cache v))
+	 (let ((u0 (allocate-vlad-pair 'unfilled 'unfilled)))
+	  (set-vlad-pair-zero-cache! v u0)
+	  (set-vlad-pair-zero-cache! u0 u0)
+	  (loop (vlad-car v)
 		(lambda (v0-car)
-		 (loop (get-tagged-pair-cdr v)
+		 (loop (vlad-cdr v)
 		       (lambda (v0-cdr)
-			(fill-tagged-pair! u0 v0-car v0-cdr)
+			(fill-vlad-pair! u0 v0-car v0-cdr)
 			(k u0))))))))
     (else (internal-error))))))
 
@@ -5823,33 +6112,34 @@
   (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
     ((union? v)
-     (if (union-perturb-cache v)
-	 (k (union-perturb-cache v))
+     (if (perturb-cache v)
+	 (k (perturb-cache v))
 	 ;; widening case H2
 	 (let ((v-perturbation (allocate-union 'unfilled)))
-	  (set-union-unperturb-cache! v-perturbation v)
-	  (set-union-perturb-cache! v v-perturbation)
+	  (set-unperturb-cache! v-perturbation v)
+	  (set-perturb-cache! v v-perturbation)
 	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
 			   (k v-perturbation))))))
-    ((vlad-empty-list? v) (k (new-perturbation-tagged-value v)))
-    ((vlad-true? v) (k (new-perturbation-tagged-value v)))
-    ((vlad-false? v) (k (new-perturbation-tagged-value v)))
-    ((vlad-real? v) (k (new-perturbation-tagged-value v)))
-    ((primitive-procedure? v) (k (new-perturbation-tagged-value v)))
+    ((or (vlad-empty-list? v)
+	 (vlad-true? v)
+	 (vlad-false? v)
+	 (vlad-real? v)
+	 (primitive-procedure? v))
+     (k (new-perturbation-tagged-value v)))
     ((nonrecursive-closure? v)
-     (if (nonrecursive-closure-perturb-cache v)
-	 (k (nonrecursive-closure-perturb-cache v))
+     (if (perturb-cache v)
+	 (k (perturb-cache v))
 	 ;; See the note in abstract-environment=?.
 	 (let ((u-perturbation
 		(allocate-nonrecursive-closure
 		 'unfilled
 		 (perturbation-transform
 		  (nonrecursive-closure-lambda-expression v)))))
-	  (set-nonrecursive-closure-unperturb-cache! u-perturbation v)
-	  (set-nonrecursive-closure-perturb-cache! v u-perturbation)
+	  (set-unperturb-cache! u-perturbation v)
+	  (set-perturb-cache! v u-perturbation)
 	  (map-cps-non-cs
 	   loop
 	   (get-nonrecursive-closure-values v)
@@ -5857,8 +6147,8 @@
 	    (fill-nonrecursive-closure-values! u-perturbation vs-perturbation)
 	    (k u-perturbation))))))
     ((recursive-closure? v)
-     (if (recursive-closure-perturb-cache v)
-	 (k (recursive-closure-perturb-cache v))
+     (if (perturb-cache v)
+	 (k (perturb-cache v))
 	 ;; See the note in abstract-environment=?.
 	 (let ((u-perturbation
 		(allocate-recursive-closure
@@ -5868,54 +6158,24 @@
 		 (map-vector perturbation-transform
 			     (recursive-closure-lambda-expressions v))
 		 (recursive-closure-index v))))
-	  (set-recursive-closure-unperturb-cache! u-perturbation v)
-	  (set-recursive-closure-perturb-cache! v u-perturbation)
+	  (set-unperturb-cache! u-perturbation v)
+	  (set-perturb-cache! v u-perturbation)
 	  (map-cps-non-cs
 	   loop
 	   (get-recursive-closure-values v)
 	   (lambda (vs-perturbation)
 	    (fill-recursive-closure-values! u-perturbation vs-perturbation)
 	    (k u-perturbation))))))
-    ((perturbation-tagged-value? v)
-     (if (perturbation-tagged-value-perturb-cache v)
-	 (k (perturbation-tagged-value-perturb-cache v))
+    ((or (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v)
+	 (vlad-pair? v))
+     (if (perturb-cache v)
+	 (k (perturb-cache v))
 	 (let ((u-perturbation (create-perturbation-tagged-value v)))
-	  (set-perturbation-tagged-value-perturb-cache! v u-perturbation)
+	  (set-perturb-cache! v u-perturbation)
 	  (k u-perturbation))))
-    ((bundle? v)
-     (if (bundle-perturb-cache v)
-	 (k (bundle-perturb-cache v))
-	 (let ((u-perturbation (create-perturbation-tagged-value v)))
-	  (set-bundle-perturb-cache! v u-perturbation)
-	  (k u-perturbation))))
-    ((sensitivity-tagged-value? v)
-     (if (sensitivity-tagged-value-perturb-cache v)
-	 (k (sensitivity-tagged-value-perturb-cache v))
-	 (let ((u-perturbation (create-perturbation-tagged-value v)))
-	  (set-sensitivity-tagged-value-perturb-cache! v u-perturbation)
-	  (k u-perturbation))))
-    ((reverse-tagged-value? v)
-     (if (reverse-tagged-value-perturb-cache v)
-	 (k (reverse-tagged-value-perturb-cache v))
-	 (let ((u-perturbation (create-perturbation-tagged-value v)))
-	  (set-reverse-tagged-value-perturb-cache! v u-perturbation)
-	  (k u-perturbation))))
-    ((tagged-pair? v)
-     (if (tagged-pair-perturb-cache v)
-	 (k (tagged-pair-perturb-cache v))
-	 (let ((u-perturbation (allocate-tagged-pair
-				(add-tag 'perturbation (tagged-pair-tags v))
-				'unfilled
-				'unfilled)))
-	  (set-tagged-pair-unperturb-cache! u-perturbation v)
-	  (set-tagged-pair-perturb-cache! v u-perturbation)
-	  (loop (get-tagged-pair-car v)
-		(lambda (v-car-perturbation)
-		 (loop (get-tagged-pair-cdr v)
-		       (lambda (v-cdr-perturbation)
-			(fill-tagged-pair!
-			 u-perturbation v-car-perturbation v-cdr-perturbation)
-			(k u-perturbation))))))))
     (else (internal-error))))))
 
 (define (unperturb v-perturbation)
@@ -5930,44 +6190,39 @@
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
     ((union? v-perturbation)
-     (if (union-unperturb-cache v-perturbation)
-	 (k (union-unperturb-cache v-perturbation))
+     (if (unperturb-cache v-perturbation)
+	 (k (unperturb-cache v-perturbation))
 	 ;; widening case H3
 	 (let ((v (allocate-union 'unfilled)))
-	  (set-union-perturb-cache! v v-perturbation)
-	  (set-union-unperturb-cache! v-perturbation v)
+	  (set-perturb-cache! v v-perturbation)
+	  (set-unperturb-cache! v-perturbation v)
 	  (map-cps-non-cs loop
 			  (union-members v-perturbation)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
-    ((vlad-empty-list? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((vlad-true? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((vlad-false? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((vlad-real? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((primitive-procedure? v-perturbation)
+    ((or (vlad-empty-list? v-perturbation)
+	 (vlad-true? v-perturbation)
+	 (vlad-false? v-perturbation)
+	 (vlad-real? v-perturbation)
+	 (primitive-procedure? v-perturbation)
+	 (bundle? v-perturbation)
+	 (sensitivity-tagged-value? v-perturbation)
+	 (reverse-tagged-value? v-perturbation)
+	 (vlad-pair? v-perturbation))
      (k (ad-error "Argument to unperturb ~a a perturbation value"
 		  v-perturbation)))
     ((nonrecursive-closure? v-perturbation)
      (cond
-      ((nonrecursive-closure-unperturb-cache v-perturbation)
-       (k (nonrecursive-closure-unperturb-cache v-perturbation)))
+      ((unperturb-cache v-perturbation) (k (unperturb-cache v-perturbation)))
       ((tagged? 'perturbation (nonrecursive-closure-tags v-perturbation))
        ;; See the note in abstract-environment=?.
        (let ((u (allocate-nonrecursive-closure
 		 'unfilled
 		 (perturbation-transform-inverse
 		  (nonrecursive-closure-lambda-expression v-perturbation)))))
-	(set-nonrecursive-closure-perturb-cache! u v-perturbation)
-	(set-nonrecursive-closure-unperturb-cache! v-perturbation u)
+	(set-perturb-cache! u v-perturbation)
+	(set-unperturb-cache! v-perturbation u)
 	(map-cps-non-cs loop
 			(get-nonrecursive-closure-values v-perturbation)
 			(lambda (vs)
@@ -5976,58 +6231,30 @@
       (else (k (ad-error "Argument to unperturb ~a a perturbation value"
 			 v-perturbation)))))
     ((recursive-closure? v-perturbation)
-     (cond ((recursive-closure-unperturb-cache v-perturbation)
-	    (k (recursive-closure-unperturb-cache v-perturbation)))
-	   ((tagged? 'perturbation (recursive-closure-tags v-perturbation))
-	    ;; See the note in abstract-environment=?.
-	    (let ((u (allocate-recursive-closure
-		      'unfilled
-		      (map-vector
-		       unperturbationify
-		       (recursive-closure-procedure-variables v-perturbation))
-		      (map-vector
-		       perturbation-transform-inverse
-		       (recursive-closure-lambda-expressions v-perturbation))
-		      (recursive-closure-index v-perturbation))))
-	     (set-recursive-closure-perturb-cache! u v-perturbation)
-	     (set-recursive-closure-unperturb-cache! v-perturbation u)
-	     (map-cps-non-cs loop
-			     (get-recursive-closure-values v-perturbation)
-			     (lambda (vs)
-			      (fill-recursive-closure-values! u vs)
-			      (k u)))))
-	   (else (k (ad-error "Argument to unperturb ~a a perturbation value"
-			      v-perturbation)))))
-    ((perturbation-tagged-value? v-perturbation)
-     (k (get-perturbation-tagged-value-primal v-perturbation)))
-    ((bundle? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((sensitivity-tagged-value? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((reverse-tagged-value? v-perturbation)
-     (k (ad-error "Argument to unperturb ~a a perturbation value"
-		  v-perturbation)))
-    ((tagged-pair? v-perturbation)
      (cond
-      ((tagged-pair-unperturb-cache v-perturbation)
-       (k (tagged-pair-unperturb-cache v-perturbation)))
-      ((tagged? 'perturbation (tagged-pair-tags v-perturbation))
-       (let ((u (allocate-tagged-pair
-		 (remove-tag 'perturbation (tagged-pair-tags v-perturbation))
+      ((unperturb-cache v-perturbation) (k (unperturb-cache v-perturbation)))
+      ((tagged? 'perturbation (recursive-closure-tags v-perturbation))
+       ;; See the note in abstract-environment=?.
+       (let ((u (allocate-recursive-closure
 		 'unfilled
-		 'unfilled)))
-	(set-tagged-pair-perturb-cache! u v-perturbation)
-	(set-tagged-pair-unperturb-cache! v-perturbation u)
-	(loop (get-tagged-pair-car v-perturbation)
-	      (lambda (v-car)
-	       (loop (get-tagged-pair-cdr v-perturbation)
-		     (lambda (v-cdr)
-		      (fill-tagged-pair! u v-car v-cdr)
-		      (k u)))))))
+		 (map-vector
+		  unperturbationify
+		  (recursive-closure-procedure-variables v-perturbation))
+		 (map-vector
+		  perturbation-transform-inverse
+		  (recursive-closure-lambda-expressions v-perturbation))
+		 (recursive-closure-index v-perturbation))))
+	(set-perturb-cache! u v-perturbation)
+	(set-unperturb-cache! v-perturbation u)
+	(map-cps-non-cs loop
+			(get-recursive-closure-values v-perturbation)
+			(lambda (vs)
+			 (fill-recursive-closure-values! u vs)
+			 (k u)))))
       (else (k (ad-error "Argument to unperturb ~a a perturbation value"
 			 v-perturbation)))))
+    ((perturbation-tagged-value? v-perturbation)
+     (k (get-perturbation-tagged-value-primal v-perturbation)))
     (else (internal-error))))))
 
 (define (primal v-forward)
@@ -6042,29 +6269,29 @@
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
     ((union? v-forward)
-     (if (union-primal-cache v-forward)
-	 (k (union-primal-cache v-forward))
+     (if (primal-cache v-forward)
+	 (k (primal-cache v-forward))
 	 ;; widening case H4
 	 (let ((v (allocate-union 'unfilled)))
-	  (set-union-primal-cache! v-forward v)
+	  (set-primal-cache! v-forward v)
 	  (map-cps-non-cs loop
 			  (union-members v-forward)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
-    ((vlad-empty-list? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((vlad-true? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((vlad-false? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((vlad-real? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((primitive-procedure? v-forward)
+    ((or (vlad-empty-list? v-forward)
+	 (vlad-true? v-forward)
+	 (vlad-false? v-forward)
+	 (vlad-real? v-forward)
+	 (primitive-procedure? v-forward)
+	 (perturbation-tagged-value? v-forward)
+	 (sensitivity-tagged-value? v-forward)
+	 (reverse-tagged-value? v-forward)
+	 (vlad-pair? v-forward))
      (k (ad-error "Argument to primal ~a a forward value" v-forward)))
     ((nonrecursive-closure? v-forward)
-     (if (nonrecursive-closure-primal-cache v-forward)
-	 (k (nonrecursive-closure-primal-cache v-forward))
+     (if (primal-cache v-forward)
+	 (k (primal-cache v-forward))
 	 (let ((b (find-if
 		   (lambda (b)
 		    (deep-abstract-value=?
@@ -6073,7 +6300,7 @@
 		   *value-bindings*)))
 	  (cond
 	   (b (let ((u (value-binding-value b)))
-	       (set-nonrecursive-closure-primal-cache! v-forward u)
+	       (set-primal-cache! v-forward u)
 	       (k u)))
 	   ((tagged? 'forward (nonrecursive-closure-tags v-forward))
 	    ;; See the note in abstract-environment=?.
@@ -6081,7 +6308,7 @@
 		      'unfilled
 		      (forward-transform-inverse
 		       (nonrecursive-closure-lambda-expression v-forward)))))
-	     (set-nonrecursive-closure-primal-cache! v-forward u)
+	     (set-primal-cache! v-forward u)
 	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-forward)
 			     (lambda (vs)
@@ -6090,8 +6317,7 @@
 	   (else (k (ad-error "Argument to primal ~a a forward value"
 			      v-forward)))))))
     ((recursive-closure? v-forward)
-     (cond ((recursive-closure-primal-cache v-forward)
-	    (k (recursive-closure-primal-cache v-forward)))
+     (cond ((primal-cache v-forward) (k (primal-cache v-forward)))
 	   ((tagged? 'forward (recursive-closure-tags v-forward))
 	    ;; See the note in abstract-environment=?.
 	    (let ((u (allocate-recursive-closure
@@ -6103,7 +6329,7 @@
 		       forward-transform-inverse
 		       (recursive-closure-lambda-expressions v-forward))
 		      (recursive-closure-index v-forward))))
-	     (set-recursive-closure-primal-cache! v-forward u)
+	     (set-primal-cache! v-forward u)
 	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-forward)
 			     (lambda (vs)
@@ -6111,30 +6337,7 @@
 			      (k u)))))
 	   (else (k (ad-error "Argument to primal ~a a forward value"
 			      v-forward)))))
-    ((perturbation-tagged-value? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
     ((bundle? v-forward) (k (get-bundle-primal v-forward)))
-    ((sensitivity-tagged-value? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((reverse-tagged-value? v-forward)
-     (k (ad-error "Argument to primal ~a a forward value" v-forward)))
-    ((tagged-pair? v-forward)
-     (cond ((tagged-pair-primal-cache v-forward)
-	    (k (tagged-pair-primal-cache v-forward)))
-	   ((tagged? 'forward (tagged-pair-tags v-forward))
-	    (let ((u (allocate-tagged-pair
-		      (remove-tag 'forward (tagged-pair-tags v-forward))
-		      'unfilled
-		      'unfilled)))
-	     (set-tagged-pair-primal-cache! v-forward u)
-	     (loop (get-tagged-pair-car v-forward)
-		   (lambda (v-car)
-		    (loop (get-tagged-pair-cdr v-forward)
-			  (lambda (v-cdr)
-			   (fill-tagged-pair! u v-car v-cdr)
-			   (k u)))))))
-	   (else (k (ad-error "Argument to primal ~a a forward value"
-			      v-forward)))))
     (else (internal-error))))))
 
 (define (tangent v-forward)
@@ -6149,29 +6352,29 @@
 	     (k canonize-and-maybe-intern-abstract-value))
    (cond
     ((union? v-forward)
-     (if (union-tangent-cache v-forward)
-	 (k (union-tangent-cache v-forward))
+     (if (tangent-cache v-forward)
+	 (k (tangent-cache v-forward))
 	 ;; widening case H5
 	 (let ((v-perturbation (allocate-union 'unfilled)))
-	  (set-union-tangent-cache! v-forward v-perturbation)
+	  (set-tangent-cache! v-forward v-perturbation)
 	  (map-cps-non-cs loop
 			  (union-members v-forward)
 			  (lambda (us-perturbation)
 			   (fill-union-values! v-perturbation us-perturbation)
 			   (k v-perturbation))))))
-    ((vlad-empty-list? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((vlad-true? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((vlad-false? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((vlad-real? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((primitive-procedure? v-forward)
+    ((or (vlad-empty-list? v-forward)
+	 (vlad-true? v-forward)
+	 (vlad-false? v-forward)
+	 (vlad-real? v-forward)
+	 (primitive-procedure? v-forward)
+	 (perturbation-tagged-value? v-forward)
+	 (sensitivity-tagged-value? v-forward)
+	 (reverse-tagged-value? v-forward)
+	 (vlad-pair? v-forward))
      (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
     ((nonrecursive-closure? v-forward)
-     (if (nonrecursive-closure-tangent-cache v-forward)
-	 (k (nonrecursive-closure-tangent-cache v-forward))
+     (if (tangent-cache v-forward)
+	 (k (tangent-cache v-forward))
 	 (let ((b (find-if
 		   (lambda (b)
 		    (deep-abstract-value=?
@@ -6180,8 +6383,7 @@
 		   *value-bindings*)))
 	  (cond
 	   (b (let ((u-perturbation (perturb (value-binding-value b))))
-	       (set-nonrecursive-closure-tangent-cache!
-		v-forward u-perturbation)
+	       (set-tangent-cache! v-forward u-perturbation)
 	       (k u-perturbation)))
 	   ((tagged? 'forward (nonrecursive-closure-tags v-forward))
 	    ;; See the note in abstract-environment=?.
@@ -6191,7 +6393,7 @@
 		    (perturbation-transform
 		     (forward-transform-inverse
 		      (nonrecursive-closure-lambda-expression v-forward))))))
-	     (set-nonrecursive-closure-tangent-cache! v-forward u-perturbation)
+	     (set-tangent-cache! v-forward u-perturbation)
 	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-forward)
 			     (lambda (vs-perturbation)
@@ -6201,8 +6403,7 @@
 	   (else (k (ad-error "Argument to tangent ~a a forward value"
 			      v-forward)))))))
     ((recursive-closure? v-forward)
-     (cond ((recursive-closure-tangent-cache v-forward)
-	    (k (recursive-closure-tangent-cache v-forward)))
+     (cond ((tangent-cache v-forward) (k (tangent-cache v-forward)))
 	   ((tagged? 'forward (recursive-closure-tags v-forward))
 	    ;; See the note in abstract-environment=?.
 	    (let ((u-perturbation
@@ -6216,7 +6417,7 @@
 		      (perturbation-transform (forward-transform-inverse e)))
 		     (recursive-closure-lambda-expressions v-forward))
 		    (recursive-closure-index v-forward))))
-	     (set-recursive-closure-tangent-cache! v-forward u-perturbation)
+	     (set-tangent-cache! v-forward u-perturbation)
 	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-forward)
 			     (lambda (vs-perturbation)
@@ -6225,35 +6426,7 @@
 			      (k u-perturbation)))))
 	   (else (k (ad-error "Argument to tangent ~a a forward value"
 			      v-forward)))))
-    ((perturbation-tagged-value? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
     ((bundle? v-forward) (k (get-bundle-tangent v-forward)))
-    ((sensitivity-tagged-value? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((reverse-tagged-value? v-forward)
-     (k (ad-error "Argument to tangent ~a a forward value" v-forward)))
-    ((tagged-pair? v-forward)
-     (cond ((tagged-pair-tangent-cache v-forward)
-	    (k (tagged-pair-tangent-cache v-forward)))
-	   ((tagged? 'forward (tagged-pair-tags v-forward))
-	    (let ((u-perturbation
-		   (allocate-tagged-pair
-		    (add-tag
-		     'perturbation
-		     (remove-tag 'forward (tagged-pair-tags v-forward)))
-		    'unfilled
-		    'unfilled)))
-	     (set-tagged-pair-tangent-cache! v-forward u-perturbation)
-	     (loop (get-tagged-pair-car v-forward)
-		   (lambda (v-car-perturbation)
-		    (loop (get-tagged-pair-cdr v-forward)
-			  (lambda (v-cdr-perturbation)
-			   (fill-tagged-pair! u-perturbation
-					      v-car-perturbation
-					      v-cdr-perturbation)
-			   (k u-perturbation)))))))
-	   (else (k (ad-error "Argument to tangent ~a a forward value"
-			      v-forward)))))
     (else (internal-error))))))
 
 (define (bundle v)
@@ -6283,14 +6456,14 @@
 			   (fill-union-values! v-forward us-forward)
 			   (k v-forward))))))
     ((vlad-pair? v0)
-     (if (tagged-pair-bundle-cache v0)
-	 (k (tagged-pair-bundle-cache v0))
+     (if (vlad-pair-bundle-cache v0)
+	 (k (vlad-pair-bundle-cache v0))
 	 (let ((v (vlad-car v0)) (v-perturbation (vlad-cdr v0)))
 	  (cond
 	   ((union? v)
 	    ;; widening case H7
 	    (let ((v-forward (allocate-union 'unfilled)))
-	     (set-tagged-pair-bundle-cache! v0 v-forward)
+	     (set-vlad-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs
 	      (lambda (u k) (loop (vlad-cons u v-perturbation) k))
 	      (union-members v)
@@ -6300,47 +6473,35 @@
 	   ((union? v-perturbation)
 	    ;; widening case H8
 	    (let ((v-forward (allocate-union 'unfilled)))
-	     (set-tagged-pair-bundle-cache! v0 v-forward)
+	     (set-vlad-pair-bundle-cache! v0 v-forward)
 	     (map-cps-non-cs (lambda (u-perturbation k)
 			      (loop (vlad-cons v u-perturbation) k))
 			     (union-members v-perturbation)
 			     (lambda (us-forward)
 			      (fill-union-values! v-forward us-forward)
 			      (k v-forward)))))
-	   ((and (vlad-empty-list? v) (some-bundlable? v v-perturbation))
+	   ((and (or (vlad-empty-list? v)
+		     (vlad-true? v)
+		     (vlad-false? v)
+		     (vlad-real? v)
+		     (perturbation-tagged-value? v)
+		     (bundle? v)
+		     (sensitivity-tagged-value? v)
+		     (reverse-tagged-value? v)
+		     (vlad-pair? v))
+		 (some-bundlable? v v-perturbation))
 	    (unless (every-bundlable? v v-perturbation)
 	     (ad-warning
 	      "Arguments to bundle might not conform" v v-perturbation))
 	    (let ((u-forward (new-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
+	     (set-vlad-pair-bundle-cache! v0 u-forward)
 	     (k u-forward)))
-	   ((and (vlad-true? v) (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (new-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and (vlad-false? v) (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (new-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and (vlad-real? v) (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (new-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((primitive-procedure? v)
+	   ((and (primitive-procedure? v) (some-bundlable? v v-perturbation))
 	    (unless (every-bundlable? v v-perturbation)
 	     (ad-warning
 	      "Arguments to bundle might not conform" v v-perturbation))
 	    (let ((u-forward (primitive-procedure-forward v)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
+	     (set-vlad-pair-bundle-cache! v0 u-forward)
 	     (k u-forward)))
 	   ((and (nonrecursive-closure? v)
 		 (nonrecursive-closure? v-perturbation)
@@ -6352,9 +6513,9 @@
 			      'unfilled
 			      (forward-transform
 			       (nonrecursive-closure-lambda-expression v)))))
-	     (set-nonrecursive-closure-primal-cache! u-forward v)
-	     (set-nonrecursive-closure-tangent-cache! u-forward v-perturbation)
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
+	     (set-primal-cache! u-forward v)
+	     (set-tangent-cache! u-forward v-perturbation)
+	     (set-vlad-pair-bundle-cache! v0 u-forward)
 	     (map2-cps-non-cs
 	      (lambda (v v-perturbation k)
 	       (loop (vlad-cons v v-perturbation) k))
@@ -6377,9 +6538,9 @@
 		    (map-vector forward-transform
 				(recursive-closure-lambda-expressions v))
 		    (recursive-closure-index v))))
-	     (set-recursive-closure-primal-cache! u-forward v)
-	     (set-recursive-closure-tangent-cache! u-forward v-perturbation)
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
+	     (set-primal-cache! u-forward v)
+	     (set-tangent-cache! u-forward v-perturbation)
+	     (set-vlad-pair-bundle-cache! v0 u-forward)
 	     (map2-cps-non-cs
 	      (lambda (v v-perturbation k)
 	       (loop (vlad-cons v v-perturbation) k))
@@ -6388,59 +6549,6 @@
 	      (lambda (vs-forward)
 	       (fill-recursive-closure-values! u-forward vs-forward)
 	       (k u-forward)))))
-	   ((and (perturbation-tagged-value? v)
-		 (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (create-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and (bundle? v) (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (create-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and (sensitivity-tagged-value? v)
-		 (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (create-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and (reverse-tagged-value? v) (some-bundlable? v v-perturbation))
-	    (unless (every-bundlable? v v-perturbation)
-	     (ad-warning
-	      "Arguments to bundle might not conform" v v-perturbation))
-	    (let ((u-forward (create-bundle v v-perturbation)))
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (k u-forward)))
-	   ((and
-	     (tagged-pair? v)
-	     (tagged-pair? v-perturbation)
-	     (tagged? 'perturbation (tagged-pair-tags v-perturbation))
-	     (equal-tags?
-	      (tagged-pair-tags v)
-	      (remove-tag 'perturbation (tagged-pair-tags v-perturbation))))
-	    (let ((u-forward (allocate-tagged-pair
-			      (add-tag 'forward (tagged-pair-tags v))
-			      'unfilled
-			      'unfilled)))
-	     (set-tagged-pair-primal-cache! u-forward v)
-	     (set-tagged-pair-tangent-cache! u-forward v-perturbation)
-	     (set-tagged-pair-bundle-cache! v0 u-forward)
-	     (loop
-	      (vlad-cons (get-tagged-pair-car v)
-			 (get-tagged-pair-car v-perturbation))
-	      (lambda (v-car-forward)
-	       (loop (vlad-cons (get-tagged-pair-cdr v)
-				(get-tagged-pair-cdr v-perturbation))
-		     (lambda (v-cdr-forward)
-		      (fill-tagged-pair! u-forward v-car-forward v-cdr-forward)
-		      (k u-forward)))))))
 	   (else (case *mode*
 		  ((concrete)
 		   (run-time-error "Arguments to bundle do not conform"
@@ -6451,7 +6559,7 @@
 				     "Arguments to bundle might not conform"
 				     v
 				     v-perturbation)))
-		    (set-tagged-pair-bundle-cache! v0 u-forward)
+		    (set-vlad-pair-bundle-cache! v0 u-forward)
 		    (k u-forward)))
 		  (else (internal-error))))))))
     (else (k (ad-error "Argument to bundle ~a valid" v0)))))))
@@ -6830,11 +6938,12 @@
 			  (lambda (us-sensitivity)
 			   (fill-union-values! v-sensitivity us-sensitivity)
 			   (k v-sensitivity))))))
-    ((vlad-empty-list? v) (k (new-sensitivity-tagged-value v)))
-    ((vlad-true? v) (k (new-sensitivity-tagged-value v)))
-    ((vlad-false? v) (k (new-sensitivity-tagged-value v)))
-    ((vlad-real? v) (k (new-sensitivity-tagged-value v)))
-    ((primitive-procedure? v) (k (new-sensitivity-tagged-value v)))
+    ((or (vlad-empty-list? v)
+	 (vlad-true? v)
+	 (vlad-false? v)
+	 (vlad-real? v)
+	 (primitive-procedure? v))
+     (k (new-sensitivity-tagged-value v)))
     ((nonrecursive-closure? v)
      (if (nonrecursive-closure-sensitize-cache v)
 	 (k (nonrecursive-closure-sensitize-cache v))
@@ -6871,46 +6980,16 @@
 	   (lambda (vs-sensitivity)
 	    (fill-recursive-closure-values! u-sensitivity vs-sensitivity)
 	    (k u-sensitivity))))))
-    ((perturbation-tagged-value? v)
-     (if (perturbation-tagged-value-sensitize-cache v)
-	 (k (perturbation-tagged-value-sensitize-cache v))
+    ((or (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v)
+	 (vlad-pair? v))
+     (if (sensitize-cache v)
+	 (k (sensitize-cache v))
 	 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	  (set-perturbation-tagged-value-sensitize-cache! v u-sensitivity)
+	  (set-sensitize-cache! v u-sensitivity)
 	  (k u-sensitivity))))
-    ((bundle? v)
-     (if (bundle-sensitize-cache v)
-	 (k (bundle-sensitize-cache v))
-	 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	  (set-bundle-sensitize-cache! v u-sensitivity)
-	  (k u-sensitivity))))
-    ((sensitivity-tagged-value? v)
-     (if (sensitivity-tagged-value-sensitize-cache v)
-	 (k (sensitivity-tagged-value-sensitize-cache v))
-	 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	  (set-sensitivity-tagged-value-sensitize-cache! v u-sensitivity)
-	  (k u-sensitivity))))
-    ((reverse-tagged-value? v)
-     (if (reverse-tagged-value-sensitize-cache v)
-	 (k (reverse-tagged-value-sensitize-cache v))
-	 (let ((u-sensitivity (create-sensitivity-tagged-value v)))
-	  (set-reverse-tagged-value-sensitize-cache! v u-sensitivity)
-	  (k u-sensitivity))))
-    ((tagged-pair? v)
-     (if (tagged-pair-sensitize-cache v)
-	 (k (tagged-pair-sensitize-cache v))
-	 (let ((u-sensitivity (allocate-tagged-pair
-			       (add-tag 'sensitivity (tagged-pair-tags v))
-			       'unfilled
-			       'unfilled)))
-	  (set-tagged-pair-unsensitize-cache! u-sensitivity v)
-	  (set-tagged-pair-sensitize-cache! v u-sensitivity)
-	  (loop (get-tagged-pair-car v)
-		(lambda (v-car-sensitivity)
-		 (loop (get-tagged-pair-cdr v)
-		       (lambda (v-cdr-sensitivity)
-			(fill-tagged-pair!
-			 u-sensitivity v-car-sensitivity v-cdr-sensitivity)
-			(k u-sensitivity))))))))
     (else (internal-error))))))
 
 (define (unsensitize? v-sensitivity)
@@ -6930,11 +7009,16 @@
 	  (k #t cs)
 	  (every-cps
 	   loop (union-members v-sensitivity) (cons v-sensitivity cs) k)))
-     ((vlad-empty-list? v-sensitivity) (k #f cs))
-     ((vlad-true? v-sensitivity) (k #f cs))
-     ((vlad-false? v-sensitivity) (k #f cs))
-     ((vlad-real? v-sensitivity) (k #f cs))
-     ((primitive-procedure? v-sensitivity) (k #f cs))
+     ((or (vlad-empty-list? v-sensitivity)
+	  (vlad-true? v-sensitivity)
+	  (vlad-false? v-sensitivity)
+	  (vlad-real? v-sensitivity)
+	  (primitive-procedure? v-sensitivity)
+	  (perturbation-tagged-value? v-sensitivity)
+	  (bundle? v-sensitivity)
+	  (reverse-tagged-value? v-sensitivity)
+	  (vlad-pair? v-sensitivity))
+      (k #f cs))
      ((nonrecursive-closure? v-sensitivity)
       (cond
        ((nonrecursive-closure-unsensitize-cache v-sensitivity) (k #t cs))
@@ -6962,20 +7046,7 @@
 		   (cons v-sensitivity cs)
 		   k))
        (else (k #f cs))))
-     ((perturbation-tagged-value? v-sensitivity) (k #f cs))
-     ((bundle? v-sensitivity) (k #f cs))
      ((sensitivity-tagged-value? v-sensitivity) (k #t (cons v-sensitivity cs)))
-     ((reverse-tagged-value? v-sensitivity) (k #f cs))
-     ((tagged-pair? v-sensitivity)
-      (cond ((tagged-pair-unsensitize-cache v-sensitivity) (k #t cs))
-	    ((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-	     (loop (get-tagged-pair-car v-sensitivity)
-		   (cons v-sensitivity cs)
-		   (lambda (r? cs)
-		    (if r?
-			(loop (get-tagged-pair-cdr v-sensitivity) cs k)
-			(k #f cs)))))
-	    (else (k #f cs))))
      (else (internal-error)))))))
 
 (define (unsensitize v-sensitivity)
@@ -7001,19 +7072,15 @@
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
-    ((vlad-empty-list? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((vlad-true? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((vlad-false? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((vlad-real? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((primitive-procedure? v-sensitivity)
+    ((or (vlad-empty-list? v-sensitivity)
+	 (vlad-true? v-sensitivity)
+	 (vlad-false? v-sensitivity)
+	 (vlad-real? v-sensitivity)
+	 (primitive-procedure? v-sensitivity)
+	 (perturbation-tagged-value? v-sensitivity)
+	 (bundle? v-sensitivity)
+	 (reverse-tagged-value? v-sensitivity)
+	 (vlad-pair? v-sensitivity))
      (k (ad-error "Argument to unsensitize ~a a sensitivity value"
 		  v-sensitivity)))
     ((nonrecursive-closure? v-sensitivity)
@@ -7066,57 +7133,32 @@
 			 (k u)))))
       (else (k (ad-error "Argument to unsensitize ~a a sensitivity value"
 			 v-sensitivity)))))
-    ((perturbation-tagged-value? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((bundle? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
     ((sensitivity-tagged-value? v-sensitivity)
      (k (get-sensitivity-tagged-value-primal v-sensitivity)))
-    ((reverse-tagged-value? v-sensitivity)
-     (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-		  v-sensitivity)))
-    ((tagged-pair? v-sensitivity)
-     (cond
-      ((tagged-pair-unsensitize-cache v-sensitivity)
-       (k (tagged-pair-unsensitize-cache v-sensitivity)))
-      ((tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-       (let ((u (allocate-tagged-pair
-		 (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
-		 'unfilled
-		 'unfilled)))
-	(set-tagged-pair-sensitize-cache! u v-sensitivity)
-	(set-tagged-pair-unsensitize-cache! v-sensitivity u)
-	(loop (get-tagged-pair-car v-sensitivity)
-	      (lambda (v-car)
-	       (loop (get-tagged-pair-cdr v-sensitivity)
-		     (lambda (v-cdr)
-		      (fill-tagged-pair! u v-car v-cdr)
-		      (k u)))))))
-      (else (k (ad-error "Argument to unsensitize ~a a sensitivity value"
-			 v-sensitivity)))))
     (else (internal-error))))))
 
 (define (is-zero? v)
  ;; A false return value doesn't mean that v is nonzero, it just means that it
  ;; wasn't produced by the zero procedure. It might just happen to be a zero.
- (or
-  (and (union? v) (eq? (union-zero-cache v) v))
-  (vlad-empty-list? v)
-  (vlad-true? v)
-  (vlad-false? v)
-  (and (real? v) (zero? v))
-  (primitive-procedure? v)
-  (and (nonrecursive-closure? v) (eq? (nonrecursive-closure-zero-cache v) v))
-  (and (recursive-closure? v) (eq? (recursive-closure-zero-cache v) v))
-  (and (perturbation-tagged-value? v)
-       (eq? (perturbation-tagged-value-zero-cache v) v))
-  (and (bundle? v) (eq? (bundle-zero-cache v) v))
-  (and (sensitivity-tagged-value? v)
-       (eq? (sensitivity-tagged-value-zero-cache v) v))
-  (and (reverse-tagged-value? v) (eq? (reverse-tagged-value-zero-cache v) v))
-  (and (tagged-pair? v) (eq? (tagged-pair-zero-cache v) v))))
+ (and
+  ;; debugging
+  #f
+  (or
+   (and (union? v) (eq? (union-zero-cache v) v))
+   (vlad-empty-list? v)
+   (vlad-true? v)
+   (vlad-false? v)
+   (and (real? v) (zero? v))
+   (primitive-procedure? v)
+   (and (nonrecursive-closure? v) (eq? (nonrecursive-closure-zero-cache v) v))
+   (and (recursive-closure? v) (eq? (recursive-closure-zero-cache v) v))
+   (and (perturbation-tagged-value? v)
+	(eq? (perturbation-tagged-value-zero-cache v) v))
+   (and (bundle? v) (eq? (bundle-zero-cache v) v))
+   (and (sensitivity-tagged-value? v)
+	(eq? (sensitivity-tagged-value-zero-cache v) v))
+   (and (reverse-tagged-value? v) (eq? (reverse-tagged-value-zero-cache v) v))
+   (and (vlad-pair? v) (eq? (vlad-pair-zero-cache v) v)))))
 
 (define (plus v)
  ;; This is written in CPS so as not to break structure sharing.
@@ -7141,21 +7183,21 @@
 			   (fill-union-values! v us)
 			   (k v))))))
     ((vlad-pair? v0)
-     (if (tagged-pair-plus-cache v0)
-	 (k (tagged-pair-plus-cache v0))
+     (if (vlad-pair-plus-cache v0)
+	 (k (vlad-pair-plus-cache v0))
 	 (let ((v1 (vlad-car v0)) (v2 (vlad-cdr v0)))
 	  (cond
 	   ;; needs work: The following two don't check conformance.
 	   ((is-zero? v1)
-	    (set-tagged-pair-plus-cache! v0 v2)
+	    (set-vlad-pair-plus-cache! v0 v2)
 	    (k v2))
 	   ((is-zero? v2)
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ;; widening case H13
 	   ((union? v1)
 	    (let ((v (allocate-union 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 v)
+	     (set-vlad-pair-plus-cache! v0 v)
 	     (map-cps-non-cs (lambda (u1 k) (loop (vlad-cons u1 v2) k))
 			     (union-members v1)
 			     (lambda (us)
@@ -7165,34 +7207,34 @@
 	   ;; There is no widening case H15
 	   ((union? v2)
 	    (let ((v (allocate-union 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 v)
+	     (set-vlad-pair-plus-cache! v0 v)
 	     (map-cps-non-cs (lambda (u2 k) (loop (vlad-cons v1 u2) k))
 			     (union-members v2)
 			     (lambda (us)
 			      (fill-union-values! v us)
 			      (k v)))))
 	   ((and (vlad-empty-list? v1) (vlad-empty-list? v2))
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((and (vlad-true? v1) (vlad-true? v2))
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((and (vlad-false? v1) (vlad-false? v2))
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((and (abstract-real? v1) (vlad-real? v2))
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((and (vlad-real? v1) (abstract-real? v2))
-	    (set-tagged-pair-plus-cache! v0 v2)
+	    (set-vlad-pair-plus-cache! v0 v2)
 	    (k v2))
 	   ((and (real? v1) (real? v2))
 	    (let ((u (+ v1 v2)))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (k u)))
 	   ((and
 	     (primitive-procedure? v1) (primitive-procedure? v2) (eq? v1 v2))
-	    (set-tagged-pair-plus-cache! v0 v1)
+	    (set-vlad-pair-plus-cache! v0 v1)
 	    (k v1))
 	   ((and (nonrecursive-closure? v1)
 		 (nonrecursive-closure? v2)
@@ -7200,7 +7242,7 @@
 	    ;; See the note in abstract-environment=?.
 	    (let ((u (allocate-nonrecursive-closure
 		      'unfilled (nonrecursive-closure-lambda-expression v1))))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) k))
 			      (get-nonrecursive-closure-values v1)
 			      (get-nonrecursive-closure-values v2)
@@ -7216,7 +7258,7 @@
 		      (recursive-closure-procedure-variables v1)
 		      (recursive-closure-lambda-expressions v1)
 		      (recursive-closure-index v1))))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (map2-cps-non-cs (lambda (v1 v2 k) (loop (vlad-cons v1 v2) k))
 			      (get-recursive-closure-values v1)
 			      (get-recursive-closure-values v2)
@@ -7226,7 +7268,7 @@
 	   ((and
 	     (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
 	    (let ((u (allocate-perturbation-tagged-value 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-perturbation-tagged-value-primal v1)
 			      (get-perturbation-tagged-value-primal v2))
 		   (lambda (v)
@@ -7234,7 +7276,7 @@
 		    (k u)))))
 	   ((and (bundle? v1) (bundle? v2))
 	    (let ((u (allocate-bundle 'unfilled 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-bundle-primal v1)
 			      (get-bundle-primal v2))
 		   (lambda (v-primal)
@@ -7246,7 +7288,7 @@
 	   ((and (sensitivity-tagged-value? v1)
 		 (sensitivity-tagged-value? v2))
 	    (let ((u (allocate-sensitivity-tagged-value 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-sensitivity-tagged-value-primal v1)
 			      (get-sensitivity-tagged-value-primal v2))
 		   (lambda (v)
@@ -7254,25 +7296,20 @@
 		    (k u)))))
 	   ((and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
 	    (let ((u (allocate-reverse-tagged-value 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 u)
+	     (set-vlad-pair-plus-cache! v0 u)
 	     (loop (vlad-cons (get-reverse-tagged-value-primal v1)
 			      (get-reverse-tagged-value-primal v2))
 		   (lambda (v)
 		    (fill-reverse-tagged-value-primal! u v)
 		    (k u)))))
-	   ((and (tagged-pair? v1)
-		 (tagged-pair? v2)
-		 (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	    (let ((u (allocate-tagged-pair
-		      (tagged-pair-tags v1) 'unfilled 'unfilled)))
-	     (set-tagged-pair-plus-cache! v0 u)
-	     (loop (vlad-cons (get-tagged-pair-car v1)
-			      (get-tagged-pair-car v2))
+	   ((and (vlad-pair? v1) (vlad-pair? v2))
+	    (let ((u (allocate-vlad-pair 'unfilled 'unfilled)))
+	     (set-vlad-pair-plus-cache! v0 u)
+	     (loop (vlad-cons (vlad-car v1) (vlad-car v2))
 		   (lambda (v-car)
-		    (loop (vlad-cons (get-tagged-pair-cdr v1)
-				     (get-tagged-pair-cdr v2))
+		    (loop (vlad-cons (vlad-cdr v1) (vlad-cdr v2))
 			  (lambda (v-cdr)
-			   (fill-tagged-pair! u v-car v-cdr)
+			   (fill-vlad-pair! u v-car v-cdr)
 			   (k u)))))))
 	   (else (case *mode*
 		  ((concrete)
@@ -7280,7 +7317,7 @@
 		  ((abstract)
 		   (let ((u (compile-time-warning
 			     "Arguments to plus might not conform" v1 v2)))
-		    (set-tagged-pair-plus-cache! v0 u)
+		    (set-vlad-pair-plus-cache! v0 u)
 		    (k u)))
 		  (else (internal-error))))))))
     (else (k (ad-error "Argument to plus ~a valid" v0)))))))
@@ -7296,25 +7333,26 @@
   (let loop ((v v) (k canonize-and-maybe-intern-abstract-value))
    (cond
     ((union? v)
-     (if (union-*j-cache v)
-	 (k (union-*j-cache v))
+     (if (*j-cache v)
+	 (k (*j-cache v))
 	 ;; widening case H16
 	 (let ((v-reverse (allocate-union 'unfilled)))
 	  (set-union-*j-inverse-cache! v-reverse v)
-	  (set-union-*j-cache! v v-reverse)
+	  (set-*j-cache! v v-reverse)
 	  (map-cps-non-cs loop
 			  (union-members v)
 			  (lambda (us-reverse)
 			   (fill-union-values! v-reverse us-reverse)
 			   (k v-reverse))))))
-    ((vlad-empty-list? v) (k (new-reverse-tagged-value v)))
-    ((vlad-true? v) (k (new-reverse-tagged-value v)))
-    ((vlad-false? v) (k (new-reverse-tagged-value v)))
-    ((vlad-real? v) (k (new-reverse-tagged-value v)))
+    ((or (vlad-empty-list? v)
+	 (vlad-true? v)
+	 (vlad-false? v)
+	 (vlad-real? v))
+     (k (new-reverse-tagged-value v)))
     ((primitive-procedure? v) (k (primitive-procedure-reverse v)))
     ((nonrecursive-closure? v)
-     (if (nonrecursive-closure-*j-cache v)
-	 (k (nonrecursive-closure-*j-cache v))
+     (if (*j-cache v)
+	 (k (*j-cache v))
 	 ;; See the note in abstract-environment=?.
 	 (let ((u-reverse
 		(allocate-nonrecursive-closure
@@ -7322,7 +7360,7 @@
 		 (reverse-transform
 		  (nonrecursive-closure-lambda-expression v)))))
 	  (set-nonrecursive-closure-*j-inverse-cache! u-reverse v)
-	  (set-nonrecursive-closure-*j-cache! v u-reverse)
+	  (set-*j-cache! v u-reverse)
 	  (map-cps-non-cs
 	   loop
 	   (get-nonrecursive-closure-values v)
@@ -7330,8 +7368,8 @@
 	    (fill-nonrecursive-closure-values! u-reverse vs-reverse)
 	    (k u-reverse))))))
     ((recursive-closure? v)
-     (if (recursive-closure-*j-cache v)
-	 (k (recursive-closure-*j-cache v))
+     (if (*j-cache v)
+	 (k (*j-cache v))
 	 ;; See the note in abstract-environment=?.
 	 (let ((u-reverse
 		(allocate-recursive-closure
@@ -7348,52 +7386,23 @@
 		  (vector-length (recursive-closure-lambda-expressions v)))
 		 (recursive-closure-index v))))
 	  (set-recursive-closure-*j-inverse-cache! u-reverse v)
-	  (set-recursive-closure-*j-cache! v u-reverse)
+	  (set-*j-cache! v u-reverse)
 	  (map-cps-non-cs
 	   loop
 	   (get-recursive-closure-values v)
 	   (lambda (vs-reverse)
 	    (fill-recursive-closure-values! u-reverse vs-reverse)
 	    (k u-reverse))))))
-    ((perturbation-tagged-value? v)
-     (if (perturbation-tagged-value-*j-cache v)
-	 (k (perturbation-tagged-value-*j-cache v))
+    ((or (perturbation-tagged-value? v)
+	 (bundle? v)
+	 (sensitivity-tagged-value? v)
+	 (reverse-tagged-value? v)
+	 (vlad-pair? v))
+     (if (*j-cache v)
+	 (k (*j-cache v))
 	 (let ((u-reverse (create-reverse-tagged-value v)))
-	  (set-perturbation-tagged-value-*j-cache! v u-reverse)
+	  (set-*j-cache! v u-reverse)
 	  (k u-reverse))))
-    ((bundle? v)
-     (if (bundle-*j-cache v)
-	 (k (bundle-*j-cache v))
-	 (let ((u-reverse (create-reverse-tagged-value v)))
-	  (set-bundle-*j-cache! v u-reverse)
-	  (k u-reverse))))
-    ((sensitivity-tagged-value? v)
-     (if (sensitivity-tagged-value-*j-cache v)
-	 (k (sensitivity-tagged-value-*j-cache v))
-	 (let ((u-reverse (create-reverse-tagged-value v)))
-	  (set-sensitivity-tagged-value-*j-cache! v u-reverse)
-	  (k u-reverse))))
-    ((reverse-tagged-value? v)
-     (if (reverse-tagged-value-*j-cache v)
-	 (k (reverse-tagged-value-*j-cache v))
-	 (let ((u-reverse (create-reverse-tagged-value v)))
-	  (set-reverse-tagged-value-*j-cache! v u-reverse)
-	  (k u-reverse))))
-    ((tagged-pair? v)
-     (if (tagged-pair-*j-cache v)
-	 (k (tagged-pair-*j-cache v))
-	 (let ((u-reverse
-		(allocate-tagged-pair
-		 (add-tag 'reverse (tagged-pair-tags v)) 'unfilled 'unfilled)))
-	  (set-tagged-pair-*j-inverse-cache! u-reverse v)
-	  (set-tagged-pair-*j-cache! v u-reverse)
-	  (loop
-	   (get-tagged-pair-car v)
-	   (lambda (v-car-reverse)
-	    (loop (get-tagged-pair-cdr v)
-		  (lambda (v-cdr-reverse)
-		   (fill-tagged-pair! u-reverse v-car-reverse v-cdr-reverse)
-		   (k u-reverse))))))))
     (else (internal-error))))))
 
 (define (*j-inverse v-reverse)
@@ -7412,22 +7421,22 @@
 	 (k (union-*j-inverse-cache v-reverse))
 	 ;; widening case H17
 	 (let ((v (allocate-union 'unfilled)))
-	  (set-union-*j-cache! v v-reverse)
+	  (set-*j-cache! v v-reverse)
 	  (set-union-*j-inverse-cache! v-reverse v)
 	  (map-cps-non-cs loop
 			  (union-members v-reverse)
 			  (lambda (us)
 			   (fill-union-values! v us)
 			   (k v))))))
-    ((vlad-empty-list? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((vlad-true? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((vlad-false? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((vlad-real? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((primitive-procedure? v-reverse)
+    ((or (vlad-empty-list? v-reverse)
+	 (vlad-true? v-reverse)
+	 (vlad-false? v-reverse)
+	 (vlad-real? v-reverse)
+	 (primitive-procedure? v-reverse)
+	 (perturbation-tagged-value? v-reverse)
+	 (bundle? v-reverse)
+	 (sensitivity-tagged-value? v-reverse)
+	 (vlad-pair? v-reverse))
      (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
     ((nonrecursive-closure? v-reverse)
      (if (nonrecursive-closure-*j-inverse-cache v-reverse)
@@ -7448,7 +7457,7 @@
 		      'unfilled
 		      (reverse-transform-inverse
 		       (nonrecursive-closure-lambda-expression v-reverse)))))
-	     (set-nonrecursive-closure-*j-cache! u v-reverse)
+	     (set-*j-cache! u v-reverse)
 	     (set-nonrecursive-closure-*j-inverse-cache! v-reverse u)
 	     (map-cps-non-cs loop
 			     (get-nonrecursive-closure-values v-reverse)
@@ -7471,7 +7480,7 @@
 		       reverse-transform-inverse
 		       (recursive-closure-lambda-expressions v-reverse))
 		      (recursive-closure-index v-reverse))))
-	     (set-recursive-closure-*j-cache! u v-reverse)
+	     (set-*j-cache! u v-reverse)
 	     (set-recursive-closure-*j-inverse-cache! v-reverse u)
 	     (map-cps-non-cs loop
 			     (get-recursive-closure-values v-reverse)
@@ -7480,32 +7489,8 @@
 			      (k u)))))
 	   (else (k (ad-error "Argument to *j-inverse ~a a reverse value"
 			      v-reverse)))))
-    ((perturbation-tagged-value? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((bundle? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
-    ((sensitivity-tagged-value? v-reverse)
-     (k (ad-error "Argument to *j-inverse ~a a reverse value" v-reverse)))
     ((reverse-tagged-value? v-reverse)
      (k (get-reverse-tagged-value-primal v-reverse)))
-    ((tagged-pair? v-reverse)
-     (cond ((tagged-pair-*j-inverse-cache v-reverse)
-	    (k (tagged-pair-*j-inverse-cache v-reverse)))
-	   ((tagged? 'reverse (tagged-pair-tags v-reverse))
-	    (let ((u (allocate-tagged-pair
-		      (remove-tag 'reverse (tagged-pair-tags v-reverse))
-		      'unfilled
-		      'unfilled)))
-	     (set-tagged-pair-*j-cache! u v-reverse)
-	     (set-tagged-pair-*j-inverse-cache! v-reverse u)
-	     (loop (get-tagged-pair-car v-reverse)
-		   (lambda (v-car)
-		    (loop (get-tagged-pair-cdr v-reverse)
-			  (lambda (v-cdr)
-			   (fill-tagged-pair! u v-car v-cdr)
-			   (k u)))))))
-	   (else (k (ad-error "Argument to *j-inverse ~a a reverse value"
-			      v-reverse)))))
     (else (internal-error))))))
 
 ;;; Pretty printer
@@ -7640,21 +7625,17 @@
     (if (eq? (reverse-tagged-value-primal v) 'unfilled)
 	'(reverse unfilled)
 	`(reverse ,(loop (get-reverse-tagged-value-primal v) vs))))
-   ((tagged-pair? v) `(pair ,(tagged-pair-tags v)
-			    ,(if (eq? (tagged-pair-car v) 'unfilled)
-				 'unfilled
-				 (loop (get-tagged-pair-car v) vs))
-			    ,(if (eq? (tagged-pair-cdr v) 'unfilled)
-				 'unfilled
-				 (loop (get-tagged-pair-cdr v) vs))))
+   ((vlad-pair? v) `(pair ,(if (eq? (vlad-pair-car v) 'unfilled)
+			       'unfilled
+			       (loop (vlad-car v) vs))
+			  ,(if (eq? (vlad-pair-cdr v) 'unfilled)
+			       'unfilled
+			       (loop (vlad-cdr v) vs))))
    ((tag? v) `(tag ,(loop (tag-abstract-value v) vs)))
    (else (internal-error)))))
 
 (define (safe-externalize v)
- (if #f					;debugging
-     ;; This doesn't work because of tagged pairs.
-     (with-safe-externalize (lambda () (externalize v)))
-     (debugging-externalize v)))
+ (with-safe-externalize (lambda () (externalize v))))
 
 (define (externalize v)
  ;; breaks structure sharing
@@ -7669,22 +7650,19 @@
 		(= (length (get-union-values v)) 2)
 		(some vlad-empty-list? (get-union-values v))
 		(some (lambda (u)
-		       (and (tagged-pair? u)
-			    (empty-tags? (tagged-pair-tags u))
-			    (deep-abstract-value=? (tagged-pair-cdr u) v)))
+		       (and (vlad-pair? u)
+			    (deep-abstract-value=? (vlad-cdr u) v)))
 		      (get-union-values v)))
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably" v))
 	   `(list*
-	     ,(loop
-	       (tagged-pair-car
-		(find-if (lambda (u)
-			  (and (tagged-pair? u)
-			       (empty-tags? (tagged-pair-tags u))
-			       (deep-abstract-value=? (tagged-pair-cdr u) v)))
-			 (get-union-values v)))
-	       quote?
-	       vs)))
+	     ,(loop (vlad-car
+		     (find-if (lambda (u)
+			       (and (vlad-pair? u)
+				    (deep-abstract-value=? (vlad-cdr u) v)))
+			      (get-union-values v)))
+		    quote?
+		    vs)))
 	  ((union? v)
 	   (when *unabbreviate-executably?*
 	    (run-time-error "Cannot unabbreviate executably" v))
@@ -7692,21 +7670,19 @@
 		 ((null? (rest (union-members v))) (internal-error))
 		 (else `(union ,@(map (lambda (u) (loop u quote? (cons v vs)))
 				      (union-members v))))))
-	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
-		(perturbation-value? v))
+	  ((and (not *unabbreviate-transformed?*) (perturbation-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
 		  `(perturb ,(loop (unperturb v) quote? vs)))
 		 (else `(perturbation ,(loop (unperturb v) quote? vs)))))
-	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
-		(forward-value? v))
+	  ((and (not *unabbreviate-transformed?*) (forward-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
 		  `(bundle ,(loop (primal v) quote? vs)
 			   ,(loop (tangent v) quote? vs)))
 		 (else `(forward ,(loop (primal v) quote? vs)
 				 ,(loop (tangent v) quote? vs)))))
-	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
+	  ((and (not *unabbreviate-transformed?*)
 		(sensitivity-value? v)
 		;; This is to prevent attempts to unsensitize backpropagators.
 		(unsensitize? v))
@@ -7719,8 +7695,7 @@
 	  ;; externalize an analysis. It may contain closures that result from
 	  ;; lambda expressions that correspond to tails of anf forms of lambda
 	  ;; expression bodies.
-	  ((and (or (not *unabbreviate-transformed?*) (tagged-pair? v))
-		(reverse-value? v))
+	  ((and (not *unabbreviate-transformed?*) (reverse-value? v))
 	   (cond (*unabbreviate-executably?*
 		  (assert (not quote?))
 		  `(*j ,(loop (*j-inverse v) quote? vs)))
@@ -7934,6 +7909,7 @@
 	(if p?
 	    ;; This may create an abstract value that violates the syntactic
 	    ;; constraints.
+	    ;; foo
 	    (new-recursive-closure
 	     (restrict-environment vs (letrec-expression-indices e)) xs es i)
 	    (vector-ref vs0 i)))
@@ -7987,15 +7963,11 @@
      v))
    (map cons (parameter-variables p) (get-recursive-closure-values v)))
   ((cons-expression? p)
-   (unless (and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-    (run-time-error
-     (format #f "Argument is not a matching tagged pair with tags ~s"
-	     (cons-expression-tags p))
-     v))
    (append
-    (concrete-destructure (cons-expression-car p) (get-tagged-pair-car v))
-    (concrete-destructure (cons-expression-cdr p) (get-tagged-pair-cdr v))))
+    (concrete-destructure
+     (cons-expression-car p) (tagged-vlad-car (cons-expression-tags p) v))
+    (concrete-destructure
+     (cons-expression-cdr p) (tagged-vlad-cdr (cons-expression-tags p) v))))
   (else (internal-error))))
 
 (define (construct-environment-for-let e vs v-alist)
@@ -8009,10 +7981,9 @@
    (free-variables (lambda-expression-body (application-callee e))))))
 
 (define (construct-environment u1 v-alist)
- (assert (not (union? u1)))
- (let ((vs (list->vector (closure-values u1))))
-  (cond
-   ((nonrecursive-closure? u1)
+ (cond
+  ((nonrecursive-closure? u1)
+   (let ((vs (list->vector (closure-values u1))))
     (map
      (lambda (i x)
       ;; needs work: To make nonrecursive-closure-body-free-variable-indices
@@ -8020,8 +7991,9 @@
       (cond ((assp variable=? x v-alist) => cdr) (else (vector-ref vs i))))
      (nonrecursive-closure-body-free-variable-indices u1)
      (free-variables
-      (lambda-expression-body (nonrecursive-closure-lambda-expression u1)))))
-   ((recursive-closure? u1)
+      (lambda-expression-body (nonrecursive-closure-lambda-expression u1))))))
+  ((recursive-closure? u1)
+   (let ((vs (list->vector (closure-values u1))))
     (map (lambda (i i1 x)
 	  ;; needs work:
 	  ;; To make recursive-closure-body-free-variable-indices and
@@ -8032,6 +8004,7 @@
 	   (i1
 	    ;; This may create an abstract value that violates the syntactic
 	    ;; constraints.
+	    ;; foo
 	    (new-recursive-closure (get-recursive-closure-values u1)
 				   (recursive-closure-procedure-variables u1)
 				   (recursive-closure-lambda-expressions u1)
@@ -8041,8 +8014,41 @@
 	 (recursive-closure-body-free-variable-procedure-variable-indices u1)
 	 (free-variables (lambda-expression-body
 			  (vector-ref (recursive-closure-lambda-expressions u1)
-				      (recursive-closure-index u1))))))
-   (else (internal-error)))))
+				      (recursive-closure-index u1)))))))
+  ((perturbation-tagged-value? u1)
+   (map perturb
+	(construct-environment
+	 (unperturb u1)
+	 (map (lambda (x-v)
+	       (cons (unperturbationify (car x-v)) (unperturb (cdr x-v))))
+	      v-alist))))
+  ((bundle? u1)
+   (map (lambda (v1 v2) (bundle (vlad-cons v1 v2)))
+	(construct-environment
+	 (primal u1)
+	 (map (lambda (x-v) (cons (unforwardify (car x-v)) (primal (cdr x-v))))
+	      v-alist))
+	(construct-environment
+	 (tangent u1)
+	 (map (lambda (x-v)
+	       (cons (perturbationify (unforwardify (car x-v)))
+		     (tangent (cdr x-v))))
+	      v-alist))))
+  ((sensitivity-tagged-value? u1)
+   (map sensitize
+	(construct-environment
+	 (unsensitize u1)
+	 (map (lambda (x-v)
+	       (cons (unsensitivityify (car x-v)) (unsensitize (cdr x-v))))
+	      v-alist))))
+  ((reverse-tagged-value? u1)
+   (map *j
+	(construct-environment
+	 (*j-inverse u1)
+	 (map (lambda (x-v)
+	       (cons (unreverseify (car x-v)) (*j-inverse (cdr x-v))))
+	      v-alist))))
+  (else (internal-error))))
 
 ;;; needs work: This evaluator is not tail recursive.
 
@@ -8096,6 +8102,7 @@
  (cond
   ((constant-expression? e) (constant-expression-value e))
   ((variable-access-expression? e) (first vs))
+  ;; foo
   ((lambda-expression? e) (new-nonrecursive-closure vs e))
   ((application? e)
    (if (lambda-expression? (application-callee e))
@@ -8130,17 +8137,7 @@
 	  (v2 (concrete-eval
 	       (cons-expression-cdr e)
 	       (restrict-environment vs (cons-expression-cdr-indices e)))))
-    (unless (prefix-tags? (cons-expression-tags e) (value-tags v1))
-     (run-time-error
-      (format #f "CAR argument has wrong type for target with tags ~s"
-	      (cons-expression-tags e))
-      v1))
-    (unless (prefix-tags? (cons-expression-tags e) (value-tags v2))
-     (run-time-error
-      (format #f "CDR argument has wrong type for target with tags ~s"
-	      (cons-expression-tags e))
-      v2))
-    (new-tagged-pair (cons-expression-tags e) v1 v2)))
+    (tagged-vlad-cons (cons-expression-tags e) v1 v2)))
   (else (internal-error))))
 
 ;;; Flow analysis
@@ -8174,10 +8171,9 @@
   ((reverse-tagged-value? v)
    (new-reverse-tagged-value
     (concrete-value->abstract-value (get-reverse-tagged-value-primal v))))
-  ((tagged-pair? v)
-   (new-tagged-pair (tagged-pair-tags v)
-		    (concrete-value->abstract-value (get-tagged-pair-car v))
-		    (concrete-value->abstract-value (get-tagged-pair-cdr v))))
+  ((vlad-pair? v)
+   (vlad-cons (concrete-value->abstract-value (vlad-car v))
+	      (concrete-value->abstract-value (vlad-cdr v))))
   (else (internal-error))))
 
 ;;; Widen
@@ -8268,16 +8264,15 @@
 	      (lambda (v-prime cs)
 	       (fill-reverse-tagged-value-primal! u-prime v-prime)
 	       (k u-prime cs)))))
-      ((tagged-pair? v)
-       (let ((u-prime
-	      (allocate-tagged-pair (tagged-pair-tags v) 'unfilled 'unfilled)))
-	(loop (get-tagged-pair-car v)
+      ((vlad-pair? v)
+       (let ((u-prime (allocate-vlad-pair 'unfilled 'unfilled)))
+	(loop (vlad-car v)
 	      (cons (cons v u-prime) cs)
 	      (lambda (v-car-prime cs)
-	       (loop (get-tagged-pair-cdr v)
+	       (loop (vlad-cdr v)
 		     cs
 		     (lambda (v-cdr-prime cs)
-		      (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+		      (fill-vlad-pair! u-prime v-car-prime v-cdr-prime)
 		      (k u-prime cs)))))))
       (else (internal-error))))))))
 
@@ -8399,16 +8394,15 @@
 	       (lambda (v-prime cs)
 		(fill-reverse-tagged-value-primal! u-prime v-prime)
 		(k u-prime cs)))))
-       ((tagged-pair? v)
-	(let ((u-prime (allocate-tagged-pair
-			(tagged-pair-tags v) 'unfilled 'unfilled)))
-	 (loop (get-tagged-pair-car v)
+       ((vlad-pair? v)
+	(let ((u-prime (allocate-vlad-pair 'unfilled 'unfilled)))
+	 (loop (vlad-car v)
 	       (cons (cons v u-prime) cs)
 	       (lambda (v-car-prime cs)
-		(loop (get-tagged-pair-cdr v)
+		(loop (vlad-cdr v)
 		      cs
 		      (lambda (v-cdr-prime cs)
-		       (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+		       (fill-vlad-pair! u-prime v-car-prime v-cdr-prime)
 		       (k u-prime cs)))))))
        (else (internal-error)))))))))
 
@@ -8663,79 +8657,63 @@
 		  (lambda (v-prime cs)
 		   (fill-reverse-tagged-value-primal! u-prime v-prime)
 		   (k u-prime cs)))))
-	  ((tagged-pair? v)
+	  ((vlad-pair? v)
 	   (cond
 	    ;; See note in abstract-value-unionable?.
-	    ((tagged-empty-list? (tagged-pair-tags v) (tagged-pair-cdr v))
-	     (let* ((u-prime (allocate-tagged-pair
-			      (tagged-pair-tags v) 'unfilled 'unfilled))
-		    (v-prime
-		     ;; This widening case is part of widen-abstract-value.
-		     (allocate-union (list u-prime (tagged-pair-cdr v)))))
-	      (loop (get-tagged-pair-car v)
+	    ((vlad-empty-list? (vlad-cdr v))
+	     (let* ((u-prime (allocate-vlad-pair 'unfilled 'unfilled))
+		    ;; This widening case is part of widen-abstract-value.
+		    (v-prime (allocate-union (list u-prime (vlad-cdr v)))))
+	      (loop (vlad-car v)
 		    cs
 		    (lambda (v-car-prime cs)
-		     (fill-tagged-pair! u-prime v-car-prime v-prime)
+		     (fill-vlad-pair! u-prime v-car-prime v-prime)
 		     (k v-prime cs)))))
-	    ((and (union? (tagged-pair-cdr v))
-		  (= (length (union-members (tagged-pair-cdr v))) 2)
-		  (some (lambda (u)
-			 (tagged-empty-list? (tagged-pair-tags v) u))
-			(union-members (tagged-pair-cdr v)))
-		  (some (lambda (u)
-			 (and (tagged-pair? u)
-			      (equal-tags? (tagged-pair-tags u)
-					   (tagged-pair-tags v))
-			      (deep-abstract-value=? (tagged-pair-cdr u)
-						     (tagged-pair-cdr v))))
-			(union-members (tagged-pair-cdr v)))
-		  (abstract-value-unionable?
-		   #t
-		   (get-tagged-pair-car v)
-		   (get-tagged-pair-car
-		    (find-if
-		     (lambda (u)
-		      (and (tagged-pair? u)
-			   (equal-tags? (tagged-pair-tags u)
-					(tagged-pair-tags v))
-			   (deep-abstract-value=? (tagged-pair-cdr u)
-						  (tagged-pair-cdr v))))
-		     (union-members (tagged-pair-cdr v))))))
-	     (let* ((u-prime (allocate-tagged-pair
-			      (tagged-pair-tags v) 'unfilled 'unfilled))
-		    (v-prime
-		     ;; This widening case is part of widen-abstract-value.
-		     (allocate-union
-		      (list
-		       u-prime
-		       (find-if (lambda (u)
-				 (tagged-empty-list? (tagged-pair-tags v) u))
-				(union-members (tagged-pair-cdr v)))))))
-	      (loop (abstract-value-union-internal
-		     (get-tagged-pair-car v)
-		     (get-tagged-pair-car
-		      (find-if
-		       (lambda (u)
-			(and (tagged-pair? u)
-			     (equal-tags? (tagged-pair-tags u)
-					  (tagged-pair-tags v))
-			     (deep-abstract-value=? (tagged-pair-cdr u)
-						    (tagged-pair-cdr v))))
-		       (union-members (tagged-pair-cdr v)))))
-		    cs
-		    (lambda (v-car-prime cs)
-		     (fill-tagged-pair! u-prime v-car-prime v-prime)
-		     (k v-prime cs)))))
+	    ((and
+	      (union? (vlad-cdr v))
+	      (= (length (union-members (vlad-cdr v))) 2)
+	      (some vlad-empty-list? (union-members (vlad-cdr v)))
+	      (some (lambda (u)
+		     (and (vlad-pair? u)
+			  (deep-abstract-value=? (vlad-cdr u) (vlad-cdr v))))
+		    (union-members (vlad-cdr v)))
+	      (abstract-value-unionable?
+	       #t
+	       (vlad-car v)
+	       (vlad-car
+		(find-if
+		 (lambda (u)
+		  (and (vlad-pair? u)
+		       (deep-abstract-value=? (vlad-cdr u) (vlad-cdr v))))
+		 (union-members (vlad-cdr v))))))
+	     (let* ((u-prime (allocate-vlad-pair 'unfilled 'unfilled))
+		    ;; This widening case is part of widen-abstract-value.
+		    (v-prime (allocate-union
+			      (list u-prime
+				    (find-if vlad-empty-list?
+					     (union-members (vlad-cdr v)))))))
+	      (loop
+	       (abstract-value-union-internal
+		(vlad-car v)
+		(vlad-car
+		 (find-if
+		  (lambda (u)
+		   (and (vlad-pair? u)
+			(deep-abstract-value=? (vlad-cdr u) (vlad-cdr v))))
+		  (union-members (vlad-cdr v)))))
+	       cs
+	       (lambda (v-car-prime cs)
+		(fill-vlad-pair! u-prime v-car-prime v-prime)
+		(k v-prime cs)))))
 	    (else
-	     (let ((u-prime (allocate-tagged-pair
-			     (tagged-pair-tags v) 'unfilled 'unfilled)))
-	      (loop (get-tagged-pair-car v)
+	     (let ((u-prime (allocate-vlad-pair 'unfilled 'unfilled)))
+	      (loop (vlad-car v)
 		    (cons (cons v u-prime) cs)
 		    (lambda (v-car-prime cs)
-		     (loop (get-tagged-pair-cdr v)
+		     (loop (vlad-cdr v)
 			   cs
 			   (lambda (v-cdr-prime cs)
-			    (fill-tagged-pair! u-prime v-car-prime v-cdr-prime)
+			    (fill-vlad-pair! u-prime v-car-prime v-cdr-prime)
 			    (k u-prime cs)))))))))
 	  (else (internal-error)))))))
      v))
@@ -8767,12 +8745,8 @@
 	      reverse-tagged-value?
 	      v))
 
-(define (limit-tagged-pair-width v)
- (limit-width *tagged-pair-width-limit*
-	      (lambda (u1 u2)
-	       (equal-tags? (tagged-pair-tags u1) (tagged-pair-tags u2)))
-	      tagged-pair?
-	      v))
+(define (limit-pair-width v)
+ (limit-width *pair-width-limit* (lambda (u1 u2) #t) vlad-pair? v))
 
 (define (backpropagator? u)
  ;; needs work: This is a kludge and might not work because some
@@ -8868,12 +8842,8 @@
 	      reverse-tagged-value?
 	      v))
 
-(define (limit-tagged-pair-depth v)
- (limit-depth *tagged-pair-depth-limit*
-	      (lambda (u1 u2)
-	       (equal-tags? (tagged-pair-tags u1) (tagged-pair-tags u2)))
-	      tagged-pair?
-	      v))
+(define (limit-pair-depth v)
+ (limit-depth *pair-depth-limit* (lambda (u1 u2) #t) vlad-pair? v))
 
 (define (widen-abstract-value v)
  (let ((v (canonize-and-maybe-intern-abstract-value v)))
@@ -8889,20 +8859,20 @@
     (sensitivity-tagged-value-widen v))
    ((and (reverse-tagged-value? v) (reverse-tagged-value-widen v))
     (reverse-tagged-value-widen v))
-   ((and (tagged-pair? v) (tagged-pair-widen v)) (tagged-pair-widen v))
+   ((and (vlad-pair? v) (vlad-pair-widen v)) (vlad-pair-widen v))
    ((and (union? v) (union-widen v)) (union-widen v))
    (else
     (let ((v-prime
 	   (let loop ((v v))
 	    (let ((v-prime (widen-lists
-			    (limit-tagged-pair-depth
+			    (limit-pair-depth
 			     (limit-reverse-tagged-value-depth
 			      (limit-sensitivity-tagged-value-depth
 			       (limit-bundle-depth
 				(limit-perturbation-tagged-value-depth
 				 (limit-backpropagator-depth
 				  (limit-closure-depth
-				   (limit-tagged-pair-width
+				   (limit-pair-width
 				    (limit-reverse-tagged-value-width
 				     (limit-sensitivity-tagged-value-width
 				      (limit-bundle-width
@@ -8922,7 +8892,7 @@
       ((sensitivity-tagged-value? v)
        (set-sensitivity-tagged-value-widen! v v-prime))
       ((reverse-tagged-value? v) (set-reverse-tagged-value-widen! v v-prime))
-      ((tagged-pair? v) (set-tagged-pair-widen! v v-prime))
+      ((vlad-pair? v) (set-vlad-pair-widen! v v-prime))
       ((union? v) (set-union-widen! v v-prime)))
      v-prime)))))
 
@@ -8955,7 +8925,7 @@
    ((union? v) (f (lambda (u) (outer p u v-alist k)) v))
    ((constant-expression? p)
     ;; This can widen when the constant expression value violates the
-    ;; syntactic constraints (presumably tagged pair depth limit).
+    ;; syntactic constraints (presumably pair depth limit).
     ;; widening case A
     (let ((v-prime
 	   (widen-abstract-value
@@ -9037,23 +9007,14 @@
 	    v)
 	   i)))
    ((cons-expression? p)
-    (cond ((and (tagged-pair? v)
-		(equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-	   (outer
-	    (cons-expression-car p)
-	    (get-tagged-pair-car v)
-	    v-alist
-	    (lambda (v-alist)
-	     (outer
-	      (cons-expression-cdr p) (get-tagged-pair-cdr v) v-alist k))))
-	  (else
-	   (compile-time-warning
-	    (format
-	     #f
-	     "Argument might not be a matching tagged pair with tags ~s"
-	     (cons-expression-tags p))
-	    v)
-	   i)))
+    (outer (cons-expression-car p)
+	   (tagged-vlad-car (cons-expression-tags p) v)
+	   v-alist
+	   (lambda (v-alist)
+	    (outer (cons-expression-cdr p)
+		   (tagged-vlad-cdr (cons-expression-tags p) v)
+		   v-alist
+		   k))))
    (else (internal-error)))))
 
 (define (abstract-apply v1 v2)
@@ -9062,33 +9023,23 @@
        ((union? v1) (map-union (lambda (u1) (abstract-apply u1 v2)) v1))
        ((primitive-procedure? v1) ((primitive-procedure-abstract v1) v2))
        ((closure? v1)
-	(cond
-	 ((every-value-tags
-	   (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
-	  (abstract-destructure
-	   ;; widening case J
-	   map-union
-	   (empty-abstract-value)
-	   (closure-parameter v1)
-	   v2
-	   (lambda (v-alist)
-	    (abstract-eval1
-	     (closure-body v1) (construct-environment v1 v-alist)))))
-	 ((some-value-tags
-	   (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
-	  (compile-time-warning
-	   "Argument might have wrong type for target" v1 v2)
-	  (abstract-destructure
-	   ;; widening case J
-	   map-union
-	   (empty-abstract-value)
-	   (closure-parameter v1)
-	   v2
-	   (lambda (v-alist)
-	    (abstract-eval1
-	     (closure-body v1) (construct-environment v1 v-alist)))))
-	 (else (compile-time-warning
-		"Argument might have wrong type for target" v1 v2))))
+	(unless (every-value-tags
+		 (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
+	 (compile-time-warning
+	  "Argument might have wrong type for target" v1 v2))
+	(if (some-value-tags
+	     (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
+	    (abstract-destructure
+	     ;; widening case J
+	     map-union
+	     (empty-abstract-value)
+	     (closure-parameter v1)
+	     v2
+	     (lambda (v-alist)
+	      ;; bar
+	      (abstract-eval1
+	       (closure-body v1) (construct-environment v1 v-alist))))
+	    (empty-abstract-value)))
        (else (compile-time-warning "Target might not be a procedure" v1))))
 
 (define (enqueue! e)
@@ -9111,48 +9062,32 @@
 	       (v (abstract-eval1 (application-argument e)
 				  (restrict-environment
 				   vs (application-argument-indices e)))))
+	 ;; needs work: what if v is empty-abstract-value
 	 (unless (empty-abstract-value? v)
-	  (cond
-	   ((every-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-	    (abstract-destructure
-	     ;; widening case J
-	     for-each-union
-	     #f
-	     p
-	     v
-	     (lambda (v-alist)
-	      ;; See the note in abstract-eval-prime!
-	      ;; here I am: Can hoist this since it doesn't depend on v-alist
-	      ;;            or b. It only depends on v-alist being nonempty and
-	      ;;            v not being an empty abstract value.
-	      (unless (memp expression-eqv? e (parents e1))
-	       (set-parents! e1 (cons e (parents e1)))
-	       (enqueue! e))
-	      (abstract-eval-prime!
-	       e1 (construct-environment-for-let e vs v-alist)))))
-	   ((some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-	    (compile-time-warning
-	     "Value might have wrong type for let binder" v)
-	    (abstract-destructure
-	     ;; widening case J
-	     for-each-union
-	     #f
-	     p
-	     v
-	     (lambda (v-alist)
-	      ;; See the note in abstract-eval-prime!
-	      ;; here I am: Can hoist this since it doesn't depend on v-alist
-	      ;;            or b. It only depends on v-alist being nonempty and
-	      ;;            v not being an empty abstract value.
-	      ;; We now use expression-eqv? in only two places. Here is the
-	      ;; second (which includes all similar additions to parents).
-	      (unless (memp expression-eqv? e (parents e1))
-	       (set-parents! e1 (cons e (parents e1)))
-	       (enqueue! e))
-	      (abstract-eval-prime!
-	       e1 (construct-environment-for-let e vs v-alist)))))
-	   (else (compile-time-warning
-		  "Value might have wrong type for let binder" v))))))
+	  (unless (every-value-tags
+		   (lambda (tags) (prefix-tags? tags1 tags)) v)
+	   (compile-time-warning
+	    "Value might have wrong type for let binder" v))
+	  (when (some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
+	   (abstract-destructure
+	    ;; widening case J
+	    for-each-union
+	    #f
+	    p
+	    v
+	    (lambda (v-alist)
+	     ;; See the note in abstract-eval-prime!
+	     ;; here I am: Can hoist this since it doesn't depend on v-alist
+	     ;;            or b. It only depends on v-alist being nonempty and
+	     ;;            v not being an empty abstract value.
+	     ;; We now use expression-eqv? in only two places. Here is the
+	     ;; second (which includes all similar additions to parents).
+	     (unless (memp expression-eqv? e (parents e1))
+	      (set-parents! e1 (cons e (parents e1)))
+	      (enqueue! e))
+	     ;; bar
+	     (abstract-eval-prime!
+	      e1 (construct-environment-for-let e vs v-alist))))))))
        (environment-bindings e))
       (for-each
        (lambda (b)
@@ -9165,34 +9100,25 @@
 		   ;; Need to refresh my memory as to why this union is needed.
 		   (abstract-value-union
 		    (environment-binding-value b)
-		    (cond
-		     ((every-value-tags
-		       (lambda (tags) (prefix-tags? tags1 tags)) v)
-		      (abstract-destructure
-		       ;; widening case J
-		       map-union
-		       (empty-abstract-value)
-		       p
-		       v
-		       (lambda (v-alist)
-			(abstract-eval1
-			 e1 (construct-environment-for-let e vs v-alist)))))
-		     ((some-value-tags
-		       (lambda (tags) (prefix-tags? tags1 tags)) v)
+		    (begin
+		     ;; needs work: what if v is empty-abstract-value
+		     (unless (every-value-tags
+			      (lambda (tags) (prefix-tags? tags1 tags)) v)
 		      (compile-time-warning
-		       "Value might have wrong type for let binder" v)
-		      (abstract-destructure
-		       ;; widening case J
-		       map-union
-		       (empty-abstract-value)
-		       p
-		       v
-		       (lambda (v-alist)
-			(abstract-eval1
-			 e1 (construct-environment-for-let e vs v-alist)))))
-		     (else
-		      (compile-time-warning
-		       "Value might have wrong type for let binder" v)))))))
+		       "Value might have wrong type for let binder" v))
+		     (if (some-value-tags
+			  (lambda (tags) (prefix-tags? tags1 tags)) v)
+			 (abstract-destructure
+			  ;; widening case J
+			  map-union
+			  (empty-abstract-value)
+			  p
+			  v
+			  (lambda (v-alist)
+			   ;; bar
+			   (abstract-eval1
+			    e1 (construct-environment-for-let e vs v-alist))))
+			 (empty-abstract-value)))))))
 	 ;; With the above union the old value will always be a subset of the
 	 ;; new value by a precise calculation but might not be given that the
 	 ;; subset calculation is imprecise. Need to document example where
@@ -9246,6 +9172,7 @@
 	       ;; See the above note.
 	       (abstract-value-union
 		(environment-binding-value b)
+		;; bar
 		(abstract-eval1 (letrec-expression-body e)
 				(letrec-nested-environment
 				 (environment-binding-values b) e))))))
@@ -9257,78 +9184,25 @@
   ((cons-expression? e)
    (for-each
     (lambda (b)
-     (let ((v1 (abstract-eval1
-		(cons-expression-car e)
-		(restrict-environment (environment-binding-values b)
-				      (cons-expression-car-indices e))))
-	   (v2 (abstract-eval1
-		(cons-expression-cdr e)
-		(restrict-environment (environment-binding-values b)
-				      (cons-expression-cdr-indices e)))))
-      (cond
-       ((and
-	 (every-value-tags
-	  (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1)) v1)
-	 (every-value-tags
-	  (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2))
-	;; widening case D
-	(let ((v (widen-abstract-value
-		  ;; See the above note.
-		  (abstract-value-union
-		   (environment-binding-value b)
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
-	 ;; See the above note.
-	 (unless (abstract-value-subset? v (environment-binding-value b))
-	  (set-environment-binding-value! b v)
-	  (for-each enqueue! (parents e)))))
-       ((and
-	 (some-value-tags
-	  (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1)) v1)
-	 (some-value-tags
-	  (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2)) v2))
-	(unless (every-value-tags
-		 (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1))
-		 v1)
-	 (compile-time-warning
-	  (format #f
-		  "CAR argument might have wrong type for target with tags ~s"
-		  (cons-expression-tags e))
-	  v1))
-	(unless (every-value-tags
-		 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-		 v2)
-	 (compile-time-warning
-	  (format #f
-		  "CDR argument might have wrong type for target with tags ~s"
-		  (cons-expression-tags e))
-	  v2))
-	;; widening case D
-	(let ((v (widen-abstract-value
-		  ;; See the above note.
-		  (abstract-value-union
-		   (environment-binding-value b)
-		   (new-tagged-pair (cons-expression-tags e) v1 v2)))))
-	 ;; See the above note.
-	 (unless (abstract-value-subset? v (environment-binding-value b))
-	  (set-environment-binding-value! b v)
-	  (for-each enqueue! (parents e)))))
-       (else
-	(unless (every-value-tags
-		 (lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1))
-		 v1)
-	 (compile-time-warning
-	  (format #f
-		  "CAR argument might have wrong type for target with tags ~s"
-		  (cons-expression-tags e))
-	  v1))
-	(unless (every-value-tags
-		 (lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-		 v2)
-	 (compile-time-warning
-	  (format #f
-		  "CDR argument might have wrong type for target with tags ~s"
-		  (cons-expression-tags e))
-	  v2))))))
+     ;; widening case D
+     (let ((v (widen-abstract-value
+	       ;; See the above note.
+	       (abstract-value-union
+		(environment-binding-value b)
+		(tagged-vlad-cons
+		 (cons-expression-tags e)
+		 (abstract-eval1
+		  (cons-expression-car e)
+		  (restrict-environment (environment-binding-values b)
+					(cons-expression-car-indices e)))
+		 (abstract-eval1
+		  (cons-expression-cdr e)
+		  (restrict-environment (environment-binding-values b)
+					(cons-expression-cdr-indices e))))))))
+      ;; See the above note.
+      (unless (abstract-value-subset? v (environment-binding-value b))
+       (set-environment-binding-value! b v)
+       (for-each enqueue! (parents e)))))
     (environment-bindings e)))
   (else (internal-error))))
 
@@ -9346,6 +9220,7 @@
     (unless (memp expression-eqv? e (parents e1))
      (set-parents! e1 (cons e (parents e1)))
      (enqueue! e))
+    ;; bar
     (abstract-eval-prime! e1 (construct-environment u1 v-alist))))))
 
 (define (abstract-apply-prime! e v1 v2)
@@ -9390,16 +9265,13 @@
 	      "Argument to if-procedure might be invalid" u)))
 	(union-members v2))))
      ((closure? u1)
-      (cond ((every-value-tags
-	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	     (abstract-apply-closure! e u1 v2))
-	    ((some-value-tags
-	      (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
-	     (compile-time-warning
-	      "Argument might have wrong type for target" u1 v2)
-	     (abstract-apply-closure! e u1 v2))
-	    (else (compile-time-warning
-		   "Argument might have wrong type for target" u1 v2))))
+      (unless (every-value-tags
+	       (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
+       (compile-time-warning
+	"Argument might have wrong type for target" u1 v2))
+      (when (some-value-tags
+	     (lambda (tags2) (prefix-tags? (value-tags u1) tags2)) v2)
+       (abstract-apply-closure! e u1 v2)))
      (else (compile-time-warning "Target might not be a procedure" u1))))
    (union-members v1))))
 
@@ -9407,6 +9279,8 @@
  ;; Can't give an error if entry already exists since we call this
  ;; indiscriminantly in abstract-apply-prime!.
  (let loop ((e e) (vs vs))
+  ;; debugging
+  (when #f (assert (every meets-syntactic-constraints? vs)))
   (unless (some (lambda (b)
 		 (abstract-environment=? vs (environment-binding-values b)))
 		(environment-bindings e))
@@ -9434,6 +9308,7 @@
 	     vs
 	     ;; Note that we don't widen vs before creating the closure.
 	     ;; widening case G
+	     ;; foo
 	     (widen-abstract-value (new-nonrecursive-closure vs e)))
 	    (environment-bindings e)))
      (for-each enqueue! (parents e)))
@@ -9480,6 +9355,7 @@
      (unless (memp expression-eqv? e (parents (letrec-expression-body e)))
       (set-parents! (letrec-expression-body e)
 		    (cons e (parents (letrec-expression-body e)))))
+     ;; bar
      (loop (letrec-expression-body e) (letrec-nested-environment vs e))
      (enqueue! e))
     ((cons-expression? e)
@@ -9559,9 +9435,9 @@
 		       (eq? (sensitivity-tagged-value-primal v) 'unfilled))
 		  (and (reverse-tagged-value? v)
 		       (eq? (reverse-tagged-value-primal v) 'unfilled))
-		  (and (tagged-pair? v)
-		       (or (eq? (tagged-pair-car v) 'unfilled)
-			   (eq? (tagged-pair-cdr v) 'unfilled))))
+		  (and (vlad-pair? v)
+		       (or (eq? (vlad-pair-car v) 'unfilled)
+			   (eq? (vlad-pair-cdr v) 'unfilled))))
 	      (k #t vs)
 	      (let inner ((vs1 (aggregate-value-values v)) (vs (cons v vs)))
 	       (if (null? vs1)
@@ -9830,7 +9706,7 @@
 	(assert (eq? (sensitivity-tagged-value-canonize-cache v) v)))
        ((reverse-tagged-value? v)
 	(assert (eq? (reverse-tagged-value-canonize-cache v) v)))
-       ((tagged-pair? v) (assert (eq? (tagged-pair-canonize-cache v) v)))
+       ((vlad-pair? v) (assert (eq? (vlad-pair-canonize-cache v) v)))
        (else (internal-error))))
 
 (define (check-intern-cache! v)
@@ -9847,7 +9723,7 @@
 	(assert (eq? (sensitivity-tagged-value-intern-cache v) v)))
        ((reverse-tagged-value? v)
 	(assert (eq? (reverse-tagged-value-intern-cache v) v)))
-       ((tagged-pair? v) (assert (eq? (tagged-pair-intern-cache v) v)))
+       ((vlad-pair? v) (assert (eq? (vlad-pair-intern-cache v) v)))
        (else (internal-error))))
 
 (define (check-filled! v)
@@ -9866,9 +9742,9 @@
 	(assert (not (eq? (sensitivity-tagged-value-primal v) 'unfilled))))
        ((reverse-tagged-value? v)
 	(assert (not (eq? (reverse-tagged-value-primal v) 'unfilled))))
-       ((tagged-pair? v)
-	(assert (and (not (eq? (tagged-pair-car v) 'unfilled))
-		     (not (eq? (tagged-pair-cdr v) 'unfilled)))))
+       ((vlad-pair? v)
+	(assert (and (not (eq? (vlad-pair-car v) 'unfilled))
+		     (not (eq? (vlad-pair-cdr v) 'unfilled)))))
        (else (internal-error))))
 
 (define (check-interned! v)
@@ -9882,7 +9758,7 @@
        ((sensitivity-tagged-value? v)
 	(assert (memq v *sensitivity-tagged-values*)))
        ((reverse-tagged-value? v) (assert (memq v *reverse-tagged-values*)))
-       ((tagged-pair? v) (assert (memq v *tagged-pairs*)))
+       ((vlad-pair? v) (assert (memq v *vlad-pairs*)))
        (else (internal-error))))
 
 (define (check-no-nested-or-singleton-unions! v)
@@ -9927,7 +9803,7 @@
  (for-each f *bundles*)
  (for-each f *sensitivity-tagged-values*)
  (for-each f *reverse-tagged-values*)
- (for-each f *tagged-pairs*))
+ (for-each f *vlad-pairs*))
 
 (define (check-no-duplicate-interned-abstract-values!)
  (define (check-no-duplicate-interned-abstract-values! vs)
@@ -9945,7 +9821,7 @@
  (check-no-duplicate-interned-abstract-values! *bundles*)
  (check-no-duplicate-interned-abstract-values! *sensitivity-tagged-values*)
  (check-no-duplicate-interned-abstract-values! *reverse-tagged-values*)
- (check-no-duplicate-interned-abstract-values! *tagged-pairs*))
+ (check-no-duplicate-interned-abstract-values! *vlad-pairs*))
 
 (define (walk-abstract-value! f v)
  ;; This is written in CPS so as not to break structure sharing.
@@ -10356,20 +10232,14 @@
 			(get-reverse-tagged-value-primal-alias v1 a1)
 			(get-reverse-tagged-value-primal v2)
 			#f)))
-	 ((and (tagged-pair? v1)
-	       (tagged-pair? v2)
-	       (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-	  (let ((as1 (get-tagged-pair-aliases v1 a1)))
-	   (new-alias-tagged-pair
-	    (tagged-pair-tags v2)
-	    (get-tagged-pair-car v2)
-	    (widen-alias
-	     (get-tagged-pair-car v1) (first as1) (get-tagged-pair-car v2) #f)
-	    (get-tagged-pair-cdr v2)
-	    (widen-alias (get-tagged-pair-cdr v1)
-			 (second as1)
-			 (get-tagged-pair-cdr v2)
-			 #f))))
+	 ((and (vlad-pair? v1) (vlad-pair? v2))
+	  (vlad-cons-alias
+	   (vlad-car v2)
+	   (widen-alias
+	    (vlad-car v1) (vlad-car-alias v1 a1) (vlad-car v2) #f)
+	   (vlad-cdr v2)
+	   (widen-alias
+	    (vlad-cdr v1) (vlad-cdr-alias v1 a1) (vlad-cdr v2) #f)))
 	 (else (internal-error)))))
   (assert (compatible-alias? v2 a2))
   a2))
@@ -10458,9 +10328,9 @@
 	 ((sensitivity-tagged-value? v)
 	  (loop (get-sensitivity-tagged-value-primal v)))
 	 ((reverse-tagged-value? v) (loop (get-reverse-tagged-value-primal v)))
-	 ((tagged-pair? v)
-	  (loop (get-tagged-pair-car v))
-	  (loop (get-tagged-pair-cdr v)))
+	 ((vlad-pair? v)
+	  (loop (vlad-car v))
+	  (loop (vlad-cdr v)))
 	 (else (internal-error))))
   (reverse vs)))
 
@@ -10480,7 +10350,7 @@
    (sensitivity-tagged-value-equivalent-slot-indices v))
   ((reverse-tagged-value? v)
    (reverse-tagged-value-equivalent-slot-indices v))
-  ((tagged-pair? v) (tagged-pair-equivalent-slot-indices v))
+  ((vlad-pair? v) (vlad-pair-equivalent-slot-indices v))
   (else (internal-error))))
 
 (define (boxed-slots v)
@@ -10508,9 +10378,9 @@
     ((sensitivity-tagged-value? v)
      (internal (get-sensitivity-tagged-value-primal v)))
     ((reverse-tagged-value? v) (internal (get-reverse-tagged-value-primal v)))
-    ((tagged-pair? v)
-     (internal (get-tagged-pair-car v))
-     (internal (get-tagged-pair-cdr v)))
+    ((vlad-pair? v)
+     (internal (vlad-car v))
+     (internal (vlad-cdr v)))
     (else (internal-error))))
   (reverse vs)))
 
@@ -10554,6 +10424,265 @@
  (cond ((nonrecursive-closure? u) (get-nonrecursive-closure-alias-values u a))
        ((recursive-closure? u) (get-recursive-closure-alias-values u a))
        (else (internal-error))))
+
+(define (closure-ref-alias v a x)
+ (list-ref (get-closure-alias-values v a)
+	   (positionp variable=? x (closure-variables v))))
+
+(define (tagged-new-alias-nonrecursive-closure tags vs as e)
+ (if (empty-tags? tags)
+     (new-alias-nonrecursive-closure vs as e)
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias (tagged-new-nonrecursive-closure
+		       (remove-tag 'perturbation tags)
+		       (map unperturb vs)
+		       (perturbation-transform-inverse e))
+		      (tagged-new-alias-nonrecursive-closure
+		       (remove-tag 'perturbation tags)
+		       (map unperturb vs)
+		       (map (lambda (v a) (unperturb-alias v a #f)) vs as)
+		       (perturbation-transform-inverse e))
+		      #f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-new-nonrecursive-closure
+		    (remove-tag 'forward tags)
+		    (map primal vs)
+		    (forward-transform-inverse e))
+		   (perturb (tagged-new-nonrecursive-closure
+			     (remove-tag 'forward tags)
+			     (map unperturb (map tangent vs))
+			     (forward-transform-inverse e))))
+	(vlad-cons-alias
+	 (tagged-new-nonrecursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (forward-transform-inverse e))
+	 (tagged-new-alias-nonrecursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (map (lambda (v a) (primal-alias v a #f)) vs as)
+	  (forward-transform-inverse e))
+	 (perturb (tagged-new-nonrecursive-closure
+		   (remove-tag 'forward tags)
+		   (map unperturb (map tangent vs))
+		   (forward-transform-inverse e)))
+	 (perturb-alias
+	  (tagged-new-nonrecursive-closure
+	   (remove-tag 'forward tags)
+	   (map unperturb (map tangent vs))
+	   (forward-transform-inverse e))
+	  (tagged-new-alias-nonrecursive-closure
+	   (remove-tag 'forward tags)
+	   (map unperturb (map tangent vs))
+	   (unperturb-alias (map tangent vs)
+			    (map (lambda (v a) (tangent-alias v a #f)) vs as)
+			    #f)
+	   (forward-transform-inverse e))
+	  #f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias (tagged-new-nonrecursive-closure
+			 (remove-tag 'sensitivity tags)
+			 (map unsensitize vs)
+			 (sensitivity-transform-inverse e))
+			(tagged-new-alias-nonrecursive-closure
+			 (remove-tag 'sensitivity tags)
+			 (map unsensitize vs)
+			 (map (lambda (v a) (unsensitize-alias v a #f)) vs as)
+			 (sensitivity-transform-inverse e))
+			#f))
+      ((reverse)
+       (*j-alias (tagged-new-nonrecursive-closure
+		  (remove-tag 'reverse tags)
+		  (map *j-inverse vs)
+		  (reverse-transform-inverse e))
+		 (tagged-new-alias-nonrecursive-closure
+		  (remove-tag 'reverse tags)
+		  (map *j-inverse vs)
+		  (map (lambda (v a) (*j-inverse-alias v a #f)) vs as)
+		  (reverse-transform-inverse e))
+		 #f))
+      (else (internal-error)))))
+
+(define (tagged-new-alias-recursive-closure tags vs as xs es i)
+ (if (empty-tags? tags)
+     (new-alias-recursive-closure vs as xs es i)
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias (tagged-new-recursive-closure
+		       (remove-tag 'perturbation tags)
+		       (map unperturb vs)
+		       (map-vector unperturbationify xs)
+		       (map-vector perturbation-transform-inverse es)
+		       i)
+		      (tagged-new-alias-recursive-closure
+		       (remove-tag 'perturbation tags)
+		       (map unperturb vs)
+		       (map (lambda (v a) (unperturb-alias v a #f)) vs as)
+		       (map-vector unperturbationify xs)
+		       (map-vector perturbation-transform-inverse es)
+		       i)
+		      #f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-new-recursive-closure
+		    (remove-tag 'forward tags)
+		    (map primal vs)
+		    (map-vector unforwardify xs)
+		    (map-vector forward-transform-inverse es)
+		    i)
+		   (perturb (tagged-new-recursive-closure
+			     (remove-tag 'forward tags)
+			     (map unperturb (map tangent vs))
+			     (map-vector unforwardify xs)
+			     (map-vector forward-transform-inverse es)
+			     i)))
+	(vlad-cons-alias
+	 (tagged-new-recursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (map-vector unforwardify xs)
+	  (map-vector forward-transform-inverse es)
+	  i)
+	 (tagged-new-alias-recursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (map (lambda (v a) (primal-alias v a #f)) vs as)
+	  (map-vector unforwardify xs)
+	  (map-vector forward-transform-inverse es)
+	  i)
+	 (perturb (tagged-new-recursive-closure
+		   (remove-tag 'forward tags)
+		   (map unperturb (map tangent vs))
+		   (map-vector unforwardify xs)
+		   (map-vector forward-transform-inverse es)
+		   i))
+	 (perturb-alias (tagged-new-recursive-closure
+			 (remove-tag 'forward tags)
+			 (map unperturb (map tangent vs))
+			 (map-vector unforwardify xs)
+			 (map-vector forward-transform-inverse es)
+			 i)
+			(tagged-new-alias-recursive-closure
+			 (remove-tag 'forward tags)
+			 (map unperturb (map tangent vs))
+			 (unperturb-alias
+			  (map tangent vs)
+			  (map (lambda (v a) (tangent-alias v a #f)) vs as)
+			  #f)
+			 (map-vector unforwardify xs)
+			 (map-vector forward-transform-inverse es)
+			 i)
+			#f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias (tagged-new-recursive-closure
+			 (remove-tag 'sensitivity tags)
+			 (map unsensitize vs)
+			 (map-vector unsensitivityify xs)
+			 (map-vector sensitivity-transform-inverse es)
+			 i)
+			(tagged-new-alias-recursive-closure
+			 (remove-tag 'sensitivity tags)
+			 (map unsensitize vs)
+			 (map (lambda (v a) (unsensitize-alias v a #f)) vs as)
+			 (map-vector unsensitivityify xs)
+			 (map-vector sensitivity-transform-inverse es)
+			 i)
+			#f))
+      ((reverse)
+       (*j-alias (tagged-new-recursive-closure
+		  (remove-tag 'reverse tags)
+		  (map *j-inverse vs)
+		  (map-vector unreverseify xs)
+		  (map-vector reverse-transform-inverse es)
+		  i)
+		 (tagged-new-alias-recursive-closure
+		  (remove-tag 'reverse tags)
+		  (map *j-inverse vs)
+		  (map (lambda (v a) (*j-inverse-alias v a #f)) vs as)
+		  (map-vector unreverseify xs)
+		  (map-vector reverse-transform-inverse es)
+		  i)
+		 #f))
+      (else (internal-error)))))
+
+(define (tagged-closure-ref-alias tags v a x)
+ (if (empty-tags? tags)
+     (cond ((union? v)
+	    ;; widening case M3
+	    (unionize-alias
+	     (map (lambda (u)
+		   (if (closure? u) (closure-ref u x) (empty-abstract-value)))
+		  (get-union-values v))
+	     (map (lambda (u a)
+		   (if (closure? u) (closure-ref-alias u a x) (empty-alias)))
+		  (get-union-values v)
+		  (get-union-alias-values v a))))
+	   ((closure? v) (closure-ref-alias v a x))
+	   (else (empty-alias)))
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias (tagged-closure-ref (remove-tag 'perturbation tags)
+					  (unperturb v)
+					  (unperturbationify x))
+		      (tagged-closure-ref-alias (remove-tag 'perturbation tags)
+						(unperturb v)
+						(unperturb-alias v a #f)
+						(unperturbationify x))
+		      #f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-closure-ref (remove-tag 'forward tags)
+				       (primal v)
+				       (unforwardify x))
+		   (perturb (tagged-closure-ref (remove-tag 'forward tags)
+						(unperturb (tangent v))
+						(unforwardify x))))
+	(vlad-cons-alias
+	 (tagged-closure-ref (remove-tag 'forward tags)
+			     (primal v)
+			     (unforwardify x))
+	 (tagged-closure-ref-alias (remove-tag 'forward tags)
+				   (primal v)
+				   (primal-alias v a #f)
+				   (unforwardify x))
+	 (perturb (tagged-closure-ref (remove-tag 'forward tags)
+				      (unperturb (tangent v))
+				      (unforwardify x)))
+	 (perturb-alias
+	  (tagged-closure-ref (remove-tag 'forward tags)
+			      (unperturb (tangent v))
+			      (unforwardify x))
+	  (tagged-closure-ref-alias
+	   (remove-tag 'forward tags)
+	   (unperturb (tangent v))
+	   (unperturb-alias (tangent v) (tangent-alias v a #f) #f)
+	   (unforwardify x))
+	  #f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias
+	(tagged-closure-ref (remove-tag 'sensitivity tags)
+			    (unsensitize v)
+			    (unsensitivityify x))
+	(tagged-closure-ref-alias (remove-tag 'sensitivity tags)
+				  (unsensitize v)
+				  (unsensitize-alias v a #f)
+				  (unsensitivityify x))
+	#f))
+      ((reverse)
+       (*j-alias (tagged-closure-ref (remove-tag 'reverse tags)
+				     (*j-inverse v)
+				     (unreverseify x))
+		 (tagged-closure-ref-alias (remove-tag 'reverse tags)
+					   (*j-inverse v)
+					   (*j-inverse-alias v a #f)
+					   (unreverseify x))
+		 #f))
+      (else (internal-error)))))
 
 (define (new-alias-perturbation-tagged-value v a)
  (assert (compatible-alias? v a))
@@ -10606,19 +10735,23 @@
  (assert (compatible-alias? u a))
  (if (boxed? u) (copy-alias (alias u)) a))
 
-(define (new-alias-tagged-pair tags v1 a1 v2 a2)
+(define (vlad-cons-alias v1 a1 v2 a2)
  (assert (and (compatible-alias? v1 a1) (compatible-alias? v2 a2)))
- (let ((u (new-tagged-pair tags v1 v2)))
+ (let ((u (vlad-cons v1 v2)))
   (cond ((boxed? u)
 	 (set-new-aliases! u (cons (append a1 a2) (new-aliases u)))
 	 (alias-for u))
 	(else (append a1 a2)))))
 
-(define (get-tagged-pair-aliases u a)
+(define (get-vlad-pair-aliases u a)
  (assert (compatible-alias? u a))
  (split-alias (if (boxed? u) (copy-alias (alias u)) a)
-	      (list (number-of-slots (get-tagged-pair-car u))
-		    (number-of-slots (get-tagged-pair-cdr u)))))
+	      (list (number-of-slots (vlad-car u))
+		    (number-of-slots (vlad-cdr u)))))
+
+(define (vlad-car-alias u a) (first (get-vlad-pair-aliases u a)))
+
+(define (vlad-cdr-alias u a) (second (get-vlad-pair-aliases u a)))
 
 (define (lookup-unionize vs)
  (canonize-and-maybe-intern-abstract-value
@@ -10626,11 +10759,13 @@
 
 (define (unionize-alias vs as)
  (assert (and (= (length vs) (length as)) (every compatible-alias? vs as)))
- (let* ((v (lookup-unionize vs))
-	(a (coalesce-aliases
-	    (map (lambda (v1 a1) (widen-alias v1 a1 v #f)) vs as))))
-  (assert (compatible-alias? v a))
-  a))
+ (if (null? vs)
+     (empty-alias)
+     (let* ((v (lookup-unionize vs))
+	    (a (coalesce-aliases
+		(map (lambda (v1 a1) (widen-alias v1 a1 v #f)) vs as))))
+      (assert (compatible-alias? v a))
+      a)))
 
 (define (get-union-alias-values v a)
  (assert (compatible-alias? v a))
@@ -10642,6 +10777,193 @@
 (define (union-alias-members v a)
  (assert (or (not (union? v)) (not (some union? (get-union-values v)))))
  (if (union? v) (get-union-alias-values v a) (list a)))
+
+(define (tagged-vlad-cons-alias tags v1 a1 v2 a2)
+ (if (empty-tags? tags)
+     (vlad-cons-alias v1 a1 v2 a2)
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias (tagged-vlad-cons (remove-tag 'perturbation tags)
+					(unperturb v1)
+					(unperturb v2))
+		      (tagged-vlad-cons-alias (remove-tag 'perturbation tags)
+					      (unperturb v1)
+					      (unperturb-alias v1 a1 #f)
+					      (unperturb v2)
+					      (unperturb-alias v2 a2 #f))
+		      #f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-vlad-cons (remove-tag 'forward tags)
+				     (primal v1)
+				     (primal v2))
+		   (perturb (tagged-vlad-cons (remove-tag 'forward tags)
+					      (unperturb (tangent v1))
+					      (unperturb (tangent v2)))))
+	(vlad-cons-alias
+	 (tagged-vlad-cons (remove-tag 'forward tags)
+			   (primal v1)
+			   (primal v2))
+	 (tagged-vlad-cons-alias (remove-tag 'forward tags)
+				 (primal v1)
+				 (primal-alias v1 a1 #f)
+				 (primal v2)
+				 (primal-alias v2 a2 #f))
+	 (perturb (tagged-vlad-cons (remove-tag 'forward tags)
+				    (unperturb (tangent v1))
+				    (unperturb (tangent v2))))
+	 (perturb-alias
+	  (tagged-vlad-cons (remove-tag 'forward tags)
+			    (unperturb (tangent v1))
+			    (unperturb (tangent v2)))
+	  (tagged-vlad-cons-alias (remove-tag 'forward tags)
+				  (unperturb (tangent v1))
+				  (unperturb-alias (tangent v1)
+						   (tangent-alias v1 a1 #f)
+						   #f)
+				  (unperturb (tangent v2))
+				  (unperturb-alias (tangent v2)
+						   (tangent-alias v2 a2 #f)
+						   #f))
+	  #f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias (tagged-vlad-cons (remove-tag 'sensitivity tags)
+					  (unsensitize v1)
+					  (unsensitize v2))
+			(tagged-vlad-cons-alias (remove-tag 'sensitivity tags)
+						(unsensitize v1)
+						(unsensitize-alias v1 a1 #f)
+						(unsensitize v2)
+						(unsensitize-alias v2 a2 #f))
+			#f))
+      ((reverse)
+       (*j-alias (tagged-vlad-cons (remove-tag 'reverse tags)
+				   (*j-inverse v1)
+				   (*j-inverse v2))
+		 (tagged-vlad-cons-alias (remove-tag 'reverse tags)
+					 (*j-inverse v1)
+					 (*j-inverse-alias v1 a1 #f)
+					 (*j-inverse v2)
+					 (*j-inverse-alias v2 a2 #f))
+		 #f))
+      (else (internal-error)))))
+
+(define (tagged-vlad-car-alias tags u a)
+ (if (empty-tags? tags)
+     (cond ((union? u)
+	    ;; widening case M1
+	    (unionize-alias
+	     (map (lambda (u)
+		   (if (vlad-pair? u) (vlad-car u) (empty-abstract-value)))
+		  (get-union-values u))
+	     (map (lambda (u a)
+		   (if (vlad-pair? u) (vlad-car-alias u a) (empty-alias)))
+		  (get-union-values u)
+		  (get-union-alias-values u a))))
+	   ((vlad-pair? u) (vlad-car-alias u a))
+	   (else (empty-alias)))
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias
+	(tagged-vlad-car (remove-tag 'perturbation tags) (unperturb u))
+	(tagged-vlad-car-alias (remove-tag 'perturbation tags)
+			       (unperturb u)
+			       (unperturb-alias u a #f))
+	#f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-vlad-car (remove-tag 'forward tags) (primal u))
+		   (perturb (tagged-vlad-car (remove-tag 'forward tags)
+					     (unperturb (tangent u)))))
+	(vlad-cons-alias
+	 (tagged-vlad-car (remove-tag 'forward tags) (primal u))
+	 (tagged-vlad-car-alias (remove-tag 'forward tags)
+				(primal u)
+				(primal-alias u a #f))
+	 (perturb (tagged-vlad-car (remove-tag 'forward tags)
+				   (unperturb (tangent u))))
+	 (perturb-alias
+	  (tagged-vlad-car (remove-tag 'forward tags) (unperturb (tangent u)))
+	  (tagged-vlad-car-alias
+	   (remove-tag 'forward tags)
+	   (unperturb (tangent u))
+	   (unperturb-alias (tangent u) (tangent-alias u a #f) #f))
+	  #f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias
+	(tagged-vlad-car (remove-tag 'sensitivity tags) (unsensitize u))
+	(tagged-vlad-car-alias (remove-tag 'sensitivity tags)
+			       (unsensitize u)
+			       (unsensitize-alias u a #f))
+	#f))
+      ((reverse)
+       (*j-alias
+	(tagged-vlad-car (remove-tag 'reverse tags) (*j-inverse u))
+	(tagged-vlad-car-alias (remove-tag 'reverse tags)
+			       (*j-inverse u)
+			       (*j-inverse-alias u a #f))
+	#f))
+      (else (internal-error)))))
+
+(define (tagged-vlad-cdr-alias tags u a)
+ (if (empty-tags? tags)
+     (cond ((union? u)
+	    ;; widening case M2
+	    (unionize-alias
+	     (map (lambda (u)
+		   (if (vlad-pair? u) (vlad-cdr u) (empty-abstract-value)))
+		  (get-union-values u))
+	     (map (lambda (u a)
+		   (if (vlad-pair? u) (vlad-cdr-alias u a) (empty-alias)))
+		  (get-union-values u)
+		  (get-union-alias-values u a))))
+	   ((vlad-pair? u) (vlad-cdr-alias u a))
+	   (else (empty-alias)))
+     (case (first tags)
+      ((perturbation)
+       (perturb-alias
+	(tagged-vlad-cdr (remove-tag 'perturbation tags) (unperturb u))
+	(tagged-vlad-cdr-alias (remove-tag 'perturbation tags)
+			       (unperturb u)
+			       (unperturb-alias u a #f))
+	#f))
+      ((forward)
+       (bundle-alias1
+	(vlad-cons (tagged-vlad-cdr (remove-tag 'forward tags) (primal u))
+		   (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+					     (unperturb (tangent u)))))
+	(vlad-cons-alias
+	 (tagged-vlad-cdr (remove-tag 'forward tags) (primal u))
+	 (tagged-vlad-cdr-alias (remove-tag 'forward tags)
+				(primal u)
+				(primal-alias u a #f))
+	 (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+				   (unperturb (tangent u))))
+	 (perturb-alias
+	  (tagged-vlad-cdr (remove-tag 'forward tags) (unperturb (tangent u)))
+	  (tagged-vlad-cdr-alias
+	   (remove-tag 'forward tags)
+	   (unperturb (tangent u))
+	   (unperturb-alias (tangent u) (tangent-alias u a #f) #f))
+	  #f))
+	#f))
+      ((sensitivity)
+       (sensitize-alias
+	(tagged-vlad-cdr (remove-tag 'sensitivity tags) (unsensitize u))
+	(tagged-vlad-cdr-alias (remove-tag 'sensitivity tags)
+			       (unsensitize u)
+			       (unsensitize-alias u a #f))
+	#f))
+      ((reverse)
+       (*j-alias
+	(tagged-vlad-cdr (remove-tag 'reverse tags) (*j-inverse u))
+	(tagged-vlad-cdr-alias (remove-tag 'reverse tags)
+			       (*j-inverse u)
+			       (*j-inverse-alias u a #f))
+	#f))
+      (else (internal-error)))))
 
 (define (restrict-alias-environment as is)
  ;; This is identical to restrict-environment up to alpha renaming.
@@ -10656,6 +10978,7 @@
   (map (lambda (p? i)
 	(if p?
 	    ;; See the note in letrec-nested-environment.
+	    ;; foo
 	    (new-alias-recursive-closure
 	     (restrict-environment vs (letrec-expression-indices e))
 	     (restrict-alias-environment as (letrec-expression-indices e))
@@ -10677,12 +11000,12 @@
    (application-let-free-variable-indices e)
    (free-variables (lambda-expression-body (application-callee e))))))
 
-(define (construct-alias-environment u1 a1 a-alist)
+(define (construct-alias-environment u1 a1 v-alist a-alist)
  ;; See the note in construct-environment.
- (assert (and (not (union? u1)) (compatible-alias? u1 a1)))
- (let ((as (list->vector (get-closure-alias-values u1 a1))))
-  (cond
-   ((nonrecursive-closure? u1)
+ (assert (compatible-alias? u1 a1))
+ (cond
+  ((nonrecursive-closure? u1)
+   (let ((as (list->vector (get-closure-alias-values u1 a1))))
     (map
      (lambda (i x)
       ;; needs work: To make nonrecursive-closure-body-free-variable-indices
@@ -10690,16 +11013,17 @@
       (cond ((assp variable=? x a-alist) => cdr) (else (vector-ref as i))))
      (nonrecursive-closure-body-free-variable-indices u1)
      (free-variables
-      (lambda-expression-body (nonrecursive-closure-lambda-expression u1)))))
-   ((recursive-closure? u1)
+      (lambda-expression-body (nonrecursive-closure-lambda-expression u1))))))
+  ((recursive-closure? u1)
+   (let ((as (list->vector (get-closure-alias-values u1 a1))))
     (map (lambda (i i1 x)
 	  ;; needs work:
 	  ;; To make recursive-closure-body-free-variable-indices and
 	  ;; recursive-closure-body-free-variable-procedure-variable-indices
 	  ;; such that this can be made more efficient.
 	  (cond ((assp variable=? x a-alist) => cdr)
-		;; This may create an abstract value that violates the
-		;; syntactic constraints.
+		;; See the note in construct-environment.
+		;; foo
 		(i1 (new-alias-recursive-closure
 		     (get-recursive-closure-values u1)
 		     (get-recursive-closure-alias-values u1 a1)
@@ -10711,8 +11035,104 @@
 	 (recursive-closure-body-free-variable-procedure-variable-indices u1)
 	 (free-variables (lambda-expression-body
 			  (vector-ref (recursive-closure-lambda-expressions u1)
-				      (recursive-closure-index u1))))))
-   (else (internal-error)))))
+				      (recursive-closure-index u1)))))))
+  ((perturbation-tagged-value? u1)
+   (map (lambda (v a) (perturb-alias v a #f))
+	(construct-environment
+	 (unperturb u1)
+	 (map (lambda (x-v)
+	       (cons (unperturbationify (car x-v)) (unperturb (cdr x-v))))
+	      v-alist))
+	(construct-alias-environment
+	 (unperturb u1)
+	 (unperturb-alias u1 a1 #f)
+	 (map (lambda (x-v)
+	       (cons (unperturbationify (car x-v)) (unperturb (cdr x-v))))
+	      v-alist)
+	 (map (lambda (x-v x-a)
+	       (assert (variable=? (car x-v) (car x-a)))
+	       (cons (unperturbationify (car x-v))
+		     (unperturb-alias (cdr x-v) (cdr x-a) #f)))
+	      v-alist
+	      a-alist))))
+  ((bundle? u1)
+   (map (lambda (v1 a1 v2 a2)
+	 (bundle-alias1 (vlad-cons v1 v2) (vlad-cons-alias v1 a1 v2 a2) #f))
+	(construct-environment
+	 (primal u1)
+	 (map (lambda (x-v) (cons (unforwardify (car x-v)) (primal (cdr x-v))))
+	      v-alist))
+	(construct-alias-environment
+	 (primal u1)
+	 (primal-alias u1 a1 #f)
+	 (map (lambda (x-v)
+	       (cons (unforwardify (car x-v))
+		     (primal (cdr x-v))))
+	      v-alist)
+	 (map (lambda (x-v x-a)
+	       (assert (variable=? (car x-v) (car x-a)))
+	       (cons (unforwardify (car x-v))
+		     (primal-alias (cdr x-v) (cdr x-a) #f)))
+	      v-alist
+	      a-alist))
+	(construct-environment
+	 (tangent u1)
+	 (map (lambda (x-v)
+	       (cons (perturbationify (unforwardify (car x-v)))
+		     (tangent (cdr x-v))))
+	      v-alist))
+	(construct-alias-environment
+	 (tangent u1)
+	 (tangent-alias u1 a1 #f)
+	 (map (lambda (x-v)
+	       (cons (perturbationify (unforwardify (car x-v)))
+		     (tangent (cdr x-v))))
+	      v-alist)
+	 (map (lambda (x-v x-a)
+	       (assert (variable=? (car x-v) (car x-a)))
+	       (cons (perturbationify (unforwardify (car x-v)))
+		     (tangent-alias (cdr x-v) (cdr x-a) #f)))
+	      v-alist
+	      a-alist))))
+  ((sensitivity-tagged-value? u1)
+   (map (lambda (v a) (sensitize-alias v a #f))
+	(construct-environment
+	 (unsensitize u1)
+	 (map (lambda (x-v)
+	       (cons (unsensitivityify (car x-v)) (unsensitize (cdr x-v))))
+	      v-alist))
+	(construct-alias-environment
+	 (unsensitize u1)
+	 (unsensitize-alias u1 a1 #f)
+	 (map (lambda (x-v)
+	       (cons (unsensitivityify (car x-v)) (unsensitize (cdr x-v))))
+	      v-alist)
+	 (map (lambda (x-v x-a)
+	       (assert (variable=? (car x-v) (car x-a)))
+	       (cons (unsensitivityify (car x-v))
+		     (unsensitize-alias (cdr x-v) (cdr x-a) #f)))
+	      v-alist
+	      a-alist))))
+  ((reverse-tagged-value? u1)
+   (map (lambda (v a) (*j-alias v a #f))
+	(construct-environment
+	 (*j-inverse u1)
+	 (map (lambda (x-v)
+	       (cons (unreverseify (car x-v)) (*j-inverse (cdr x-v))))
+	      v-alist))
+	(construct-alias-environment
+	 (*j-inverse u1)
+	 (*j-inverse-alias u1 a1 #f)
+	 (map (lambda (x-v)
+	       (cons (unreverseify (car x-v)) (*j-inverse (cdr x-v))))
+	      v-alist)
+	 (map (lambda (x-v x-a)
+	       (assert (variable=? (car x-v) (car x-a)))
+	       (cons (unreverseify (car x-v))
+		     (*j-inverse-alias (cdr x-v) (cdr x-a) #f)))
+	      v-alist
+	      a-alist))))
+  (else (internal-error))))
 
 (define (alias-destructure p v a k1 k2)
  (assert (compatible-alias? v a))
@@ -10793,18 +11213,15 @@
 			  (rest xs1) (rest xs2) (rest vs) v-alist k1)))))
 		  (empty-abstract-value)))
 	     ((cons-expression? p)
-	      (if (and
-		   (tagged-pair? v)
-		   (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-		  (abstract-outer (cons-expression-car p)
-				  (get-tagged-pair-car v)
-				  v-alist
-				  (lambda (v-alist)
-				   (abstract-outer (cons-expression-cdr p)
-						   (get-tagged-pair-cdr v)
-						   v-alist
-						   k1)))
-		  (empty-abstract-value)))
+	      (abstract-outer
+	       (cons-expression-car p)
+	       (tagged-vlad-car (cons-expression-tags p) v)
+	       v-alist
+	       (lambda (v-alist)
+		(abstract-outer (cons-expression-cdr p)
+				(tagged-vlad-cdr (cons-expression-tags p) v)
+				v-alist
+				k1))))
 	     (else (internal-error)))))
 	  (alias-outer
 	   (lambda (p v a v-alist a-alist k1 k2)
@@ -10967,29 +11384,26 @@
 				k2))
 		  (empty-alias)))
 	     ((cons-expression? p)
-	      (if (and
-		   (tagged-pair? v)
-		   (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-		  (let ((as (get-tagged-pair-aliases v a)))
-		   (alias-outer (cons-expression-car p)
-				(get-tagged-pair-car v)
-				(first as)
+	      (alias-outer
+	       (cons-expression-car p)
+	       (tagged-vlad-car (cons-expression-tags p) v)
+	       (tagged-vlad-car-alias (cons-expression-tags p) v a)
+	       v-alist
+	       a-alist
+	       (lambda (v-alist)
+		(abstract-outer (cons-expression-cdr p)
+				(tagged-vlad-cdr (cons-expression-tags p) v)
 				v-alist
-				a-alist
-				(lambda (v-alist)
-				 (abstract-outer (cons-expression-cdr p)
-						 (get-tagged-pair-cdr v)
-						 v-alist
-						 k1))
-				(lambda (v-alist a-alist)
-				 (alias-outer (cons-expression-cdr p)
-					      (get-tagged-pair-cdr v)
-					      (second as)
-					      v-alist
-					      a-alist
-					      k1
-					      k2))))
-		  (empty-alias)))
+				k1))
+	       (lambda (v-alist a-alist)
+		(alias-outer
+		 (cons-expression-cdr p)
+		 (tagged-vlad-cdr (cons-expression-tags p) v)
+		 (tagged-vlad-cdr-alias (cons-expression-tags p) v a)
+		 v-alist
+		 a-alist
+		 k1
+		 k2))))
 	     (else (internal-error))))))
   (alias-outer p v a '() '() k1 k2)))
 
@@ -11028,12 +11442,15 @@
 	       v2
 	       a2
 	       (lambda (v-alist)
+		;; bar
 		(abstract-eval1 (closure-body v1)
 				(construct-environment v1 v-alist)))
 	       (lambda (v-alist a-alist)
-		(alias-eval (closure-body v1)
-			    (construct-environment v1 v-alist)
-			    (construct-alias-environment v1 a1 a-alist)))))
+		;; bar
+		(alias-eval
+		 (closure-body v1)
+		 (construct-environment v1 v-alist)
+		 (construct-alias-environment v1 a1 v-alist a-alist)))))
 	     (else (empty-alias))))
 	   (else (empty-alias)))))
   (assert (compatible-alias? (abstract-apply v1 v2) a))
@@ -11055,6 +11472,7 @@
 	  ((variable-access-expression? e) (first as))
 	  ((lambda-expression? e)
 	   ;; widening case G
+	   ;; foo
 	   (widen-alias (new-nonrecursive-closure vs e)
 			(new-alias-nonrecursive-closure vs as e)
 			v0
@@ -11070,41 +11488,44 @@
 			  (application-argument e)
 			  (restrict-environment
 			   vs (application-argument-indices e)))))
-		(cond
-		 ((some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-		  ;; widening case B-prime
-		  (widen-alias
-		   (abstract-destructure
-		    ;; widening case J
-		    map-union
-		    (empty-abstract-value)
-		    p
-		    v
-		    (lambda (v-alist)
-		     (abstract-eval1
-		      e1 (construct-environment-for-let e vs v-alist))))
-		   ;; widening case J
-		   (alias-destructure
-		    p
-		    v
-		    (alias-eval
-		     (application-argument e)
-		     (restrict-environment vs (application-argument-indices e))
-		     (restrict-alias-environment
-		      as (application-argument-indices e)))
-		    (lambda (v-alist)
-		     (abstract-eval1
-		      e1 (construct-environment-for-let e vs v-alist)))
-		    (lambda (v-alist a-alist)
-		     (alias-eval
-		      e1
-		      (construct-environment-for-let e vs v-alist)
-		      (construct-alias-environment-for-let e as a-alist))))
-		   v0
-		   #f))
-		 (else
-		  ;; widening case B-prime
-		  (widen-alias (empty-abstract-value) (empty-alias) v0 #f))))
+		(if (some-value-tags
+		     (lambda (tags) (prefix-tags? tags1 tags)) v)
+		    ;; widening case B-prime
+		    (widen-alias
+		     (abstract-destructure
+		      ;; widening case J
+		      map-union
+		      (empty-abstract-value)
+		      p
+		      v
+		      (lambda (v-alist)
+		       ;; bar
+		       (abstract-eval1
+			e1 (construct-environment-for-let e vs v-alist))))
+		     ;; widening case J
+		     (alias-destructure
+		      p
+		      v
+		      (alias-eval
+		       (application-argument e)
+		       (restrict-environment
+			vs (application-argument-indices e))
+		       (restrict-alias-environment
+			as (application-argument-indices e)))
+		      (lambda (v-alist)
+		       ;; bar
+		       (abstract-eval1
+			e1 (construct-environment-for-let e vs v-alist)))
+		      (lambda (v-alist a-alist)
+		       ;; bar
+		       (alias-eval
+			e1
+			(construct-environment-for-let e vs v-alist)
+			(construct-alias-environment-for-let e as a-alist))))
+		     v0
+		     #f)
+		    ;; widening case B-prime
+		    (widen-alias (empty-abstract-value) (empty-alias) v0 #f)))
 	       (let ((v1 (abstract-eval1
 			  (application-callee e)
 			  (restrict-environment
@@ -11134,57 +11555,46 @@
 		 #f))))
 	  ((letrec-expression? e)
 	   ;; widening case C
+	   ;; bar
 	   (widen-alias (abstract-eval1 (letrec-expression-body e)
 					(letrec-nested-environment vs e))
+			;; bar
 			(alias-eval (letrec-expression-body e)
 				    (letrec-nested-environment vs e)
 				    (letrec-nested-alias-environment vs as e))
 			v0
 			#f))
 	  ((cons-expression? e)
-	   (let ((v1 (abstract-eval1
-		      (cons-expression-car e)
-		      (restrict-environment
-		       vs (cons-expression-car-indices e))))
-		 (v2 (abstract-eval1
-		      (cons-expression-cdr e)
-		      (restrict-environment
-		       vs (cons-expression-cdr-indices e)))))
-	    (cond
-	     ((and
-	       (some-value-tags
-		(lambda (tags1) (prefix-tags? (cons-expression-tags e) tags1))
-		v1)
-	       (some-value-tags
-		(lambda (tags2) (prefix-tags? (cons-expression-tags e) tags2))
-		v2))
-	      ;; widening case D
-	      (widen-alias
-	       (new-tagged-pair (cons-expression-tags e) v1 v2)
-	       (new-alias-tagged-pair
-		(cons-expression-tags e)
-		v1
-		(alias-eval
-		 (cons-expression-car e)
-		 (restrict-environment vs (cons-expression-car-indices e))
-		 (restrict-alias-environment
-		  as (cons-expression-car-indices e)))
-		v2
-		(alias-eval
-		 (cons-expression-cdr e)
-		 (restrict-environment vs (cons-expression-cdr-indices e))
-		 (restrict-alias-environment
-		  as (cons-expression-cdr-indices e))))
-	       v0
-	       #f))
-	     ;; widening case D
-	     (else (widen-alias (empty-abstract-value) (empty-alias) v0 #f)))))
+	   (let ((v1 (abstract-eval1 (cons-expression-car e)
+				     (restrict-environment
+				      vs (cons-expression-car-indices e))))
+		 (v2 (abstract-eval1 (cons-expression-cdr e)
+				     (restrict-environment
+				      vs (cons-expression-cdr-indices e)))))
+	    ;; widening case D
+	    (widen-alias
+	     (tagged-vlad-cons (cons-expression-tags e) v1 v2)
+	     (tagged-vlad-cons-alias
+	      (cons-expression-tags e)
+	      v1
+	      (alias-eval
+	       (cons-expression-car e)
+	       (restrict-environment vs (cons-expression-car-indices e))
+	       (restrict-alias-environment as (cons-expression-car-indices e)))
+	      v2
+	      (alias-eval
+	       (cons-expression-cdr e)
+	       (restrict-environment vs (cons-expression-cdr-indices e))
+	       (restrict-alias-environment
+		as (cons-expression-cdr-indices e))))
+	     v0
+	     #f)))
 	  (else (internal-error)))))
   (assert (compatible-alias? v0 a0))
   a0))
 
 (define (zero-alias v a top?)
- (let ((instance (lookup-instance 'zero v)))
+ (let ((instance (find-instance 'zero v)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a (new-input-aliases instance)))
@@ -11198,7 +11608,8 @@
    ((vlad-empty-list? v) (alias-for v))
    ((vlad-true? v) (alias-for v))
    ((vlad-false? v) (alias-for v))
-   ((vlad-real? v) (alias-for 0))
+   ;; debugging
+   ((vlad-real? v) (if #t (alias-for 0) (alias-for (abstract-real))))
    ((primitive-procedure? v) (alias-for v))
    ((nonrecursive-closure? v)
     ;; See the note in abstract-environment=?.
@@ -11241,18 +11652,15 @@
      (zero-alias (get-reverse-tagged-value-primal v)
 		 (get-reverse-tagged-value-primal-alias v a)
 		 #f)))
-   ((tagged-pair? v)
-    (let ((as (get-tagged-pair-aliases v a)))
-     (new-alias-tagged-pair
-      (tagged-pair-tags v)
-      (zero (get-tagged-pair-car v))
-      (zero-alias (get-tagged-pair-car v) (first as) #f)
-      (zero (get-tagged-pair-cdr v))
-      (zero-alias (get-tagged-pair-cdr v) (second as) #f))))
+   ((vlad-pair? v)
+    (vlad-cons-alias (zero (vlad-car v))
+		     (zero-alias (vlad-car v) (vlad-car-alias v a) #f)
+		     (zero (vlad-cdr v))
+		     (zero-alias (vlad-cdr v) (vlad-cdr-alias v a) #f)))
    (else (internal-error)))))
 
 (define (perturb-alias v a top?)
- (let ((instance (lookup-instance 'perturb v)))
+ (let ((instance (find-instance 'perturb v)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a (new-input-aliases instance)))
@@ -11263,11 +11671,17 @@
 		    (map (lambda (u a) (perturb-alias u a #f))
 			 (get-union-values v)
 			 (get-union-alias-values v a))))
-   ((vlad-empty-list? v) (new-alias-perturbation-tagged-value v a))
-   ((vlad-true? v) (new-alias-perturbation-tagged-value v a))
-   ((vlad-false? v) (new-alias-perturbation-tagged-value v a))
-   ((vlad-real? v) (new-alias-perturbation-tagged-value v a))
-   ((primitive-procedure? v) (new-alias-perturbation-tagged-value v a))
+   ((or (vlad-empty-list? v)
+	(vlad-true? v)
+	(vlad-false? v)
+	(vlad-real? v)
+	(primitive-procedure? v)
+	(perturbation-tagged-value? v)
+	(bundle? v)
+	(sensitivity-tagged-value? v)
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
+    (new-alias-perturbation-tagged-value v a))
    ((nonrecursive-closure? v)
     ;; See the note in abstract-environment=?.
     (new-alias-nonrecursive-closure
@@ -11287,22 +11701,10 @@
      (map-vector perturbation-transform
 		 (recursive-closure-lambda-expressions v))
      (recursive-closure-index v)))
-   ((perturbation-tagged-value? v) (new-alias-perturbation-tagged-value v a))
-   ((bundle? v) (new-alias-perturbation-tagged-value v a))
-   ((sensitivity-tagged-value? v) (new-alias-perturbation-tagged-value v a))
-   ((reverse-tagged-value? v) (new-alias-perturbation-tagged-value v a))
-   ((tagged-pair? v)
-    (let ((as (get-tagged-pair-aliases v a)))
-     (new-alias-tagged-pair
-      (add-tag 'perturbation (tagged-pair-tags v))
-      (perturb (get-tagged-pair-car v))
-      (perturb-alias (get-tagged-pair-car v) (first as) #f)
-      (perturb (get-tagged-pair-cdr v))
-      (perturb-alias (get-tagged-pair-cdr v) (second as) #f))))
    (else (internal-error)))))
 
 (define (unperturb-alias v-perturbation a-perturbation top?)
- (let ((instance (lookup-instance 'unperturb v-perturbation)))
+ (let ((instance (find-instance 'unperturb v-perturbation)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases!
@@ -11316,11 +11718,16 @@
 	   (unperturb-alias u-perturbation a-perturbation #f))
 	  (get-union-values v-perturbation)
 	  (get-union-alias-values v-perturbation a-perturbation))))
-   ((vlad-empty-list? v-perturbation) (empty-alias))
-   ((vlad-true? v-perturbation) (empty-alias))
-   ((vlad-false? v-perturbation) (empty-alias))
-   ((vlad-real? v-perturbation) (empty-alias))
-   ((primitive-procedure? v-perturbation) (empty-alias))
+   ((or (vlad-empty-list? v-perturbation)
+	(vlad-true? v-perturbation)
+	(vlad-false? v-perturbation)
+	(vlad-real? v-perturbation)
+	(primitive-procedure? v-perturbation)
+	(bundle? v-perturbation)
+	(sensitivity-tagged-value? v-perturbation)
+	(reverse-tagged-value? v-perturbation)
+	(vlad-pair? v-perturbation))
+    (empty-alias))
    ((nonrecursive-closure? v-perturbation)
     (if (tagged? 'perturbation (nonrecursive-closure-tags v-perturbation))
 	;; See the note in abstract-environment=?.
@@ -11352,25 +11759,10 @@
 	(empty-alias)))
    ((perturbation-tagged-value? v-perturbation)
     (get-perturbation-tagged-value-primal-alias v-perturbation a-perturbation))
-   ((bundle? v-perturbation) (empty-alias))
-   ((sensitivity-tagged-value? v-perturbation) (empty-alias))
-   ((reverse-tagged-value? v-perturbation) (empty-alias))
-   ((tagged-pair? v-perturbation)
-    (if (tagged? 'perturbation (tagged-pair-tags v-perturbation))
-	(let ((as (get-tagged-pair-aliases v-perturbation a-perturbation)))
-	 (new-alias-tagged-pair
-	  (remove-tag 'perturbation (tagged-pair-tags v-perturbation))
-	  (unperturb (get-tagged-pair-car v-perturbation))
-	  (unperturb-alias
-	   (get-tagged-pair-car v-perturbation) (first as) #f)
-	  (unperturb (get-tagged-pair-cdr v-perturbation))
-	  (unperturb-alias
-	   (get-tagged-pair-cdr v-perturbation) (second as) #f)))
-	(empty-alias)))
    (else (internal-error)))))
 
 (define (primal-alias v-forward a-forward top?)
- (let ((instance (lookup-instance 'primal v-forward)))
+ (let ((instance (find-instance 'primal v-forward)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases!
@@ -11383,11 +11775,16 @@
      (map (lambda (u-forward a-forward) (primal-alias u-forward a-forward #f))
 	  (get-union-values v-forward)
 	  (get-union-alias-values v-forward a-forward))))
-   ((vlad-empty-list? v-forward) (empty-alias))
-   ((vlad-true? v-forward) (empty-alias))
-   ((vlad-false? v-forward) (empty-alias))
-   ((vlad-real? v-forward) (empty-alias))
-   ((primitive-procedure? v-forward) (empty-alias))
+   ((or (vlad-empty-list? v-forward)
+	(vlad-true? v-forward)
+	(vlad-false? v-forward)
+	(vlad-real? v-forward)
+	(primitive-procedure? v-forward)
+	(perturbation-tagged-value? v-forward)
+	(sensitivity-tagged-value? v-forward)
+	(reverse-tagged-value? v-forward)
+	(vlad-pair? v-forward))
+    (empty-alias))
    ((nonrecursive-closure? v-forward)
     (let ((b (find-if (lambda (b)
 		       (deep-abstract-value=?
@@ -11421,24 +11818,11 @@
 		     (recursive-closure-lambda-expressions v-forward))
 	 (recursive-closure-index v-forward))
 	(empty-alias)))
-   ((perturbation-tagged-value? v-forward) (empty-alias))
    ((bundle? v-forward) (first (get-bundle-aliases v-forward a-forward)))
-   ((sensitivity-tagged-value? v-forward) (empty-alias))
-   ((reverse-tagged-value? v-forward) (empty-alias))
-   ((tagged-pair? v-forward)
-    (if (tagged? 'forward (tagged-pair-tags v-forward))
-	(let ((as (get-tagged-pair-aliases v-forward a-forward)))
-	 (new-alias-tagged-pair
-	  (remove-tag 'forward (tagged-pair-tags v-forward))
-	  (primal (get-tagged-pair-car v-forward))
-	  (primal-alias (get-tagged-pair-car v-forward) (first as) #f)
-	  (primal (get-tagged-pair-cdr v-forward))
-	  (primal-alias (get-tagged-pair-cdr v-forward) (second as) #f)))
-	(empty-alias)))
    (else (internal-error)))))
 
 (define (tangent-alias v-forward a-forward top?)
- (let ((instance (lookup-instance 'tangent v-forward)))
+ (let ((instance (find-instance 'tangent v-forward)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases!
@@ -11451,11 +11835,16 @@
 			  (tangent-alias u-forward a-forward #f))
 			 (get-union-values v-forward)
 			 (get-union-alias-values v-forward a-forward))))
-   ((vlad-empty-list? v-forward) (empty-alias))
-   ((vlad-true? v-forward) (empty-alias))
-   ((vlad-false? v-forward) (empty-alias))
-   ((vlad-real? v-forward) (empty-alias))
-   ((primitive-procedure? v-forward) (empty-alias))
+   ((or (vlad-empty-list? v-forward)
+	(vlad-true? v-forward)
+	(vlad-false? v-forward)
+	(vlad-real? v-forward)
+	(primitive-procedure? v-forward)
+	(perturbation-tagged-value? v-forward)
+	(sensitivity-tagged-value? v-forward)
+	(reverse-tagged-value? v-forward)
+	(vlad-pair? v-forward))
+    (empty-alias))
    ((nonrecursive-closure? v-forward)
     (let ((b (find-if (lambda (b)
 		       (deep-abstract-value=?
@@ -11491,27 +11880,13 @@
 		     (recursive-closure-lambda-expressions v-forward))
 	 (recursive-closure-index v-forward))
 	(empty-alias)))
-   ((perturbation-tagged-value? v-forward) (empty-alias))
    ((bundle? v-forward) (second (get-bundle-aliases v-forward a-forward)))
-   ((sensitivity-tagged-value? v-forward) (empty-alias))
-   ((reverse-tagged-value? v-forward) (empty-alias))
-   ((tagged-pair? v-forward)
-    (if (tagged? 'forward (tagged-pair-tags v-forward))
-	(let ((as (get-tagged-pair-aliases v-forward a-forward)))
-	 (new-alias-tagged-pair
-	  (add-tag 'perturbation
-		   (remove-tag 'forward (tagged-pair-tags v-forward)))
-	  (tangent (get-tagged-pair-car v-forward))
-	  (tangent-alias (get-tagged-pair-car v-forward) (first as) #f)
-	  (tangent (get-tagged-pair-cdr v-forward))
-	  (tangent-alias (get-tagged-pair-cdr v-forward) (second as) #f)))
-	(empty-alias)))
    (else (internal-error)))))
 
 (define (bundle-alias1 v0 a0 top?)
  ;; needs work: There is a naming clash with the alias slot of bundle.
  ;; needs work: v0 naming convention
- (let ((instance (lookup-instance 'bundle v0)))
+ (let ((instance (find-instance 'bundle v0)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a0 (new-input-aliases instance)))
@@ -11524,11 +11899,10 @@
 			 (get-union-alias-values v0 a0)
 			 #f)))
    ((vlad-pair? v0)
-    (let* ((v (vlad-car v0))
-	   (v-perturbation (vlad-cdr v0))
-	   (as (get-tagged-pair-aliases v0 a0))
-	   (a (first as))
-	   (a-perturbation (second as)))
+    (let ((v (vlad-car v0))
+	  (v-perturbation (vlad-cdr v0))
+	  (a (vlad-car-alias v0 a0))
+	  (a-perturbation (vlad-cdr-alias v0 a0)))
      (cond
       ((union? v)
        ;; widening case H7
@@ -11538,7 +11912,7 @@
 	(map (lambda (u a)
 	      (bundle-alias1
 	       (vlad-cons u v-perturbation)
-	       (new-alias-tagged-pair '() u a v-perturbation a-perturbation)
+	       (vlad-cons-alias u a v-perturbation a-perturbation)
 	       #f))
 	     (get-union-values v)
 	     (get-union-alias-values v a))))
@@ -11550,19 +11924,23 @@
 	(map (lambda (u-perturbation a-perturbation)
 	      (bundle-alias1
 	       (vlad-cons v u-perturbation)
-	       (new-alias-tagged-pair '() v a u-perturbation a-perturbation)
+	       (vlad-cons-alias v a u-perturbation a-perturbation)
 	       #f))
 	     (get-union-values v-perturbation)
 	     (get-union-alias-values v-perturbation a-perturbation))))
-      ((and (vlad-empty-list? v) (some-bundlable? v v-perturbation))
+      ((and (or (vlad-empty-list? v)
+		(vlad-true? v)
+		(vlad-false? v)
+		(vlad-real? v)
+		(perturbation-tagged-value? v)
+		(bundle? v)
+		(sensitivity-tagged-value? v)
+		(reverse-tagged-value? v)
+		(vlad-pair? v))
+	    (some-bundlable? v v-perturbation))
        (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (vlad-true? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (vlad-false? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (vlad-real? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((primitive-procedure? v) (alias-for (primitive-procedure-forward v)))
+      ((and (primitive-procedure? v) (some-bundlable? v v-perturbation))
+       (alias-for (primitive-procedure-forward v)))
       ((and (nonrecursive-closure? v)
 	    (nonrecursive-closure? v-perturbation)
 	    (perturbation-parameter?
@@ -11576,7 +11954,7 @@
 	(map (lambda (v a v-perturbation a-perturbation)
 	      (bundle-alias1
 	       (vlad-cons v v-perturbation)
-	       (new-alias-tagged-pair '() v a v-perturbation a-perturbation)
+	       (vlad-cons-alias v a v-perturbation a-perturbation)
 	       #f))
 	     (get-nonrecursive-closure-values v)
 	     (get-nonrecursive-closure-alias-values v a)
@@ -11598,7 +11976,7 @@
 	 (lambda (v a v-perturbation a-perturbation)
 	  (bundle-alias1
 	   (vlad-cons v v-perturbation)
-	   (new-alias-tagged-pair '() v a v-perturbation a-perturbation)
+	   (vlad-cons-alias v a v-perturbation a-perturbation)
 	   #f))
 	 (get-recursive-closure-values v)
 	 (get-recursive-closure-alias-values v a)
@@ -11607,52 +11985,11 @@
 	(map-vector forwardify (recursive-closure-procedure-variables v))
 	(map-vector forward-transform (recursive-closure-lambda-expressions v))
 	(recursive-closure-index v)))
-      ((and (perturbation-tagged-value? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (bundle? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (sensitivity-tagged-value? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (reverse-tagged-value? v) (some-bundlable? v v-perturbation))
-       (new-alias-bundle v a v-perturbation a-perturbation))
-      ((and (tagged-pair? v)
-	    (tagged-pair? v-perturbation)
-	    (tagged? 'perturbation (tagged-pair-tags v-perturbation))
-	    (equal-tags?
-	     (tagged-pair-tags v)
-	     (remove-tag 'perturbation (tagged-pair-tags v-perturbation))))
-       (let ((as (get-tagged-pair-aliases v a))
-	     (as-perturbation
-	      (get-tagged-pair-aliases v-perturbation a-perturbation)))
-	(new-alias-tagged-pair
-	 (add-tag 'forward (tagged-pair-tags v))
-	 (bundle (vlad-cons (get-tagged-pair-car v)
-			    (get-tagged-pair-car v-perturbation)))
-	 (bundle-alias1
-	  (vlad-cons (get-tagged-pair-car v)
-		     (get-tagged-pair-car v-perturbation))
-	  (new-alias-tagged-pair '()
-				 (get-tagged-pair-car v)
-				 (first as)
-				 (get-tagged-pair-car v-perturbation)
-				 (first as-perturbation))
-	  #f)
-	 (bundle (vlad-cons (get-tagged-pair-cdr v)
-			    (get-tagged-pair-cdr v-perturbation)))
-	 (bundle-alias1
-	  (vlad-cons (get-tagged-pair-cdr v)
-		     (get-tagged-pair-cdr v-perturbation))
-	  (new-alias-tagged-pair '()
-				 (get-tagged-pair-cdr v)
-				 (second as)
-				 (get-tagged-pair-cdr v-perturbation)
-				 (second as-perturbation))
-	  #f))))
       (else (empty-alias)))))
    (else (empty-alias)))))
 
 (define (sensitize-alias v a top?)
- (let ((instance (lookup-instance 'sensitize v)))
+ (let ((instance (find-instance 'sensitize v)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a (new-input-aliases instance)))
@@ -11663,11 +12000,17 @@
 		    (map (lambda (u a) (sensitize-alias u a #f))
 			 (get-union-values v)
 			 (get-union-alias-values v a))))
-   ((vlad-empty-list? v) (new-alias-sensitivity-tagged-value v a))
-   ((vlad-true? v) (new-alias-sensitivity-tagged-value v a))
-   ((vlad-false? v) (new-alias-sensitivity-tagged-value v a))
-   ((vlad-real? v) (new-alias-sensitivity-tagged-value v a))
-   ((primitive-procedure? v) (new-alias-sensitivity-tagged-value v a))
+   ((or (vlad-empty-list? v)
+	(vlad-true? v)
+	(vlad-false? v)
+	(vlad-real? v)
+	(primitive-procedure? v)
+	(perturbation-tagged-value? v)
+	(bundle? v)
+	(sensitivity-tagged-value? v)
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
+    (new-alias-sensitivity-tagged-value v a))
    ((nonrecursive-closure? v)
     ;; See the note in abstract-environment=?.
     (new-alias-nonrecursive-closure
@@ -11687,22 +12030,10 @@
      (map-vector sensitivity-transform
 		 (recursive-closure-lambda-expressions v))
      (recursive-closure-index v)))
-   ((perturbation-tagged-value? v) (new-alias-sensitivity-tagged-value v a))
-   ((bundle? v) (new-alias-sensitivity-tagged-value v a))
-   ((sensitivity-tagged-value? v) (new-alias-sensitivity-tagged-value v a))
-   ((reverse-tagged-value? v) (new-alias-sensitivity-tagged-value v a))
-   ((tagged-pair? v)
-    (let ((as (get-tagged-pair-aliases v a)))
-     (new-alias-tagged-pair
-      (add-tag 'sensitivity (tagged-pair-tags v))
-      (sensitize (get-tagged-pair-car v))
-      (sensitize-alias (get-tagged-pair-car v) (first as) #f)
-      (sensitize (get-tagged-pair-cdr v))
-      (sensitize-alias (get-tagged-pair-cdr v) (second as) #f))))
    (else (internal-error)))))
 
 (define (unsensitize-alias v-sensitivity a-sensitivity top?)
- (let ((instance (lookup-instance 'unsensitize v-sensitivity)))
+ (let ((instance (find-instance 'unsensitize v-sensitivity)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases!
@@ -11716,11 +12047,16 @@
 	   (unsensitize-alias u-sensitivity a-sensitivity #f))
 	  (get-union-values v-sensitivity)
 	  (get-union-alias-values v-sensitivity a-sensitivity))))
-   ((vlad-empty-list? v-sensitivity) (empty-alias))
-   ((vlad-true? v-sensitivity) (empty-alias))
-   ((vlad-false? v-sensitivity) (empty-alias))
-   ((vlad-real? v-sensitivity) (empty-alias))
-   ((primitive-procedure? v-sensitivity) (empty-alias))
+   ((or (vlad-empty-list? v-sensitivity)
+	(vlad-true? v-sensitivity)
+	(vlad-false? v-sensitivity)
+	(vlad-real? v-sensitivity)
+	(primitive-procedure? v-sensitivity)
+	(perturbation-tagged-value? v-sensitivity)
+	(bundle? v-sensitivity)
+	(reverse-tagged-value? v-sensitivity)
+	(vlad-pair? v-sensitivity))
+    (empty-alias))
    ((nonrecursive-closure? v-sensitivity)
     (if (and (tagged? 'sensitivity (nonrecursive-closure-tags v-sensitivity))
 	     (sensitivity-transform-inverse?
@@ -11759,28 +12095,13 @@
 	  (recursive-closure-lambda-expressions v-sensitivity))
 	 (recursive-closure-index v-sensitivity))
 	(empty-alias)))
-   ((perturbation-tagged-value? v-sensitivity) (empty-alias))
-   ((bundle? v-sensitivity) (empty-alias))
    ((sensitivity-tagged-value? v-sensitivity)
     (get-sensitivity-tagged-value-primal-alias v-sensitivity a-sensitivity))
-   ((reverse-tagged-value? v-sensitivity) (empty-alias))
-   ((tagged-pair? v-sensitivity)
-    (if (tagged? 'sensitivity (tagged-pair-tags v-sensitivity))
-	(let ((as (get-tagged-pair-aliases v-sensitivity a-sensitivity)))
-	 (new-alias-tagged-pair
-	  (remove-tag 'sensitivity (tagged-pair-tags v-sensitivity))
-	  (unsensitize (get-tagged-pair-car v-sensitivity))
-	  (unsensitize-alias
-	   (get-tagged-pair-car v-sensitivity) (first as) #f)
-	  (unsensitize (get-tagged-pair-cdr v-sensitivity))
-	  (unsensitize-alias
-	   (get-tagged-pair-cdr v-sensitivity) (second as) #f)))
-	(empty-alias)))
    (else (internal-error)))))
 
 (define (plus-alias v0 a0 top?)
  ;; needs work: v0 naming convention
- (let ((instance (lookup-instance 'plus v0)))
+ (let ((instance (find-instance 'plus v0)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a0 (new-input-aliases instance)))
@@ -11792,11 +12113,10 @@
 			 (get-union-values v0)
 			 (get-union-alias-values v0 a0))))
    ((vlad-pair? v0)
-    (let* ((v1 (vlad-car v0))
-	   (v2 (vlad-cdr v0))
-	   (as (get-tagged-pair-aliases v0 a0))
-	   (a1 (first as))
-	   (a2 (second as)))
+    (let ((v1 (vlad-car v0))
+	  (v2 (vlad-cdr v0))
+	  (a1 (vlad-car-alias v0 a0))
+	  (a2 (vlad-cdr-alias v0 a0)))
      (cond
       ;; needs work: The following two don't check conformance.
       ((is-zero? v1) a2)
@@ -11806,9 +12126,7 @@
        (unionize-alias
 	(map (lambda (u1) (plus (vlad-cons u1 v2))) (get-union-values v1))
 	(map (lambda (u1 a1)
-	      (plus-alias (vlad-cons u1 v2)
-			  (new-alias-tagged-pair '() u1 a1 v2 a2)
-			  #f))
+	      (plus-alias (vlad-cons u1 v2) (vlad-cons-alias u1 a1 v2 a2) #f))
 	     (get-union-values v1)
 	     (get-union-alias-values v1 a1))))
       ((union? v2)
@@ -11817,9 +12135,7 @@
        (unionize-alias
 	(map (lambda (u2) (plus (vlad-cons v1 u2))) (get-union-values v2))
 	(map (lambda (u2 a2)
-	      (plus-alias (vlad-cons v1 u2)
-			  (new-alias-tagged-pair '() v1 a1 u2 a2)
-			  #f))
+	      (plus-alias (vlad-cons v1 u2) (vlad-cons-alias v1 a1 u2 a2) #f))
 	     (get-union-values v2)
 	     (get-union-alias-values v2 a2))))
       ((and (vlad-empty-list? v1) (vlad-empty-list? v2)) a1)
@@ -11839,9 +12155,7 @@
 	     (get-nonrecursive-closure-values v1)
 	     (get-nonrecursive-closure-values v2))
 	(map (lambda (v1 a1 v2 a2)
-	      (plus-alias (vlad-cons v1 v2)
-			  (new-alias-tagged-pair '() v1 a1 v2 a2)
-			  #f))
+	      (plus-alias (vlad-cons v1 v2) (vlad-cons-alias v1 a1 v2 a2) #f))
 	     (get-nonrecursive-closure-values v1)
 	     (get-nonrecursive-closure-alias-values v1 a1)
 	     (get-nonrecursive-closure-values v2)
@@ -11856,9 +12170,7 @@
 	     (get-recursive-closure-values v1)
 	     (get-recursive-closure-values v2))
 	(map (lambda (v1 a1 v2 a2)
-	      (plus-alias (vlad-cons v1 v2)
-			  (new-alias-tagged-pair '() v1 a1 v2 a2)
-			  #f))
+	      (plus-alias (vlad-cons v1 v2) (vlad-cons-alias v1 a1 v2 a2) #f))
 	     (get-recursive-closure-values v1)
 	     (get-recursive-closure-alias-values v1 a1)
 	     (get-recursive-closure-values v2)
@@ -11872,8 +12184,7 @@
 			 (get-perturbation-tagged-value-primal v2)))
 	(plus-alias (vlad-cons (get-perturbation-tagged-value-primal v1)
 			       (get-perturbation-tagged-value-primal v2))
-		    (new-alias-tagged-pair
-		     '()
+		    (vlad-cons-alias
 		     (get-perturbation-tagged-value-primal v1)
 		     (get-perturbation-tagged-value-primal-alias v1 a1)
 		     (get-perturbation-tagged-value-primal v2)
@@ -11887,21 +12198,19 @@
 			  (get-bundle-primal v2)))
 	 (plus-alias (vlad-cons (get-bundle-primal v1)
 				(get-bundle-primal v2))
-		     (new-alias-tagged-pair '()
-					    (get-bundle-primal v1)
-					    (first as1)
-					    (get-bundle-primal v2)
-					    (first as2))
+		     (vlad-cons-alias (get-bundle-primal v1)
+				      (first as1)
+				      (get-bundle-primal v2)
+				      (first as2))
 		     #f)
 	 (plus (vlad-cons (get-bundle-tangent v1)
 			  (get-bundle-tangent v2)))
 	 (plus-alias (vlad-cons (get-bundle-tangent v1)
 				(get-bundle-tangent v2))
-		     (new-alias-tagged-pair '()
-					    (get-bundle-tangent v1)
-					    (second as1)
-					    (get-bundle-tangent v2)
-					    (second as2))
+		     (vlad-cons-alias (get-bundle-tangent v1)
+				      (second as1)
+				      (get-bundle-tangent v2)
+				      (second as2))
 		     #f))))
       ((and (sensitivity-tagged-value? v1)
 	    (sensitivity-tagged-value? v2))
@@ -11910,8 +12219,7 @@
 			 (get-sensitivity-tagged-value-primal v2)))
 	(plus-alias (vlad-cons (get-sensitivity-tagged-value-primal v1)
 			       (get-sensitivity-tagged-value-primal v2))
-		    (new-alias-tagged-pair
-		     '()
+		    (vlad-cons-alias
 		     (get-sensitivity-tagged-value-primal v1)
 		     (get-sensitivity-tagged-value-primal-alias v1 a1)
 		     (get-sensitivity-tagged-value-primal v2)
@@ -11923,45 +12231,32 @@
 			 (get-reverse-tagged-value-primal v2)))
 	(plus-alias (vlad-cons (get-reverse-tagged-value-primal v1)
 			       (get-reverse-tagged-value-primal v2))
-		    (new-alias-tagged-pair
-		     '()
+		    (vlad-cons-alias
 		     (get-reverse-tagged-value-primal v1)
 		     (get-reverse-tagged-value-primal-alias v1 a1)
 		     (get-reverse-tagged-value-primal v2)
 		     (get-reverse-tagged-value-primal-alias v2 a2))
 		    #f)))
-      ((and (tagged-pair? v1)
-	    (tagged-pair? v2)
-	    (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2)))
-       (let ((as1 (get-tagged-pair-aliases v1 a1))
-	     (as2 (get-tagged-pair-aliases v2 a2)))
-	(new-alias-tagged-pair
-	 (tagged-pair-tags v1)
-	 (plus (vlad-cons (get-tagged-pair-car v1)
-			  (get-tagged-pair-car v2)))
-	 (plus-alias (vlad-cons (get-tagged-pair-car v1)
-				(get-tagged-pair-car v2))
-		     (new-alias-tagged-pair '()
-					    (get-tagged-pair-car v1)
-					    (first as1)
-					    (get-tagged-pair-car v2)
-					    (first as2))
-		     #f)
-	 (plus (vlad-cons (get-tagged-pair-cdr v1)
-			  (get-tagged-pair-cdr v2)))
-	 (plus-alias (vlad-cons (get-tagged-pair-cdr v1)
-				(get-tagged-pair-cdr v2))
-		     (new-alias-tagged-pair '()
-					    (get-tagged-pair-cdr v1)
-					    (second as1)
-					    (get-tagged-pair-cdr v2)
-					    (second as2))
-		     #f))))
+      ((and (vlad-pair? v1) (vlad-pair? v2))
+       (vlad-cons-alias (plus (vlad-cons (vlad-car v1) (vlad-car v2)))
+			(plus-alias (vlad-cons (vlad-car v1) (vlad-car v2))
+				    (vlad-cons-alias (vlad-car v1)
+						     (vlad-car-alias v1 a1)
+						     (vlad-car v2)
+						     (vlad-car-alias v2 a2))
+				    #f)
+			(plus (vlad-cons (vlad-cdr v1) (vlad-cdr v2)))
+			(plus-alias (vlad-cons (vlad-cdr v1) (vlad-cdr v2))
+				    (vlad-cons-alias (vlad-cdr v1)
+						     (vlad-cdr-alias v1 a1)
+						     (vlad-cdr v2)
+						     (vlad-cdr-alias v2 a2))
+				    #f)))
       (else (empty-alias)))))
    (else (empty-alias)))))
 
 (define (*j-alias v a top?)
- (let ((instance (lookup-instance '*j v)))
+ (let ((instance (find-instance '*j v)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases! instance (cons a (new-input-aliases instance)))
@@ -11972,10 +12267,16 @@
 		    (map (lambda (u a) (*j-alias u a #f))
 			 (get-union-values v)
 			 (get-union-alias-values v a))))
-   ((vlad-empty-list? v) (new-alias-reverse-tagged-value v a))
-   ((vlad-true? v) (new-alias-reverse-tagged-value v a))
-   ((vlad-false? v) (new-alias-reverse-tagged-value v a))
-   ((vlad-real? v) (new-alias-reverse-tagged-value v a))
+   ((or (vlad-empty-list? v)
+	(vlad-true? v)
+	(vlad-false? v)
+	(vlad-real? v)
+	(perturbation-tagged-value? v)
+	(bundle? v)
+	(sensitivity-tagged-value? v)
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
+    (new-alias-reverse-tagged-value v a))
    ((primitive-procedure? v) (alias-for (primitive-procedure-reverse v)))
    ((nonrecursive-closure? v)
     ;; See the note in abstract-environment=?.
@@ -12001,22 +12302,10 @@
 		     i))
 		   (vector-length (recursive-closure-lambda-expressions v)))
      (recursive-closure-index v)))
-   ((perturbation-tagged-value? v) (new-alias-reverse-tagged-value v a))
-   ((bundle? v) (new-alias-reverse-tagged-value v a))
-   ((sensitivity-tagged-value? v) (new-alias-reverse-tagged-value v a))
-   ((reverse-tagged-value? v) (new-alias-reverse-tagged-value v a))
-   ((tagged-pair? v)
-    (let ((as (get-tagged-pair-aliases v a)))
-     (new-alias-tagged-pair
-      (add-tag 'reverse (tagged-pair-tags v))
-      (*j (get-tagged-pair-car v))
-      (*j-alias (get-tagged-pair-car v) (first as) #f)
-      (*j (get-tagged-pair-cdr v))
-      (*j-alias (get-tagged-pair-cdr v) (second as) #f))))
    (else (internal-error)))))
 
 (define (*j-inverse-alias v-reverse a-reverse top?)
- (let ((instance (lookup-instance '*j-inverse v-reverse)))
+ (let ((instance (find-instance '*j-inverse v-reverse)))
   (cond
    ((and instance (not top?) (not (inline? instance)))
     (set-new-input-aliases!
@@ -12029,11 +12318,16 @@
 			  (*j-inverse-alias u-reverse a-reverse #f))
 			 (get-union-values v-reverse)
 			 (get-union-alias-values v-reverse a-reverse))))
-   ((vlad-empty-list? v-reverse) (empty-alias))
-   ((vlad-true? v-reverse) (empty-alias))
-   ((vlad-false? v-reverse) (empty-alias))
-   ((vlad-real? v-reverse) (empty-alias))
-   ((primitive-procedure? v-reverse) (empty-alias))
+   ((or (vlad-empty-list? v-reverse)
+	(vlad-true? v-reverse)
+	(vlad-false? v-reverse)
+	(vlad-real? v-reverse)
+	(primitive-procedure? v-reverse)
+	(perturbation-tagged-value? v-reverse)
+	(bundle? v-reverse)
+	(sensitivity-tagged-value? v-reverse)
+	(vlad-pair? v-reverse))
+    (empty-alias))
    ((nonrecursive-closure? v-reverse)
     (let ((b (find-if (lambda (b)
 		       (deep-abstract-value=?
@@ -12068,21 +12362,8 @@
 		     (recursive-closure-lambda-expressions v-reverse))
 	 (recursive-closure-index v-reverse))
 	(empty-alias)))
-   ((perturbation-tagged-value? v-reverse) (empty-alias))
-   ((bundle? v-reverse) (empty-alias))
-   ((sensitivity-tagged-value? v-reverse) (empty-alias))
    ((reverse-tagged-value? v-reverse)
     (get-reverse-tagged-value-primal-alias v-reverse a-reverse))
-   ((tagged-pair? v-reverse)
-    (if (tagged? 'reverse (tagged-pair-tags v-reverse))
-	(let ((as (get-tagged-pair-aliases v-reverse a-reverse)))
-	 (new-alias-tagged-pair
-	  (remove-tag 'reverse (tagged-pair-tags v-reverse))
-	  (*j-inverse (get-tagged-pair-car v-reverse))
-	  (*j-inverse-alias (get-tagged-pair-car v-reverse) (first as) #f)
-	  (*j-inverse (get-tagged-pair-cdr v-reverse))
-	  (*j-inverse-alias (get-tagged-pair-cdr v-reverse) (second as) #f)))
-	(empty-alias)))
    (else (internal-error)))))
 
 ;;; needs work: The widening case is not annotated yet.
@@ -12143,8 +12424,8 @@
 				     ;; needs work: This may be imprecise for
 				     ;;             *, /, and atan.
 				     (or (not (real? u1)) (not (real? u2)))))
-			       (union-members (tagged-pair-cdr u))))
-			(union-members (tagged-pair-car u)))))
+			       (union-members (vlad-cdr u))))
+			(union-members (vlad-car u)))))
 	    (union-members v))
       (alias-for (abstract-real))
       (empty-alias))))
@@ -12161,8 +12442,8 @@
 					 (vlad-real? u2)
 					 (or (not (real? u1))
 					     (not (real? u2)))))
-				   (union-members (tagged-pair-cdr u))))
-			    (union-members (tagged-pair-car u)))))
+				   (union-members (vlad-cdr u))))
+			    (union-members (vlad-car u)))))
 		(union-members v))
 	  (and (some (lambda (u)
 		      (and (vlad-pair? u)
@@ -12173,8 +12454,8 @@
 					      (real? u1)
 					      (real? u2)
 					      (f u1 u2)))
-					(union-members (tagged-pair-cdr u))))
-				 (union-members (tagged-pair-car u)))))
+					(union-members (vlad-cdr u))))
+				 (union-members (vlad-car u)))))
 		     (union-members v))
 	       (some (lambda (u)
 		      (and (vlad-pair? u)
@@ -12185,8 +12466,8 @@
 					      (real? u1)
 					      (real? u2)
 					      (not (f u1 u2))))
-					(union-members (tagged-pair-cdr u))))
-				 (union-members (tagged-pair-car u)))))
+					(union-members (vlad-cdr u))))
+				 (union-members (vlad-car u)))))
 		     (union-members v))))
       (alias-for (abstract-boolean))
       (empty-alias))))
@@ -12217,9 +12498,12 @@
 	 (get-union-values v23)
 	 (get-union-alias-values v23 a23))))
   ((vlad-pair? v23)
-   (let ((as23 (get-tagged-pair-aliases v23 a23)))
-    (alias-if-procedure2
-     v1 a1 (vlad-car v23) (first as23) (vlad-cdr v23) (second as23))))
+   (alias-if-procedure2 v1
+			a1
+			(vlad-car v23)
+			(vlad-car-alias v23 a23)
+			(vlad-cdr v23)
+			(vlad-cdr-alias v23 a23)))
   (else (empty-alias))))
 
 (define (alias-if-procedure v a)
@@ -12233,8 +12517,8 @@
 	 (get-union-values v)
 	 (get-union-alias-values v a))))
   ((vlad-pair? v)
-   (let ((as (get-tagged-pair-aliases v a)))
-    (alias-if-procedure1 (vlad-car v) (first as) (vlad-cdr v) (second as))))
+   (alias-if-procedure1
+    (vlad-car v) (vlad-car-alias v a) (vlad-cdr v) (vlad-cdr-alias v a)))
   (else (empty-alias))))
 
 (define (some-alias? a)
@@ -12354,7 +12638,7 @@
 	 (set-sensitivity-tagged-value-equivalent-slot-indices! v iis))
 	((reverse-tagged-value? v)
 	 (set-reverse-tagged-value-equivalent-slot-indices! v iis))
-	((tagged-pair? v) (set-tagged-pair-equivalent-slot-indices! v iis))
+	((vlad-pair? v) (set-vlad-pair-equivalent-slot-indices! v iis))
 	((union? v) (set-union-equivalent-slot-indices! v iis))
 	(else (internal-error))))))
     vs)))
@@ -12378,10 +12662,8 @@
 	(set-alias! v (alias-for (get-sensitivity-tagged-value-primal v))))
        ((reverse-tagged-value? v)
 	(set-alias! v (alias-for (get-reverse-tagged-value-primal v))))
-       ((tagged-pair? v)
-	(set-alias!
-	 v
-	 (aliases-for (list (get-tagged-pair-car v) (get-tagged-pair-cdr v)))))
+       ((vlad-pair? v)
+	(set-alias! v (aliases-for (list (vlad-car v) (vlad-cdr v)))))
        ((union? v)
 	(set-alias! v (add-tag-alias v (aliases-for (get-union-values v)))))
        (else (internal-error)))))
@@ -12609,7 +12891,7 @@
 	 ((bundle? v) (bundle-void? v))
 	 ((sensitivity-tagged-value? v) (sensitivity-tagged-value-void? v))
 	 ((reverse-tagged-value? v) (reverse-tagged-value-void? v))
-	 ((tagged-pair? v) (tagged-pair-void? v))
+	 ((vlad-pair? v) (vlad-pair-void? v))
 	 (else (internal-error)))))
   (assert (boolean? p?))
   p?))
@@ -12644,8 +12926,7 @@
 	   *sensitivity-tagged-values*)
  (for-each (lambda (v) (set-reverse-tagged-value-void?! v (deep-void? v)))
 	   *reverse-tagged-values*)
- (for-each (lambda (v) (set-tagged-pair-void?! v (deep-void? v)))
-	   *tagged-pairs*)
+ (for-each (lambda (v) (set-vlad-pair-void?! v (deep-void? v))) *vlad-pairs*)
  (for-each (lambda (v) (set-union-void?! v (deep-void? v))) *unions*))
 
 (define (for-each-call-site s f)
@@ -12766,6 +13047,50 @@
 	     ;; needs work: to make imperative
 	     (all-null-abstract-subvalues v)))))
 
+(define (descend? s)
+ (case s
+  ((zero) (lambda (v) #t))
+  ((perturb)
+   (lambda (v)
+    (and (not (perturbation-tagged-value? v))
+	 (not (bundle? v))
+	 (not (sensitivity-tagged-value? v))
+	 (not (reverse-tagged-value? v))
+	 (not (vlad-pair? v)))))
+  ((unperturb)
+   (lambda (v)
+    (and (perturbation-value? v) (not (perturbation-tagged-value? v)))))
+  ((primal) (lambda (v) (and (forward-value? v) (not (bundle? v)))))
+  ((tangent) (lambda (v) (and (forward-value? v) (not (bundle? v)))))
+  ((bundle)
+   (lambda (v)
+    (and (not (perturbation-tagged-value? v))
+	 (not (bundle? v))
+	 (not (sensitivity-tagged-value? v))
+	 (not (reverse-tagged-value? v))
+	 (not (vlad-pair? v)))))
+  ((sensitize)
+   (lambda (v)
+    (and (not (perturbation-tagged-value? v))
+	 (not (bundle? v))
+	 (not (sensitivity-tagged-value? v))
+	 (not (reverse-tagged-value? v))
+	 (not (vlad-pair? v)))))
+  ((unsensitize)
+   (lambda (v)
+    (and (sensitivity-value? v) (not (sensitivity-tagged-value? v)))))
+  ((plus) (lambda (v) #t))
+  ((*j)
+   (lambda (v)
+    (and (not (perturbation-tagged-value? v))
+	 (not (bundle? v))
+	 (not (sensitivity-tagged-value? v))
+	 (not (reverse-tagged-value? v))
+	 (not (vlad-pair? v)))))
+  ((*j-inverse)
+   (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v)))))
+  (else (internal-error))))
+
 (define (all-unary-abstract-subvalues descend? v)
  ;; This is written in CPS so as not to break structure sharing.
  (time-it-bucket
@@ -12794,14 +13119,30 @@
 		      n
 		      (lambda (n vs) (inner (rest vs1) vs n))))))))))
 
-(define (all-unary-ad-instances! s descend?)
- (lambda ()
-  (for-each-call-site
-   s
-   (lambda (v)
-    (for-each (lambda (v) (new-instance s v))
-	      ;; needs work: to make imperative
-	      (all-unary-abstract-subvalues descend? v))))))
+(define (bundle-aggregates-match? v1 v2)
+ (and (or (and (nonrecursive-closure? v1)
+	       (nonrecursive-closure? v2)
+	       (perturbation-parameter? (nonrecursive-closure-parameter v2))
+	       (nonrecursive-closure-match? v1 (unperturb v2)))
+	  (and (recursive-closure? v1)
+	       (recursive-closure? v2)
+	       (perturbation-parameter? (recursive-closure-parameter v2))
+	       (recursive-closure-match? v1 (unperturb v2))))
+      (not (empty-abstract-value? (bundle (vlad-cons v1 v2))))))
+
+(define (plus-aggregates-match? v1 v2)
+ (and (or (and (nonrecursive-closure? v1)
+	       (nonrecursive-closure? v2)
+	       (nonrecursive-closure-match? v1 v2))
+	  (and (recursive-closure? v1)
+	       (recursive-closure? v2)
+	       (recursive-closure-match? v1 v2))
+	  (and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
+	  (and (bundle? v1) (bundle? v2))
+	  (and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
+	  (and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
+	  (and (vlad-pair? v1) (vlad-pair? v2)))
+      (not (empty-abstract-value? (plus (vlad-cons v1 v2))))))
 
 (define (all-binary-abstract-subvalues
 	 descend? f? f f-inverse aggregates-match? v)
@@ -12896,48 +13237,6 @@
  (time-it-bucket
   37
   (outer1 v '() '() '() (lambda (n vs cs) n))))
-
-(define (all-binary-ad-instances! s descend? f? f f-inverse aggregates-match?)
- (lambda ()
-  (for-each-call-site
-   s
-   (lambda (v)
-    (for-each (lambda (v) (new-instance s v))
-	      ;; needs work: to make imperative
-	      (all-binary-abstract-subvalues
-	       descend? f? f f-inverse aggregates-match? v))))))
-
-(define (bundle-aggregates-match? v1 v2)
- (and (or (and (nonrecursive-closure? v1)
-	       (nonrecursive-closure? v2)
-	       (perturbation-parameter? (nonrecursive-closure-parameter v2))
-	       (nonrecursive-closure-match? v1 (unperturb v2)))
-	  (and (recursive-closure? v1)
-	       (recursive-closure? v2)
-	       (perturbation-parameter? (recursive-closure-parameter v2))
-	       (recursive-closure-match? v1 (unperturb v2)))
-	  (and (tagged-pair? v1)
-	       (tagged-pair? v2)
-	       (tagged? 'perturbation (tagged-pair-tags v2))
-	       (equal-tags? (tagged-pair-tags v1)
-			    (remove-tag 'perturbation (tagged-pair-tags v2)))))
-      (not (empty-abstract-value? (bundle (vlad-cons v1 v2))))))
-
-(define (plus-aggregates-match? v1 v2)
- (and (or (and (nonrecursive-closure? v1)
-	       (nonrecursive-closure? v2)
-	       (nonrecursive-closure-match? v1 v2))
-	  (and (recursive-closure? v1)
-	       (recursive-closure? v2)
-	       (recursive-closure-match? v1 v2))
-	  (and (perturbation-tagged-value? v1) (perturbation-tagged-value? v2))
-	  (and (bundle? v1) (bundle? v2))
-	  (and (sensitivity-tagged-value? v1) (sensitivity-tagged-value? v2))
-	  (and (reverse-tagged-value? v1) (reverse-tagged-value? v2))
-	  (and (tagged-pair? v1)
-	       (tagged-pair? v2)
-	       (equal-tags? (tagged-pair-tags v1) (tagged-pair-tags v2))))
-      (not (empty-abstract-value? (plus (vlad-cons v1 v2))))))
 
 (define (if-function-instances2! v1 v2 v3)
  (cond
@@ -13059,67 +13358,104 @@
 		      cs
 		      (lambda (cs) (inner (rest vs1) (rest vs2) cs))))))))))
 
-(define (all-unary-ad-widener-instances! s descend? f)
- (for-each-call-site
-  s
-  (lambda (v)
-   (for-each (lambda (v)
-	      (when (union? v)
-	       ;; The calls to f might issue "might" warnings and might return
-	       ;; empty abstract values.
-	       ;; widening case H1, H2, H3, H4, H5, H10, H11, H16, H17
-	       (for-each (lambda (u) (all-subwidener-instances! (f u) (f v)))
-			 (get-union-values v))))
-	     ;; needs work: to make imperative
-	     (all-unary-abstract-subvalues descend? v)))))
+(define (all-unary-ad-subinstances! s v)
+ (let ((f (case s
+	   ((zero) zero)
+	   ((perturb) perturb)
+	   ((unperturb) unperturb)
+	   ((primal) primal)
+	   ((tangent) tangent)
+	   ((sensitize) sensitize)
+	   ((unsensitize) unsensitize)
+	   ((*j) *j)
+	   ((*j-inverse) *j-inverse)
+	   (else (internal-error)))))
+  (for-each (lambda (v)
+	     (new-instance s v)
+	     (when (union? v)
+	      ;; The calls to f might issue "might" warnings and might return
+	      ;; empty abstract values.
+	      ;; widening case H1, H2, H3, H4, H5, H10, H11, H16, H17
+	      (for-each (lambda (u) (all-subwidener-instances! (f u) (f v)))
+			(get-union-values v))))
+	    ;; needs work: to make imperative
+	    (all-unary-abstract-subvalues (descend? s) v))))
 
-(define (all-binary-ad-widener-instances!
-	 s descend? f? f f-inverse g aggregates-match?)
- (for-each-call-site
-  s
-  (lambda (v)
-   (for-each
-    (lambda (v)
-     (cond
-      ((union? v)
-       ;; The calls to g might issue "might" warnings and might return empty
-       ;; abstract values.
-       ;; widening case H6, H12
-       (for-each (lambda (u) (all-subwidener-instances! (g u) (g v)))
-		 (get-union-values v)))
-      ((vlad-pair? v)
-       (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	(cond ((union? v1)
-	       ;; The calls to g might issue "might" warnings and might return
-	       ;; empty abstract values.
-	       (for-each (lambda (u1)
-			  ;; widening case H7, H13
-			  (all-subwidener-instances!
-			   (g (vlad-cons u1 v2)) (g (vlad-cons v1 v2))))
-			 (get-union-values v1)))
-	      ((union? v2)
-	       ;; The calls to g might issue "might" warnings and might return
-	       ;; empty abstract values.
-	       (for-each (lambda (u2)
-			  ;; widening case H8, H14
-			  ;; There is no widening case H15
-			  (all-subwidener-instances!
-			   (g (vlad-cons v1 u2)) (g (vlad-cons v1 v2))))
-			 (get-union-values v2)))
-	      ;; The calls to f and f-inverse should never return an empty
-	      ;; abstract value. The call to f-inverse might issue "might"
-	      ;; warnings.
-	      ((and (f? v2) (union? (f-inverse v2)))
-	       ;; The calls to g might issue "might" warnings and might return
-	       ;; empty abstract values.
-	       (for-each (lambda (u2)
-			  ;; widening case H9
-			  (all-subwidener-instances!
-			   (g (vlad-cons v1 (f u2))) (g (vlad-cons v1 v2))))
-			 (get-union-values (f-inverse v2)))))))))
-    ;; needs work: to make imperative
-    (all-binary-abstract-subvalues
-     descend? f? f f-inverse aggregates-match? v)))))
+(define (all-unary-ad-instances! s)
+ (lambda ()
+  (for-each-call-site s (lambda (v) (all-unary-ad-subinstances! s v)))))
+
+(define (all-binary-ad-subinstances! s v)
+ (let ((f? (case s
+	    ((bundle) perturbation-tagged-value?)
+	    ((plus) (lambda (v) #f))
+	    (else (internal-error))))
+       (f (case s
+	   ((bundle) perturb)
+	   ((plus) identity)
+	   (else (internal-error))))
+       (f-inverse (case s
+		   ((bundle) unperturb)
+		   ((plus) identity)
+		   (else (internal-error))))
+       (g (case s
+	   ((bundle) bundle)
+	   ((plus) plus)
+	   (else (internal-error)))))
+  (for-each
+   (lambda (v)
+    (new-instance s v)
+    (cond
+     ((union? v)
+      ;; The calls to g might issue "might" warnings and might return empty
+      ;; abstract values.
+      ;; widening case H6, H12
+      (for-each (lambda (u) (all-subwidener-instances! (g u) (g v)))
+		(get-union-values v)))
+     ((vlad-pair? v)
+      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
+       (cond ((union? v1)
+	      ;; The calls to g might issue "might" warnings and might return
+	      ;; empty abstract values.
+	      (for-each (lambda (u1)
+			 ;; widening case H7, H13
+			 (all-subwidener-instances!
+			  (g (vlad-cons u1 v2)) (g (vlad-cons v1 v2))))
+			(get-union-values v1)))
+	     ((union? v2)
+	      ;; The calls to g might issue "might" warnings and might return
+	      ;; empty abstract values.
+	      (for-each (lambda (u2)
+			 ;; widening case H8, H14
+			 ;; There is no widening case H15
+			 (all-subwidener-instances!
+			  (g (vlad-cons v1 u2)) (g (vlad-cons v1 v2))))
+			(get-union-values v2)))
+	     ;; The calls to f and f-inverse should never return an empty
+	     ;; abstract value. The call to f-inverse might issue "might"
+	     ;; warnings.
+	     ((and (f? v2) (union? (f-inverse v2)))
+	      ;; The calls to g might issue "might" warnings and might return
+	      ;; empty abstract values.
+	      (for-each (lambda (u2)
+			 ;; widening case H9
+			 (all-subwidener-instances!
+			  (g (vlad-cons v1 (f u2))) (g (vlad-cons v1 v2))))
+			(get-union-values (f-inverse v2)))))))))
+   ;; needs work: to make imperative
+   (all-binary-abstract-subvalues (descend? s)
+				  f?
+				  f
+				  f-inverse
+				  (case s
+				   ((bundle) bundle-aggregates-match?)
+				   ((plus) plus-aggregates-match?)
+				   (else (internal-error)))
+				  v))))
+
+(define (all-binary-ad-instances! s)
+ (lambda ()
+  (for-each-call-site s (lambda (v) (all-binary-ad-subinstances! s v)))))
 
 (define (if-widener-instances2! v1 v2 v3)
  (cond
@@ -13180,39 +13516,21 @@
  (for-each (lambda (instance)
 	    (let ((v1 (function-instance-v1 instance))
 		  (v2 (function-instance-v2 instance)))
-	     (cond
-	      ((every-value-tags
-		(lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
-	       (abstract-destructure
-		;; widening case J
-		(lambda (f v)
-		 (let* ((vs (map f (get-union-values v))) (v (unionize vs)))
-		  (for-each (lambda (v1) (all-subwidener-instances! v1 v)) vs)
-		  v))
-		(empty-abstract-value)
-		(closure-parameter v1)
-		v2
-		(lambda (v-alist)
-		 (abstract-eval1
-		  (closure-body v1) (construct-environment v1 v-alist)))))
-	      ((some-value-tags
-		(lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
-	       (compile-time-warning
-		"Argument might have wrong type for target" v1 v2)
-	       (abstract-destructure
-		;; widening case J
-		(lambda (f v)
-		 (let* ((vs (map f (get-union-values v))) (v (unionize vs)))
-		  (for-each (lambda (v1) (all-subwidener-instances! v1 v)) vs)
-		  v))
-		(empty-abstract-value)
-		(closure-parameter v1)
-		v2
-		(lambda (v-alist)
-		 (abstract-eval1
-		  (closure-body v1) (construct-environment v1 v-alist)))))
-	      (else (compile-time-warning
-		     "Argument might have wrong type for target" v1 v2)))))
+	     (when (some-value-tags
+		    (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2)
+	      (abstract-destructure
+	       ;; widening case J
+	       (lambda (f v)
+		(let* ((vs (map f (get-union-values v))) (v (unionize vs)))
+		 (for-each (lambda (v1) (all-subwidener-instances! v1 v)) vs)
+		 v))
+	       (empty-abstract-value)
+	       (closure-parameter v1)
+	       v2
+	       (lambda (v-alist)
+		;; bar
+		(abstract-eval1
+		 (closure-body v1) (construct-environment v1 v-alist)))))))
 	   *function-instances*)
  (for-each
   (lambda (e)
@@ -13228,6 +13546,7 @@
        ((variable-access-expression? e) '())
        ((lambda-expression? e)
 	;; widening case G
+	;; foo
 	(all-subwidener-instances!
 	 (new-nonrecursive-closure vs e) (environment-binding-value b)))
        ((application? e)
@@ -13240,43 +13559,24 @@
 				      (restrict-environment
 				       vs (application-argument-indices e))))
 		   (v0
-		    (cond
-		     ((every-value-tags
-		       (lambda (tags) (prefix-tags? tags1 tags)) v)
-		      (abstract-destructure
-		       ;; widening case J
-		       (lambda (f v)
-			(let* ((vs (map f (get-union-values v)))
-			       (v (unionize vs)))
-			 (for-each
-			  (lambda (v1) (all-subwidener-instances! v1 v)) vs)
-			 v))
-		       (empty-abstract-value)
-		       p
-		       v
-		       (lambda (v-alist)
-			(abstract-eval1
-			 e1 (construct-environment-for-let e vs v-alist)))))
-		     ((some-value-tags
-		       (lambda (tags) (prefix-tags? tags1 tags)) v)
-		      (compile-time-warning
-		       "Value might have wrong type for let binder" v)
-		      (abstract-destructure
-		       ;; widening case J
-		       (lambda (f v)
-			(let* ((vs (map f (get-union-values v)))
-			       (v (unionize vs)))
-			 (for-each
-			  (lambda (v1) (all-subwidener-instances! v1 v)) vs)
-			 v))
-		       (empty-abstract-value)
-		       p
-		       v
-		       (lambda (v-alist)
-			(abstract-eval1
-			 e1 (construct-environment-for-let e vs v-alist)))))
-		     (else (compile-time-warning
-			    "Value might have wrong type for let binder" v)))))
+		    (if (some-value-tags
+			 (lambda (tags) (prefix-tags? tags1 tags)) v)
+			(abstract-destructure
+			 ;; widening case J
+			 (lambda (f v)
+			  (let* ((vs (map f (get-union-values v)))
+				 (v (unionize vs)))
+			   (for-each
+			    (lambda (v1) (all-subwidener-instances! v1 v)) vs)
+			   v))
+			 (empty-abstract-value)
+			 p
+			 v
+			 (lambda (v-alist)
+			  ;; bar
+			  (abstract-eval1
+			   e1 (construct-environment-for-let e vs v-alist))))
+			(empty-abstract-value))))
 	     ;; widening case B-prime
 	     (all-subwidener-instances! v0 (environment-binding-value b)))
 	    (let ((v1 (abstract-eval1 (application-callee e)
@@ -13304,13 +13604,14 @@
        ((letrec-expression? e)
 	;; widening case C
 	(all-subwidener-instances!
+	 ;; bar
 	 (abstract-eval1
 	  (letrec-expression-body e) (letrec-nested-environment vs e))
 	 (environment-binding-value b)))
        ((cons-expression? e)
 	;; widening case D
 	(all-subwidener-instances!
-	 (new-tagged-pair
+	 (tagged-vlad-cons
 	  (cons-expression-tags e)
 	  (abstract-eval1
 	   (cons-expression-car e)
@@ -13321,70 +13622,7 @@
 	 (environment-binding-value b)))
        (else (internal-error)))))
     (environment-bindings e)))
-  *expressions*)
- ;; widening case H1
- (all-unary-ad-widener-instances! 'zero (lambda (v) #t) zero)
- ;; widening case H2
- (all-unary-ad-widener-instances! 'perturb
-				  (lambda (v)
-				   (and (not (perturbation-tagged-value? v))
-					(not (bundle? v))
-					(not (sensitivity-tagged-value? v))
-					(not (reverse-tagged-value? v))))
-				  perturb)
- ;; widening case H3
- (all-unary-ad-widener-instances!
-  'unperturb
-  (lambda (v)
-   (and (perturbation-value? v) (not (perturbation-tagged-value? v))))
-  unperturb)
- ;; widening case H4
- (all-unary-ad-widener-instances!
-  'primal (lambda (v) (and (forward-value? v) (not (bundle? v)))) primal)
- ;; widening case H5
- (all-unary-ad-widener-instances!
-  'tangent (lambda (v) (and (forward-value? v) (not (bundle? v)))) tangent)
- ;; widening case H6, H7, H8, H9
- (all-binary-ad-widener-instances!
-  'bundle
-  (lambda (v)
-   (and (not (perturbation-tagged-value? v))
-	(not (bundle? v))
-	(not (sensitivity-tagged-value? v))
-	(not (reverse-tagged-value? v))))
-  perturbation-tagged-value? perturb unperturb bundle
-  bundle-aggregates-match?)
- ;; widening case H10
- (all-unary-ad-widener-instances! 'sensitize
-				  (lambda (v)
-				   (and (not (perturbation-tagged-value? v))
-					(not (bundle? v))
-					(not (sensitivity-tagged-value? v))
-					(not (reverse-tagged-value? v))))
-				  sensitize)
- ;; widening case H11
- (all-unary-ad-widener-instances!
-  'unsensitize
-  (lambda (v) (and (sensitivity-value? v) (not (sensitivity-tagged-value? v))))
-  unsensitize)
- ;; widening case H12, H13, H14
- ;; There is no widening case H15
- (all-binary-ad-widener-instances!
-  'plus (lambda (v) #t) (lambda (v) #f) identity identity plus
-  plus-aggregates-match?)
- ;; widening case H16
- (all-unary-ad-widener-instances! '*j
-				  (lambda (v)
-				   (and (not (perturbation-tagged-value? v))
-					(not (bundle? v))
-					(not (sensitivity-tagged-value? v))
-					(not (reverse-tagged-value? v))))
-				  *j)
- ;; widening case H17
- (all-unary-ad-widener-instances!
-  '*j-inverse
-  (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v))))
-  *j-inverse))
+  *expressions*))
 
 (define (all-nested-abstract-values)
  ;; needs work: to make imperative
@@ -13769,12 +14007,10 @@
       (make-il:reverse-tagged-value-primal v il))))
 
 (define (il:car v il)
- (let ((v0 (get-tagged-pair-car v)))
-  (if (void? v0) (il:empty v0) (make-il:car v il))))
+ (let ((v0 (vlad-car v))) (if (void? v0) (il:empty v0) (make-il:car v il))))
 
 (define (il:cdr v il)
- (let ((v0 (get-tagged-pair-cdr v)))
-  (if (void? v0) (il:empty v0) (make-il:cdr v il))))
+ (let ((v0 (vlad-cdr v))) (if (void? v0) (il:empty v0) (make-il:cdr v il))))
 
 (define (il:union-ref v u il)
  (if (void? u) (il:empty u) (make-il:union-ref v u il)))
@@ -13849,7 +14085,7 @@
   ((bundle? v) (list il:bundle-primal il:bundle-tangent))
   ((sensitivity-tagged-value? v) (list il:sensitivity-tagged-value-primal))
   ((reverse-tagged-value? v) (list il:reverse-tagged-value-primal))
-  ((tagged-pair? v) (list il:car il:cdr))
+  ((vlad-pair? v) (list il:car il:cdr))
   (else (internal-error))))
 
 (define (il:widen v1 v2 il)
@@ -13865,7 +14101,7 @@
   v
   il
   ;; widening case H1, H2, H3, H4, H5, H6, H7, H8, H9, H10, H11, H12, H13, H14,
-  ;;               H16, H17, I, L1, L2, L3
+  ;;               H16, H17, I, L1, L2, L3, M
   (map (lambda (il:member u) (il:widen (g u) (g v) (f (il:member v il) u)))
        (il:generate-members v)
        (get-union-values v))))
@@ -13878,6 +14114,523 @@
  (lambda (il) (il:binary-boolean il string (il:constant 0))))
 
 (define (il:values v . ils) (il:values* v ils))
+
+(define (il:tagged-construct-nonrecursive-closure tags vs e ils)
+ (if (empty-tags? tags)
+     (il:construct (new-nonrecursive-closure vs e) ils)
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance 'perturb
+			 (tagged-new-nonrecursive-closure
+			  (remove-tag 'perturbation tags)
+			  (map unperturb vs)
+			  (perturbation-transform-inverse e)))
+	(il:tagged-construct-nonrecursive-closure
+	 (remove-tag 'perturbation tags)
+	 (map unperturb vs)
+	 (perturbation-transform-inverse e)
+	 (map (lambda (v il) (il:call (lookup-instance 'unperturb v) il))
+	      vs
+	      ils))))
+      ((forward)
+       (il:call
+	(lookup-instance 'bundle
+			 (vlad-cons (tagged-new-nonrecursive-closure
+				     (remove-tag 'forward tags)
+				     (map primal vs)
+				     (forward-transform-inverse e))
+				    (perturb (tagged-new-nonrecursive-closure
+					      (remove-tag 'forward tags)
+					      (map unperturb (map tangent vs))
+					      (forward-transform-inverse e)))))
+	(il:construct
+	 (vlad-cons (tagged-new-nonrecursive-closure
+		     (remove-tag 'forward tags)
+		     (map primal vs)
+		     (forward-transform-inverse e))
+		    (perturb (tagged-new-nonrecursive-closure
+			      (remove-tag 'forward tags)
+			      (map unperturb (map tangent vs))
+			      (forward-transform-inverse e))))
+	 (il:tagged-construct-nonrecursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (forward-transform-inverse e)
+	  (map (lambda (v il) (il:call (lookup-instance 'primal v) il))
+	       vs
+	       ils))
+	 (il:call (lookup-instance 'perturb
+				   (tagged-new-nonrecursive-closure
+				    (remove-tag 'forward tags)
+				    (map unperturb (map tangent vs))
+				    (forward-transform-inverse e)))
+		  (il:tagged-construct-nonrecursive-closure
+		   (remove-tag 'forward tags)
+		   (map unperturb (map tangent vs))
+		   (forward-transform-inverse e)
+		   (map (lambda (v il)
+			 (il:call (lookup-instance 'unperturb (tangent v))
+				  (il:call (lookup-instance 'tangent v) il)))
+			vs
+			ils))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance 'sensitize
+			 (tagged-new-nonrecursive-closure
+			  (remove-tag 'sensitivity tags)
+			  (map unsensitize vs)
+			  (sensitivity-transform-inverse e)))
+	(il:tagged-construct-nonrecursive-closure
+	 (remove-tag 'sensitivity tags)
+	 (map unsensitize vs)
+	 (sensitivity-transform-inverse e)
+	 (map (lambda (v il) (il:call (lookup-instance 'unsensitize v) il))
+	      vs
+	      ils))))
+      ((reverse)
+       (il:call
+	(lookup-instance '*j
+			 (tagged-new-nonrecursive-closure
+			  (remove-tag 'reverse tags)
+			  (map *j-inverse vs)
+			  (reverse-transform-inverse e)))
+	(il:tagged-construct-nonrecursive-closure
+	 (remove-tag 'reverse tags)
+	 (map *j-inverse vs)
+	 (reverse-transform-inverse e)
+	 (map (lambda (v il) (il:call (lookup-instance '*j-inverse v) il))
+	      vs
+	      ils))))
+      (else (internal-error)))))
+
+(define (il:tagged-construct-recursive-closure tags vs xs es i ils)
+ (if (empty-tags? tags)
+     (il:construct (new-recursive-closure vs xs es i) ils)
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance 'perturb
+			 (tagged-new-recursive-closure
+			  (remove-tag 'perturbation tags)
+			  (map unperturb vs)
+			  (map-vector unperturbationify xs)
+			  (map-vector perturbation-transform-inverse es)
+			  i))
+	(il:tagged-construct-recursive-closure
+	 (remove-tag 'perturbation tags)
+	 (map unperturb vs)
+	 (map-vector unperturbationify xs)
+	 (map-vector perturbation-transform-inverse es)
+	 i
+	 (map (lambda (v il) (il:call (lookup-instance 'unperturb v) il))
+	      vs
+	      ils))))
+      ((forward)
+       (il:call
+	(lookup-instance
+	 'bundle
+	 (vlad-cons (tagged-new-recursive-closure
+		     (remove-tag 'forward tags)
+		     (map primal vs)
+		     (map-vector unforwardify xs)
+		     (map-vector forward-transform-inverse es)
+		     i)
+		    (perturb (tagged-new-recursive-closure
+			      (remove-tag 'forward tags)
+			      (map unperturb (map tangent vs))
+			      (map-vector unforwardify xs)
+			      (map-vector forward-transform-inverse es)
+			      i))))
+	(il:construct
+	 (vlad-cons (tagged-new-recursive-closure
+		     (remove-tag 'forward tags)
+		     (map primal vs)
+		     (map-vector unforwardify xs)
+		     (map-vector forward-transform-inverse es)
+		     i)
+		    (perturb (tagged-new-recursive-closure
+			      (remove-tag 'forward tags)
+			      (map unperturb (map tangent vs))
+			      (map-vector unforwardify xs)
+			      (map-vector forward-transform-inverse es)
+			      i)))
+	 (il:tagged-construct-recursive-closure
+	  (remove-tag 'forward tags)
+	  (map primal vs)
+	  (map-vector unforwardify xs)
+	  (map-vector forward-transform-inverse es)
+	  i
+	  (map (lambda (v il) (il:call (lookup-instance 'primal v) il))
+	       vs
+	       ils))
+	 (il:call (lookup-instance 'perturb
+				   (tagged-new-recursive-closure
+				    (remove-tag 'forward tags)
+				    (map unperturb (map tangent vs))
+				    (map-vector unforwardify xs)
+				    (map-vector forward-transform-inverse es)
+				    i))
+		  (il:tagged-construct-recursive-closure
+		   (remove-tag 'forward tags)
+		   (map unperturb (map tangent vs))
+		   (map-vector unforwardify xs)
+		   (map-vector forward-transform-inverse es)
+		   i
+		   (map (lambda (v il)
+			 (il:call (lookup-instance 'unperturb (tangent v))
+				  (il:call (lookup-instance 'tangent v) il)))
+			vs
+			ils))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance 'sensitize
+			 (tagged-new-recursive-closure
+			  (remove-tag 'sensitivity tags)
+			  (map unsensitize vs)
+			  (map-vector unsensitivityify xs)
+			  (map-vector sensitivity-transform-inverse es)
+			  i))
+	(il:tagged-construct-recursive-closure
+	 (remove-tag 'sensitivity tags)
+	 (map unsensitize vs)
+	 (map-vector unsensitivityify xs)
+	 (map-vector sensitivity-transform-inverse es)
+	 i
+	 (map (lambda (v il) (il:call (lookup-instance 'unsensitize v) il))
+	      vs
+	      ils))))
+      ((reverse)
+       (il:call
+	(lookup-instance '*j
+			 (tagged-new-recursive-closure
+			  (remove-tag 'reverse tags)
+			  (map *j-inverse vs)
+			  (map-vector unreverseify xs)
+			  (map-vector reverse-transform-inverse es)
+			  i))
+	(il:tagged-construct-recursive-closure
+	 (remove-tag 'reverse tags)
+	 (map *j-inverse vs)
+	 (map-vector unreverseify xs)
+	 (map-vector reverse-transform-inverse es)
+	 i
+	 (map (lambda (v il) (il:call (lookup-instance '*j-inverse v) il))
+	      vs
+	      ils))))
+      (else (internal-error)))))
+
+(define (il:tagged-closure-ref tags v il x)
+ (if (empty-tags? tags)
+     (cond
+      ((empty-abstract-value? v)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
+      ((union? v)
+       (il:let v
+	       (il:y)
+	       il
+	       ;; widening case M3
+	       (il:map-dispatch
+		v
+		(il:y)
+		(lambda (u)
+		 (map-union
+		  (lambda (u)
+		   (if (closure? u) (closure-ref u x) (empty-abstract-value)))
+		  u))
+		(lambda (il u)
+		 (if (closure? u)
+		     (il:closure-ref u il x)
+		     (il:panic "Argument is not a closure"))))))
+      ((closure? v) (il:closure-ref v il x))
+      (else (il:panic "Argument is not a closure")))
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance
+	 'perturb
+	 (tagged-closure-ref (remove-tag 'perturbation tags)
+			     (unperturb v)
+			     (unperturbationify x)))
+	(il:tagged-closure-ref (remove-tag 'perturbation tags)
+			       (unperturb v)
+			       (il:call (lookup-instance 'unperturb v) il)
+			       (unperturbationify x))))
+      ((forward)
+       (il:call
+	(lookup-instance
+	 'bundle
+	 (vlad-cons (tagged-closure-ref (remove-tag 'forward tags)
+					(primal v)
+					(unforwardify x))
+		    (perturb (tagged-closure-ref (remove-tag 'forward tags)
+						 (unperturb (tangent v))
+						 (unforwardify x)))))
+	(il:construct
+	 (vlad-cons (tagged-closure-ref (remove-tag 'forward tags)
+					(primal v)
+					(unforwardify x))
+		    (perturb (tagged-closure-ref (remove-tag 'forward tags)
+						 (unperturb (tangent v))
+						 (unforwardify x))))
+	 (il:tagged-closure-ref (remove-tag 'forward tags)
+				(primal v)
+				(il:call (lookup-instance 'primal v) il)
+				(unforwardify x))
+	 (il:call
+	  (lookup-instance 'perturb
+			   (tagged-closure-ref (remove-tag 'forward tags)
+					       (unperturb (tangent v))
+					       (unforwardify x)))
+	  (il:tagged-closure-ref
+	   (remove-tag 'forward tags)
+	   (unperturb (tangent v))
+	   (il:call (lookup-instance 'unperturb (tangent v))
+		    (il:call (lookup-instance 'tangent v) il))
+	   (unforwardify x))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance
+	 'sensitize
+	 (tagged-closure-ref (remove-tag 'sensitivity tags)
+			     (unsensitize v)
+			     (unsensitivityify x)))
+	(il:tagged-closure-ref (remove-tag 'sensitivity tags)
+			       (unsensitize v)
+			       (il:call (lookup-instance 'unsensitize v) il)
+			       (unsensitivityify x))))
+      ((reverse)
+       (il:call
+	(lookup-instance
+	 '*j
+	 (tagged-closure-ref (remove-tag 'reverse tags)
+			     (*j-inverse v)
+			     (unreverseify x)))
+	(il:tagged-closure-ref (remove-tag 'reverse tags)
+			       (*j-inverse v)
+			       (il:call (lookup-instance '*j-inverse v) il)
+			       (unreverseify x))))
+      (else (internal-error)))))
+
+(define (il:tagged-cons tags v1 v2 il1 il2)
+ (if (empty-tags? tags)
+     (il:construct (vlad-cons v1 v2) il1 il2)
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance 'perturb
+			 (tagged-vlad-cons (remove-tag 'perturbation tags)
+					   (unperturb v1)
+					   (unperturb v2)))
+	(il:tagged-cons (remove-tag 'perturbation tags)
+			(unperturb v1)
+			(unperturb v2)
+			(il:call (lookup-instance 'unperturb v1) il1)
+			(il:call (lookup-instance 'unperturb v2) il2))))
+      ((forward)
+       (il:call
+	(lookup-instance
+	 'bundle
+	 (vlad-cons (tagged-vlad-cons (remove-tag 'forward tags)
+				      (primal v1)
+				      (primal v2))
+		    (perturb (tagged-vlad-cons (remove-tag 'forward tags)
+					       (unperturb (tangent v1))
+					       (unperturb (tangent v2))))))
+	(il:construct
+	 (vlad-cons (tagged-vlad-cons (remove-tag 'forward tags)
+				      (primal v1)
+				      (primal v2))
+		    (perturb (tagged-vlad-cons (remove-tag 'forward tags)
+					       (unperturb (tangent v1))
+					       (unperturb (tangent v2)))))
+	 (il:tagged-cons (remove-tag 'forward tags)
+			 (primal v1)
+			 (primal v2)
+			 (il:call (lookup-instance 'primal v1) il1)
+			 (il:call (lookup-instance 'primal v2) il2))
+	 (il:call (lookup-instance 'perturb
+				   (tagged-vlad-cons (remove-tag 'forward tags)
+						     (unperturb (tangent v1))
+						     (unperturb (tangent v2))))
+		  (il:tagged-cons
+		   (remove-tag 'forward tags)
+		   (unperturb (tangent v1))
+		   (unperturb (tangent v2))
+		   (il:call (lookup-instance 'unperturb (tangent v1))
+			    (il:call (lookup-instance 'tangent v1) il1))
+		   (il:call (lookup-instance 'unperturb (tangent v2))
+			    (il:call (lookup-instance 'tangent v2) il2)))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance 'sensitize
+			 (tagged-vlad-cons (remove-tag 'sensitivity tags)
+					   (unsensitize v1)
+					   (unsensitize v2)))
+	(il:tagged-cons (remove-tag 'sensitivity tags)
+			(unsensitize v1)
+			(unsensitize v2)
+			(il:call (lookup-instance 'unsensitize v1) il1)
+			(il:call (lookup-instance 'unsensitize v2) il2))))
+      ((reverse)
+       (il:call
+	(lookup-instance '*j
+			 (tagged-vlad-cons (remove-tag 'reverse tags)
+					   (*j-inverse v1)
+					   (*j-inverse v2)))
+	(il:tagged-cons (remove-tag 'reverse tags)
+			(*j-inverse v1)
+			(*j-inverse v2)
+			(il:call (lookup-instance '*j-inverse v1) il1)
+			(il:call (lookup-instance '*j-inverse v2) il2))))
+      (else (internal-error)))))
+
+(define (il:tagged-car tags v il)
+ (if (empty-tags? tags)
+     (cond
+      ((empty-abstract-value? v)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
+      ((union? v)
+       (il:let
+	v
+	(il:y)
+	il
+	;; widening case M1
+	(il:map-dispatch
+	 v
+	 (il:y)
+	 (lambda (u)
+	  (map-union
+	   (lambda (u) (if (vlad-pair? u) (vlad-car u) (empty-abstract-value)))
+	   u))
+	 (lambda (il u)
+	  (if (vlad-pair? u)
+	      (il:car u il)
+	      (il:panic "Argument is not a pair"))))))
+      ((vlad-pair? v) (il:car v il))
+      (else (il:panic "Argument is not a pair")))
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance
+	 'perturb
+	 (tagged-vlad-car (remove-tag 'perturbation tags) (unperturb v)))
+	(il:tagged-car (remove-tag 'perturbation tags)
+		       (unperturb v)
+		       (il:call (lookup-instance 'unperturb v) il))))
+      ((forward)
+       (il:call
+	(lookup-instance
+	 'bundle
+	 (vlad-cons (tagged-vlad-car (remove-tag 'forward tags) (primal v))
+		    (perturb (tagged-vlad-car (remove-tag 'forward tags)
+					      (unperturb (tangent v))))))
+	(il:construct
+	 (vlad-cons (tagged-vlad-car (remove-tag 'forward tags) (primal v))
+		    (perturb (tagged-vlad-car (remove-tag 'forward tags)
+					      (unperturb (tangent v)))))
+	 (il:tagged-car (remove-tag 'forward tags)
+			(primal v)
+			(il:call (lookup-instance 'primal v) il))
+	 (il:call (lookup-instance 'perturb
+				   (tagged-vlad-car (remove-tag 'forward tags)
+						    (unperturb (tangent v))))
+		  (il:tagged-car
+		   (remove-tag 'forward tags)
+		   (unperturb (tangent v))
+		   (il:call (lookup-instance 'unperturb (tangent v))
+			    (il:call (lookup-instance 'tangent v) il)))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance
+	 'sensitize
+	 (tagged-vlad-car (remove-tag 'sensitivity tags) (unsensitize v)))
+	(il:tagged-car (remove-tag 'sensitivity tags)
+		       (unsensitize v)
+		       (il:call (lookup-instance 'unsensitize v) il))))
+      ((reverse)
+       (il:call
+	(lookup-instance
+	 '*j (tagged-vlad-car (remove-tag 'reverse tags) (*j-inverse v)))
+	(il:tagged-car (remove-tag 'reverse tags)
+		       (*j-inverse v)
+		       (il:call (lookup-instance '*j-inverse v) il))))
+      (else (internal-error)))))
+
+(define (il:tagged-cdr tags v il)
+ (if (empty-tags? tags)
+     (cond
+      ((empty-abstract-value? v)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
+      ((union? v)
+       (il:let
+	v
+	(il:y)
+	il
+	;; widening case M2
+	(il:map-dispatch
+	 v
+	 (il:y)
+	 (lambda (u)
+	  (map-union
+	   (lambda (u) (if (vlad-pair? u) (vlad-cdr u) (empty-abstract-value)))
+	   u))
+	 (lambda (il u)
+	  (if (vlad-pair? u)
+	      (il:cdr u il)
+	      (il:panic "Argument is not a pair"))))))
+      ((vlad-pair? v) (il:cdr v il))
+      (else (il:panic "Argument is not a pair")))
+     (case (first tags)
+      ((perturbation)
+       (il:call
+	(lookup-instance
+	 'perturb
+	 (tagged-vlad-cdr (remove-tag 'perturbation tags) (unperturb v)))
+	(il:tagged-cdr (remove-tag 'perturbation tags)
+		       (unperturb v)
+		       (il:call (lookup-instance 'unperturb v) il))))
+      ((forward)
+       (il:call
+	(lookup-instance
+	 'bundle
+	 (vlad-cons (tagged-vlad-cdr (remove-tag 'forward tags) (primal v))
+		    (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+					      (unperturb (tangent v))))))
+	(il:construct
+	 (vlad-cons (tagged-vlad-cdr (remove-tag 'forward tags) (primal v))
+		    (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+					      (unperturb (tangent v)))))
+	 (il:tagged-cdr (remove-tag 'forward tags)
+			(primal v)
+			(il:call (lookup-instance 'primal v) il))
+	 (il:call (lookup-instance 'perturb
+				   (tagged-vlad-cdr (remove-tag 'forward tags)
+						    (unperturb (tangent v))))
+		  (il:tagged-cdr
+		   (remove-tag 'forward tags)
+		   (unperturb (tangent v))
+		   (il:call (lookup-instance 'unperturb (tangent v))
+			    (il:call (lookup-instance 'tangent v) il)))))))
+      ((sensitivity)
+       (il:call
+	(lookup-instance
+	 'sensitize
+	 (tagged-vlad-cdr (remove-tag 'sensitivity tags) (unsensitize v)))
+	(il:tagged-cdr (remove-tag 'sensitivity tags)
+		       (unsensitize v)
+		       (il:call (lookup-instance 'unsensitize v) il))))
+      ((reverse)
+       (il:call
+	(lookup-instance
+	 '*j (tagged-vlad-cdr (remove-tag 'reverse tags) (*j-inverse v)))
+	(il:tagged-cdr (remove-tag 'reverse tags)
+		       (*j-inverse v)
+		       (il:call (lookup-instance '*j-inverse v) il))))
+      (else (internal-error)))))
 
 ;;; Expression generators
 
@@ -13959,18 +14712,15 @@
 			  (rest xs1) (rest xs2) (rest vs) v-alist k1)))))
 		  (empty-abstract-value)))
 	     ((cons-expression? p)
-	      (if (and
-		   (tagged-pair? v)
-		   (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-		  (abstract-outer (cons-expression-car p)
-				  (get-tagged-pair-car v)
-				  v-alist
-				  (lambda (v-alist)
-				   (abstract-outer (cons-expression-cdr p)
-						   (get-tagged-pair-cdr v)
-						   v-alist
-						   k1)))
-		  (empty-abstract-value)))
+	      (abstract-outer
+	       (cons-expression-car p)
+	       (tagged-vlad-car (cons-expression-tags p) v)
+	       v-alist
+	       (lambda (v-alist)
+		(abstract-outer (cons-expression-cdr p)
+				(tagged-vlad-cdr (cons-expression-tags p) v)
+				v-alist
+				k1))))
 	     (else (internal-error)))))
 	  (generate-outer
 	   (lambda (p v il v-alist k1 k2)
@@ -14039,6 +14789,7 @@
 				  (allocate-variable-access-expression
 				   (first xs1))
 				  (first vs)
+				  ;; foo
 				  (il:closure-ref v il (first xs2))
 				  v-alist
 				  (lambda (v-alist)
@@ -14111,6 +14862,7 @@
 				  (allocate-variable-access-expression
 				   (first xs1))
 				  (first vs)
+				  ;; foo
 				  (il:closure-ref v il (first xs2))
 				  v-alist
 				  (lambda (v-alist)
@@ -14126,47 +14878,41 @@
 						   v-alist
 						   k1
 						   k2)))))))
-		   (generate-inner
-		    (parameter-variables p)
-		    (recursive-closure-variables v)
-		    (get-recursive-closure-values v)
-		    v-alist
-		    k1
-		    k2))
+		   (generate-inner (parameter-variables p)
+				   (recursive-closure-variables v)
+				   (get-recursive-closure-values v)
+				   v-alist
+				   k1
+				   k2))
 		  (il:panic
 		   (format
 		    #f "Argument is not a matching recursive closure for ~s"
 		    (externalize-expression p)))))
 	     ((cons-expression? p)
-	      (if (and
-		   (tagged-pair? v)
-		   (equal-tags? (cons-expression-tags p) (tagged-pair-tags v)))
-		  (generate-outer (cons-expression-car p)
-				  (get-tagged-pair-car v)
-				  (il:car v il)
-				  v-alist
-				  (lambda (v-alist)
-				   (abstract-outer (cons-expression-cdr p)
-						   (get-tagged-pair-cdr v)
-						   v-alist
-						   k1))
-				  (lambda (v-alist)
-				   (generate-outer (cons-expression-cdr p)
-						   (get-tagged-pair-cdr v)
-						   (il:cdr v il)
-						   v-alist
-						   k1
-						   k2)))
-		  (il:panic
-		   (format
-		    #f "Argument is not a matching tagged pair with tags ~s"
-		    (cons-expression-tags p)))))
+	      (generate-outer
+	       (cons-expression-car p)
+	       (tagged-vlad-car (cons-expression-tags p) v)
+	       (il:tagged-car (cons-expression-tags p) v il)
+	       v-alist
+	       (lambda (v-alist)
+		(abstract-outer (cons-expression-cdr p)
+				(tagged-vlad-cdr (cons-expression-tags p) v)
+				v-alist
+				k1))
+	       (lambda (v-alist)
+		(generate-outer (cons-expression-cdr p)
+				(tagged-vlad-cdr (cons-expression-tags p) v)
+				(il:tagged-cdr (cons-expression-tags p) v il)
+				v-alist
+				k1
+				k2))))
 	     (else (internal-error))))))
   (generate-outer p v il '() k1 k2)))
 
 (define (generate-reference v0 v1 x xs xs2)
  (cond ((memp variable=? x xs2) (il:c))
        ((memp variable=? x xs)
+	;; foo
 	(if (void? v1) (il:empty v1) (il:closure-ref v0 (il:c) x)))
        (else x)))
 
@@ -14214,6 +14960,7 @@
    (il:widen
     (new-nonrecursive-closure vs e)
     (abstract-eval1 e vs)
+    ;; foo
     (il:construct* (new-nonrecursive-closure vs e)
 		   (map (lambda (x1 v1) (generate-reference v0 v1 x1 xs xs2))
 			(free-variables e)
@@ -14241,31 +14988,18 @@
 	  bs)
 	 ;; widening case B-prime
 	 (il:widen
-	  (cond
-	   ((every-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-	    (abstract-destructure
-	     ;; widening case J
-	     map-union
-	     (empty-abstract-value)
-	     p
-	     v
-	     (lambda (v-alist)
-	      (abstract-eval1
-	       e1 (construct-environment-for-let e vs v-alist)))))
-	   ((some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-	    (compile-time-warning
-	     "Value might have wrong type for let binder" v)
-	    (abstract-destructure
-	     ;; widening case J
-	     map-union
-	     (empty-abstract-value)
-	     p
-	     v
-	     (lambda (v-alist)
-	      (abstract-eval1
-	       e1 (construct-environment-for-let e vs v-alist)))))
-	   (else (compile-time-warning
-		  "Value might have wrong type for let binder" v)))
+	  (if (some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
+	      (abstract-destructure
+	       ;; widening case J
+	       map-union
+	       (empty-abstract-value)
+	       p
+	       v
+	       (lambda (v-alist)
+		;; bar
+		(abstract-eval1
+		 e1 (construct-environment-for-let e vs v-alist))))
+	      (empty-abstract-value))
 	  (abstract-eval1 e vs)
 	  ;; widening case J
 	  (generate-destructure
@@ -14273,8 +15007,10 @@
 	   v
 	   (il:z)
 	   (lambda (v-alist)
+	    ;; bar
 	    (abstract-eval1 e1 (construct-environment-for-let e vs v-alist)))
 	   (lambda (v-alist)
+	    ;; bar
 	    (generate-expression
 	     e1 (construct-environment-for-let e vs v-alist) v0 xs xs2 bs))))))
        (let ((v1 (abstract-eval1
@@ -14306,9 +15042,11 @@
 	   bs))))))
   ((letrec-expression? e)
    ;; widening case C
+   ;; bar
    (il:widen (abstract-eval1 (letrec-expression-body e)
 			     (letrec-nested-environment vs e))
 	     (abstract-eval1 e vs)
+	     ;; bar
 	     (generate-expression (letrec-expression-body e)
 				  (letrec-nested-environment vs e)
 				  v0
@@ -14322,27 +15060,27 @@
 	 (v2 (abstract-eval1
 	      (cons-expression-cdr e)
 	      (restrict-environment vs (cons-expression-cdr-indices e)))))
-    ;; needs work: We don't check the "Argument has wrong type for target"
-    ;;             condition.
     ;; widening case D
     (il:widen
-     (new-tagged-pair (cons-expression-tags e) v1 v2)
+     (tagged-vlad-cons (cons-expression-tags e) v1 v2)
      (abstract-eval1 e vs)
-     (il:construct (new-tagged-pair (cons-expression-tags e) v1 v2)
-		   (generate-expression
-		    (cons-expression-car e)
-		    (restrict-environment vs (cons-expression-car-indices e))
-		    v0
-		    xs
-		    xs2
-		    bs)
-		   (generate-expression
-		    (cons-expression-cdr e)
-		    (restrict-environment vs (cons-expression-cdr-indices e))
-		    v0
-		    xs
-		    xs2
-		    bs)))))
+     (il:tagged-cons (cons-expression-tags e)
+		     v1
+		     v2
+		     (generate-expression
+		      (cons-expression-car e)
+		      (restrict-environment vs (cons-expression-car-indices e))
+		      v0
+		      xs
+		      xs2
+		      bs)
+		     (generate-expression
+		      (cons-expression-cdr e)
+		      (restrict-environment vs (cons-expression-cdr-indices e))
+		      v0
+		      xs
+		      xs2
+		      bs)))))
   (else (internal-error))))
 
 (define (generate-letrec-bindings e vs v0 xs xs2 il)
@@ -14367,12 +15105,14 @@
   ((letrec-expression? e)
    (let loop ((xs1 (letrec-expression-procedure-variables e)))
     (if (null? xs1)
+	;; bar
 	(generate-letrec-bindings (letrec-expression-body e)
 				  (letrec-nested-environment vs e)
 				  v0
 				  xs
 				  xs2
 				  il)
+	;; foo
 	(let ((v (new-recursive-closure
 		  (restrict-environment vs (letrec-expression-indices e))
 		  (list->vector (letrec-expression-procedure-variables e))
@@ -14415,6 +15155,9 @@
 	 (name (primitive-procedure-name primitive-procedure))
 	 (f (primitive-procedure-abstract primitive-procedure)))
    (cond
+    ((empty-abstract-value? v)
+     (il:panic
+      "A run-time error that was detected at compile time has occurred"))
     ((union? v)
      ;; needs work: The widening case is not annotated yet.
      (il:map-dispatch
@@ -14422,6 +15165,9 @@
     ((vlad-pair? v)
      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
       (cond
+       ((empty-abstract-value? v1)
+	(il:panic
+	 "A run-time error that was detected at compile time has occurred"))
        ((union? v1)
 	;; needs work: The widening case is not annotated yet.
 	(il:map-dispatch
@@ -14431,6 +15177,9 @@
 	 (lambda (il1 u1)
 	  (il:call (lookup-instance symbol (vlad-cons u1 v2))
 		   (il:construct (vlad-cons u1 v2) il1 (il:cdr v (il:x)))))))
+       ((empty-abstract-value? v2)
+	(il:panic
+	 "A run-time error that was detected at compile time has occurred"))
        ((union? v2)
 	;; needs work: The widening case is not annotated yet.
 	(il:map-dispatch
@@ -14453,7 +15202,10 @@
 	 (primitive-procedure (lookup-primitive-procedure symbol))
 	 (name (primitive-procedure-name primitive-procedure))
 	 (f (primitive-procedure-abstract primitive-procedure)))
-   (cond ((union? v)
+   (cond ((empty-abstract-value? v)
+	  (il:panic
+	   "A run-time error that was detected at compile time has occurred"))
+	 ((union? v)
 	  ;; needs work: The widening case is not annotated yet.
 	  (il:map-dispatch
 	   v (il:x) f (lambda (il u) (il:call (lookup-instance symbol u) il))))
@@ -14466,7 +15218,10 @@
 	 (symbol (primitive-procedure-instance-symbol instance))
 	 (f (primitive-procedure-abstract
 	     (lookup-primitive-procedure symbol))))
-   (cond ((union? v)
+   (cond ((empty-abstract-value? v)
+	  (il:panic
+	   "A run-time error that was detected at compile time has occurred"))
+	 ((union? v)
 	  ;; needs work: The widening case is not annotated yet.
 	  (il:map-dispatch
 	   v (il:x) f (lambda (il u) (il:call (lookup-instance symbol u) il))))
@@ -14474,7 +15229,10 @@
 	 (else (il:empty (abstract-boolean)))))))
 
 (define (generate-if2 v1 v2 v3 il1 il2 il3)
- (cond ((union? v1)
+ (cond ((empty-abstract-value? v1)
+	(il:panic
+	 "A run-time error that was detected at compile time has occurred"))
+       ((union? v1)
 	;; widening case L1
 	(il:map-dispatch
 	 v1
@@ -14487,7 +15245,10 @@
 	      v2 (vlad-empty-list) il2 (il:empty (vlad-empty-list))))))
 
 (define (generate-if1 v1 v23 il1 il23)
- (cond ((union? v23)
+ (cond ((empty-abstract-value? v23)
+	(il:panic
+	 "A run-time error that was detected at compile time has occurred"))
+       ((union? v23)
 	;; widening case L2
 	(il:map-dispatch v23
 			 il23
@@ -14503,7 +15264,10 @@
        (else (il:panic "Argument to if-procedure is invalid"))))
 
 (define (generate-if v il)
- (cond ((union? v)
+ (cond ((empty-abstract-value? v)
+	(il:panic
+	 "A run-time error that was detected at compile time has occurred"))
+       ((union? v)
 	;; widening case L3
 	(il:map-dispatch
 	 v il abstract-if-procedure (lambda (il u) (generate-if u il))))
@@ -14519,7 +15283,10 @@
 	(symbol (primitive-procedure-instance-symbol instance))
 	(primitive-procedure (lookup-primitive-procedure symbol))
 	(f (primitive-procedure-abstract primitive-procedure)))
-  (cond ((union? v)
+  (cond ((empty-abstract-value? v)
+	 (il:panic
+	  "A run-time error that was detected at compile time has occurred"))
+	((union? v)
 	 ;; needs work: The widening case is not annotated yet.
 	 (il:map-dispatch
 	  v (il:x) f (lambda (il u) (il:call (lookup-instance symbol u) il))))
@@ -14531,7 +15298,10 @@
 	(symbol (primitive-procedure-instance-symbol instance))
 	(primitive-procedure (lookup-primitive-procedure symbol))
 	(f (primitive-procedure-abstract primitive-procedure)))
-  (cond ((union? v)
+  (cond ((empty-abstract-value? v)
+	 (il:panic
+	  "A run-time error that was detected at compile time has occurred"))
+	((union? v)
 	 ;; needs work: The widening case is not annotated yet.
 	 (il:map-dispatch
 	  v (il:x) f (lambda (il u) (il:call (lookup-instance symbol u) il))))
@@ -14543,7 +15313,10 @@
 	(symbol (primitive-procedure-instance-symbol instance))
 	(primitive-procedure (lookup-primitive-procedure symbol))
 	(f (primitive-procedure-abstract primitive-procedure)))
-  (cond ((union? v)
+  (cond ((empty-abstract-value? v)
+	 (il:panic
+	  "A run-time error that was detected at compile time has occurred"))
+	((union? v)
 	 ;; needs work: The widening case is not annotated yet.
 	 (il:map-dispatch
 	  v (il:x) f (lambda (il u) (il:call (lookup-instance symbol u) il))))
@@ -14554,6 +15327,9 @@
 (define (generate-zero instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H1
     (il:map-dispatch v
@@ -14566,7 +15342,7 @@
 	(bundle? v)
 	(sensitivity-tagged-value? v)
 	(reverse-tagged-value? v)
-	(tagged-pair? v))
+	(vlad-pair? v))
     (il:construct*
      (zero v)
      (map (lambda (il:slot1 v1)
@@ -14579,6 +15355,9 @@
 (define (generate-perturb instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H2
     (il:map-dispatch
@@ -14590,9 +15369,10 @@
 	(perturbation-tagged-value? v)
 	(bundle? v)
 	(sensitivity-tagged-value? v)
-	(reverse-tagged-value? v))
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
     (il:construct (perturb v) (il:x)))
-   ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+   ((closure? v)
     (il:construct*
      (perturb v)
      (map (lambda (il:slot1 v1)
@@ -14605,6 +15385,9 @@
 (define (generate-unperturb instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H3
     (il:map-dispatch
@@ -14614,8 +15397,7 @@
      (lambda (il u) (il:call (lookup-instance 'unperturb u) il))))
    ((perturbation-tagged-value? v)
     (il:perturbation-tagged-value-primal v (il:x)))
-   ((and (or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-	 (not (empty-abstract-value? (unperturb v))))
+   ((and (closure? v) (not (empty-abstract-value? (unperturb v))))
     (il:construct*
      (unperturb v)
      (map (lambda (il:slot1 v1)
@@ -14627,6 +15409,9 @@
 (define (generate-primal instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H4
     (il:map-dispatch v
@@ -14634,8 +15419,7 @@
 		     primal
 		     (lambda (il u) (il:call (lookup-instance 'primal u) il))))
    ((bundle? v) (il:bundle-primal v (il:x)))
-   ((and (or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-	 (not (empty-abstract-value? (primal v))))
+   ((and (closure? v) (not (empty-abstract-value? (primal v))))
     (if (primitive-procedure? (primal v))
 	;; In this case, the result will be void so this case should never
 	;; happen.
@@ -14651,6 +15435,9 @@
 (define (generate-tangent instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H5
     (il:map-dispatch
@@ -14659,8 +15446,7 @@
      tangent
      (lambda (il u) (il:call (lookup-instance 'tangent u) il))))
    ((bundle? v) (il:bundle-tangent v (il:x)))
-   ((and (or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-	 (not (empty-abstract-value? (tangent v))))
+   ((and (closure? v) (not (empty-abstract-value? (tangent v))))
     (if (primitive-procedure? (primal v))
 	;; In this case, the result will be void so this case should never
 	;; happen.
@@ -14676,6 +15462,9 @@
 (define (generate-bundle instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H6
     (il:map-dispatch v
@@ -14685,6 +15474,9 @@
    ((vlad-pair? v)
     (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
      (cond
+      ((empty-abstract-value? v1)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
       ((union? v1)
        ;; widening case H7
        (il:map-dispatch
@@ -14694,6 +15486,9 @@
 	(lambda (il1 u1)
 	 (il:call (lookup-instance 'bundle (vlad-cons u1 v2))
 		  (il:construct (vlad-cons u1 v2) il1 (il:cdr v (il:x)))))))
+      ((empty-abstract-value? v2)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
       ((union? v2)
        ;; widening case H8
        (il:map-dispatch
@@ -14743,10 +15538,12 @@
 	   ;; here I am: need to check conformance
 	   ;;            even when one or both arguments is void
 	   ;;            and even when one or both arguments is deep
-	   (and (perturbation-tagged-value? v1) (some-bundlable? v1 v2))
-	   (and (bundle? v1) (some-bundlable? v1 v2))
-	   (and (sensitivity-tagged-value? v1) (some-bundlable? v1 v2))
-	   (and (reverse-tagged-value? v1) (some-bundlable? v1 v2)))
+	   (and (or (perturbation-tagged-value? v1)
+		    (bundle? v1)
+		    (sensitivity-tagged-value? v1)
+		    (reverse-tagged-value? v1)
+		    (vlad-pair? v1))
+		(some-bundlable? v1 v2)))
        (il:construct
 	(bundle (vlad-cons v1 v2)) (il:car v (il:x)) (il:cdr v (il:x))))
       ((bundle-aggregates-match? v1 v2)
@@ -14768,6 +15565,9 @@
 (define (generate-sensitize instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H10
     (il:map-dispatch
@@ -14779,9 +15579,10 @@
 	(perturbation-tagged-value? v)
 	(bundle? v)
 	(sensitivity-tagged-value? v)
-	(reverse-tagged-value? v))
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
     (il:construct (sensitize v) (il:x)))
-   ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+   ((closure? v)
     (il:construct* (sensitize v)
 		   (map (lambda (il:slot1 v1)
 			 (il:call (lookup-instance 'sensitize v1)
@@ -14794,6 +15595,9 @@
 (define (generate-unsensitize instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H11
     (il:map-dispatch
@@ -14803,8 +15607,7 @@
      (lambda (il u) (il:call (lookup-instance 'unsensitize u) il))))
    ((sensitivity-tagged-value? v)
     (il:sensitivity-tagged-value-primal v (il:x)))
-   ((and (or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-	 (not (empty-abstract-value? (unsensitize v))))
+   ((and (closure? v) (not (empty-abstract-value? (unsensitize v))))
     (il:construct* (unsensitize v)
 		   (map (lambda (il:slot1 v1)
 			 (il:call (lookup-instance 'unsensitize v1)
@@ -14816,6 +15619,9 @@
 (define (generate-plus instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H12
     (il:map-dispatch
@@ -14826,6 +15632,9 @@
       ;; needs work: The following two don't check conformance.
       ((is-zero? v1) (il:cdr v (il:x)))
       ((is-zero? v2) (il:car v (il:x)))
+      ((empty-abstract-value? v1)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
       ((union? v1)
        ;; widening case H13
        (il:map-dispatch
@@ -14835,6 +15644,9 @@
 	(lambda (il1 u1)
 	 (il:call (lookup-instance 'plus (vlad-cons u1 v2))
 		  (il:construct (vlad-cons u1 v2) il1 (il:cdr v (il:x)))))))
+      ((empty-abstract-value? v2)
+       (il:panic
+	"A run-time error that was detected at compile time has occurred"))
       ((union? v2)
        ;; widening case H14
        ;; There is no widening case H15
@@ -14878,19 +15690,21 @@
 (define (generate-*j instance)
  (let ((v (primitive-procedure-instance-v instance)))
   (cond
+   ((empty-abstract-value? v)
+    (il:panic
+     "A run-time error that was detected at compile time has occurred"))
    ((union? v)
     ;; widening case H16
-    (il:map-dispatch v
-		     (il:x)
-		     *j
-		     (lambda (il u) (il:call (lookup-instance '*j u) il))))
+    (il:map-dispatch
+     v (il:x) *j (lambda (il u) (il:call (lookup-instance '*j u) il))))
    ((or (vlad-real? v)
 	(perturbation-tagged-value? v)
 	(bundle? v)
 	(sensitivity-tagged-value? v)
-	(reverse-tagged-value? v))
+	(reverse-tagged-value? v)
+	(vlad-pair? v))
     (il:construct (*j v) (il:x)))
-   ((or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
+   ((or (nonrecursive-closure? v) (recursive-closure? v))
     (il:construct*
      (*j v)
      (map (lambda (il:slot1 v1)
@@ -14902,28 +15716,29 @@
 
 (define (generate-*j-inverse instance)
  (let ((v (primitive-procedure-instance-v instance)))
-  (cond
-   ((union? v)
-    ;; widening case H17
-    (il:map-dispatch
-     v
-     (il:x)
-     *j-inverse
-     (lambda (il u) (il:call (lookup-instance '*j-inverse u) il))))
-   ((reverse-tagged-value? v) (il:reverse-tagged-value-primal v (il:x)))
-   ((and (or (nonrecursive-closure? v) (recursive-closure? v) (tagged-pair? v))
-	 (not (empty-abstract-value? (*j-inverse v))))
-    (if (primitive-procedure? (*j-inverse v))
-	;; In this case, the result will be void so this case should never
-	;; happen.
-	(il:empty (*j-inverse v))
-	(il:construct* (*j-inverse v)
-		       (map (lambda (il:slot1 v1)
-			     (il:call (lookup-instance '*j-inverse v1)
-				      (il:slot1 v (il:x))))
-			    (il:generate-slots v)
-			    (aggregate-value-values v)))))
-   (else (il:panic "Argument to *j-inverse is not a reverse value")))))
+  (cond ((empty-abstract-value? v)
+	 (il:panic
+	  "A run-time error that was detected at compile time has occurred"))
+	((union? v)
+	 ;; widening case H17
+	 (il:map-dispatch
+	  v
+	  (il:x)
+	  *j-inverse
+	  (lambda (il u) (il:call (lookup-instance '*j-inverse u) il))))
+	((reverse-tagged-value? v) (il:reverse-tagged-value-primal v (il:x)))
+	((and (closure? v) (not (empty-abstract-value? (*j-inverse v))))
+	 (if (primitive-procedure? (*j-inverse v))
+	     ;; In this case, the result will be void so this case should never
+	     ;; happen.
+	     (il:empty (*j-inverse v))
+	     (il:construct* (*j-inverse v)
+			    (map (lambda (il:slot1 v1)
+				  (il:call (lookup-instance '*j-inverse v1)
+					   (il:slot1 v (il:x))))
+				 (il:generate-slots v)
+				 (aggregate-value-values v)))))
+	(else (il:panic "Argument to *j-inverse is not a reverse value")))))
 
 (define (generate-function-instances! bs)
  (for-each
@@ -14938,8 +15753,10 @@
       v2
       (il:x)
       (lambda (v-alist)
+       ;; bar
        (abstract-eval1 (closure-body v1) (construct-environment v1 v-alist)))
       (lambda (v-alist)
+       ;; bar
        (let ((vs (construct-environment v1 v-alist)))
 	(generate-letrec-bindings
 	 (closure-body v1)
@@ -15202,15 +16019,200 @@
    ((variable? il) (c:variable-name il))
    (else (internal-error)))))
 
+(define (generate-cons-expression-instances! tags v1 v2)
+ (unless (empty-tags? tags)
+  (case (first tags)
+   ((perturbation)
+    (all-unary-ad-subinstances! 'unperturb v1)
+    (all-unary-ad-subinstances! 'unperturb v2)
+    (all-unary-ad-subinstances!
+     'perturb
+     (tagged-vlad-cons
+      (remove-tag 'perturbation tags) (unperturb v1) (unperturb v2)))
+    (generate-cons-expression-instances!
+     (remove-tag 'perturbation tags) (unperturb v1) (unperturb v2)))
+   ((forward)
+    (all-unary-ad-subinstances! 'primal v1)
+    (all-unary-ad-subinstances! 'primal v2)
+    (all-unary-ad-subinstances! 'tangent v1)
+    (all-unary-ad-subinstances! 'tangent v2)
+    (all-unary-ad-subinstances! 'unperturb (tangent v1))
+    (all-unary-ad-subinstances! 'unperturb (tangent v2))
+    (all-unary-ad-subinstances! 'perturb
+				(tagged-vlad-cons (remove-tag 'forward tags)
+						  (unperturb (tangent v1))
+						  (unperturb (tangent v2))))
+    (all-binary-ad-subinstances!
+     'bundle
+     (vlad-cons (tagged-vlad-cons
+		 (remove-tag 'forward tags) (primal v1) (primal v2))
+		(perturb (tagged-vlad-cons (remove-tag 'forward tags)
+					   (unperturb (tangent v1))
+					   (unperturb (tangent v2))))))
+    (generate-cons-expression-instances!
+     (remove-tag 'forward tags) (primal v1) (primal v2))
+    (generate-cons-expression-instances! (remove-tag 'forward tags)
+					 (unperturb (tangent v1))
+					 (unperturb (tangent v2))))
+   ((sensitivity)
+    (all-unary-ad-subinstances! 'unsensitize v1)
+    (all-unary-ad-subinstances! 'unsensitize v2)
+    (all-unary-ad-subinstances!
+     'sensitize
+     (tagged-vlad-cons
+      (remove-tag 'sensitivity tags) (unsensitize v1) (unsensitize v2)))
+    (generate-cons-expression-instances!
+     (remove-tag 'sensitivity tags) (unsensitize v1) (unsensitize v2)))
+   ((reverse)
+    (all-unary-ad-subinstances! '*j-inverse v1)
+    (all-unary-ad-subinstances! '*j-inverse v2)
+    (all-unary-ad-subinstances!
+     '*j
+     (tagged-vlad-cons
+      (remove-tag 'reverse tags) (*j-inverse v1) (*j-inverse v2)))
+    (generate-cons-expression-instances!
+     (remove-tag 'reverse tags) (*j-inverse v1) (*j-inverse v2)))
+   (else (internal-error)))))
+
+(define (generate-car/cdr-instances! tags v)
+ (cond
+  ((empty-tags? tags)
+   (when (union? v)
+    (for-each (lambda (u)
+	       ;; widening case M1
+	       (all-subwidener-instances!
+		(if (vlad-pair? u) (vlad-car u) (empty-abstract-value))
+		(tagged-vlad-car tags v))
+	       ;; widening case M2
+	       (all-subwidener-instances!
+		(if (vlad-pair? u) (vlad-cdr u) (empty-abstract-value))
+		(tagged-vlad-cdr tags v)))
+	      (get-union-values v))))
+  (else
+   (case (first tags)
+    ((perturbation)
+     (all-unary-ad-subinstances! 'unperturb v)
+     (all-unary-ad-subinstances!
+      'perturb (tagged-vlad-car (remove-tag 'perturbation tags) (unperturb v)))
+     (all-unary-ad-subinstances!
+      'perturb (tagged-vlad-cdr (remove-tag 'perturbation tags) (unperturb v)))
+     (generate-car/cdr-instances!
+      (remove-tag 'perturbation tags) (unperturb v)))
+    ((forward)
+     (all-unary-ad-subinstances! 'primal v)
+     (all-unary-ad-subinstances! 'tangent v)
+     (all-unary-ad-subinstances! 'unperturb (tangent v))
+     (all-unary-ad-subinstances!
+      'perturb
+      (tagged-vlad-car (remove-tag 'forward tags) (unperturb (tangent v))))
+     (all-unary-ad-subinstances!
+      'perturb
+      (tagged-vlad-cdr (remove-tag 'forward tags) (unperturb (tangent v))))
+     (all-binary-ad-subinstances!
+      'bundle
+      (vlad-cons (tagged-vlad-car (remove-tag 'forward tags) (primal v))
+		 (perturb (tagged-vlad-car (remove-tag 'forward tags)
+					   (unperturb (tangent v))))))
+     (all-binary-ad-subinstances!
+      'bundle
+      (vlad-cons (tagged-vlad-cdr (remove-tag 'forward tags) (primal v))
+		 (perturb (tagged-vlad-cdr (remove-tag 'forward tags)
+					   (unperturb (tangent v))))))
+     (generate-car/cdr-instances! (remove-tag 'forward tags) (primal v))
+     (generate-car/cdr-instances!
+      (remove-tag 'forward tags) (unperturb (tangent v))))
+    ((sensitivity)
+     (all-unary-ad-subinstances! 'unsensitize v)
+     (all-unary-ad-subinstances!
+      'sensitize
+      (tagged-vlad-car (remove-tag 'sensitivity tags) (unsensitize v)))
+     (all-unary-ad-subinstances!
+      'sensitize
+      (tagged-vlad-cdr (remove-tag 'sensitivity tags) (unsensitize v)))
+     (generate-car/cdr-instances!
+      (remove-tag 'sensitivity tags) (unsensitize v)))
+    ((reverse)
+     (all-unary-ad-subinstances! '*j-inverse v)
+     (all-unary-ad-subinstances!
+      '*j (tagged-vlad-car (remove-tag 'reverse tags) (*j-inverse v)))
+     (all-unary-ad-subinstances!
+      '*j (tagged-vlad-cdr (remove-tag 'reverse tags) (*j-inverse v)))
+     (generate-car/cdr-instances! (remove-tag 'reverse tags) (*j-inverse v)))
+    (else (internal-error))))))
+
+(define (generate-destructuring-instances! p v)
+ ;; The assumption is that v doesn't violate the syntactic constraints.
+ (let outer ((p p) (v v) (k (lambda () #f)))
+  (cond
+   ;; This case comes first to avoid the dispatch.
+   ((variable-access-expression? p) (k))
+   ;; widening case J
+   ((union? v) (for-each-union (lambda (u) (outer p u k)) v))
+   ((constant-expression? p)
+    ;; This can widen when the constant expression value violates the
+    ;; syntactic constraints (presumably pair depth limit).
+    ;; widening case A
+    (let ((v-prime
+	   (widen-abstract-value
+	    (concrete-value->abstract-value (constant-expression-value p)))))
+     (when (abstract-value-nondisjoint? v-prime v) (k))))
+   ((lambda-expression? p)
+    (when (and (nonrecursive-closure? v)
+	       (dereferenced-expression-eqv?
+		p (nonrecursive-closure-lambda-expression v)))
+     (let inner ((xs1 (parameter-variables p))
+		 (xs2 (nonrecursive-closure-variables v))
+		 (vs (get-nonrecursive-closure-values v))
+		 (k k))
+      (if (null? xs1)
+	  (k)
+	  (outer (allocate-variable-access-expression (first xs1))
+		 (first vs)
+		 (lambda () (inner (rest xs1) (rest xs2) (rest vs) k)))))))
+   ((letrec-expression? p)
+    (assert (and (variable-access-expression? (letrec-expression-body p))
+		 (memp variable=?
+		       (variable-access-expression-variable
+			(letrec-expression-body p))
+		       (letrec-expression-procedure-variables p))))
+    (when (and (recursive-closure? v)
+	       (= (recursive-closure-index v)
+		  (positionp variable=?
+			     (variable-access-expression-variable
+			      (letrec-expression-body p))
+			     (letrec-expression-procedure-variables p)))
+	       (= (vector-length (recursive-closure-procedure-variables v))
+		  (length (letrec-expression-procedure-variables p)))
+	       (= (vector-length (recursive-closure-lambda-expressions v))
+		  (length (letrec-expression-lambda-expressions p)))
+	       (every dereferenced-expression-eqv?
+		      (vector->list (recursive-closure-lambda-expressions v))
+		      (letrec-expression-lambda-expressions p)))
+     (let inner ((xs1 (parameter-variables p))
+		 (xs2 (recursive-closure-variables v))
+		 (vs (get-recursive-closure-values v))
+		 (k k))
+      (if (null? xs1)
+	  (k)
+	  (outer (allocate-variable-access-expression (first xs1))
+		 (first vs)
+		 (lambda () (inner (rest xs1) (rest xs2) (rest vs) k)))))))
+   ((cons-expression? p)
+    (generate-car/cdr-instances! (cons-expression-tags p) v)
+    (outer (cons-expression-car p)
+	   (tagged-vlad-car (cons-expression-tags p) v)
+	   (lambda ()
+	    (outer (cons-expression-cdr p)
+		   (tagged-vlad-cdr (cons-expression-tags p) v)
+		   k))))
+   (else (internal-error)))))
+
 (define (generate! e bs)
  (profile "~a generate! determine-void?!~%" (lambda () (determine-void?!)))
- (for-each-indexed set-c:index! *variables*)
  (profile "~a generate! all-function-instances!~%"
 	  (lambda () (all-function-instances!)))
- (for-each-indexed set-c:index! *function-instances*)
  (profile "~a generate! all-widener-instances!~%"
 	  (lambda () (all-widener-instances!)))
- (for-each-indexed set-c:index! *widener-instances*)
  (profile
   "~a generate! primitive-procedure-all-instances!~%"
   (lambda ()
@@ -15219,6 +16221,55 @@
 			   'write)
 	       ((primitive-procedure-all-instances! (value-binding-value b)))))
 	     *value-bindings*)))
+ (profile
+  "~a generate! cons expressions~%"
+  (lambda ()
+   (for-each
+    (lambda (e)
+     (when (cons-expression? e)
+      (for-each (lambda (b)
+		 (generate-cons-expression-instances!
+		  (cons-expression-tags e)
+		  (abstract-eval1
+		   (cons-expression-car e)
+		   (restrict-environment (environment-binding-values b)
+					 (cons-expression-car-indices e)))
+		  (abstract-eval1
+		   (cons-expression-cdr e)
+		   (restrict-environment (environment-binding-values b)
+					 (cons-expression-cdr-indices e)))))
+		(environment-bindings e))))
+    *expressions*)))
+ (profile
+  "~a generate! cons parameters~%"
+  (lambda ()
+   (for-each
+    (lambda (instance)
+     (let ((v1 (function-instance-v1 instance))
+	   (v2 (function-instance-v2 instance)))
+      (when (and (closure? v1)
+		 (some-value-tags
+		  (lambda (tags2) (prefix-tags? (value-tags v1) tags2)) v2))
+       (generate-destructuring-instances! (closure-parameter v1) v2))))
+    *function-instances*)
+   (for-each
+    (lambda (e)
+     (when (and (application? e) (lambda-expression? (application-callee e)))
+      (let ((p (lambda-expression-parameter (application-callee e)))
+	    (tags1 (lambda-expression-tags (application-callee e))))
+       (for-each
+	(lambda (b)
+	 (let* ((vs (environment-binding-values b))
+		(v (abstract-eval1 (application-argument e)
+				   (restrict-environment
+				    vs (application-argument-indices e)))))
+	  (when (some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
+	   (generate-destructuring-instances! p v))))
+	(environment-bindings e)))))
+    *expressions*)))
+ (for-each-indexed set-c:index! *variables*)
+ (for-each-indexed set-c:index! *function-instances*)
+ (for-each-indexed set-c:index! *widener-instances*)
  (profile "~a generate! all-nested-abstract-values~%"
 	  (lambda () (set! *vs* (all-nested-abstract-values))))
  (profile "~a generate! determine-void?!~%" (lambda () (determine-void?!)))
@@ -15545,202 +16596,6 @@
 	((variable? il) il)
 	(else (internal-error)))))
 
-(define (il:anf-convert-internal il)
- ;; Must be called pre-SRA.
- ;; Returns (bindings il) where each binding is (v x il).
- (cond ((il:c? il) (list '() il))
-       ((il:x? il) (list '() il))
-       ((il:y? il) (list '() il))
-       ((il:z? il) (list '() il))
-       ((il:t? il) (list '() il))
-       ((il:a? il) (list '() il))
-       ((il:r? il) (list '() il))
-       ((il:empty? il)
-	(let ((t (il:t))) (list (list (list (il:empty-v il) t il)) t)))
-       ((il:tag? il)
-	(let ((t (il:t)))
-	 (list (list (list (make-tag (il:tag-v il)) t il)) t)))
-       ((il:constant? il)
-	(let ((t (il:t))) (list (list (list (abstract-real) t il)) t)))
-       ((il:let? il)
-	(let* ((result1 (il:anf-convert-internal (il:let-il1 il)))
-	       (result2
-		(il:anf-convert-internal
-		 (il:replace
-		  (il:let-x il) (second result1) (il:let-il2 il)))))
-	 (list (append (first result1) (first result2))
-	       (second result2))))
-       ((il:dispatch? il)
-	(let* ((result (il:anf-convert-internal (il:dispatch-il il)))
-	       (t (il:t)))
-	 (list (append
-		(first result)
-		(list
-		 (list
-		  (il:dispatch-v0 il)
-		  t
-		  (il:dispatch
-		   (il:dispatch-v0 il)
-		   (il:dispatch-v il)
-		   (second result)
-		   (map il:anf-convert (il:dispatch-ils il))))))
-	       t)))
-       ((il:panic? il)
-	(let ((t (il:t))) (list (list (list (empty-abstract-value) t il)) t)))
-       ((il:closure-ref? il)
-	(let* ((result (il:anf-convert-internal (il:closure-ref-il il)))
-	       (t (il:t)))
-	 (list
-	  (append
-	   (first result)
-	   (list
-	    (list (closure-ref (il:closure-ref-v il) (il:closure-ref-x il))
-		  t
-		  (il:closure-ref (il:closure-ref-v il)
-				  (second result)
-				  (il:closure-ref-x il)))))
-	  t)))
-       ((il:perturbation-tagged-value-primal? il)
-	(let* ((result (il:anf-convert-internal
-			(il:perturbation-tagged-value-primal-il il)))
-	       (t (il:t)))
-	 (list (append
-		(first result)
-		(list (list (get-perturbation-tagged-value-primal
-			     (il:perturbation-tagged-value-primal-v il))
-			    t
-			    (il:perturbation-tagged-value-primal
-			     (il:perturbation-tagged-value-primal-v il)
-			     (second result)))))
-	       t)))
-       ((il:bundle-primal? il)
-	(let* ((result (il:anf-convert-internal (il:bundle-primal-il il)))
-	       (t (il:t)))
-	 (list (append (first result)
-		       (list (list (get-bundle-primal (il:bundle-primal-v il))
-				   t
-				   (il:bundle-primal (il:bundle-primal-v il)
-						     (second result)))))
-	       t)))
-       ((il:bundle-tangent? il)
-	(let* ((result (il:anf-convert-internal (il:bundle-tangent-il il)))
-	       (t (il:t)))
-	 (list
-	  (append (first result)
-		  (list (list (get-bundle-tangent (il:bundle-tangent-v il))
-			      t
-			      (il:bundle-tangent (il:bundle-tangent-v il)
-						 (second result)))))
-	  t)))
-       ((il:sensitivity-tagged-value-primal? il)
-	(let* ((result (il:anf-convert-internal
-			(il:sensitivity-tagged-value-primal-il il)))
-	       (t (il:t)))
-	 (list (append (first result)
-		       (list (list (get-sensitivity-tagged-value-primal
-				    (il:sensitivity-tagged-value-primal-v il))
-				   t
-				   (il:sensitivity-tagged-value-primal
-				    (il:sensitivity-tagged-value-primal-v il)
-				    (second result)))))
-	       t)))
-       ((il:reverse-tagged-value-primal? il)
-	(let* ((result (il:anf-convert-internal
-			(il:reverse-tagged-value-primal-il il)))
-	       (t (il:t)))
-	 (list (append (first result)
-		       (list (list (get-reverse-tagged-value-primal
-				    (il:reverse-tagged-value-primal-v il))
-				   t
-				   (il:reverse-tagged-value-primal
-				    (il:reverse-tagged-value-primal-v il)
-				    (second result)))))
-	       t)))
-       ((il:car? il)
-	(let* ((result (il:anf-convert-internal (il:car-il il))) (t (il:t)))
-	 (list (append (first result)
-		       (list (list (get-tagged-pair-car (il:car-v il))
-				   t
-				   (il:car (il:car-v il) (second result)))))
-	       t)))
-       ((il:cdr? il)
-	(let* ((result (il:anf-convert-internal (il:cdr-il il))) (t (il:t)))
-	 (list (append (first result)
-		       (list (list (get-tagged-pair-cdr (il:cdr-v il))
-				   t
-				   (il:cdr (il:cdr-v il) (second result)))))
-	       t)))
-       ((il:union-ref? il)
-	(let* ((result (il:anf-convert-internal (il:union-ref-il il)))
-	       (t (il:t)))
-	 (list (append (first result)
-		       (list (list (il:union-ref-u il)
-				   t
-				   (il:union-ref (il:union-ref-v il)
-						 (il:union-ref-u il)
-						 (second result)))))
-	       t)))
-       ((il:construct*? il)
-	(let* ((results (map il:anf-convert-internal (il:construct*-ils il)))
-	       (t (il:t)))
-	 (list (append (reduce append (map first results) '())
-		       (list (list (il:construct*-v il)
-				   t
-				   (make-il:construct* (il:construct*-v il)
-						       (map second results)))))
-	       t)))
-       ((il:construct-union? il)
-	(let* ((result (il:anf-convert-internal (il:construct-union-il il)))
-	       (t (il:t)))
-	 (list
-	  (append (first result)
-		  (list (list (il:construct-union-v il)
-			      t
-			      (il:construct-union (il:construct-union-u il)
-						  (il:construct-union-v il)
-						  (second result)))))
-	  t)))
-       ((il:construct-union0? il)
-	(let ((t (il:t)))
-	 (list (list (list (il:construct-union0-v il) t il)) t)))
-       ((il:call*? il)
-	(let* ((results (map il:anf-convert-internal (il:call*-ils il)))
-	       (t (il:t))
-	       (instance (il:call*-instance il)))
-	 (list (append
-		(reduce append (map first results) '())
-		(list (list (instance-return-value instance)
-			    t
-			    (make-il:call* instance (map second results)))))
-	       t)))
-       ((il:binary? il)
-	(let* ((result1 (il:anf-convert-internal (il:binary-il1 il)))
-	       (result2 (il:anf-convert-internal (il:binary-il2 il)))
-	       (t (il:t)))
-	 (list (append (first result1)
-		       (first result2)
-		       (list (list (abstract-real)
-				   t
-				   (il:binary (second result1)
-					      (il:binary-string il)
-					      (second result2)))))
-	       t)))
-       ((il:binary-boolean? il)
-	(let* ((result1 (il:anf-convert-internal (il:binary-boolean-il1 il)))
-	       (result2 (il:anf-convert-internal (il:binary-boolean-il2 il)))
-	       (t (il:t)))
-	 (list
-	  (append (first result1)
-		  (first result2)
-		  (list (list (abstract-boolean)
-			      t
-			      (il:binary-boolean (second result1)
-						 (il:binary-boolean-string il)
-						 (second result2)))))
-	  t)))
-       ((variable? il) (list '() il))
-       (else (internal-error))))
-
 (define (il:copy-propagate il)
  ;; Because this doesn't descend into any other construct, it should only be
  ;; used on code in ANF (either pre- or post-SRA).
@@ -15859,31 +16714,226 @@
 
 (define (il:anf-convert il)
  ;; Must be called pre-SRA.
- ;; Panics are propagated upward, except through dispatches. Doing so might
- ;; unsoundly remove code that might do I/O, panic, signal an error, or not
- ;; terminate.
  (il:copy-propagate
   (profile
    "~a il:anf-convert~%"
    (lambda ()
-    (let ((result (il:anf-convert-internal il)))
-     (let loop ((bindings (first result)))
-      (if (null? bindings)
-	  (second result)
-	  (let ((il (loop (rest bindings))))
-	   (cond
-	    ((il:panic? (third (first bindings))) (third (first bindings)))
-	    ((il:panic? il) il)
-	    ((and (il:values*? il)
-		  (= (length (second (first bindings)))
-		     (length (il:values*-ils il)))
-		  (every eq? (second (first bindings)) (il:values*-ils il))
-		  (il:dispatch? (third (first bindings))))
-	     (third (first bindings)))
-	    (else (il:let (first (first bindings))
-			  (second (first bindings))
-			  (third (first bindings))
-			  il)))))))))))
+    (let outer ((il il))
+     (let ((result
+	    ;; Returns (bindings il) where each binding is (v x il).
+	    (let inner ((il il))
+	     (cond
+	      ((il:c? il) (list '() il))
+	      ((il:x? il) (list '() il))
+	      ((il:y? il) (list '() il))
+	      ((il:z? il) (list '() il))
+	      ((il:t? il) (list '() il))
+	      ((il:a? il) (list '() il))
+	      ((il:r? il) (list '() il))
+	      ((il:empty? il)
+	       (let ((t (il:t))) (list (list (list (il:empty-v il) t il)) t)))
+	      ((il:tag? il)
+	       (let ((t (il:t)))
+		(list (list (list (make-tag (il:tag-v il)) t il)) t)))
+	      ((il:constant? il)
+	       (let ((t (il:t))) (list (list (list (abstract-real) t il)) t)))
+	      ((il:let? il)
+	       (let* ((result1 (inner (il:let-il1 il)))
+		      (result2
+		       (inner
+			(il:replace
+			 (il:let-x il) (second result1) (il:let-il2 il)))))
+		(list (append (first result1) (first result2))
+		      (second result2))))
+	      ((il:dispatch? il)
+	       (let* ((result (inner (il:dispatch-il il))) (t (il:t)))
+		(list (append
+		       (first result)
+		       (list
+			(list
+			 (il:dispatch-v0 il)
+			 t
+			 (il:dispatch (il:dispatch-v0 il)
+				      (il:dispatch-v il)
+				      (second result)
+				      (map outer (il:dispatch-ils il))))))
+		      t)))
+	      ((il:panic? il)
+	       (let ((t (il:t)))
+		(list (list (list (empty-abstract-value) t il)) t)))
+	      ((il:closure-ref? il)
+	       (let* ((result (inner (il:closure-ref-il il))) (t (il:t)))
+		(list
+		 (append
+		  (first result)
+		  (list
+		   (list
+		    (closure-ref (il:closure-ref-v il) (il:closure-ref-x il))
+		    t
+		    (il:closure-ref (il:closure-ref-v il)
+				    (second result)
+				    (il:closure-ref-x il)))))
+		 t)))
+	      ((il:perturbation-tagged-value-primal? il)
+	       (let* ((result
+		       (inner (il:perturbation-tagged-value-primal-il il)))
+		      (t (il:t)))
+		(list (append
+		       (first result)
+		       (list (list (get-perturbation-tagged-value-primal
+				    (il:perturbation-tagged-value-primal-v il))
+				   t
+				   (il:perturbation-tagged-value-primal
+				    (il:perturbation-tagged-value-primal-v il)
+				    (second result)))))
+		      t)))
+	      ((il:bundle-primal? il)
+	       (let* ((result (inner (il:bundle-primal-il il))) (t (il:t)))
+		(list
+		 (append
+		  (first result)
+		  (list (list (get-bundle-primal (il:bundle-primal-v il))
+			      t
+			      (il:bundle-primal (il:bundle-primal-v il)
+						(second result)))))
+		 t)))
+	      ((il:bundle-tangent? il)
+	       (let* ((result (inner (il:bundle-tangent-il il))) (t (il:t)))
+		(list
+		 (append
+		  (first result)
+		  (list (list (get-bundle-tangent (il:bundle-tangent-v il))
+			      t
+			      (il:bundle-tangent (il:bundle-tangent-v il)
+						 (second result)))))
+		 t)))
+	      ((il:sensitivity-tagged-value-primal? il)
+	       (let* ((result
+		       (inner (il:sensitivity-tagged-value-primal-il il)))
+		      (t (il:t)))
+		(list
+		 (append
+		  (first result)
+		  (list (list (get-sensitivity-tagged-value-primal
+			       (il:sensitivity-tagged-value-primal-v il))
+			      t
+			      (il:sensitivity-tagged-value-primal
+			       (il:sensitivity-tagged-value-primal-v il)
+			       (second result)))))
+		 t)))
+	      ((il:reverse-tagged-value-primal? il)
+	       (let* ((result (inner (il:reverse-tagged-value-primal-il il)))
+		      (t (il:t)))
+		(list
+		 (append (first result)
+			 (list (list (get-reverse-tagged-value-primal
+				      (il:reverse-tagged-value-primal-v il))
+				     t
+				     (il:reverse-tagged-value-primal
+				      (il:reverse-tagged-value-primal-v il)
+				      (second result)))))
+		 t)))
+	      ((il:car? il)
+	       (let* ((result (inner (il:car-il il))) (t (il:t)))
+		(list
+		 (append (first result)
+			 (list (list (vlad-car (il:car-v il))
+				     t
+				     (il:car (il:car-v il) (second result)))))
+		 t)))
+	      ((il:cdr? il)
+	       (let* ((result (inner (il:cdr-il il))) (t (il:t)))
+		(list
+		 (append (first result)
+			 (list (list (vlad-cdr (il:cdr-v il))
+				     t
+				     (il:cdr (il:cdr-v il) (second result)))))
+		 t)))
+	      ((il:union-ref? il)
+	       (let* ((result (inner (il:union-ref-il il))) (t (il:t)))
+		(list (append (first result)
+			      (list (list (il:union-ref-u il)
+					  t
+					  (il:union-ref (il:union-ref-v il)
+							(il:union-ref-u il)
+							(second result)))))
+		      t)))
+	      ((il:construct*? il)
+	       (let* ((results (map inner (il:construct*-ils il))) (t (il:t)))
+		(list (append
+		       (reduce append (map first results) '())
+		       (list (list (il:construct*-v il)
+				   t
+				   (make-il:construct* (il:construct*-v il)
+						       (map second results)))))
+		      t)))
+	      ((il:construct-union? il)
+	       (let* ((result (inner (il:construct-union-il il))) (t (il:t)))
+		(list
+		 (append
+		  (first result)
+		  (list (list (il:construct-union-v il)
+			      t
+			      (il:construct-union (il:construct-union-u il)
+						  (il:construct-union-v il)
+						  (second result)))))
+		 t)))
+	      ((il:construct-union0? il)
+	       (let ((t (il:t)))
+		(list (list (list (il:construct-union0-v il) t il)) t)))
+	      ((il:call*? il)
+	       (let* ((results (map inner (il:call*-ils il)))
+		      (t (il:t))
+		      (instance (il:call*-instance il)))
+		(list
+		 (append
+		  (reduce append (map first results) '())
+		  (list (list (instance-return-value instance)
+			      t
+			      (make-il:call* instance (map second results)))))
+		 t)))
+	      ((il:binary? il)
+	       (let* ((result1 (inner (il:binary-il1 il)))
+		      (result2 (inner (il:binary-il2 il)))
+		      (t (il:t)))
+		(list (append (first result1)
+			      (first result2)
+			      (list (list (abstract-real)
+					  t
+					  (il:binary (second result1)
+						     (il:binary-string il)
+						     (second result2)))))
+		      t)))
+	      ((il:binary-boolean? il)
+	       (let* ((result1 (inner (il:binary-boolean-il1 il)))
+		      (result2 (inner (il:binary-boolean-il2 il)))
+		      (t (il:t)))
+		(list
+		 (append
+		  (first result1)
+		  (first result2)
+		  (list (list (abstract-boolean)
+			      t
+			      (il:binary-boolean (second result1)
+						 (il:binary-boolean-string il)
+						 (second result2)))))
+		 t)))
+	      ((variable? il) (list '() il))
+	      (else (internal-error))))))
+      (let loop ((bindings (first result)))
+       (if (null? bindings)
+	   (second result)
+	   (let ((il (loop (rest bindings))))
+	    (if (and (il:values*? il)
+		     (= (length (second (first bindings)))
+			(length (il:values*-ils il)))
+		     (every eq? (second (first bindings)) (il:values*-ils il))
+		     (il:dispatch? (third (first bindings))))
+		(third (first bindings))
+		(il:let (first (first bindings))
+			(second (first bindings))
+			(third (first bindings))
+			il)))))))))))
 
 ;;; SRA
 
@@ -15914,11 +16964,11 @@
 		(list (number-of-slots (get-bundle-primal v))
 		      (number-of-slots (get-bundle-tangent v)))))
 
-(define (il:get-tagged-pair-values v xs)
+(define (il:get-vlad-pair-values v xs)
  (assert (= (number-of-slots v) (length xs)))
  (il:split-flat xs
-		(list (number-of-slots (get-tagged-pair-car v))
-		      (number-of-slots (get-tagged-pair-cdr v)))))
+		(list (number-of-slots (vlad-car v))
+		      (number-of-slots (vlad-cdr v)))))
 
 (define (il:get-union-values v xs)
  (assert (and (= (number-of-slots v) (length xs))
@@ -15941,15 +16991,13 @@
     (assert (and (= (length xs) (length vs)) (every il:t? xs)))
     (cond
      ((il:dispatch? il1)
-      (il:mv-let
-       vs
-       xs
-       (il:dispatch
-	(il:dispatch-v0 il1)
-	(il:dispatch-v il1)
-	(il:dispatch-il il1)
-	(map il:sra-anf-convert (il:dispatch-ils il1)))
-       (il:sra-anf-convert (il:mv-let-il2 il))))
+      (il:mv-let vs
+		 xs
+		 (il:dispatch (il:dispatch-v0 il1)
+			      (il:dispatch-v il1)
+			      (il:dispatch-il il1)
+			      (map il:sra-anf-convert (il:dispatch-ils il1)))
+		 (il:sra-anf-convert (il:mv-let-il2 il))))
      ((or (il:closure-ref? il1)
 	  (il:perturbation-tagged-value-primal? il1)
 	  (il:bundle-primal? il1)
@@ -15975,11 +17023,10 @@
        ;; This transformation is sound because at this point all of the il:t in
        ;; all of the mv-let-xs must be unique.
        (il:sra-anf-convert
-	(il:mv-let
-	 vs1
-	 xs1
-	 (il:mv-let-il1 il1)
-	 (il:mv-let vs xs (il:mv-let-il2 il1) (il:mv-let-il2 il))))))
+	(il:mv-let vs1
+		   xs1
+		   (il:mv-let-il1 il1)
+		   (il:mv-let vs xs (il:mv-let-il2 il1) (il:mv-let-il2 il))))))
      (else (internal-error)))))
   ((il:values*? il) il)
   (else (internal-error))))
@@ -16146,115 +17193,123 @@
 
 (define (il:remove-trivial-dispatches il)
  ;; Must be called post-SRA.
- (cond
-  ((il:dispatch? il)
-   (cond
-    ((and
-      (tag? (il:dispatch-v il))
-      (abstract-value=? (tag-abstract-value (il:dispatch-v il))
-			(abstract-boolean))
-      (= (length (il:dispatch-ils il)) 2)
-      (il:values*? (first (il:dispatch-ils il)))
-      (= (length (il:values*-ils (first (il:dispatch-ils il)))) 1)
-      (il:tag? (first (il:values*-ils (first (il:dispatch-ils il)))))
-      (eq? (il:tag-u (first (il:values*-ils (first (il:dispatch-ils il))))) #t)
-      (abstract-value=?
-       (il:tag-v (first (il:values*-ils (first (il:dispatch-ils il)))))
-       (abstract-boolean))
-      (il:values*? (second (il:dispatch-ils il)))
-      (= (length (il:values*-ils (second (il:dispatch-ils il)))) 1)
-      (il:tag? (first (il:values*-ils (second (il:dispatch-ils il)))))
-      (eq? (il:tag-u (first (il:values*-ils (second (il:dispatch-ils il)))))
-	   #f)
-      (abstract-value=?
-       (il:tag-v (first (il:values*-ils (second (il:dispatch-ils il)))))
-       (abstract-boolean)))
-     (il:values (il:dispatch-v il) (il:dispatch-il il)))
-    ;; This might unsoundly remove code that might do I/O, panic, signal an
-    ;; error, or not terminate.
-    ((every (lambda (il1) (il:=? il1 (first (il:dispatch-ils il))))
-	    (il:dispatch-ils il))
-     (first (il:dispatch-ils il)))
-    (else
-     (il:dispatch (il:dispatch-v0 il)
-		  (il:dispatch-v il)
-		  (il:dispatch-il il)
-		  (map il:remove-trivial-dispatches (il:dispatch-ils il))))))
-  ((il:panic? il) il)
-  ((il:mv-let? il)
-   (let ((vs (il:mv-let-vs il))
-	 (xs (il:mv-let-xs il))
-	 (il1 (il:mv-let-il1 il)))
-    (assert (and (= (length xs) (length vs)) (every il:t? xs)))
+ (profile
+  "~a il:remove-trivial-dispatches~%"
+  (lambda ()
+   (let loop ((il il))
     (cond
-     ((il:dispatch? il1)
-      ;; This might unsoundly remove code that might do I/O, panic, signal an
-      ;; error, or not terminate.
-      (if (and (every (lambda (il2) (il:=? il2 (first (il:dispatch-ils il1))))
-		      (il:dispatch-ils il1))
-	       (il:panic? (first (il:dispatch-ils il1))))
-	  (first (il:dispatch-ils il1))
-	  (il:mv-let
-	   vs
-	   xs
-	   (cond
-	    ((and
-	      (tag? (il:dispatch-v il1))
-	      (abstract-value=? (tag-abstract-value (il:dispatch-v il1))
-				(abstract-boolean))
-	      (= (length (il:dispatch-ils il1)) 2)
-	      (il:values*? (first (il:dispatch-ils il1)))
-	      (= (length (il:values*-ils (first (il:dispatch-ils il1)))) 1)
-	      (il:tag? (first (il:values*-ils (first (il:dispatch-ils il1)))))
-	      (eq? (il:tag-u
-		    (first (il:values*-ils (first (il:dispatch-ils il1)))))
-		   #t)
-	      (abstract-value=?
-	       (il:tag-v
-		(first (il:values*-ils (first (il:dispatch-ils il1)))))
-	       (abstract-boolean))
-	      (il:values*? (second (il:dispatch-ils il1)))
-	      (= (length (il:values*-ils (second (il:dispatch-ils il1)))) 1)
-	      (il:tag? (first (il:values*-ils (second (il:dispatch-ils il1)))))
-	      (eq? (il:tag-u
-		    (first (il:values*-ils (second (il:dispatch-ils il1)))))
-		   #f)
-	      (abstract-value=?
-	       (il:tag-v
-		(first (il:values*-ils (second (il:dispatch-ils il1)))))
-	       (abstract-boolean)))
-	     (il:values (il:dispatch-v il1) (il:dispatch-il il1)))
-	    ;; This might unsoundly remove code that might do I/O, panic,
-	    ;; signal an error, or not terminate.
-	    ((every (lambda (il2) (il:=? il2 (first (il:dispatch-ils il1))))
-		    (il:dispatch-ils il1))
-	     (first (il:dispatch-ils il1)))
-	    (else (il:dispatch
-		   (il:dispatch-v0 il1)
-		   (il:dispatch-v il1)
-		   (il:dispatch-il il1)
-		   (map il:remove-trivial-dispatches (il:dispatch-ils il1)))))
-	   (il:remove-trivial-dispatches (il:mv-let-il2 il)))))
-     ((or (il:closure-ref? il1)
-	  (il:perturbation-tagged-value-primal? il1)
-	  (il:bundle-primal? il1)
-	  (il:bundle-tangent? il1)
-	  (il:sensitivity-tagged-value-primal? il1)
-	  (il:reverse-tagged-value-primal? il1)
-	  (il:car? il1)
-	  (il:cdr? il1)
-	  (il:union-ref? il1)
-	  (il:construct*? il1)
-	  (il:construct-union? il1)
-	  (il:construct-union0? il1)
-	  (il:call*? il1)
-	  (il:binary? il1)
-	  (il:binary-boolean? il1)
-	  (il:values*? il1))
-      (il:mv-let vs xs il1 (il:remove-trivial-dispatches (il:mv-let-il2 il))))
-     (else (internal-error)))))
-  ((il:values*? il) il)
-  (else (internal-error))))
+     ((il:dispatch? il)
+      (cond
+       ((and
+	 (tag? (il:dispatch-v il))
+	 (abstract-value=? (tag-abstract-value (il:dispatch-v il))
+			   (abstract-boolean))
+	 (= (length (il:dispatch-ils il)) 2)
+	 (il:values*? (first (il:dispatch-ils il)))
+	 (= (length (il:values*-ils (first (il:dispatch-ils il)))) 1)
+	 (il:tag? (first (il:values*-ils (first (il:dispatch-ils il)))))
+	 (eq? (il:tag-u (first (il:values*-ils (first (il:dispatch-ils il)))))
+	      #t)
+	 (abstract-value=?
+	  (il:tag-v (first (il:values*-ils (first (il:dispatch-ils il)))))
+	  (abstract-boolean))
+	 (il:values*? (second (il:dispatch-ils il)))
+	 (= (length (il:values*-ils (second (il:dispatch-ils il)))) 1)
+	 (il:tag? (first (il:values*-ils (second (il:dispatch-ils il)))))
+	 (eq? (il:tag-u (first (il:values*-ils (second (il:dispatch-ils il)))))
+	      #f)
+	 (abstract-value=?
+	  (il:tag-v (first (il:values*-ils (second (il:dispatch-ils il)))))
+	  (abstract-boolean)))
+	(il:values (il:dispatch-v il) (il:dispatch-il il)))
+       ;; This might unsoundly remove code that might do I/O, panic, signal an
+       ;; error, or not terminate.
+       ((every (lambda (il1) (il:=? il1 (first (il:dispatch-ils il))))
+	       (il:dispatch-ils il))
+	(first (il:dispatch-ils il)))
+       (else
+	(il:dispatch (il:dispatch-v0 il)
+		     (il:dispatch-v il)
+		     (il:dispatch-il il)
+		     (map loop (il:dispatch-ils il))))))
+     ((il:panic? il) il)
+     ((il:mv-let? il)
+      (let ((vs (il:mv-let-vs il))
+	    (xs (il:mv-let-xs il))
+	    (il1 (il:mv-let-il1 il)))
+       (assert (and (= (length xs) (length vs)) (every il:t? xs)))
+       (cond
+	((il:dispatch? il1)
+	 ;; This might unsoundly remove code that might do I/O, panic, signal
+	 ;; an error, or not terminate.
+	 (if (and
+	      (every (lambda (il2) (il:=? il2 (first (il:dispatch-ils il1))))
+		     (il:dispatch-ils il1))
+	      (il:panic? (first (il:dispatch-ils il1))))
+	     (first (il:dispatch-ils il1))
+	     (il:mv-let
+	      vs
+	      xs
+	      (cond
+	       ((and
+		 (tag? (il:dispatch-v il1))
+		 (abstract-value=? (tag-abstract-value (il:dispatch-v il1))
+				   (abstract-boolean))
+		 (= (length (il:dispatch-ils il1)) 2)
+		 (il:values*? (first (il:dispatch-ils il1)))
+		 (= (length (il:values*-ils (first (il:dispatch-ils il1)))) 1)
+		 (il:tag?
+		  (first (il:values*-ils (first (il:dispatch-ils il1)))))
+		 (eq? (il:tag-u
+		       (first (il:values*-ils (first (il:dispatch-ils il1)))))
+		      #t)
+		 (abstract-value=?
+		  (il:tag-v
+		   (first (il:values*-ils (first (il:dispatch-ils il1)))))
+		  (abstract-boolean))
+		 (il:values*? (second (il:dispatch-ils il1)))
+		 (= (length (il:values*-ils (second (il:dispatch-ils il1)))) 1)
+		 (il:tag?
+		  (first (il:values*-ils (second (il:dispatch-ils il1)))))
+		 (eq? (il:tag-u
+		       (first (il:values*-ils (second (il:dispatch-ils il1)))))
+		      #f)
+		 (abstract-value=?
+		  (il:tag-v
+		   (first (il:values*-ils (second (il:dispatch-ils il1)))))
+		  (abstract-boolean)))
+		(il:values (il:dispatch-v il1) (il:dispatch-il il1)))
+	       ;; This might unsoundly remove code that might do I/O, panic,
+	       ;; signal an error, or not terminate.
+	       ((every (lambda (il2) (il:=? il2 (first (il:dispatch-ils il1))))
+		       (il:dispatch-ils il1))
+		(first (il:dispatch-ils il1)))
+	       (else (il:dispatch
+		      (il:dispatch-v0 il1)
+		      (il:dispatch-v il1)
+		      (il:dispatch-il il1)
+		      (map loop (il:dispatch-ils il1)))))
+	      (loop (il:mv-let-il2 il)))))
+	((or (il:closure-ref? il1)
+	     (il:perturbation-tagged-value-primal? il1)
+	     (il:bundle-primal? il1)
+	     (il:bundle-tangent? il1)
+	     (il:sensitivity-tagged-value-primal? il1)
+	     (il:reverse-tagged-value-primal? il1)
+	     (il:car? il1)
+	     (il:cdr? il1)
+	     (il:union-ref? il1)
+	     (il:construct*? il1)
+	     (il:construct-union? il1)
+	     (il:construct-union0? il1)
+	     (il:call*? il1)
+	     (il:binary? il1)
+	     (il:binary-boolean? il1)
+	     (il:values*? il1))
+	 (il:mv-let vs xs il1 (loop (il:mv-let-il2 il))))
+	(else (internal-error)))))
+     ((il:values*? il) il)
+     (else (internal-error)))))))
 
 (define (il:multiply-out-dispatches il)
  ;; Must be called post-SRA.
@@ -16342,11 +17397,13 @@
   (else (internal-error))))
 
 (define (il:maybe-multiply-out-dispatches il)
- (if (or (not *il:multiply-out-dispatches-cost-limit*)
-	 (<= (il:multiplying-out-cost il)
-	     *il:multiply-out-dispatches-cost-limit*))
-     (il:multiply-out-dispatches il)
-     il))
+ (profile "~a il:maybe-multiply-out-dispatches~%"
+	  (lambda ()
+	   (if (or (not *il:multiply-out-dispatches-cost-limit*)
+		   (<= (il:multiplying-out-cost il)
+		       *il:multiply-out-dispatches-cost-limit*))
+	       (il:multiply-out-dispatches il)
+	       il))))
 
 (define (il:sra il bs)
  (il:copy-propagate
@@ -16450,26 +17507,24 @@
 		      (else (il:values* (second b) (fourth b))))))
 	      ((il:car? il1)
 	       (let ((b (lookup (il:car-il il1))))
-		(cond
-		 ((boxed? (il:car-v il1))
-		  (assert (= (length (third b)) 1))
-		  (il:car (first (third b)) (first (fourth b))))
-		 (else
-		  (il:values*
-		   (get-tagged-pair-car (second b))
-		   (first
-		    (il:get-tagged-pair-values (second b) (fourth b))))))))
+		(cond ((boxed? (il:car-v il1))
+		       (assert (= (length (third b)) 1))
+		       (il:car (first (third b)) (first (fourth b))))
+		      (else
+		       (il:values*
+			(vlad-car (second b))
+			(first
+			 (il:get-vlad-pair-values (second b) (fourth b))))))))
 	      ((il:cdr? il1)
 	       (let ((b (lookup (il:cdr-il il1))))
-		(cond
-		 ((boxed? (il:cdr-v il1))
-		  (assert (= (length (third b)) 1))
-		  (il:cdr (first (third b)) (first (fourth b))))
-		 (else
-		  (il:values*
-		   (get-tagged-pair-cdr (second b))
-		   (second
-		    (il:get-tagged-pair-values (second b) (fourth b))))))))
+		(cond ((boxed? (il:cdr-v il1))
+		       (assert (= (length (third b)) 1))
+		       (il:cdr (first (third b)) (first (fourth b))))
+		      (else
+		       (il:values*
+			(vlad-cdr (second b))
+			(second
+			 (il:get-vlad-pair-values (second b) (fourth b))))))))
 	      ((il:union-ref? il1)
 	       (let ((b (lookup (il:union-ref-il il1))))
 		(cond
@@ -16735,11 +17790,9 @@
 (define (c:reverse-tagged-value-primal v code)
  (if (void? (get-reverse-tagged-value-primal v)) '() (c:slot v code "p")))
 
-(define (c:car v code)
- (if (void? (get-tagged-pair-car v)) '() (c:slot v code "a")))
+(define (c:car v code) (if (void? (vlad-car v)) '() (c:slot v code "a")))
 
-(define (c:cdr v code)
- (if (void? (get-tagged-pair-cdr v)) '() (c:slot v code "d")))
+(define (c:cdr v code) (if (void? (vlad-cdr v)) '() (c:slot v code "d")))
 
 (define (c:union-ref v u code)
  (assert (union? v))
@@ -16794,7 +17847,7 @@
        ((bundle? v) '("p" "t"))
        ((sensitivity-tagged-value? v) '("p"))
        ((reverse-tagged-value? v) '("p"))
-       ((tagged-pair? v) '("a" "d"))
+       ((vlad-pair? v) '("a" "d"))
        (else (internal-error))))
 
 (define (c:generate-member-names v) (map c:member-name (get-union-values v)))
@@ -16874,7 +17927,7 @@
   ((bundle? v) (list c:bundle-primal c:bundle-tangent))
   ((sensitivity-tagged-value? v) (list c:sensitivity-tagged-value-primal))
   ((reverse-tagged-value? v) (list c:reverse-tagged-value-primal))
-  ((tagged-pair? v) (list c:car c:cdr))
+  ((vlad-pair? v) (list c:car c:cdr))
   (else (internal-error))))
 
 (define (c:generate-members v)
@@ -17151,7 +18204,7 @@
 	    vs
 	    (enumerate (length vs))))
       ((il:cdr? il1)
-       (let ((offset (number-of-slots (get-tagged-pair-car (il:cdr-v il1)))))
+       (let ((offset (number-of-slots (vlad-car (il:cdr-v il1)))))
 	(map (lambda (x v i)
 	      (c:specifier-init-declaration
 	       v
@@ -17331,12 +18384,11 @@
       (equal? (second (first c)) "=")))
 
 (define (c:remove-redundant-stores cs)
- (append
-  (remove-if c:assignment? cs)
-  (map first
-       (transitive-equivalence-classesp
-	(lambda (c1 c2) (equal? (first (first c1)) (first (first c2))))
-	(remove-if-not c:assignment? cs)))))
+ (append (remove-if c:assignment? cs)
+	 (map first
+	      (transitive-equivalence-classesp
+	       (lambda (c1 c2) (equal? (first (first c1)) (first (first c2))))
+	       (remove-if-not c:assignment? cs)))))
 
 (define (c:sra-alias-fill f v a ils top?)
  (c:remove-redundant-stores
@@ -17401,10 +18453,10 @@
 				(number-of-slots (get-bundle-tangent v)))))
 	    ((sensitivity-tagged-value? v) (list a))
 	    ((reverse-tagged-value? v) (list a))
-	    ((tagged-pair? v)
+	    ((vlad-pair? v)
 	     (split-alias a
-			  (list (number-of-slots (get-tagged-pair-car v))
-				(number-of-slots (get-tagged-pair-cdr v)))))
+			  (list (number-of-slots (vlad-car v))
+				(number-of-slots (vlad-cdr v)))))
 	    (else (internal-error)))
       (cond ((nonrecursive-closure? v)
 	     (il:split-flat
@@ -17419,11 +18471,10 @@
 				  (number-of-slots (get-bundle-tangent v)))))
 	    ((sensitivity-tagged-value? v) (list ils))
 	    ((reverse-tagged-value? v) (list ils))
-	    ((tagged-pair? v)
-	     (il:split-flat
-	      ils
-	      (list (number-of-slots (get-tagged-pair-car v))
-		    (number-of-slots (get-tagged-pair-cdr v)))))
+	    ((vlad-pair? v)
+	     (il:split-flat ils
+			    (list (number-of-slots (vlad-car v))
+				  (number-of-slots (vlad-cdr v)))))
 	    (else (internal-error)))))))))
 
 (define (c:sra-alias-generate-il il xs vs)
@@ -17570,9 +18621,8 @@
 	     (first
 	      (split-alias
 	       (alias (il:car-v il1))
-	       (list
-		(number-of-slots (get-tagged-pair-car (il:car-v il1)))
-		(number-of-slots (get-tagged-pair-cdr (il:car-v il1))))))))
+	       (list (number-of-slots (vlad-car (il:car-v il1)))
+		     (number-of-slots (vlad-cdr (il:car-v il1))))))))
       ((il:cdr? il1)
        (map3 (lambda (x v color)
 	      ;; This can result in copying, i.e., multiple x's can be assigned
@@ -17587,9 +18637,8 @@
 	     (second
 	      (split-alias
 	       (alias (il:cdr-v il1))
-	       (list
-		(number-of-slots (get-tagged-pair-car (il:cdr-v il1)))
-		(number-of-slots (get-tagged-pair-cdr (il:cdr-v il1))))))))
+	       (list (number-of-slots (vlad-car (il:cdr-v il1)))
+		     (number-of-slots (vlad-cdr (il:cdr-v il1))))))))
       ((il:union-ref? il1)
        (map3 (lambda (x v color)
 	      ;; This can result in copying, i.e., multiple x's can be assigned
@@ -18140,241 +19189,64 @@
        ((vlad-pair? v) (if-function-instances1 (vlad-car v) (vlad-cdr v)))
        (else '())))
 
-(define (instances-before instance)
+(define (instances-before-il il)
  (cond
-  ((function-instance? instance)
-   (append
-    ;; This is a conservative overapproximation for now.
-    *widener-instances*
-    (abstract-destructure
-     ;; widening case J
-     (lambda (f v) (map-reduce unionq '() f (get-union-values v)))
-     '()
-     (closure-parameter (function-instance-v1 instance))
-     (function-instance-v2 instance)
-     (lambda (v-alist)
-      (let loop ((e (closure-body (function-instance-v1 instance)))
-		 (vs (construct-environment
-		      (function-instance-v1 instance) v-alist)))
-       (assert (= (length vs) (length (free-variables e))))
-       (cond
-	((application? e)
-	 (if (lambda-expression? (application-callee e))
-	     ;; This handling of LET is an optimization.
-	     (let ((e1 (lambda-expression-body (application-callee e)))
-		   (p (lambda-expression-parameter (application-callee e)))
-		   (tags1 (lambda-expression-tags (application-callee e)))
-		   (v (abstract-eval1 (application-argument e)
-				      (restrict-environment
-				       vs (application-argument-indices e)))))
-	      (unionq
-	       (cond
-		((every-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-		 (abstract-destructure
-		  ;; widening case J
-		  (lambda (f v) (map-reduce unionq '() f (get-union-values v)))
-		  '()
-		  p
-		  v
-		  (lambda (v-alist)
-		   (loop e1 (construct-environment-for-let e vs v-alist)))))
-		((some-value-tags (lambda (tags) (prefix-tags? tags1 tags)) v)
-		 (compile-time-warning
-		  "Value might have wrong type for let binder" v)
-		 (abstract-destructure
-		  ;; widening case J
-		  (lambda (f v) (map-reduce unionq '() f (get-union-values v)))
-		  '()
-		  p
-		  v
-		  (lambda (v-alist)
-		   (loop e1 (construct-environment-for-let e vs v-alist)))))
-		(else (compile-time-warning
-		       "Value might have wrong type for let binder" v)
-		      '()))
-	       (loop
-		(application-argument e)
-		(restrict-environment vs (application-argument-indices e)))))
-	     (let ((v1 (abstract-eval1 (application-callee e)
-				       (restrict-environment
-					vs (application-callee-indices e))))
-		   (v2 (abstract-eval1 (application-argument e)
-				       (restrict-environment
-					vs (application-argument-indices e)))))
-	      (unionq
-	       (map-reduce
-		unionq
-		'()
-		(lambda (u1)
-		 (cond
-		  ((primitive-procedure? u1)
-		   (list (lookup-instance (primitive-procedure-symbol u1) v2)))
-		  ((closure? u1)
-		   (list (lookup-function-instance u1 v2)))
-		  (else '())))
-		(union-members v1))
-	       (unionq
-		(loop (application-callee e)
-		      (restrict-environment vs (application-callee-indices e)))
-		(loop (application-argument e)
-		      (restrict-environment
-		       vs (application-argument-indices e))))))))
-	((letrec-expression? e)
-	 (loop (letrec-expression-body e) (letrec-nested-environment vs e)))
-	((cons-expression? e)
-	 (unionq
-	  (loop (cons-expression-car e)
-		(restrict-environment vs (cons-expression-car-indices e)))
-	  (loop (cons-expression-cdr e)
-		(restrict-environment vs (cons-expression-cdr-indices e)))))
-	(else '())))))))
-  ((widener-instance? instance)
-   (cond
-    ;; See the note for this case in all-subwidener-instances!.
-    ((union? (widener-instance-v1 instance))
-     (map (lambda (u1)
-	   (lookup-widener-instance u1 (widener-instance-v2 instance)))
-	  (get-union-values (widener-instance-v1 instance))))
-    ;; See the notes for this case in all-subwidener-instances!.
-    ((union? (widener-instance-v2 instance))
-     (map (lambda (u2)
-	   (lookup-widener-instance (widener-instance-v1 instance) u2))
-	  (get-union-values (widener-instance-v2 instance))))
-    ((scalar-value? (widener-instance-v2 instance)) '())
-    ;; This will only be done on conforming structures since the analysis is
-    ;; almost union free.
-    ;; needs work: To check conformance.
-    (else (map lookup-widener-instance
-	       (aggregate-value-values (widener-instance-v1 instance))
-	       (aggregate-value-values (widener-instance-v2 instance))))))
-  ((primitive-procedure-instance? instance)
-   (append
-    ;; This is a conservative overapproximation for now.
-    *widener-instances*
-    (case (primitive-procedure-instance-symbol instance)
-     ((+ - * / atan = < > <= >=)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map (lambda (v)
-	     (lookup-instance
-	      (primitive-procedure-instance-symbol instance) v))
-	    (cond ((union? v) (get-union-values v))
-		  ((vlad-pair? v)
-		   (cond ((union? (vlad-car v))
-			  (map (lambda (u) (vlad-cons u (vlad-cdr v)))
-			       (get-union-values (vlad-car v))))
-			 ((union? (vlad-cdr v))
-			  (map (lambda (u) (vlad-cons (vlad-car v) u))
-			       (get-union-values (vlad-cdr v))))
-			 ((and (vlad-real? (vlad-car v))
-			       (vlad-real? (vlad-cdr v)))
-			  '())
-			 (else '())))
-		  (else '())))))
-     ((sqrt exp log sin cos zero? positive? negative? real write-real)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map (lambda (v)
-	     (lookup-instance
-	      (primitive-procedure-instance-symbol instance) v))
-	    (cond ((union? v) (get-union-values v))
-		  ((vlad-real? v) '())
-		  (else '())))))
-     ((null?
-       boolean?
-       real?
-       pair?
-       procedure?
-       perturbation?
-       forward?
-       sensitivity?
-       reverse?)
-      '())
-     ((if-procedure)
-      (if-function-instances (primitive-procedure-instance-v instance)))
-     ((read-real)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map (lambda (v) (lookup-instance 'read-real v))
-	    (cond ((union? v) (get-union-values v))
-		  ((vlad-empty-list? v) '())
-		  (else '())))))
-     ((write) (unimplemented "write"))
-     ((zero
-       perturb
-       unperturb
-       primal
-       tangent
-       sensitize
-       unsensitize
-       *j
-       *j-inverse)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map (lambda (v)
-	     (lookup-instance
-	      (primitive-procedure-instance-symbol instance) v))
-	    (cond ((union? v) (get-union-values v))
-		  ((scalar-value? v) '())
-		  (else (aggregate-value-values v))))))
-     ((bundle)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map
-	(lambda (v) (lookup-instance 'bundle v))
-	(cond
-	 ((union? v) (get-union-values v))
-	 ((vlad-pair? v)
-	  (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	   (cond
-	    ((union? v1)
-	     (map (lambda (u1) (vlad-cons u1 v2)) (get-union-values v1)))
-	    ((union? v2)
-	     (map (lambda (u2) (vlad-cons v1 u2)) (get-union-values v2)))
-	    ((and (perturbation-tagged-value? v2) (union? (unperturb v2)))
-	     (map (lambda (u2) (vlad-cons v1 (perturb u2)))
-		  (get-union-values (unperturb v2))))
-	    ((and (or (vlad-empty-list? v1)
-		      (vlad-true? v1)
-		      (vlad-false? v1)
-		      (primitive-procedure? v1))
-		  (every-bundlable? v1 v2))
-	     '())
-	    ((or (and (vlad-real? v1) (every-bundlable? v1 v2))
-		 (and (perturbation-tagged-value? v1) (some-bundlable? v1 v2))
-		 (and (bundle? v1) (some-bundlable? v1 v2))
-		 (and (sensitivity-tagged-value? v1) (some-bundlable? v1 v2))
-		 (and (reverse-tagged-value? v1) (some-bundlable? v1 v2)))
-	     '())
-	    ((bundle-aggregates-match? v1 v2)
-	     (map vlad-cons
-		  (aggregate-value-values v1)
-		  (aggregate-value-values v2)))
-	    (else '()))))
-	 (else '())))))
-     ((plus)
-      (let ((v (primitive-procedure-instance-v instance)))
-       (map (lambda (v) (lookup-instance 'plus v))
-	    (cond
-	     ((union? v) (get-union-values v))
-	     ((vlad-pair? v)
-	      (let ((v1 (vlad-car v)) (v2 (vlad-cdr v)))
-	       (cond
-		((union? v1)
-		 (map (lambda (u1) (vlad-cons u1 v2)) (get-union-values v1)))
-		((union? v2)
-		 (map (lambda (u2) (vlad-cons v1 u2)) (get-union-values v2)))
-		((or (and (vlad-empty-list? v1) (vlad-empty-list? v2))
-		     (and (vlad-true? v1) (vlad-true? v2))
-		     (and (vlad-false? v1) (vlad-false? v2))
-		     (and (primitive-procedure? v1)
-			  (primitive-procedure? v2)
-			  (eq? v1 v2)))
-		 '())
-		((and (vlad-real? v1) (vlad-real? v2)) '())
-		((plus-aggregates-match? v1 v2)
-		 (map vlad-cons
-		      (aggregate-value-values v1)
-		      (aggregate-value-values v2)))
-		(else '()))))
-	     (else '())))))
-     (else (internal-error)))))
+  ((il:c? il) '())
+  ((il:x? il) '())
+  ((il:y? il) '())
+  ((il:z? il) '())
+  ((il:t? il) '())
+  ((il:a? il) '())
+  ((il:r? il) '())
+  ((il:empty? il) '())
+  ((il:tag? il) '())
+  ((il:constant? il) '())
+  ((il:let? il)
+   (unionq (instances-before-il (il:let-il1 il))
+	   (instances-before-il (il:let-il2 il))))
+  ((il:dispatch? il)
+   (unionq (instances-before-il (il:dispatch-il il))
+	   (map-reduce unionq '() instances-before-il (il:dispatch-ils il))))
+  ((il:panic? il) '())
+  ((il:closure-ref? il) (instances-before-il (il:closure-ref-il il)))
+  ((il:perturbation-tagged-value-primal? il)
+   (instances-before-il (il:perturbation-tagged-value-primal-il il)))
+  ((il:bundle-primal? il) (instances-before-il (il:bundle-primal-il il)))
+  ((il:bundle-tangent? il) (instances-before-il (il:bundle-tangent-il il)))
+  ((il:sensitivity-tagged-value-primal? il)
+   (instances-before-il (il:sensitivity-tagged-value-primal-il il)))
+  ((il:reverse-tagged-value-primal? il)
+   (instances-before-il (il:reverse-tagged-value-primal-il il)))
+  ((il:car? il) (instances-before-il (il:car-il il)))
+  ((il:cdr? il) (instances-before-il (il:cdr-il il)))
+  ((il:union-ref? il) (instances-before-il (il:union-ref-il il)))
+  ((il:construct*? il)
+   (map-reduce unionq '() instances-before-il (il:construct*-ils il)))
+  ((il:construct-union? il) (instances-before-il (il:construct-union-il il)))
+  ((il:construct-union0? il) '())
+  ((il:call*? il)
+   (if (or (function-instance? (il:call*-instance il))
+	   (widener-instance? (il:call*-instance il))
+	   (primitive-procedure-instance? (il:call*-instance il)))
+       (adjoinq (il:call*-instance il)
+		(map-reduce unionq '() instances-before-il (il:call*-ils il)))
+       (map-reduce unionq '() instances-before-il (il:call*-ils il))))
+  ((il:binary? il)
+   (unionq (instances-before-il (il:binary-il1 il))
+	   (instances-before-il (il:binary-il2 il))))
+  ((il:binary-boolean? il)
+   (unionq (instances-before-il (il:binary-boolean-il1 il))
+	   (instances-before-il (il:binary-boolean-il2 il))))
+  ((il:mv-let? il)
+   (unionq (instances-before-il (il:mv-let-il1 il))
+	   (instances-before-il (il:mv-let-il2 il))))
+  ((il:values*? il)
+   (map-reduce unionq '() instances-before-il (il:values*-ils il)))
+  ((variable? il) '())
   (else (internal-error))))
+
+(define (instances-before instance)
+ (instances-before-il (instance-il instance)))
 
 (define (c:generate e bs)
  (with-abstract
@@ -18426,11 +19298,10 @@
 			 (lambda (instance1)
 			  (and (recursive-closure?
 				(function-instance-v1 instance1))
-			       (tagged-pair? (instance-return-value instance1))
+			       (vlad-pair? (instance-return-value instance1))
 			       (abstract-value=?
 				(function-instance-v1 instance)
-				(get-tagged-pair-cdr
-				 (instance-return-value instance1)))))
+				(vlad-cdr (instance-return-value instance1)))))
 			 *function-instances*)))
 		      instances)
 		     (find-if
@@ -18701,11 +19572,10 @@
 			    (and
 			     (recursive-closure?
 			      (function-instance-v1 instance1))
-			     (tagged-pair? (instance-return-value instance1))
+			     (vlad-pair? (instance-return-value instance1))
 			     (abstract-value=?
 			      (function-instance-v1 instance)
-			      (get-tagged-pair-cdr
-			       (instance-return-value instance1)))))
+			      (vlad-cdr (instance-return-value instance1)))))
 			   *function-instances*)))
 			instances)
 		       (find-if
@@ -18785,6 +19655,30 @@
 		 vs)
 		(first vs)))
 	      *vs*)))))
+    ;; debugging
+    (when #f
+     (for-each
+      (lambda (instance)
+       (unless (inline? instance)
+	(display (c:instance-name instance))
+	(newline)
+	(write (externalize (widener-instance-v1 instance)))
+	(newline)
+	(write (externalize (widener-instance-v2 instance)))
+	(newline)
+	(newline)))
+      *widener-instances*))
+    ;; debugging
+    (when #f
+     (for-each
+      (lambda (v)
+       (when (boxed? v)
+	(display (c:member-name v))
+	(newline)
+	(write (externalize v))
+	(newline)
+	(newline)))
+      *vs*))
     (when *number-of-call-sites*
      (for-each (lambda (instance)
 		(when (> (instance-number-of-call-sites instance)
@@ -19101,16 +19995,6 @@
 
 ;;; Primitives
 
-(define (divide x1 x2)
- ;; An approximation of IEEE since Scheme->C hides it. Doesn't handle positive
- ;; vs. negative zero x2.
- (if (zero? x2)
-     (cond ((positive? x1) infinity)
-	   ((negative? x1) minus-infinity)
-	   ;; Both zeros and nan.
-	   (else nan))
-     (/ x1 x2)))
-
 (define (concrete-read-real v)
  (unless (vlad-empty-list? v)
   (run-time-error "Argument is not an equivalent value for '()" v))
@@ -19330,9 +20214,8 @@
 	     (let ((v-forward (evaluate-in-top-level-environment
 			       (primitive-procedure-forward v))))
 	      (set-primitive-procedure-forward! v v-forward)
-	      (set-nonrecursive-closure-primal-cache! v-forward v)
-	      (set-nonrecursive-closure-tangent-cache!
-	       v-forward (new-perturbation-tagged-value v)))
+	      (set-primal-cache! v-forward v)
+	      (set-tangent-cache! v-forward (new-perturbation-tagged-value v)))
 	     (let ((v-reverse (evaluate-in-top-level-environment
 			       (primitive-procedure-reverse v))))
 	      (set-primitive-procedure-reverse! v v-reverse)
@@ -19415,9 +20298,9 @@
  (define-primitive-procedure '/
   "/"
   "divide"
-  (concrete-binary-real divide "/")
-  (abstract-binary-real divide "/")
-  (alias-binary-real divide "/")
+  (concrete-binary-real / "/")
+  (abstract-binary-real / "/")
+  (alias-binary-real / "/")
   (all-real*real-instances! '/)
   (generate-real*real-primitive (lambda (il1 il2) (il:binary il1 "/" il2)))
   '(lambda ((forward x))
@@ -19974,7 +20857,7 @@
   (concrete-ad zero)
   (abstract-ad zero)
   (alias-ad zero-alias)
-  (all-unary-ad-instances! 'zero (lambda (v) #t))
+  (all-unary-ad-instances! 'zero)
   generate-zero
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -19990,12 +20873,7 @@
   (concrete-ad perturb)
   (abstract-ad perturb)
   (alias-ad perturb-alias)
-  (all-unary-ad-instances! 'perturb
-			   (lambda (v)
-			    (and (not (perturbation-tagged-value? v))
-				 (not (bundle? v))
-				 (not (sensitivity-tagged-value? v))
-				 (not (reverse-tagged-value? v)))))
+  (all-unary-ad-instances! 'perturb)
   generate-perturb
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -20017,10 +20895,7 @@
   (concrete-ad unperturb)
   (abstract-ad unperturb)
   (alias-ad unperturb-alias)
-  (all-unary-ad-instances!
-   'unperturb
-   (lambda (v)
-    (and (perturbation-value? v) (not (perturbation-tagged-value? v)))))
+  (all-unary-ad-instances! 'unperturb)
   generate-unperturb
   ;; The argument must be called x-perturbation so as not to confuse the tags.
   '(lambda ((forward x-perturbation))
@@ -20042,8 +20917,7 @@
   (concrete-ad primal)
   (abstract-ad primal)
   (alias-ad primal-alias)
-  (all-unary-ad-instances!
-   'primal (lambda (v) (and (forward-value? v) (not (bundle? v)))))
+  (all-unary-ad-instances! 'primal)
   generate-primal
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -20068,8 +20942,7 @@
   (concrete-ad tangent)
   (abstract-ad tangent)
   (alias-ad tangent-alias)
-  (all-unary-ad-instances!
-   'tangent (lambda (v) (and (forward-value? v) (not (bundle? v)))))
+  (all-unary-ad-instances! 'tangent)
   generate-tangent
   ;; The argument must be called x-forward so as not to confuse the tags.
   '(lambda ((forward x-forward))
@@ -20096,14 +20969,7 @@
   (concrete-ad bundle)
   (abstract-ad bundle)
   (alias-ad bundle-alias1)
-  (all-binary-ad-instances! 'bundle
-			    (lambda (v)
-			     (and (not (perturbation-tagged-value? v))
-				  (not (bundle? v))
-				  (not (sensitivity-tagged-value? v))
-				  (not (reverse-tagged-value? v))))
-			    perturbation-tagged-value? perturb unperturb
-			    bundle-aggregates-match?)
+  (all-binary-ad-instances! 'bundle)
   generate-bundle
   '(lambda ((forward x))
     (let (((cons x1 (perturbation x2)) (primal (forward x)))
@@ -20132,12 +20998,7 @@
   (concrete-ad sensitize)
   (abstract-ad sensitize)
   (alias-ad sensitize-alias)
-  (all-unary-ad-instances! 'sensitize
-			   (lambda (v)
-			    (and (not (perturbation-tagged-value? v))
-				 (not (bundle? v))
-				 (not (sensitivity-tagged-value? v))
-				 (not (reverse-tagged-value? v)))))
+  (all-unary-ad-instances! 'sensitize)
   generate-sensitize
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -20159,10 +21020,7 @@
   (concrete-ad unsensitize)
   (abstract-ad unsensitize)
   (alias-ad unsensitize-alias)
-  (all-unary-ad-instances!
-   'unsensitize
-   (lambda (v)
-    (and (sensitivity-value? v) (not (sensitivity-tagged-value? v)))))
+  (all-unary-ad-instances! 'unsensitize)
   generate-unsensitize
   ;; The argument must be called x-sensitivity so as not to confuse the tags.
   '(lambda ((forward x-sensitivity))
@@ -20186,9 +21044,7 @@
   (concrete-ad plus)
   (abstract-ad plus)
   (alias-ad plus-alias)
-  (all-binary-ad-instances!
-   'plus (lambda (v) #t) (lambda (v) #f) identity identity
-   plus-aggregates-match?)
+  (all-binary-ad-instances! 'plus)
   generate-plus
   '(lambda ((forward x))
     (let (((cons x1 x2) (primal (forward x)))
@@ -20208,12 +21064,7 @@
   (concrete-ad *j)
   (abstract-ad *j)
   (alias-ad *j-alias)
-  (all-unary-ad-instances! '*j
-			   (lambda (v)
-			    (and (not (perturbation-tagged-value? v))
-				 (not (bundle? v))
-				 (not (sensitivity-tagged-value? v))
-				 (not (reverse-tagged-value? v)))))
+  (all-unary-ad-instances! '*j)
   generate-*j
   '(lambda ((forward x))
     (let ((x (primal (forward x))) ((perturbation x) (tangent (forward x))))
@@ -20233,9 +21084,7 @@
   (concrete-ad *j-inverse)
   (abstract-ad *j-inverse)
   (alias-ad *j-inverse-alias)
-  (all-unary-ad-instances!
-   '*j-inverse
-   (lambda (v) (and (reverse-value? v) (not (reverse-tagged-value? v)))))
+  (all-unary-ad-instances! '*j-inverse)
   generate-*j-inverse
   ;; The argument must be called x-reverse so as not to confuse the tags.
   '(lambda ((forward x-reverse))
