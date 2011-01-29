@@ -397,8 +397,9 @@ all: $(FAILURE_REPORTS)
 	  (file->expectations shared-definitions-expectations)
 	  '("addition.vlad"
 	    "list-of-unknown-length.vlad"
-	    "marble.vlad"
-	    "secant.vlad"))
+	    "marble.vlad" ; gone
+	    "secant.vlad" ; gone
+	    ))
 	 (with-working-directory-pathname
 	  "interpreter/"
 	  (lambda ()
@@ -425,17 +426,22 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/"
       (lambda ()
-	(append-map
-	 (file->expectations shared-definitions-expectations)
-	 '("example.vlad"
-	   "double-agent.vlad"
-	   "hessian.vlad"
-	   "saddle.vlad"
-	   "triple.vlad"
-	   "dn.vlad"
-	   "series.vlad"
-	   "slow-sqrt.vlad"
-	   )))))))
+	(append
+	 (append-map
+	  (file->expectations shared-definitions-expectations)
+	  '("double-agent.vlad"		; gone
+	    "saddle.vlad"		; gone
+	    "dn.vlad"			; gone
+	    "series.vlad"
+	    "slow-sqrt.vlad"))
+	 (with-working-directory-pathname
+	  "interpreter/"
+	  (lambda ()
+	    (append-map
+	     (file->expectations shared-definitions-expectations)
+	     '("example.vlad"
+	       "hessian.vlad"
+	       "triple.vlad"))))))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
