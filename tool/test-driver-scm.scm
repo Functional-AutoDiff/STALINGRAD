@@ -372,14 +372,18 @@ all: $(FAILURE_REPORTS)
 	 (iota count 1))))
 
 (define ((file->expectations parse) filename)
-  (let ((expectations (parse (read-forms filename))))
-    (append
-     (expectations-named
-      (file-basename filename)
-      expectations)
-     (expectations-named
-      (string-append "compile-" (file-basename filename))
-      (filter-map compiling-version expectations)))))
+  (if (file-exists? filename)
+      (let ((expectations (parse (read-forms filename))))
+	(append
+	 (expectations-named
+	  (file-basename filename)
+	  expectations)
+	 (expectations-named
+	  (string-append "compile-" (file-basename filename))
+	  (filter-map compiling-version expectations))))
+      (begin
+	(warn "File of examples not found" filename)
+	'())))
 
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
