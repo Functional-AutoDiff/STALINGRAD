@@ -109,8 +109,7 @@ all: $(FAILURE_REPORTS)
   ;; to emits an interesting message on startup.
   (string-tail
    string
-   (string-length "***** INITIALIZEVAR Duplicately defined symbol MAP-REDUCE
-***** INITIALIZEVAR Duplicately defined symbol GENSYM
+   (string-length "***** INITIALIZEVAR Duplicately defined symbol GENSYM
 ")))
 
 ;;;; Expectations
