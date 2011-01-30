@@ -166,6 +166,16 @@ all: $(FAILURE_REPORTS)
 (define (list->expectation lst)
   (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst) (car (cddddr lst))))
 
+;;; Varying the expectations for interpretation
+
+(define (interpreting-version expectation)
+  (%make-expectation
+   (string-append "interpret-" (expectation-name expectation))
+   #f
+   (expectation-forms expectation)
+   (expectation-inputs expectation)
+   (expectation-answer expectation)))
+
 ;;; Varying the expectations for compilation
 
 ;;; The compiler has some differences from and restrictions relative
@@ -377,7 +387,7 @@ all: $(FAILURE_REPORTS)
 				  (file-basename filename)
 				  expectations)))
 	(append
-	 named-expectations
+	 (filter-map interpreting-version named-expectations)
 	 (filter-map compiling-version named-expectations)))
       (begin
 	(warn "File of examples not found" filename)
