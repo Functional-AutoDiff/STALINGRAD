@@ -178,7 +178,7 @@ all: $(FAILURE_REPORTS)
 (define (demand-assq item alist)
   (let ((answer (assq item alist)))
     (if answer (cdr answer) (error "Not found" item))))
-
+
 ;;;; Implementations
 
 ;;; An implementation object contains all the information I need in
@@ -242,7 +242,7 @@ all: $(FAILURE_REPORTS)
     (make-implementation 'stalingrad-interpreter prepare discrepancy))
 
   the-interpreter)
-
+
 ;;; Stalingrad used as a compiler
 
 (define (stalingrad-compiler)
@@ -344,8 +344,8 @@ all: $(FAILURE_REPORTS)
     (make-implementation 'stalingrad-compiler prepare discrepancy))
 
   the-compiler)
-
-;;; Detecting discrepancies in general
+
+;;;; General treatment of discrepancies
 
 (define implementations
   (list (stalingrad-interpreter)
@@ -421,8 +421,6 @@ all: $(FAILURE_REPORTS)
 	  (else
 	   (loop (expect #t) (cdr forms) definitions)))))
 
-;;;; Parsing data files into expectations
-
 (define (file-basename filename)
   (->namestring (pathname-new-type filename #f)))
 
@@ -459,6 +457,8 @@ all: $(FAILURE_REPORTS)
       (begin
 	(warn "File of examples not found" filename)
 	'())))
+
+;;;; Definitions of expectation sets
 
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
@@ -514,7 +514,7 @@ all: $(FAILURE_REPORTS)
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
-
+
 ;;;; Entry points
 
 ;;; Saving expectations to disk
