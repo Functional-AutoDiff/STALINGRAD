@@ -35,7 +35,8 @@
      (cons (f (first l1) (first l2)) (map2 f (rest l1) (rest l2)))))
 
 (define (map-n f n)
- (if (zero? n) '() (append (map-n f (- n 1)) (list (f (- n 1))))))
+ (letrec ((loop (lambda (i) (if (= i n) '() (cons (f i) (loop (+ i 1)))))))
+  (loop 0)))
 
 (define ((reduce f i) l)
  (if (null? l) i (f (first l) ((reduce f i) (rest l)))))
