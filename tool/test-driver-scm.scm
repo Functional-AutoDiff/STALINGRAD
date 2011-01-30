@@ -131,7 +131,7 @@ all: $(FAILURE_REPORTS)
      (lambda (expectation)
        (expectation->list expectation)))))
   name
-  executor
+  implementation
   forms
   inputs
   answer)
@@ -139,7 +139,7 @@ all: $(FAILURE_REPORTS)
 (define (update-expectation-name expectation new-name)
   (%make-expectation
    new-name
-   (expectation-executor expectation)
+   (expectation-implementation expectation)
    (expectation-forms expectation)
    (expectation-inputs expectation)
    (expectation-answer expectation)))
@@ -158,165 +158,179 @@ all: $(FAILURE_REPORTS)
 
 (define (expectation->list expectation)
   (list (expectation-name expectation)
-	(serialize-executor (expectation-executor expectation))
+	(implementation-name (expectation-implementation expectation))
 	(expectation-forms expectation)
 	(expectation-inputs expectation)
 	(expectation-answer expectation)))
 
 (define (list->expectation lst)
   (%make-expectation
-   (car lst) (deserialize-executor (cadr lst))
+   (car lst) (deserialize-implementation (cadr lst))
    (caddr lst) (cadddr lst) (car (cddddr lst))))
 
-(define (serialize-executor executor)
-  (demand-assq executor (map (lambda (x.y)
-			       (cons (cdr x.y) (car x.y)))
-			     executors)))
-
-(define (deserialize-executor name)
-  (demand-assq name executors))
+(define (deserialize-implementation name)
+  (demand-assq name (map (lambda (impl)
+			   (cons (implementation-name impl) impl))
+			 implementations)))
 
 (define (demand-assq item alist)
   (let ((answer (assq item alist)))
     (if answer (cdr answer) (error "Not found" item))))
 
-;;; Varying the expectations for interpretation
-
-(define (interpreting-version expectation)
-  (%make-expectation
-   (string-append "interpret-" (expectation-name expectation))
-   interpretation-discrepancy
-   (expectation-forms expectation)
-   (expectation-inputs expectation)
-   (expectation-answer expectation)))
-
-;;; Varying the expectations for compilation
-
-;;; The compiler has some differences from and restrictions relative
-;;; the interpreter.  Expectations are written with the interpreter in
-;;; mind, and need to be adjusted for the compiler.  There are two
-;;; ways to get a compilable expectation out of an interpreted one,
-;;; depending on whether the return value of the expression being
-;;; tested can be checked in the compiled program.  Also, some tests
-;;; cannot usefully be converted to testing the compiler at all.
-
-(define (writing-value-version expectation)
-  (define (writing-value forms)
-    (append (except-last-pair forms)
-	    `((write-real (real ,(car (last-pair forms)))))))
-  (%make-expectation
-   (string-append "compile-" (expectation-name expectation))
-   compilation-discrepancy
-   (writing-value (expectation-forms expectation))
-   (expectation-inputs expectation)
-   (expectation-answer expectation)))
-
-(define (ignoring-value-version expectation)
-  (define (ignoring-value expect)
-    (cond ((multiform? expect)
-	   `(multiform ,@(except-last-pair (multi-forms expect))))
-	  ((error? expect) expect)
-	  (else (error "Can't ignore the only expectation"))))
-  (%make-expectation
-   (string-append "compile-" (expectation-name expectation))
-   compilation-discrepancy
-   (expectation-forms expectation)
-   (expectation-inputs expectation)
-   (ignoring-value (expectation-answer expectation))))
-
-(define (compiling-version expectation)
-  (if (any exact-string? (expectation-forms expectation))
-      #f
-      (let ((expect (expectation-answer expectation)))
-	(cond ((or (number? expect)
-		   (error? expect)
-		   (and (multiform? expect)
-			(every number? (multi-forms expect))))
-	       (writing-value-version expectation))
-	      ((and (multiform? expect)
-		    (every number? (except-last-pair (multi-forms expect))))
-	       (ignoring-value-version expectation))
-	      (else
-	       #f)))))
+(define-structure (implementation safe-accessors)
+  name
+  prepare
+  discrepancy)
 
 ;;; Checking whether the interpreter behaved as expected
+(define (stalingrad-interpreter)
 
-(define (interpretation-discrepancy expectation)
-  (let* ((forms (expectation-forms expectation))
-	 (expected (expectation-answer expectation))
-	 (inputs (expectation-inputs expectation))
-	 (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	 (reaction (interpreter-reaction-to
-		    forms inputs (expectation-name expectation))))
-    (if (matches? expected reaction)
+  (define (prepare expectation)
+    (%make-expectation
+     (string-append "interpret-" (expectation-name expectation))
+     the-interpreter
+     (expectation-forms expectation)
+     (expectation-inputs expectation)
+     (expectation-answer expectation)))
+
+  (define (discrepancy expectation)
+    (let* ((forms (expectation-forms expectation))
+	   (expected (expectation-answer expectation))
+	   (inputs (expectation-inputs expectation))
+	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+	   (reaction (reaction-to
+		      forms inputs (expectation-name expectation))))
+      (if (matches? expected reaction)
+	  #f
+	  `( interpreting ,forms
+	     ,@input-report-slot
+	     produced ,reaction
+	     expected ,expected))))
+
+  (define (reaction-to forms inputs basename)
+    (write-forms forms basename)
+    (let ((input-string (with-output-to-string
+			  (lambda () (for-each pp inputs)))))
+      (frobnicate
+       (shell-command-output
+	(string-append stalingrad-command test-directory basename ".vlad")
+	input-string))))
+
+  (define the-interpreter
+    (make-implementation 'stalingrad-interpreter prepare discrepancy))
+
+  the-interpreter)
+
+(define (stalingrad-compiler)
+
+  ;;; Varying the expectations for compilation
+
+  ;;; The compiler has some differences from and restrictions relative
+  ;;; the interpreter.  Expectations are written with the interpreter in
+  ;;; mind, and need to be adjusted for the compiler.  There are two
+  ;;; ways to get a compilable expectation out of an interpreted one,
+  ;;; depending on whether the return value of the expression being
+  ;;; tested can be checked in the compiled program.  Also, some tests
+  ;;; cannot usefully be converted to testing the compiler at all.
+
+  (define (writing-value-version expectation)
+    (define (writing-value forms)
+      (append (except-last-pair forms)
+	      `((write-real (real ,(car (last-pair forms)))))))
+    (%make-expectation
+     (string-append "compile-" (expectation-name expectation))
+     the-compiler
+     (writing-value (expectation-forms expectation))
+     (expectation-inputs expectation)
+     (expectation-answer expectation)))
+
+  (define (ignoring-value-version expectation)
+    (define (ignoring-value expect)
+      (cond ((multiform? expect)
+	     `(multiform ,@(except-last-pair (multi-forms expect))))
+	    ((error? expect) expect)
+	    (else (error "Can't ignore the only expectation"))))
+    (%make-expectation
+     (string-append "compile-" (expectation-name expectation))
+     the-compiler
+     (expectation-forms expectation)
+     (expectation-inputs expectation)
+     (ignoring-value (expectation-answer expectation))))
+
+  (define (compiling-version expectation)
+    (if (any exact-string? (expectation-forms expectation))
 	#f
-	`( interpreting ,forms
-	   ,@input-report-slot
-	   produced ,reaction
-	   expected ,expected))))
+	(let ((expect (expectation-answer expectation)))
+	  (cond ((or (number? expect)
+		     (error? expect)
+		     (and (multiform? expect)
+			  (every number? (multi-forms expect))))
+		 (writing-value-version expectation))
+		((and (multiform? expect)
+		      (every number? (except-last-pair (multi-forms expect))))
+		 (ignoring-value-version expectation))
+		(else
+		 #f)))))
 
-(define (interpreter-reaction-to forms inputs basename)
-  (write-forms forms basename)
-  (let ((input-string (with-output-to-string
-			(lambda () (for-each pp inputs)))))
+  ;;; Checking whether the compiler behaved as expected
+  (define (compilation-discrepancy expectation)
+    (let* ((name (expectation-name expectation))
+	   (expected (expectation-answer expectation))
+	   (forms (expectation-forms expectation))
+	   (inputs (expectation-inputs expectation))
+	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+	   (compiler-reaction (compilation-reaction-to forms name)))
+      (if (equal? "" compiler-reaction)
+	  (let ((run-reaction (execution-reaction inputs name)))
+	    (if (matches? expected run-reaction)
+		#f
+		`( running ,forms
+			   ,@input-report-slot
+			   produced ,run-reaction
+			   expected ,expected)))
+	  (if (error? expected)
+	      (if (matches? expected compiler-reaction)
+		  #f
+		  `( compiling ,forms
+			       produced ,compiler-reaction
+			       expected ,expected))
+	      `( compiling ,forms
+			   produced ,compiler-reaction)))))
+
+  (define (compilation-reaction-to forms basename)
+    (write-forms forms basename)
     (frobnicate
      (shell-command-output
-      (string-append stalingrad-command test-directory basename ".vlad")
-      input-string))))
+      (string-append
+       stalingrad-command
+       ;; -imprecise-inexacts causes some "Warning: Arguments to bundle
+       ;; might not conform" that's confusing the test suite.
+       "-compile -k -imprecise-inexacts -no-warnings "
+       test-directory
+       basename
+       ".vlad"))))
 
-;;; Checking whether the compiler behaved as expected
+  (define (execution-reaction forms basename)
+    (let ((input-string (with-output-to-string
+			  (lambda () (for-each pp forms)))))
+      (shell-command-output (string-append "./" test-directory basename)
+			    input-string)))
 
-(define (compilation-discrepancy expectation)
-  (let* ((name (expectation-name expectation))
-	 (expected (expectation-answer expectation))
-	 (forms (expectation-forms expectation))
-	 (inputs (expectation-inputs expectation))
-	 (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	 (compiler-reaction (compilation-reaction-to forms name)))
-    (if (equal? "" compiler-reaction)
-	(let ((run-reaction (execution-reaction inputs name)))
-	  (if (matches? expected run-reaction)
-	      #f
-	      `( running ,forms
-		 ,@input-report-slot
-		 produced ,run-reaction
-		 expected ,expected)))
-	(if (error? expected)
-	    (if (matches? expected compiler-reaction)
-		#f
-		`( compiling ,forms
-		   produced ,compiler-reaction
-		   expected ,expected))
-	    `( compiling ,forms
-	       produced ,compiler-reaction)))))
+  (define the-compiler
+    (make-implementation 'stalingrad-compiler compiling-version compilation-discrepancy))
 
-(define (compilation-reaction-to forms basename)
-  (write-forms forms basename)
-  (frobnicate
-   (shell-command-output
-    (string-append
-     stalingrad-command
-     ;; -imprecise-inexacts causes some "Warning: Arguments to bundle
-     ;; might not conform" that's confusing the test suite.
-     "-compile -k -imprecise-inexacts -no-warnings "
-     test-directory
-     basename
-     ".vlad"))))
-
-(define (execution-reaction forms basename)
-  (let ((input-string (with-output-to-string
-			(lambda () (for-each pp forms)))))
-    (shell-command-output (string-append "./" test-directory basename)
-			  input-string)))
+  the-compiler)
 
 ;;; Detecting discrepancies in general
 
-(define executors
-  `((interpret . ,interpretation-discrepancy)
-    (compile . ,compilation-discrepancy)))
+(define implementations
+  (list (stalingrad-interpreter)
+	(stalingrad-compiler)))
 
 (define (discrepancy expectation)
-  ((expectation-executor expectation) expectation))
+  ((implementation-discrepancy
+    (expectation-implementation expectation))
+   expectation))
 
 (define (report-discrepancy discrepancy)
   (for-each
@@ -414,9 +428,10 @@ all: $(FAILURE_REPORTS)
 	     (named-expectations (expectations-named
 				  (file-basename filename)
 				  expectations)))
-	(append
-	 (filter-map interpreting-version named-expectations)
-	 (filter-map compiling-version named-expectations)))
+	(append-map
+	 (lambda (impl)
+	   (filter-map (implementation-prepare impl) named-expectations))
+	 implementations))
       (begin
 	(warn "File of examples not found" filename)
 	'())))
