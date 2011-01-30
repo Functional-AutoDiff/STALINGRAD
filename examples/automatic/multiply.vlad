@@ -1,0 +1,18 @@
+(define (cdr (cons x y)) y)
+(define (multiply m n) (if (zero? m) (real 0) (+ (multiply (- m 1) n) n)))
+
+(multiply 1 (read-real)) ===> (with-inputs (4) 4)
+
+(multiply (read-real) (read-real)) ===> (with-inputs (3 4) 12)
+
+; ((*j multiply) (*j 1 (read-real)))
+
+; ((*j multiply) (*j (read-real) (read-real)))
+
+(cdr
+ (unsensitize ((cdr ((*j multiply) (*j 1 (read-real)))) (sensitize (real 1)))))
+ ===> (with-inputs (5) (0 . 1))
+
+(cdr (unsensitize ((cdr ((*j multiply) (*j (read-real) (read-real))))
+		   (sensitize (real 1)))))
+ ===> (with-inputs (4 5) (0 . 4)) ;; TODO Is this right?

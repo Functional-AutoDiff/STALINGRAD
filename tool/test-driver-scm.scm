@@ -408,6 +408,7 @@ all: $(FAILURE_REPORTS)
 	    "factorial.vlad"
 	    "list-of-unknown-length.vlad"
 	    "marble.vlad"
+	    "multiply.vlad"
 	    "prefix.vlad"
 	    "secant.vlad"
 	    "sqrt.vlad"))))))))
