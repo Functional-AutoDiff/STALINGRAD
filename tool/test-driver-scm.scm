@@ -131,7 +131,7 @@ all: $(FAILURE_REPORTS)
      (lambda (expectation)
        (expectation->list expectation)))))
   name
-  compile?
+  executor
   forms
   inputs
   answer)
@@ -139,7 +139,7 @@ all: $(FAILURE_REPORTS)
 (define (update-expectation-name expectation new-name)
   (%make-expectation
    new-name
-   (expectation-compile? expectation)
+   (expectation-executor expectation)
    (expectation-forms expectation)
    (expectation-inputs expectation)
    (expectation-answer expectation)))
@@ -158,20 +158,34 @@ all: $(FAILURE_REPORTS)
 
 (define (expectation->list expectation)
   (list (expectation-name expectation)
-	(expectation-compile? expectation)
+	(serialize-executor (expectation-executor expectation))
 	(expectation-forms expectation)
 	(expectation-inputs expectation)
 	(expectation-answer expectation)))
 
 (define (list->expectation lst)
-  (%make-expectation (car lst) (cadr lst) (caddr lst) (cadddr lst) (car (cddddr lst))))
+  (%make-expectation
+   (car lst) (deserialize-executor (cadr lst))
+   (caddr lst) (cadddr lst) (car (cddddr lst))))
+
+(define (serialize-executor executor)
+  (demand-assq executor (map (lambda (x.y)
+			       (cons (cdr x.y) (car x.y)))
+			     executors)))
+
+(define (deserialize-executor name)
+  (demand-assq name executors))
+
+(define (demand-assq item alist)
+  (let ((answer (assq item alist)))
+    (if answer (cdr answer) (error "Not found" item))))
 
 ;;; Varying the expectations for interpretation
 
 (define (interpreting-version expectation)
   (%make-expectation
    (string-append "interpret-" (expectation-name expectation))
-   #f
+   interpretation-discrepancy
    (expectation-forms expectation)
    (expectation-inputs expectation)
    (expectation-answer expectation)))
@@ -192,7 +206,7 @@ all: $(FAILURE_REPORTS)
 	    `((write-real (real ,(car (last-pair forms)))))))
   (%make-expectation
    (string-append "compile-" (expectation-name expectation))
-   #t
+   compilation-discrepancy
    (writing-value (expectation-forms expectation))
    (expectation-inputs expectation)
    (expectation-answer expectation)))
@@ -205,7 +219,7 @@ all: $(FAILURE_REPORTS)
 	  (else (error "Can't ignore the only expectation"))))
   (%make-expectation
    (string-append "compile-" (expectation-name expectation))
-   #t
+   compilation-discrepancy
    (expectation-forms expectation)
    (expectation-inputs expectation)
    (ignoring-value (expectation-answer expectation))))
@@ -297,10 +311,12 @@ all: $(FAILURE_REPORTS)
 
 ;;; Detecting discrepancies in general
 
+(define executors
+  `((interpret . ,interpretation-discrepancy)
+    (compile . ,compilation-discrepancy)))
+
 (define (discrepancy expectation)
-  (if (expectation-compile? expectation)
-      (compilation-discrepancy expectation)
-      (interpretation-discrepancy expectation)))
+  ((expectation-executor expectation) expectation))
 
 (define (report-discrepancy discrepancy)
   (for-each
