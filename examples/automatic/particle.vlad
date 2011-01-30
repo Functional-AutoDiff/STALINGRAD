@@ -1,45 +1,51 @@
 (include "math")
 
-(define (second x) (car (cdr x)))
+(define (distance-squared u v) (magnitude-squared (v- v u)))
 
-(define (distance u v) (magnitude (v- v u)))
+(define (distance u v) (sqrt (distance-squared u v)))
+
+(define (multivariate-argmin f x)
+ (let ((g (gradient-using-j* f)))
+  (letrec ((loop
+	    (lambda (x fx gx eta i)
+	     (cond ((<= (magnitude gx) (real 1e-5)) x)
+		   ((= i (real 10)) (loop x fx gx (* (real 2) eta) (real 0)))
+		   (else
+		    (let ((x-prime (v- x (k*v eta gx))))
+		     (if (<= (distance x x-prime) (real 1e-5))
+			 x
+			 (let ((fx-prime (f x-prime)))
+			  (if (< fx-prime fx)
+			      (loop x-prime fx-prime (g x-prime) eta (+ i 1))
+			      (loop x fx gx (/ eta (real 2)) (real 0)))))))))))
+   (loop x (f x) (g x) (real 1e-5) (real 0)))))
+
+(define (multivariate-argmax f x)
+ (multivariate-argmin (lambda (x) (- (real 0) (f x))) x))
+
+(define (multivariate-max f x) (f (multivariate-argmax f x)))
 
 (define (naive-euler w)
- (let* ((x-initial '(0.0 8.0))
-	(xdot-initial '(0.75 0.0))
-	(delta-t 1e-1)
-	(charges (list (list 10.0 (- 10.0 w)) (list 10.0 0.0)))
+ (let* ((charges
+	 (list (list (real 10) (- (real 10) w)) (list (real 10) (real 0))))
+	(x-initial (list (real 0) (real 8)))
+	(xdot-initial (list (real 0.75) (real 0)))
+	(delta-t (real 1e-1))
 	(p (lambda (x)
-	    ((reduce + 0.0)
-	     (map (lambda (c) (/ 1.0 (distance x c))) charges))))
-	(del-p (gradient-using-j* p)))
+	    ((reduce + (real 0))
+	     (map (lambda (c) (/ (real 1) (distance x c))) charges)))))
   (letrec ((loop (lambda (x xdot)
-		  (let* ((xddot (k*v -1.0 (del-p (write x))))
-			 (x-new (v+ x (k*v delta-t xdot))))
-		   (if (positive? (second x-new))
-		       (loop x-new (v+ xdot (k*v delta-t xddot)))
-		       (let* ((delta-t-f (/ (- (second x-new) (second x))
-					    (second xdot)))
-			      (x-t-f (v+ x (k*v delta-t-f xdot))))
-			(sqr (first x-t-f))))))))
+		   (let* ((xddot (k*v (real -1) ((gradient-using-j* p) x)))
+			  (x-new (v+ x (k*v delta-t xdot))))
+		     (if (positive? (list-ref x-new 1))
+			 (loop x-new (v+ xdot (k*v delta-t xddot)))
+			 (let* ((delta-t-f (/ (- (real 0) (list-ref x 1))
+					      (list-ref xdot 1)))
+				(x-t-f (v+ x (k*v delta-t-f xdot))))
+			   (sqr (list-ref x-t-f 0))))))))
    (loop x-initial xdot-initial))))
 
-(define (argmin-using-textbook-newtons-method f x)
- (let ((error-tolerance 1e-1) (f-j*-j* (j* (j* f))))
-  (letrec ((loop
-	    (lambda (x i)
-	     (let* ((result
-		     (f-j*-j* (bundle (bundle (write x) (perturb 1))
-				      (perturb (bundle 1 (perturb 0))))))
-		    (df-dx (primal (unperturb (tangent result)))))
-	      (if (< (abs df-dx) error-tolerance)
-		  x
-		  (loop
-		   (- x
-		      (/ df-dx
-			 (unperturb (tangent (unperturb (tangent result))))))
-		   (+ i 1)))))))
-   (loop x 0))))
-
-(let ((w0 0.0)) (argmin-using-textbook-newtons-method naive-euler w0))
- ===> 0.2020094843175354 ;; TODO Is this the right answer?
+(let* ((w0 (real 0))
+       ((list w*)
+	(multivariate-argmin (lambda ((list w)) (naive-euler w)) (list w0))))
+ (write-real w*))

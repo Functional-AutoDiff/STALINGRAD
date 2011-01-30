@@ -426,6 +426,7 @@ all: $(FAILURE_REPORTS)
 	   "double-agent.vlad"
 	   "example.vlad"
 	   "hessian.vlad"
+	   "particle.vlad"
 	   "saddle.vlad"
 	   "series.vlad"
 	   "slow-sqrt.vlad"

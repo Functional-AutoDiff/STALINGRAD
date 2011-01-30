@@ -68,11 +68,13 @@
 
 (define (derivative-using-j* f)
  (let ((f-forward (j* f)))
-  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
+  (lambda (x)
+    (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
 
 (define (derivative-using-*j f)
  (let ((f-reverse (*j f)))
-  (lambda (x) (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
+  (lambda (x)
+    (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
 
 (define (derivative f) (derivative-using-*j f))
 
