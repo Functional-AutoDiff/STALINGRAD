@@ -345,11 +345,52 @@ all: $(FAILURE_REPORTS)
 
   the-compiler)
 
+(define (slad)
+  (define (prepare expectation)
+    (%make-expectation
+     (string-append "slad-" (expectation-name expectation))
+     slad-interpreter
+     (expectation-forms expectation)
+     (expectation-inputs expectation)
+     (expectation-answer expectation)))
+
+  (define (discrepancy expectation)
+    (let* ((forms (expectation-forms expectation))
+	   (expected (expectation-answer expectation))
+	   (inputs (expectation-inputs expectation))
+	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+	   (reaction (reaction-to
+		      forms inputs (expectation-name expectation))))
+      (if (matches? expected reaction)
+	  #f
+	  `( interpreting ,forms
+	     ,@input-report-slot
+	     produced ,reaction
+	     expected ,expected))))
+
+  (define slad-command (string-append (->namestring my-pathname)
+				      "../../BCL-AD/slad/run-slad "))
+
+  (define (reaction-to forms inputs basename)
+    (write-forms forms basename)
+    (let ((input-string (with-output-to-string
+			  (lambda () (for-each pp inputs)))))
+      (shell-command-output
+       (string-append slad-command test-directory basename ".vlad")
+       input-string)))
+
+  (define slad-interpreter
+    (make-implementation 'slad-interpreter prepare discrepancy))
+
+  slad-interpreter)
+
 ;;;; General treatment of discrepancies
 
 (define implementations
   (list (stalingrad-interpreter)
-	(stalingrad-compiler)))
+	(stalingrad-compiler)
+	;(slad)
+	))
 
 (define (discrepancy expectation)
   ((implementation-discrepancy
