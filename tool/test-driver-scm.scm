@@ -429,6 +429,8 @@ all: $(FAILURE_REPORTS)
 	   "example.vlad"
 	   "hessian.vlad"
 	   "particle.vlad"
+	   "probabilistic-lambda-calculus.vlad"
+	   "probabilistic-prolog.vlad"
 	   "saddle.vlad"
 	   "series.vlad"
 	   "slow-sqrt.vlad"
