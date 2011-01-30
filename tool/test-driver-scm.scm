@@ -388,68 +388,47 @@ all: $(FAILURE_REPORTS)
   (with-working-directory-pathname my-pathname
    (lambda ()
      (with-working-directory-pathname
-      "../examples/"
+      "../examples/automatic/"
       (lambda ()
 	(append
-	 (with-working-directory-pathname
-	  "automatic/"
-	  (lambda ()
-	    ((file->expectations independent-expectations) "one-offs.vlad")))
-	 (with-working-directory-pathname
-	  "automatic/"
-	  (lambda ()
-	    (append-map
-	     (file->expectations shared-definitions-expectations)
-	     '("addition.vlad"
-	       "list-of-unknown-length.vlad"
-	       "marble.vlad"
-	       "secant.vlad"
-	       ))))
-	 (with-working-directory-pathname
-	  "interpreter/"
-	  (lambda ()
-	    (append-map
-	     (file->expectations shared-definitions-expectations)
-	     '("even-odd.vlad"
-	       "example-forward.vlad"
-	       "factorial.vlad"
-	       "bug-a.vlad"
-	       "bug-b.vlad"
-	       "bug-c.vlad"
-	       "bug0.vlad"
-	       "bug1.vlad"
-	       "bug2.vlad"
-	       "bug3.vlad"
-	       "bug4.vlad"
-	       "prefix.vlad"
-	       "sqrt.vlad"))))))))))
+	 ((file->expectations independent-expectations) "one-offs.vlad")
+	 (append-map
+	  (file->expectations shared-definitions-expectations)
+	  '("addition.vlad"
+	    "even-odd.vlad"
+	    "example-forward.vlad"
+	    "factorial.vlad"
+	    "bug-a.vlad"
+	    "bug-b.vlad"
+	    "bug-c.vlad"
+	    "bug0.vlad"
+	    "bug1.vlad"
+	    "bug2.vlad"
+	    "bug3.vlad"
+	    "bug4.vlad"
+	    "prefix.vlad"
+	    "sqrt.vlad"
+	    "list-of-unknown-length.vlad"
+	    "marble.vlad"
+	    "secant.vlad"))))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
    my-pathname
    (lambda ()
      (with-working-directory-pathname
-      "../examples/"
+      "../examples/automatic/"
       (lambda ()
-	(append
-	 (with-working-directory-pathname
-	  "automatic/"
-	  (lambda ()
-	    (append-map
-	     (file->expectations shared-definitions-expectations)
-	     '("double-agent.vlad"
-	       "saddle.vlad"
-	       "dn.vlad"
-	       "series.vlad"
-	       "slow-sqrt.vlad"))))
-	 (with-working-directory-pathname
-	  "interpreter/"
-	  (lambda ()
-	    (append-map
-	     (file->expectations shared-definitions-expectations)
-	     '("example.vlad"
-	       "hessian.vlad"
-	       "triple.vlad"))))))))))
+	(append-map
+	 (file->expectations shared-definitions-expectations)
+	 '("double-agent.vlad"
+	   "saddle.vlad"
+	   "dn.vlad"
+	   "series.vlad"
+	   "slow-sqrt.vlad"
+	   "example.vlad"
+	   "hessian.vlad"
+	   "triple.vlad")))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))

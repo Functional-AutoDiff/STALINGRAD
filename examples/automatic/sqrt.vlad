@@ -1,0 +1,36 @@
+(define (abs x) (if (negative? x) (- 0 x) x))
+
+(define (cdr (cons x y)) y)
+
+(define (j* x) (bundle x (perturb (zero x))))
+
+(define (derivative-using-j* f)
+ (let ((f-forward (j* f)))
+  (lambda (x) (unperturb (tangent (f-forward (bundle x (perturb 1))))))))
+
+(define (derivative-using-*j f)
+ (let ((f-reverse (*j f)))
+  (lambda (x) (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
+
+(define (nr-sqrt x)
+ (letrec ((loop (lambda (y)
+		 (let ((y-prime (- y (/ (- (* y y) x) (+ y y)))))
+		  (if (<= (abs (- y y-prime)) 1e-5)
+		      y
+		      (loop y-prime))))))
+  (loop 1.0)))
+
+(sqrt 4) ===> 2
+
+(nr-sqrt 4) ===> 2.000000092922295
+
+((derivative-using-j* sqrt) 4) ===> 0.25
+
+((derivative-using-*j sqrt) 4) ===> 0.25
+
+((derivative-using-j* nr-sqrt) 4) ===> 0.2500002594080783
+
+;;; TODO This one appears to make the analysis not converge when compiling with -imprecise-inexacts
+;((derivative-using-*j nr-sqrt) 4) ===> 0.2500002594080784
+
+((derivative-using-j* nr-sqrt) (read-real)) ===> (with-inputs (4) 0.2500002594080783)

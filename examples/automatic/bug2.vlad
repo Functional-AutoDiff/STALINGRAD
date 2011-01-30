@@ -1,0 +1,13 @@
+(define (cdr (cons x y)) y)
+
+(define (derivative-using-*j f)
+ (let ((f-reverse (*j f)))
+  (lambda (x) (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1)))))))
+
+(define ((g b) c) b)
+
+(define (h p) (+ (p 1) (p 1)))
+
+(define (f a) (h (g a)))
+
+((derivative-using-*j f) 4) ===> 2

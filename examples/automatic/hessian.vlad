@@ -1,0 +1,127 @@
+(include "math")
+
+(define ((partial-derivative-using-j* f i) x)
+ (unperturb (tangent ((j* f) (bundle x (perturb (e i (length x))))))))
+
+(define ((partial-derivative-using-*j f i) x)
+ (list-ref ((gradient-using-*j f) x) i))
+
+(define (partial-derivative f i) (partial-derivative-using-j* f i))
+
+(define ((hessian-using-j*-j* f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (map-n (lambda (j)
+		  ((partial-derivative-using-j*
+		    (partial-derivative-using-j* f i) j)
+		   x))
+		 n))
+	 n)))
+
+(define ((hessian-using-j*-*j f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (map-n (lambda (j)
+		  ((partial-derivative-using-*j
+		    (partial-derivative-using-j* f i) j)
+		   x))
+		 n))
+	 n)))
+
+(define ((hessian-using-*j-j* f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (map-n (lambda (j)
+		  ((partial-derivative-using-j*
+		    (partial-derivative-using-*j f i) j)
+		   x))
+		 n))
+	 n)))
+
+(define ((hessian-using-*j-*j f) x)
+ (let ((n (length x)))
+  (map-n (lambda (i)
+	  (map-n (lambda (j)
+		  ((partial-derivative-using-*j
+		    (partial-derivative-using-*j f i) j)
+		   x))
+		 n))
+	 n)))
+
+(define (hessian f) (hessian-using-j*-j* f))
+
+(define (hessian-quadratic-form-using-j*-j* f x u v)
+ (let ((f-forward (j* f)))
+  (unperturb
+   (tangent ((j* (lambda (x)
+		  (unperturb (tangent (f-forward (bundle x (perturb v)))))))
+	     (bundle x (perturb u)))))))
+
+(define (hessian-quadratic-form-using-j*-*j f x u v)
+ (let ((f-reverse (*j f)))
+  (unperturb
+   (tangent
+    ((j* (lambda (x)
+	  (dot (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize 1))))
+	       v)))
+     (bundle x (perturb u)))))))
+
+(define (hessian-quadratic-form-using-*j-j* f x u v)
+ (let ((f-forward (j* f)))
+  (dot
+   u
+   (cdr (unsensitize
+	 ((cdr ((*j (lambda (x)
+		     (unperturb (tangent (f-forward (bundle x (perturb v)))))))
+		(*j x)))
+	  (sensitize 1)))))))
+
+(define (hessian-quadratic-form-using-*j-*j f x u v)
+ (let ((f-reverse (*j f)))
+  (dot
+   u
+   (cdr
+    (unsensitize ((cdr ((*j (lambda (x)
+			     (dot (cdr (unsensitize ((cdr (f-reverse (*j x)))
+						     (sensitize 1))))
+				  v)))
+			(*j x)))
+		  (sensitize 1)))))))
+
+(define (hessian-quadratic-form f x v)
+ (hessian-quadratic-form-using-j*-j* f x v))
+
+(define (alternate-hessian-quadratic-form f x u v)
+ (dot u (m*v ((hessian f) x) v)))
+
+(define (curried-hessian-quadratic-form f)
+ (let ((f-forward-forward (j* (j* f))))
+  (lambda (x u v)
+   (unperturb
+    (tangent
+     (unperturb
+      (tangent (f-forward-forward
+		(bundle (bundle x (perturb u))
+			(perturb (bundle v (perturb (zero x)))))))))))))
+
+(define (f (list x y)) (+ (* 2 (sqr x)) (+ (* 3 (* x y)) (* 4 (sqr y)))))
+
+((hessian-using-j*-j* f) '(3 4)) ===> ((4 3) (3 8))
+
+((hessian-using-j*-*j f) '(3 4)) ===> ((4 3) (3 8))
+
+((hessian-using-*j-j* f) '(3 4)) ===> ((4 3) (3 8))
+
+((hessian-using-*j-*j f) '(3 4)) ===> ((4 3) (3 8))
+
+(alternate-hessian-quadratic-form f '(3 4) '(7 8) '(9 10)) ===> 1318
+
+(hessian-quadratic-form-using-j*-j* f '(3 4) '(7 8) '(9 10)) ===> 1318
+
+(hessian-quadratic-form-using-j*-*j f '(3 4) '(7 8) '(9 10)) ===> 1318
+
+(hessian-quadratic-form-using-*j-j* f '(3 4) '(7 8) '(9 10)) ===> 1318
+
+(hessian-quadratic-form-using-*j-*j f '(3 4) '(7 8) '(9 10)) ===> 1318
+
+((curried-hessian-quadratic-form f) '(3 4) '(7 8) '(9 10)) ===> 1318
