@@ -181,7 +181,7 @@ all: $(FAILURE_REPORTS)
     (append (except-last-pair forms)
 	    `((write-real (real ,(car (last-pair forms)))))))
   (%make-expectation
-   (expectation-name expectation)
+   (string-append "compile-" (expectation-name expectation))
    #t
    (writing-value (expectation-forms expectation))
    (expectation-inputs expectation)
@@ -194,7 +194,7 @@ all: $(FAILURE_REPORTS)
 	  ((error? expect) expect)
 	  (else (error "Can't ignore the only expectation"))))
   (%make-expectation
-   (expectation-name expectation)
+   (string-append "compile-" (expectation-name expectation))
    #t
    (expectation-forms expectation)
    (expectation-inputs expectation)
@@ -372,14 +372,13 @@ all: $(FAILURE_REPORTS)
 
 (define ((file->expectations parse) filename)
   (if (file-exists? filename)
-      (let ((expectations (parse (read-forms filename))))
+      (let* ((expectations (parse (read-forms filename)))
+	     (named-expectations (expectations-named
+				  (file-basename filename)
+				  expectations)))
 	(append
-	 (expectations-named
-	  (file-basename filename)
-	  expectations)
-	 (expectations-named
-	  (string-append "compile-" (file-basename filename))
-	  (filter-map compiling-version expectations))))
+	 named-expectations
+	 (filter-map compiling-version named-expectations)))
       (begin
 	(warn "File of examples not found" filename)
 	'())))
