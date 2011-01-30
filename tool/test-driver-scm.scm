@@ -17,7 +17,7 @@
 (define test-directory "test-runs/last/")
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../source/stalingrad -scmh 1000 -I "
-		 (->namestring my-pathname) "../examples/interpreter/ "))
+		 (->namestring my-pathname) "../examples/automatic/ "))
 
 (define (read-all)
   (let loop ((results '())
