@@ -220,3 +220,9 @@
 ;;  (define (length n) (if (null? n) 0 (+ (length (rest n)) 1)))
 ;;  (length (enumerate (read-real))))
 ;; ===> (with-inputs (4) 4)
+
+(multiform
+ (include "math")
+ ((j* (j* sqrt))
+  (bundle (bundle 4 (perturb 1)) (perturb (bundle 1 (perturb 0))))))
+===> (forward (forward 2 (perturbation 0.25)) (perturbation (forward 0.25 (perturbation -0.03125))))
