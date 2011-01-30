@@ -232,10 +232,14 @@ all: $(FAILURE_REPORTS)
 	 (expected (expectation-answer expectation))
 	 (inputs (expectation-inputs expectation))
 	 (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	 (reaction (interpreter-reaction-to forms inputs (expectation-name expectation))))
+	 (reaction (interpreter-reaction-to
+		    forms inputs (expectation-name expectation))))
     (if (matches? expected reaction)
 	#f
-	`(interpreting ,forms ,@input-report-slot produced ,reaction expected ,expected))))
+	`( interpreting ,forms
+	   ,@input-report-slot
+	   produced ,reaction
+	   expected ,expected))))
 
 (define (interpreter-reaction-to forms inputs basename)
   (write-forms forms basename)
@@ -259,12 +263,18 @@ all: $(FAILURE_REPORTS)
 	(let ((run-reaction (execution-reaction inputs name)))
 	  (if (matches? expected run-reaction)
 	      #f
-	      `(running ,forms ,@input-report-slot produced ,run-reaction expected ,expected)))
+	      `( running ,forms
+		 ,@input-report-slot
+		 produced ,run-reaction
+		 expected ,expected)))
 	(if (error? expected)
 	    (if (matches? expected compiler-reaction)
 		#f
-		`(compiling ,forms produced ,compiler-reaction expected ,expected))
-	    `(compiling ,forms produced ,compiler-reaction)))))
+		`( compiling ,forms
+		   produced ,compiler-reaction
+		   expected ,expected))
+	    `( compiling ,forms
+	       produced ,compiler-reaction)))))
 
 (define (compilation-reaction-to forms basename)
   (write-forms forms basename)
@@ -282,7 +292,8 @@ all: $(FAILURE_REPORTS)
 (define (execution-reaction forms basename)
   (let ((input-string (with-output-to-string
 			(lambda () (for-each pp forms)))))
-    (shell-command-output (string-append "./" test-directory basename) input-string)))
+    (shell-command-output (string-append "./" test-directory basename)
+			  input-string)))
 
 ;;; Detecting discrepancies in general
 
@@ -342,7 +353,8 @@ all: $(FAILURE_REPORTS)
 	     (forms forms)
 	     (definitions '()))
     (define (expect answer)
-      (cons (make-expectation `(multiform ,@(reverse definitions) ,(car forms)) answer)
+      (cons (make-expectation
+	     `(multiform ,@(reverse definitions) ,(car forms)) answer)
 	    answers))
     (cond ((null? forms)
 	   (reverse answers))
