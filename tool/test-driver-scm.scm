@@ -395,9 +395,6 @@ all: $(FAILURE_REPORTS)
 	 (append-map
 	  (file->expectations shared-definitions-expectations)
 	  '("addition.vlad"
-	    "even-odd.vlad"
-	    "example-forward.vlad"
-	    "factorial.vlad"
 	    "bug-a.vlad"
 	    "bug-b.vlad"
 	    "bug-c.vlad"
@@ -406,11 +403,14 @@ all: $(FAILURE_REPORTS)
 	    "bug2.vlad"
 	    "bug3.vlad"
 	    "bug4.vlad"
-	    "prefix.vlad"
-	    "sqrt.vlad"
+	    "even-odd.vlad"
+	    "example-forward.vlad"
+	    "factorial.vlad"
 	    "list-of-unknown-length.vlad"
 	    "marble.vlad"
-	    "secant.vlad"))))))))
+	    "prefix.vlad"
+	    "secant.vlad"
+	    "sqrt.vlad"))))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
@@ -421,13 +421,13 @@ all: $(FAILURE_REPORTS)
       (lambda ()
 	(append-map
 	 (file->expectations shared-definitions-expectations)
-	 '("double-agent.vlad"
-	   "saddle.vlad"
-	   "dn.vlad"
-	   "series.vlad"
-	   "slow-sqrt.vlad"
+	 '("dn.vlad"
+	   "double-agent.vlad"
 	   "example.vlad"
 	   "hessian.vlad"
+	   "saddle.vlad"
+	   "series.vlad"
+	   "slow-sqrt.vlad"
 	   "triple.vlad")))))))
 
 (define (all-expectations)
