@@ -422,7 +422,9 @@ all: $(FAILURE_REPORTS)
       (lambda ()
 	(append-map
 	 (file->expectations shared-definitions-expectations)
-	 '("dn.vlad"
+	 '("backprop-F.vlad"
+	   "backprop-R.vlad"
+	   "dn.vlad"
 	   "double-agent.vlad"
 	   "example.vlad"
 	   "hessian.vlad"
