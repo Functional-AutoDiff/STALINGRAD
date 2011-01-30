@@ -116,11 +116,13 @@ all: $(FAILURE_REPORTS)
 
 ;;; An expectation object defines a situation that a VLAD
 ;;; implementation may be subjected to, and expectations for how it
-;;; should react to that situation.  For example, executing it on a
-;;; file containing certain forms.  An expectation object can be
-;;; turned into a test in the test-manager/ framework's sense, testing
-;;; whether the Stalingrad interpreter or the Stalingrad compiler
-;;; produce the expected results.
+;;; should react to that situation.  For example, executing said
+;;; implementation on a file containing certain forms.  When
+;;; originally parsed from a file, an expectation will be
+;;; implementation-agnostic, but each implementation can specialize
+;;; the expectation to itself.  These specialized expectations can be
+;;; serialized and then deserialized and executed by a standalone,
+;;; parallel-safe process.
 
 (define-structure
   (expectation
@@ -177,14 +179,33 @@ all: $(FAILURE_REPORTS)
   (let ((answer (assq item alist)))
     (if answer (cdr answer) (error "Not found" item))))
 
+;;;; Implementations
+
+;;; An implementation object contains all the information I need in
+;;; order to test a given expectation against the corresponding
+;;; implementation of VLAD.  There are two interesting parts to this:
+;;; one is a PREPARER procedure, which specializes an
+;;; implementation-agnostic expectation for this implementation (that
+;;; is, accounts for programmatically account-for-able differences in
+;;; the language being implemented, with the possibility or completely
+;;; rejecting an expectation that cannot usefully test this
+;;; implementation).  The other is a DISCREPANCY procedure, which
+;;; actually executes an already-specialized expectation in this
+;;; implementation, and reports any discrepancies between what
+;;; happened and what was expected.  Finally, an implementation object
+;;; also has a NAME which is used for serializations.
+
 (define-structure (implementation safe-accessors)
   name
-  prepare
+  preparer
   discrepancy)
 
-;;; Checking whether the interpreter behaved as expected
+;;; Stalingrad used as an interpreter
 (define (stalingrad-interpreter)
 
+  ;;; Stalingrad the interpreter is currently the gold standard
+  ;;; definition of the VLAD language, so not much needs to be done to
+  ;;; prepare an expectation for running with it.
   (define (prepare expectation)
     (%make-expectation
      (string-append "interpret-" (expectation-name expectation))
@@ -193,6 +214,7 @@ all: $(FAILURE_REPORTS)
      (expectation-inputs expectation)
      (expectation-answer expectation)))
 
+  ;;; Checking whether the interpreter behaved as expected
   (define (discrepancy expectation)
     (let* ((forms (expectation-forms expectation))
 	   (expected (expectation-answer expectation))
@@ -220,6 +242,8 @@ all: $(FAILURE_REPORTS)
     (make-implementation 'stalingrad-interpreter prepare discrepancy))
 
   the-interpreter)
+
+;;; Stalingrad used as a compiler
 
 (define (stalingrad-compiler)
 
@@ -257,7 +281,7 @@ all: $(FAILURE_REPORTS)
      (expectation-inputs expectation)
      (ignoring-value (expectation-answer expectation))))
 
-  (define (compiling-version expectation)
+  (define (prepare expectation)
     (if (any exact-string? (expectation-forms expectation))
 	#f
 	(let ((expect (expectation-answer expectation)))
@@ -273,7 +297,7 @@ all: $(FAILURE_REPORTS)
 		 #f)))))
 
   ;;; Checking whether the compiler behaved as expected
-  (define (compilation-discrepancy expectation)
+  (define (discrepancy expectation)
     (let* ((name (expectation-name expectation))
 	   (expected (expectation-answer expectation))
 	   (forms (expectation-forms expectation))
@@ -317,7 +341,7 @@ all: $(FAILURE_REPORTS)
 			    input-string)))
 
   (define the-compiler
-    (make-implementation 'stalingrad-compiler compiling-version compilation-discrepancy))
+    (make-implementation 'stalingrad-compiler prepare discrepancy))
 
   the-compiler)
 
@@ -430,7 +454,7 @@ all: $(FAILURE_REPORTS)
 				  expectations)))
 	(append-map
 	 (lambda (impl)
-	   (filter-map (implementation-prepare impl) named-expectations))
+	   (filter-map (implementation-preparer impl) named-expectations))
 	 implementations))
       (begin
 	(warn "File of examples not found" filename)
