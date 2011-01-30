@@ -49,3 +49,4 @@
        ((list w*)
 	(multivariate-argmin (lambda ((list w)) (naive-euler w)) (list w0))))
  (write-real w*))
+ ===> 0.2020094843175354 ;; TODO Is this the right answer?
