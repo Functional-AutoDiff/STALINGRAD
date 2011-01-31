@@ -372,7 +372,18 @@ all: $(FAILURE_REPORTS)
      slad-interpreter
      (expectation-forms expectation)
      (expectation-inputs expectation)
-     (expectation-answer expectation)))
+     (strip-perturbation-tags (expectation-answer expectation))))
+
+  (define (strip-perturbation-tags form)
+    (cond ((and (pair? form)
+		(eq? (car form) 'perturbation)
+		(= 2 (length form)))
+	   (strip-perturbation-tags (cadr form)))
+	  ((pair? form)
+	   (cons (strip-perturbation-tags (car form))
+		 (strip-perturbation-tags (cdr form))))
+	  (else
+	   form)))
 
   (define (discrepancy expectation)
     (let* ((forms (expectation-forms expectation))
