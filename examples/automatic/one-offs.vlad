@@ -43,7 +43,11 @@
 (tangent (bundle 1 (perturb 1))) ===> (perturbation 1)
 (perturb (cons 1 2)) ===> (perturbation (1 . 2))
 (perturb #t) ===> (perturbation #t)
-(bundle (cons 1 2) (perturb (cons 3 4))) ===> (forward (1 . 2) (perturbation (3 . 4)))
+(bundle (cons 1 2) (perturb (cons 3 4)))
+===> (or (forward (1 . 2) (perturbation (3 . 4)))
+	 ((forward 1 (perturbation 3)) . (forward 2 (perturbation 4))))
+(primal (bundle (cons 1 2) (perturb (cons 3 4)))) ===> (1 . 2)
+(unperturb (tangent (bundle (cons 1 2) (perturb (cons 3 4))))) ===> (3 . 4)
 (*j 1) ===> (reverse 1)
 
 (multiform
