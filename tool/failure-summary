@@ -3,7 +3,7 @@
 dir="${1:-test-runs/last/}"
 
 for file in $(find $dir -name "*.fail" -not -empty -print | sort); do
-    if [ -z "`grep "Variable not found" $file`" -a -z "`grep "The object ()" $file`" ]; then
+    if [ -z "`grep 'Variable not found' $file`" -a -z "`grep 'The object ()' $file`" ]; then
 	printf -- '----- %s:\n\n' $file
 	awk 1 $file # Like cat $file, but forces trailing newline if absent from $file
 	echo
@@ -19,4 +19,6 @@ n_unbound_var=$(find $dir -name "*.fail" | xargs grep "Variable not found" | wc 
 n_car_null=$(find $dir -name "*.fail" | xargs grep "The object ()" | wc -l)
 
 echo ${n_tests} tests, ${n_fails} total failures, ${n_crash} crashes.
-echo ${n_unbound_var} unbound variables, ${n_car_null} car-of-nulls
+echo ${n_car_null} car-of-nulls, ${n_unbound_var} unbound variables:
+
+find $dir -name "*.fail" | xargs grep "Variable not found" | cut -f 4 -d ' ' | sort | uniq -c | sort -g
