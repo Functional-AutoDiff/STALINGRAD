@@ -383,13 +383,53 @@ all: $(FAILURE_REPORTS)
     (make-implementation 'slad-interpreter prepare discrepancy))
 
   slad-interpreter)
+
+(define (vl)
+  (define (prepare expectation)
+    (%make-expectation
+     (string-append "vl-" (expectation-name expectation))
+     vl-compiler
+     (expectation-forms expectation)
+     (expectation-inputs expectation)
+     (expectation-answer expectation)))
 
+  (define (discrepancy expectation)
+    (let* ((forms (expectation-forms expectation))
+	   (expected (expectation-answer expectation))
+	   (inputs (expectation-inputs expectation))
+	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+	   (reaction (reaction-to
+		      forms inputs (expectation-name expectation))))
+      (if (matches? expected reaction)
+	  #f
+	  `( running ,forms
+	     ,@input-report-slot
+	     produced ,reaction
+	     expected ,expected))))
+
+  (define vl-command (string-append (->namestring my-pathname)
+				      "../../BCL-AD/vl/run-vl "))
+
+  (define (reaction-to forms inputs basename)
+    (write-forms forms basename)
+    (let ((input-string (with-output-to-string
+			  (lambda () (for-each pp inputs)))))
+      (shell-command-output
+       (string-append vl-command test-directory basename ".vlad")
+       input-string)))
+
+  (define vl-compiler
+    (make-implementation 'vl-compiler prepare discrepancy))
+
+  vl-compiler)
+
 ;;;; General treatment of discrepancies
 
 (define implementations
   (list (stalingrad-interpreter)
 	(stalingrad-compiler)
 	;(slad)
+	;(vl)
 	))
 
 (define (discrepancy expectation)
