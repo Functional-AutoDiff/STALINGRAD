@@ -12,4 +12,5 @@
       (car lst)
       (list-ref (cdr lst) (- ind 1))))
 
-(list-ref (gen-list (read-real) (lambda (x) x)) (read-real)) ===> (with-inputs (5 3) 2)
+(let ((len (read-real)))
+  (list-ref (gen-list len (lambda (x) x)) (read-real))) ===> (with-inputs (5 3) 2)
