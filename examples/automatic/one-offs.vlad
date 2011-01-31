@@ -135,8 +135,8 @@
 (+ (read-real) 3) ===> (with-inputs (4) 7)
 (+ (read-real) 3.0) ===> (with-inputs (4) 7)
 
-(write-real (+ '(3 . 4))) ===> (multiform 7 7)
-(write-real (real (+ '(3 . 4)))) ===> (multiform 7 7)
+(write-real (+ (cons 3 4))) ===> (multiform 7 7)
+(write-real (real (+ (cons 3 4)))) ===> (multiform 7 7)
 
 (if (null? '())
     (sin (read-real))
