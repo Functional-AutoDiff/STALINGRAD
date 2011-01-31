@@ -66,11 +66,11 @@
 ;; (double-loop)
 
 '() ===> ()
-() ===> (error "Invalid expression: ()")
+() ===> (or (error "Invalid expression: ()") ())
 
 (multiform
  (define x 3)
- x) ===> (error "Invalid expression")
+ x) ===> (or (error "Invalid expression") 3)
 
 (let ((x 3)
       (x 4))
@@ -105,11 +105,11 @@
 
 (exact-string
  "#;(write 3) 2")
-===> (error "READ Invalid # option: ;")
+===> (or (error "READ Invalid # option: ;") 2)
 
 (exact-string
  "#|(write 3)|# 2")
-===> (error "READ Invalid # option: |")
+===> (or (error "READ Invalid # option: |") 2)
 
 ((lambda ((cons x y)) (+ x y))
  (cons 1 2)) ===> 3
