@@ -13,3 +13,4 @@ rm -f $link
 ln -sf $dirname $link
 rm -f $testdir/last
 ln -sf $dirname $testdir/last
+cp examples/automatic/math.vlad examples/automatic/math-forward.vlad $testdir/$dirname
