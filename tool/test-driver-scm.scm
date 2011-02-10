@@ -581,28 +581,27 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/automatic/"
       (lambda ()
-	(append
-	 ((file->expectations independent-expectations) "one-offs.vlad")
-	 (append-map
-	  (file->expectations shared-definitions-expectations)
-	  '("addition.vlad"
-	    "bug-a.vlad"
-	    "bug-b.vlad"
-	    "bug-c.vlad"
-	    "bug0.vlad"
-	    "bug1.vlad"
-	    "bug2.vlad"
-	    "bug3.vlad"
-	    "bug4.vlad"
-	    "even-odd.vlad"
-	    "example-forward.vlad"
-	    "factorial.vlad"
-	    "list-of-unknown-length.vlad"
-	    "marble.vlad"
-	    "multiply.vlad"
-	    "prefix.vlad"
-	    "secant.vlad"
-	    "sqrt.vlad"))))))))
+	(append-map
+	 (file->expectations shared-definitions-expectations)
+	 '("one-offs.vlad"
+	   "addition.vlad"
+	   "bug-a.vlad"
+	   "bug-b.vlad"
+	   "bug-c.vlad"
+	   "bug0.vlad"
+	   "bug1.vlad"
+	   "bug2.vlad"
+	   "bug3.vlad"
+	   "bug4.vlad"
+	   "even-odd.vlad"
+	   "example-forward.vlad"
+	   "factorial.vlad"
+	   "list-of-unknown-length.vlad"
+	   "marble.vlad"
+	   "multiply.vlad"
+	   "prefix.vlad"
+	   "secant.vlad"
+	   "sqrt.vlad")))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
