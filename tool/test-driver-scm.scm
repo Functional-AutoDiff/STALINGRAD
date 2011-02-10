@@ -485,10 +485,11 @@ all: $(FAILURE_REPORTS)
 ;;;; Parsing expectations from files of examples
 
 ;;; The procedure SHARED-DEFINITIONS-EXPECTATIONS parses a file that
-;;; could be a VLAD program.  Definitions and includes appearing at
-;;; the top level of the file are taken to be shared by all following
-;;; non-definition expressions, but each non-definition expression
-;;; produces its own expectation.
+;;; could be a VLAD program (except for special testing directives, if
+;;; any).  Definitions and includes appearing at the top level of the
+;;; file are taken to be shared by all following non-definition
+;;; expressions, but each non-definition expression produces its own
+;;; expectation.
 (define (shared-definitions-expectations forms)
   (define (definition? form)
     (and (pair? form)
