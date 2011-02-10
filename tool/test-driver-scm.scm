@@ -487,24 +487,6 @@ all: $(FAILURE_REPORTS)
 
 ;;;; Parsing expectations from files of examples
 
-;;; The procedure INDEPENDENT-EXPECTATIONS parses a file explicitly of
-;;; tests.  Every form in the file is taken to be separate (though
-;;; small bundles of forms can be denoted with the (multiform ...)
-;;; construct) and produces its own expectation.
-(define (independent-expectations forms)
-  (let loop ((answers '())
-	     (forms forms))
-    (cond ((null? forms)
-	   (reverse answers))
-	  ((null? (cdr forms))
-	   (reverse (cons (make-expectation (car forms) #t) answers)))
-	  ((eq? '===> (cadr forms))
-	   (loop (cons (make-expectation (car forms) (caddr forms)) answers)
-		 (cdddr forms)))
-	  (else
-	   (loop (cons (make-expectation (car forms) #t) answers)
-		 (cdr forms))))))
-
 ;;; The procedure SHARED-DEFINITIONS-EXPECTATIONS parses a file that
 ;;; could be a VLAD program.  Definitions and includes appearing at
 ;;; the top level of the file are taken to be shared by all following
@@ -559,9 +541,9 @@ all: $(FAILURE_REPORTS)
 	 expectations
 	 (iota count 1))))
 
-(define ((file->expectations parse) filename)
+(define (file->expectations filename)
   (if (file-exists? filename)
-      (let* ((expectations (parse (read-forms filename)))
+      (let* ((expectations (shared-definitions-expectations (read-forms filename)))
 	     (named-expectations (expectations-named
 				  (file-basename filename)
 				  expectations)))
@@ -581,8 +563,7 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/automatic/"
       (lambda ()
-	(append-map
-	 (file->expectations shared-definitions-expectations)
+	(append-map file->expectations
 	 '("one-offs.vlad"
 	   "addition.vlad"
 	   "bug-a.vlad"
@@ -610,8 +591,7 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/automatic/"
       (lambda ()
-	(append-map
-	 (file->expectations shared-definitions-expectations)
+	(append-map file->expectations
 	 '("backprop-F.vlad"
 	   "backprop-R.vlad"
 	   "dn.vlad"
