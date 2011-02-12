@@ -1,7 +1,5 @@
 (include "math")
 
-(define (max x y) (if (> x y) x y))
-
 (define (mnbrak f ax bx k)
  (let ((gold 1.61803399)
        (glimit 100.0)
