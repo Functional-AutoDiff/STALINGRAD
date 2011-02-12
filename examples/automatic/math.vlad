@@ -179,14 +179,20 @@
 (define (gradient-descent args)
   ((iterated-line-search gradient argmin) args))
 
-(define (gradient-ascent f x0 n eta)
- (if (zero? n)
-     (list x0 (f x0) ((gradient f) x0))
-     (gradient-ascent
-      f
-      (map2 (lambda (xi gi) (+ xi (* eta gi))) x0 ((gradient f) x0))
-      (- n 1)
-      eta)))
+(define (follow-direction select-direction)
+  (lambda (f x0 n eta)
+    (let ((direction ((select-direction f) x0)))
+      (if (zero? n)
+	  (list x0 (f x0) direction)
+	  (gradient-ascent
+	   f
+	   (v+ x0 (k*v eta direction))
+	   (- n 1)
+	   eta)))))
+
+(define (gradient-ascent-F args) ((follow-direction gradient-F) args))
+(define (gradient-ascent-R args) ((follow-direction gradient-R) args))
+(define (gradient-ascent   args) ((follow-direction gradient  ) args))
 
 ;;; Matrices
 
