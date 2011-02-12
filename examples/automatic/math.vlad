@@ -161,10 +161,11 @@
 	      (let ((g ((select-direction f) x)))
 		(if (<= (magnitude g) epsilon)
 		    x
-		    (let ((line (lambda (k) (f (v+ x (k*v k g))))))
+		    (let* ((line (lambda (k) (v+ x (k*v k g))))
+			   (line-f (lambda (k) (f (line k)))))
 		      (loop
 		       f
-		       (line (line-step line 0 epsilon))
+		       (line (line-step line-f 0 epsilon))
 		       epsilon)))))))
     loop))
 
