@@ -129,9 +129,11 @@
 ;;; Roots and Optimization
 
 (define (newton-method derivative)
-  (lambda (f x epsilon)
-    (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
-      (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon)))))
+  (letrec ((loop
+	    (lambda (f x epsilon)
+	      (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
+		(if (<= (abs (- x x-prime)) epsilon) x (loop f x-prime epsilon))))))
+    loop))
 
 (define (root-F args) ((newton-method derivative-F) args))
 
@@ -154,15 +156,17 @@
 (define ((invert   f) y) (root   (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
 (define (iterated-line-search select-direction line-step)
-  (lambda (f x epsilon)
-    (let ((g ((select-direction f) x)))
-      (if (<= (magnitude g) epsilon)
-	  x
-	  (let ((line (lambda (k) (f (v+ x (k*v k g))))))
-	    (gradient-descent
-	     f
-	     (line (line-step line 0 epsilon))
-	     epsilon))))))
+  (letrec ((loop
+	    (lambda (f x epsilon)
+	      (let ((g ((select-direction f) x)))
+		(if (<= (magnitude g) epsilon)
+		    x
+		    (let ((line (lambda (k) (f (v+ x (k*v k g))))))
+		      (loop
+		       f
+		       (line (line-step line 0 epsilon))
+		       epsilon)))))))
+    loop))
 
 (define (gradient-descent-FF args)
   ((iterated-line-search gradient-F argmin-F) args))
@@ -180,15 +184,17 @@
   ((iterated-line-search gradient argmin) args))
 
 (define (follow-direction select-direction)
-  (lambda (f x0 n eta)
-    (let ((direction ((select-direction f) x0)))
-      (if (zero? n)
-	  (list x0 (f x0) direction)
-	  (gradient-ascent
-	   f
-	   (v+ x0 (k*v eta direction))
-	   (- n 1)
-	   eta)))))
+  (letrec ((loop
+	    (lambda (f x0 n eta)
+	      (let ((direction ((select-direction f) x0)))
+		(if (zero? n)
+		    (list x0 (f x0) direction)
+		    (gradient-ascent
+		     f
+		     (v+ x0 (k*v eta direction))
+		     (- n 1)
+		     eta))))))
+    loop))
 
 (define (gradient-ascent-F args) ((follow-direction gradient-F) args))
 (define (gradient-ascent-R args) ((follow-direction gradient-R) args))
