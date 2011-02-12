@@ -28,4 +28,4 @@
 	      (lambda (s) s)
 	      (lambda (o) (- 0 (sqr (- o 3))))
 	      (lambda (o) (- 0 (sqr (- o 1))))
-	      2)
+	      2) ===> -10 ; TODO bogus answer to stimulate compilation
