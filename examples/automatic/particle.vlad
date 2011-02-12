@@ -4,8 +4,8 @@
 
 (define (distance u v) (sqrt (distance-squared u v)))
 
-(define (multivariate-argmin f x)
- (let ((g (gradient-using-j* f)))
+(define (multivariate-argmin gradient f x)
+ (let ((g (gradient f)))
   (letrec ((loop
 	    (lambda (x fx gx eta i)
 	     (cond ((<= (magnitude gx) (real 1e-5)) x)
@@ -25,7 +25,7 @@
 
 (define (multivariate-max f x) (f (multivariate-argmax f x)))
 
-(define (naive-euler w)
+(define (naive-euler gradient w)
  (let* ((charges
 	 (list (list (real 10) (- (real 10) w)) (list (real 10) (real 0))))
 	(x-initial (list (real 0) (real 8)))
@@ -35,7 +35,7 @@
 	    ((reduce + (real 0))
 	     (map (lambda (c) (/ (real 1) (distance x c))) charges)))))
   (letrec ((loop (lambda (x xdot)
-		   (let* ((xddot (k*v (real -1) ((gradient-using-j* p) x)))
+		   (let* ((xddot (k*v (real -1) ((gradient p) x)))
 			  (x-new (v+ x (k*v delta-t xdot))))
 		     (if (positive? (list-ref x-new 1))
 			 (loop x-new (v+ xdot (k*v delta-t xddot)))
@@ -45,8 +45,21 @@
 			   (sqr (list-ref x-t-f 0))))))))
    (loop x-initial xdot-initial))))
 
-(let* ((w0 (real 0))
-       ((list w*)
-	(multivariate-argmin (lambda ((list w)) (naive-euler w)) (list w0))))
- (write-real w*))
+(define (particle outer-gradient inner-gradient)
+ (let* ((w0 (real 0))
+	((list w*)
+	 (multivariate-argmin outer-gradient
+          (lambda ((list w)) (naive-euler inner-gradient w)) (list w0))))
+   w*))
+
+(particle gradient-F gradient-F)
  ===> 0.2020094843175354 ;; TODO Is this the right answer?
+
+(particle gradient-F gradient-R)
+ ===> 0.2020094843175354
+
+(particle gradient-R gradient-F)
+ ===> 0.2020094843175354
+
+(particle gradient-R gradient-R)
+ ===> 0.2020094843175354
