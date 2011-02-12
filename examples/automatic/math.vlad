@@ -190,7 +190,7 @@
 	      (let ((direction ((select-direction f) x0)))
 		(if (zero? n)
 		    (list x0 (f x0) direction)
-		    (gradient-ascent
+		    (loop
 		     f
 		     (v+ x0 (k*v eta direction))
 		     (- n 1)
