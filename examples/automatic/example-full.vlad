@@ -1,0 +1,15 @@
+(include "math")
+
+(root-F (lambda (x) (- (sqr x) 4.)) 5 1e-5) ===> 2.000005181219473
+(root-R (lambda (x) (- (sqr x) 4.)) 5 1e-5) ===> 2.000005181219473
+
+(argmin-F (lambda (x) (sqr (- x 4.))) 5 1e-5) ===> 4.
+(argmin-R (lambda (x) (sqr (- x 4.))) 5 1e-5) ===> 4.
+
+((gradient-F magnitude) (list 3. 4.)) ===> (0.6 0.8)
+((gradient-R magnitude) (list 3. 4.)) ===> (0.6000000000000001 0.8)
+
+(gradient-descent-FF magnitude-squared (list 3. 4.) 1e-5) ===> (0. 0.)
+(gradient-descent-FR magnitude-squared (list 3. 4.) 1e-5) ===> (0. 0.)
+(gradient-descent-RF magnitude-squared (list 3. 4.) 1e-5) ===> (0. 0.)
+(gradient-descent-RR magnitude-squared (list 3. 4.) 1e-5) ===> (0. 0.)
