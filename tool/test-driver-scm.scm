@@ -39,17 +39,19 @@
     (lambda ()
       (for-each dispatched-write forms))))
 
-(define (shell-command-output command #!optional input)
-  ;; It seems the micro-optimization of not bothering with an empty
-  ;; input port actually makes a big difference to the speed of the
-  ;; fast test suite.
+(define (shell-command-output basename command #!optional input)
   (if (or (default-object? input) (equal? input ""))
       (with-output-to-string
 	(lambda ()
 	  (run-shell-command command)))
-      (with-output-to-string
-	(lambda ()
-	  (run-shell-command command 'input (open-input-string input))))))
+      (let ((input-file-name (string-append test-directory basename ".input")))
+	(with-output-to-file input-file-name
+	  (lambda ()
+	    (display input)
+	    (newline)))
+	(with-output-to-string
+	  (lambda ()
+	    (run-shell-command (string-append command " < " input-file-name)))))))
 
 (define (write-makefile directory)
   (with-working-directory-pathname directory
@@ -239,7 +241,7 @@ all: $(FAILURE_REPORTS)
     (let ((input-string (with-output-to-string
 			  (lambda () (for-each pp inputs)))))
       (frobnicate
-       (shell-command-output
+       (shell-command-output basename
 	(string-append stalingrad-command test-directory basename ".vlad")
 	input-string))))
 
@@ -341,7 +343,7 @@ all: $(FAILURE_REPORTS)
   (define (compilation-reaction-to forms basename)
     (write-forms forms basename)
     (frobnicate
-     (shell-command-output
+     (shell-command-output basename
       (string-append
        stalingrad-command
        ;; -imprecise-inexacts causes some "Warning: Arguments to bundle
@@ -354,7 +356,7 @@ all: $(FAILURE_REPORTS)
   (define (execution-reaction forms basename)
     (let ((input-string (with-output-to-string
 			  (lambda () (for-each pp forms)))))
-      (shell-command-output (string-append "./" test-directory basename)
+      (shell-command-output basename (string-append "./" test-directory basename)
 			    input-string)))
 
   (define the-compiler
@@ -403,7 +405,7 @@ all: $(FAILURE_REPORTS)
     (write-forms forms basename)
     (let ((input-string (with-output-to-string
 			  (lambda () (for-each pp inputs)))))
-      (shell-command-output
+      (shell-command-output basename
        (string-append slad-command test-directory basename ".vlad")
        input-string)))
 
@@ -442,7 +444,7 @@ all: $(FAILURE_REPORTS)
     (write-forms forms basename)
     (let ((input-string (with-output-to-string
 			  (lambda () (for-each pp inputs)))))
-      (shell-command-output
+      (shell-command-output basename
        (string-append vl-command test-directory basename ".vlad")
        input-string)))
 
