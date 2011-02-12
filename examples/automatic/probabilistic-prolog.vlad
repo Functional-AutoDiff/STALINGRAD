@@ -207,3 +207,4 @@
 
 (let ((p (first (example))))
  (list (write-real (list-ref p 0)) (write-real (list-ref p 1))))
+===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
