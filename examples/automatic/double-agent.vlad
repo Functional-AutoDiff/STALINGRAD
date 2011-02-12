@@ -29,3 +29,7 @@
 	      (lambda (o) (- 0 (sqr (- o 3))))
 	      (lambda (o) (- 0 (sqr (- o 1))))
 	      2) ===> -10 ; TODO bogus answer to stimulate compilation
+
+;;; TODO What are the appropriate variations on this theme that use
+;;; reverse mode, and mixtures of forward and reverse mode in various
+;;; places?
