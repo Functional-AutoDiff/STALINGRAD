@@ -128,17 +128,30 @@
 
 ;;; Roots and Optimization
 
-(define (root f x epsilon)
- (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
-  (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon))))
+(define (root derivative)
+  (lambda (f x epsilon)
+    (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
+      (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon)))))
+
+(define (root-F args) ((root derivative-F) args))
+
+(define (root-R args) ((root derivative-R) args))
+
+(define (root args) ((root derivative) args))
 
 ;;; needs work: To rule out maxima and inflection points.
-(define (argmin f x epsilon) (root (derivative f) x epsilon))
+(define (argmin-F f x epsilon) (root-F (derivative-F f) x epsilon))
+(define (argmin-R f x epsilon) (root-R (derivative-R f) x epsilon))
+(define (argmin   f x epsilon) (root   (derivative   f) x epsilon))
 
 ;;; needs work: To rule out minima and inflection points.
-(define (argmax f x epsilon) (root (derivative f) x epsilon))
+(define (argmax-F f x epsilon) (root-F (derivative-F f) x epsilon))
+(define (argmax-R f x epsilon) (root-R (derivative-R f) x epsilon))
+(define (argmax   f x epsilon) (root   (derivative   f) x epsilon))
 
-(define ((invert f) y) (root (lambda (x) (abs (- (f x) y))) 1 1e-5))
+(define ((invert-F f) y) (root-F (lambda (x) (abs (- (f x) y))) 1 1e-5))
+(define ((invert-R f) y) (root-R (lambda (x) (abs (- (f x) y))) 1 1e-5))
+(define ((invert   f) y) (root   (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
 (define (gradient-descent f x epsilon)
  (let ((g ((gradient f) x)))
