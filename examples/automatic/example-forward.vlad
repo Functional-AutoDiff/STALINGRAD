@@ -1,6 +1,0 @@
-(include "math-forward")
-
-(root (lambda (x) (- (sqr x) 4.)) 5 1e-5) ===> 2.000005181219473
-(argmin (lambda (x) (sqr (- x 4.))) 5 1e-5) ===> 4.
-((gradient magnitude) (list 3. 4.)) ===> (0.6 0.8)
-(gradient-descent magnitude-squared (list 3. 4.) 1e-5) ===> (0. 0.)
