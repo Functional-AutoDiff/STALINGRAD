@@ -128,16 +128,16 @@
 
 ;;; Roots and Optimization
 
-(define (root derivative)
+(define (newton-method derivative)
   (lambda (f x epsilon)
     (let ((x-prime (- x (/ (f x) ((derivative f) x)))))
       (if (<= (abs (- x x-prime)) epsilon) x (root f x-prime epsilon)))))
 
-(define (root-F args) ((root derivative-F) args))
+(define (root-F args) ((newton-method derivative-F) args))
 
-(define (root-R args) ((root derivative-R) args))
+(define (root-R args) ((newton-method derivative-R) args))
 
-(define (root args) ((root derivative) args))
+(define (root args) ((newton-method derivative) args))
 
 ;;; needs work: To rule out maxima and inflection points.
 (define (argmin-F f x epsilon) (root-F (derivative-F f) x epsilon))
@@ -153,14 +153,31 @@
 (define ((invert-R f) y) (root-R (lambda (x) (abs (- (f x) y))) 1 1e-5))
 (define ((invert   f) y) (root   (lambda (x) (abs (- (f x) y))) 1 1e-5))
 
-(define (gradient-descent f x epsilon)
- (let ((g ((gradient f) x)))
-  (if (<= (magnitude g) epsilon)
-      x
-      (gradient-descent
-       f
-       (v+ x (k*v (argmin (lambda (k) (f (v+ x (k*v k g)))) 0 epsilon) g))
-       epsilon))))
+(define (iterated-line-search select-direction line-step)
+  (lambda (f x epsilon)
+    (let ((g ((select-direction f) x)))
+      (if (<= (magnitude g) epsilon)
+	  x
+	  (let ((line (lambda (k) (f (v+ x (k*v k g))))))
+	    (gradient-descent
+	     f
+	     (line (line-step line 0 epsilon))
+	     epsilon))))))
+
+(define (gradient-descent-FF args)
+  ((iterated-line-search gradient-F argmin-F) args))
+
+(define (gradient-descent-FR args)
+  ((iterated-line-search gradient-F argmin-R) args))
+
+(define (gradient-descent-RF args)
+  ((iterated-line-search gradient-R argmin-F) args))
+
+(define (gradient-descent-RR args)
+  ((iterated-line-search gradient-R argmin-R) args))
+
+(define (gradient-descent args)
+  ((iterated-line-search gradient argmin) args))
 
 (define (gradient-ascent f x0 n eta)
  (if (zero? n)
