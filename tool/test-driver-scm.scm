@@ -475,13 +475,6 @@ all: $(FAILURE_REPORTS)
 
 ;;;; General treatment of discrepancies
 
-(define implementations
-  (list (stalingrad-interpreter)
-	(stalingrad-compiler)
-	;(slad)
-	;(vl)
-	))
-
 (define (discrepancy expectation)
   ((implementation-discrepancy
     (expectation-implementation expectation))
@@ -576,6 +569,13 @@ all: $(FAILURE_REPORTS)
 	'())))
 
 ;;;; Definitions of expectation sets
+
+(define implementations
+  (list (stalingrad-interpreter)
+	(stalingrad-compiler)
+	;(slad)
+	;(vl)
+	))
 
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
