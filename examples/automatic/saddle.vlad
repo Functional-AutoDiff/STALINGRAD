@@ -69,18 +69,11 @@
  (mnbrak f l u (lambda (ax fa bx fb cx fc)
 		(golden f 1.0e-3 ax bx cx (lambda (mx fm) mx)))))
 
-(define (multivariate-argmin f x epsilon)
- (let ((g (gradient f)))
-  (letrec ((loop
-	    (lambda (x)
-	     (let ((g (g x)))
-	      (if (<= (magnitude g) epsilon)
-		  x
-		  (loop (v+ x
-			    (k*v (argmin-using-mnbrak-and-golden
-				  (lambda (k) (f (v+ x (k*v k g)))) -100 100)
-				 g))))))))
-   (loop x))))
+(define (saddle-argmin f start epsilon)
+  (argmin-using-mnbrak-and-golden f -100 100))
+
+(define (multivariate-argmin args)
+  ((iterated-line-search gradient saddle-argmin) args))
 
 (define (multivariate-argmax f x epsilon)
  (multivariate-argmin (lambda (x) (- 0 (f x))) x epsilon))
