@@ -173,7 +173,7 @@
 (define (likelihood substitution-distribution)
  (map-reduce + 0.0 double-p substitution-distribution))
 
-(define (example)
+(define (example gradient-ascent)
  (gradient-ascent
   (lambda (p)
    (let ((clauses
@@ -205,6 +205,10 @@
   1000.0
   0.1))
 
-(let ((p (first (example))))
- (list (write-real (list-ref p 0)) (write-real (list-ref p 1))))
-===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
+(define (do-example gradient-ascent)
+ (let ((p (first (example gradient-ascent))))
+   (list (write-real (list-ref p 0)) (write-real (list-ref p 1)))))
+
+(do-example gradient-ascent-F) ===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
+
+(do-example gradient-ascent-R) ===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
