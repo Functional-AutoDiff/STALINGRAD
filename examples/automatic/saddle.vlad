@@ -69,31 +69,42 @@
  (mnbrak f l u (lambda (ax fa bx fb cx fc)
 		(golden f 1.0e-3 ax bx cx (lambda (mx fm) mx)))))
 
-(define (saddle-argmin f start epsilon)
-  (argmin-using-mnbrak-and-golden f -100 100))
+(define (saddle outer-gradient inner-gradient)
+  (let* ((linear-argmin (lambda (f x epsilon)
+			  (argmin-using-mnbrak-and-golden f -100 100)))
+	 (outer-argmin (iterated-line-search outer-gradient linear-argmin))
+	 (inner-argmin (iterated-line-search inner-gradient linear-argmin))
+	 (inner-argmax (lambda (f x epsilon)
+			 (inner-argmin (lambda (x) (- 0 (f x))) x epsilon)))
+	 (inner-max (lambda (f x epsilon)
+		      (f (inner-argmax f x epsilon)))))
+    (lambda (f start epsilon)
+      (let (((list x1* y1*)
+	     (outer-argmin
+	      (lambda ((list x1 y1))
+		(inner-max
+		 (lambda ((list x2 y2)) (f x1 y1 x2 y2)) start epsilon))
+	      start
+	      epsilon)))
+	(list (list x1* y1*)
+	      (inner-argmax
+	       (lambda ((list x2 y2)) (f x1* y1* x2 y2)) start epsilon))))))
 
-(define (multivariate-argmin args)
-  ((iterated-line-search gradient saddle-argmin) args))
+(define (objective-function x1 y1 x2 y2)
+  (- (+ (sqr x1) (sqr y1)) (+ (sqr x2) (sqr y2))))
 
-(define (multivariate-argmax f x epsilon)
- (multivariate-argmin (lambda (x) (- 0 (f x))) x epsilon))
+((saddle gradient-F gradient-F)
+ objective-function (list (real 1) (real 1)) 1e-2)
+ ===> ((4.965316230354233e-05 4.965316230354233e-05) (4.965316230354233e-05 4.965316230354233e-05))
 
-(define (multivariate-min f x epsilon) (f (multivariate-argmin f x epsilon)))
+((saddle gradient-F gradient-R)
+ objective-function (list (real 1) (real 1)) 1e-2)
+ ===> ((4.965316230354233e-05 4.965316230354233e-05) (4.965316230354233e-05 4.965316230354233e-05))
 
-(define (multivariate-max f x epsilon) (f (multivariate-argmax f x epsilon)))
+((saddle gradient-R gradient-F)
+ objective-function (list (real 1) (real 1)) 1e-2)
+ ===> ((4.965316230354233e-05 4.965316230354233e-05) (4.965316230354233e-05 4.965316230354233e-05))
 
-(let ((epsilon 1e-2)
-      (start (list 1 1))
-      (f (lambda (x1 y1 x2 y2)
-	  (- (+ (sqr x1) (sqr y1)) (+ (sqr x2) (sqr y2))))))
- (let (((list x1 y1)
-	(multivariate-argmin
-	 (lambda ((list x1 y1))
-	  (multivariate-max
-	   (lambda ((list x2 y2)) (f x1 y1 x2 y2)) start epsilon))
-	 start
-	 epsilon)))
-  (list (list x1 y1)
-	(multivariate-argmax
-	 (lambda ((list x2 y2)) (f x1 y1 x2 y2)) start epsilon))))
+((saddle gradient-R gradient-R)
+ objective-function (list (real 1) (real 1)) 1e-2)
  ===> ((4.965316230354233e-05 4.965316230354233e-05) (4.965316230354233e-05 4.965316230354233e-05))
