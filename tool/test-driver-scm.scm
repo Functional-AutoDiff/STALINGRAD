@@ -185,6 +185,17 @@ all: $(FAILURE_REPORTS)
 (define (demand-assq item alist)
   (let ((answer (assq item alist)))
     (if answer (cdr answer) (error "Not found" item))))
+
+(define-structure rejection
+  expectation
+  reason)
+
+(define (rejection->list rejection)
+  (cons (rejection-reason rejection)
+	(expectation->list (rejection-expectation rejection))))
+
+(define (rejection-name rejection)
+  (expectation-name (rejection-expectation rejection)))
 
 ;;;; Implementations
 
@@ -301,15 +312,24 @@ all: $(FAILURE_REPORTS)
 	       (every number? (except-last-pair (multi-forms expect))))
 	  (and (alternate-behaviors? expect)
 	       (every ignorable-expectation? (behavior-alternatives expect)))))
+    (define (reject reason)
+      (make-rejection
+       (%make-expectation
+	(string-append "compile-" (expectation-name expectation))
+	the-compiler
+	(expectation-forms expectation)
+	(expectation-inputs expectation)
+	(expectation-answer expectation))
+       reason))
     (if (any exact-string? (expectation-forms expectation))
-	#f
+	(reject "Not compiling exact string expectation")
 	(let ((expect (expectation-answer expectation)))
 	  (cond ((writable-expectation? expect)
 		 (writing-value-version expectation))
 		((ignorable-expectation? expect)
 		 (ignoring-value-version expectation))
 		(else
-		 #f)))))
+		 (reject "Not compiling expectation with single non-writable answer"))))))
 
   ;;; Checking whether the compiler behaved as expected
   (define (discrepancy expectation)
@@ -614,10 +634,15 @@ all: $(FAILURE_REPORTS)
 ;;; Saving expectations to disk
 
 (define (save-expectation expectation)
-  (with-output-to-file
-      (string-append test-directory (expectation-name expectation) ".expect")
-    (lambda ()
-      (pp (expectation->list expectation)))))
+  (if (expectation? expectation)
+      (with-output-to-file
+	  (string-append test-directory (expectation-name expectation) ".expect")
+	(lambda ()
+	  (pp (expectation->list expectation))))
+      (with-output-to-file
+	  (string-append test-directory (rejection-name expectation) ".reject")
+	(lambda ()
+	  (pp (rejection->list expectation))))))
 
 (define (record-expectations! expectations)
   (write-makefile test-directory)
