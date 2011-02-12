@@ -90,19 +90,12 @@
 
 (define (j* x) (bundle x (perturb (zero x))))
 
-(define (derivative-using-j* f)
+(define (derivative-F f)
  (let ((f-forward (j* f)))
   (lambda (x)
     (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
 
-(define (derivative-using-*j f)
- (let ((f-reverse (*j f)))
-  (lambda (x)
-    (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
-
-(define (derivative f) (derivative-using-*j f))
-
-(define (gradient-using-j* f)
+(define (gradient-F f)
  (let ((f-forward (j* f)))
   (lambda (x)
    (let ((n (length x)))
@@ -110,7 +103,26 @@
 	    (unperturb (tangent (f-forward (bundle x (perturb (e i n)))))))
 	   n)))))
 
-(define (gradient-using-*j f) (derivative-using-*j f))
+(define (gradient-R f)
+ (let ((f-reverse (*j f)))
+  (lambda (x)
+    (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
+
+(define (derivative-R f) (gradient-R f))
+
+;; Backwards compatibility names
+
+(define (derivative-using-j* f) (derivative-F f))
+
+(define (derivative-using-*j f) (gradient-using-*j f))
+
+(define (gradient-using-j* f) (gradient-F f))
+
+(define (gradient-using-*j f) (gradient-R f))
+
+;; "Sensible" defaults
+
+(define (derivative f) (derivative-using-*j f))
 
 (define (gradient f) (gradient-using-*j f))
 
