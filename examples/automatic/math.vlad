@@ -185,17 +185,17 @@
   ((iterated-line-search gradient argmin) args))
 
 (define (follow-direction select-direction)
-  (letrec ((loop
-	    (lambda (f x0 n eta)
-	      (let ((direction ((select-direction f) x0)))
-		(if (zero? n)
-		    (list x0 (f x0) direction)
-		    (loop
-		     f
-		     (v+ x0 (k*v eta direction))
-		     (- n 1)
-		     eta))))))
-    loop))
+  (lambda (f x0 n eta)
+    (let ((select-direction (select-direction f)))
+      (letrec ((loop
+		(lambda (x0 n)
+		  (let ((direction (select-direction x0)))
+		    (if (zero? n)
+			(list x0 (f x0) direction)
+			(loop
+			 (v+ x0 (k*v eta direction))
+			 (- n 1)))))))
+	(loop x0 n)))))
 
 (define (gradient-ascent-F args) ((follow-direction gradient-F) args))
 (define (gradient-ascent-R args) ((follow-direction gradient-R) args))
