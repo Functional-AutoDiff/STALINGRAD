@@ -13,7 +13,7 @@ TEST_DRIVER="${SELFDIR}/test-driver"
 
 if [ -s $1.fail ]; then
     echo FAIL $1
-    cat $1.fail
+    awk 1 $1.fail # Like cat $1.fail, but forces trailing newline if absent from $1.fail
 else
     echo ok $1
 fi
