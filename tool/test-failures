@@ -8,9 +8,13 @@ for file in $(find $dir -name "*.fail" -not -empty -print | sort); do
     echo
 done
 
+n_examples=$(find $dir -name "*.*ect" | wc -l)
+n_rejects=$(find $dir -name "*.reject" | wc -l)
+n_accepts=$(find $dir -name "*.expect" | wc -l)
 n_tests=$(find $dir -name "*.fail" | wc -l)
 n_fails=$(find $dir -name "*.fail" -not -empty -print | wc -l)
 n_crash=$(find $dir -name "*.time" -exec head -1 '{}' \; \
     | grep "Command exited with non-zero status" | wc -l)
 
-echo ${n_tests} tests, ${n_fails} failures, ${n_crash} crashes.
+echo ${n_examples} total examples, ${n_rejects} rejected, ${n_accepts} accepted.
+echo ${n_tests} attempted: ${n_fails} failures, of them ${n_crash} crashes.

@@ -5,13 +5,16 @@ dir="${1:-test-runs/last/}"
 for file in $(find $dir -name "*.fail" -not -empty -print | sort); do
     if [ -z "`grep 'Variable not found' $file`" -a \
 	-z "`grep 'Trying to normalize a non-definition' $file`" -a \
-	-z "`grep 'Subprocess' $file | grep 'terminated with signal'`" ]; then
+	-z "`grep 'Subprocess' $file | grep 'terminated'`" ]; then
 	printf -- '----- %s:\n\n' $file
 	awk 1 $file # Like cat $file, but forces trailing newline if absent from $file
 	echo
     fi
 done
 
+n_examples=$(find $dir -name "*.*ect" | wc -l)
+n_rejects=$(find $dir -name "*.reject" | wc -l)
+n_accepts=$(find $dir -name "*.expect" | wc -l)
 n_tests=$(find $dir -name "*.fail" | wc -l)
 n_fails=$(find $dir -name "*.fail" -not -empty -print | wc -l)
 n_crash=$(find $dir -name "*.time" -exec head -1 '{}' \; \
@@ -19,9 +22,10 @@ n_crash=$(find $dir -name "*.time" -exec head -1 '{}' \; \
 
 n_unbound_var=$(find $dir -name "*.fail" | xargs grep "Variable not found" | wc -l)
 n_wrong_defn=$(find $dir -name "*.fail" | xargs grep "Trying to normalize a non-definition" | wc -l)
-n_too_hard=$(find $dir -name "*.fail" | xargs grep "Subprocess" | grep "terminated with signal" | wc -l)
+n_too_hard=$(find $dir -name "*.fail" | xargs grep "Subprocess" | grep "terminated" | wc -l)
 
-echo ${n_tests} tests, ${n_fails} total failures, ${n_crash} crashes.
+echo ${n_examples} total examples, ${n_rejects} rejected, ${n_accepts} accepted.
+echo ${n_tests} attempted: ${n_fails} total failures, of them ${n_crash} crashes.
 echo ${n_too_hard} out of resources, ${n_wrong_defn} bad definitions, ${n_unbound_var} unbound variables:
 
 find $dir -name "*.fail" | xargs grep "Variable not found" | cut -f 4 -d ' ' | sort | uniq -c | sort -g
