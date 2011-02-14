@@ -39,19 +39,30 @@
     (lambda ()
       (for-each dispatched-write forms))))
 
+(load-option 'regular-expression)
+
 (define (shell-command-output basename command #!optional input)
-  (if (or (default-object? input) (equal? input ""))
-      (with-output-to-string
-	(lambda ()
-	  (run-shell-command command)))
-      (let ((input-file-name (string-append test-directory basename ".input")))
-	(with-output-to-file input-file-name
-	  (lambda ()
-	    (display input)
-	    (newline)))
+  (define (doit)
+    (if (or (default-object? input) (equal? input ""))
 	(with-output-to-string
 	  (lambda ()
-	    (run-shell-command (string-append command " < " input-file-name)))))))
+	    (run-shell-command command)))
+	(let ((input-file-name (string-append test-directory basename ".input")))
+	  (with-output-to-file input-file-name
+	    (lambda ()
+	      (display input)
+	      (newline)))
+	  (with-output-to-string
+	    (lambda ()
+	      (run-shell-command (string-append command " < " input-file-name)))))))
+  (let ((answer (doit)))
+    (cond ((or (re-string-search-forward "bash: line [0-9]+:[0-9 ]*Killed" answer)
+	       (re-string-search-forward "bash: line [0-9]+:[0-9 ]*Aborted" answer))
+	   (display answer)
+	   (newline)
+	   (error "Subprocess reports being terminated"))
+	  (else
+	   answer))))
 
 (define (write-makefile directory)
   (with-working-directory-pathname directory
