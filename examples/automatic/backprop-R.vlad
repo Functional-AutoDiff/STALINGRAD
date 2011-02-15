@@ -80,7 +80,7 @@
 (do-it) ===> (with-inputs (10)       0.4967496867413786)
 (do-it) ===> (with-inputs (100)      0.4911168310721801)
 (do-it) ===> (with-inputs (1000)     0.2909192592250362)
-(do-it) ===> (with-inputs (10000)    -1) ; TODO Bogus answers to stilumate compilation
-(do-it) ===> (with-inputs (100000)   -1)
+(do-it) ===> (with-inputs (10000)    0.2513707871333965)
+(do-it) ===> (with-inputs (100000)   -1) ; TODO Bogus answers to stilumate compilation
 (do-it) ===> (with-inputs (1000000)  -1)
 (do-it) ===> (with-inputs (10000000) -1)
