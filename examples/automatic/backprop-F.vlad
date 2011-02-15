@@ -54,23 +54,29 @@
 	   (length ll))))
   (length ws)))
 
-(define ((weight-gradient f) ws)
- (map-n
-  (lambda (li)
-   (let ((ll (list-ref ws li)))
-    (map-n (lambda (ui)
-	    (map-n (lambda (wi)
-		    (unperturb
-		     (tangent
-		      ((j* f) (bundle ws (perturb (weight-e ws li ui wi)))))))
-		   (length (list-ref ll ui))))
-	   (length ll))))
-  (length ws)))
+(define (weight-gradient f)
+  (let ((f-forward (j* f)))
+    (lambda (ws)
+      (map-n
+       (lambda (li)
+	 (let ((ll (list-ref ws li)))
+	   (map-n (lambda (ui)
+		    (map-n (lambda (wi)
+			     (unperturb
+			      (tangent
+			       (f-forward (bundle ws (perturb (weight-e ws li ui wi)))))))
+			   (length (list-ref ll ui))))
+		  (length ll))))
+       (length ws)))))
 
-(define (vanilla f w0 n eta)
- (if (zero? n)
-     (f w0)
-     (vanilla f (s-k* w0 eta ((weight-gradient f) w0)) (- n 1) eta)))
+(define (vanilla f)
+  (let ((compute-grad (weight-gradient f)))
+    (letrec ((loop
+	      (lambda (w0 n eta)
+		(if (zero? n)
+		    (f w0)
+		    (loop (s-k* w0 eta ((weight-gradient f) w0)) (- n 1) eta)))))
+      loop)))
 
 ;;;; Allow compiler to grok structure of sexpr but not the numbers at
 ;;;; the leaves
@@ -93,7 +99,7 @@
    ((1 1) (0))))
 
 (define (do-it)
-  (vanilla (error-on-dataset (xor-data)) (xor-ws0) (read-real) 0.3))
+  ((vanilla (error-on-dataset (xor-data))) (xor-ws0) (read-real) 0.3))
 
 (do-it) ===> (with-inputs (1)        0.5105678882572587) ; TODO Are these right?
 (do-it) ===> (with-inputs (10)       0.4967496867413786)
