@@ -207,8 +207,11 @@
 
 (define (do-example gradient-ascent)
  (let ((p (first (example gradient-ascent))))
-   (list (write-real (list-ref p 0)) (write-real (list-ref p 1)))))
+   (let ((p0 (write-real (list-ref p 0)))) ; force order of evaluation
+     (list p0 (write-real (list-ref p 1))))))
 
-(do-example gradient-ascent-F) ===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
+(do-example gradient-ascent-F) ===>
+(multiform .2500000000000016 .33333333349839966 (.2500000000000016 .33333333349839966))
 
-(do-example gradient-ascent-R) ===> (multiform -1 -1 (-1 -1)) ;; TODO Bogus answer to stimulate compilation
+(do-example gradient-ascent-R) ===>
+(multiform .2500000000000016 .33333333349839966 (.2500000000000016 .33333333349839966))
