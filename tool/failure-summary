@@ -26,6 +26,11 @@ n_too_hard=$(find $dir -name "*.fail" | xargs grep "Subprocess" | grep "terminat
 
 echo ${n_examples} total examples, ${n_rejects} rejected, ${n_accepts} accepted.
 echo ${n_tests} attempted: ${n_fails} total failures, of them ${n_crash} crashes.
-echo ${n_too_hard} out of resources, ${n_wrong_defn} bad definitions, ${n_unbound_var} unbound variables:
+echo -n ${n_too_hard} out of resources, ${n_wrong_defn} bad definitions, ${n_unbound_var} unbound variables
 
-find $dir -name "*.fail" | xargs grep "Variable not found" | cut -f 4 -d ' ' | sort | uniq -c | sort -g
+if [ ${n_unbound_var} -ne 0 ]; then
+    echo ":"
+    find $dir -name "*.fail" | xargs grep "Variable not found" | cut -f 4 -d ' ' | sort | uniq -c | sort -g
+else
+    echo "."
+fi
