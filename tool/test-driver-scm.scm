@@ -107,11 +107,15 @@ all: $(FAILURE_REPORTS)
 
 (define (matches? expected reaction)
   (define (structure-matches? expected gotten)
-    (if (number? expected)
-	;; TODO I really should put this in the recursive case
-	;; too (and get the numerics right).
-	(< (abs (- expected gotten)) 1e-10)
-	(equal? expected gotten)))
+    (cond ((number? expected)
+	   ;; TODO I really should get the numerics right here.
+	   (< (abs (- expected gotten)) 1e-10))
+	  ((pair? expected)
+	   (and (pair? gotten)
+		(structure-matches? (car expected) (car gotten))
+		(structure-matches? (cdr expected) (cdr gotten))))
+	  (else
+	   (equal? expected gotten))))
   (cond ((error? expected)
 	 (re-string-search-forward (error-message expected) reaction))
 	((alternate-behaviors? expected)
