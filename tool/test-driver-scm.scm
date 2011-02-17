@@ -434,7 +434,7 @@ all: $(FAILURE_REPORTS)
 	     expected ,expected))))
 
   (define slad-command (string-append (->namestring my-pathname)
-				      "../../BCL-AD/slad/run-slad "))
+				      "../../BCL-AD/slad/slad "))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
