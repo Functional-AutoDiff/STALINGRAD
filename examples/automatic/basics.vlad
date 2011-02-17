@@ -1,0 +1,51 @@
+(define (cdr (cons x y)) y)
+
+(define (j* x) (bundle x (perturb (zero x))))
+
+(define (derivative-F f)
+ (let ((f-forward (j* f)))
+  (lambda (x)
+    (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
+
+(define (derivative-R f)
+ (let ((f-reverse (*j f)))
+  (lambda (x)
+    (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
+
+;;; Identity function
+((derivative-F (lambda (x) x)) 7) ===> 1
+
+;;; Constant function
+((derivative-F (lambda (x) 3)) 7) ===> 0
+
+;;; Transform of +
+((derivative-F (lambda (x) (+ x 1))) 7) ===> 1
+((derivative-F (lambda (x) (+ x x))) 7) ===> 2
+
+(define (one-F x)
+  ((derivative-F (lambda (y) (+ x y))) 3))
+
+;;; Nested constant function (don't conflate the perturbations)
+((derivative-F one-F) 7) ===> 0
+
+;;; Another don't conflate the perturbations
+((derivative-F (lambda (x)
+		 (* x (one-F x))))
+ 7) ===> 1
+
+;;; Don't confuse the perturbations
+;; I'm not sure this would catch a thing that swapped the
+;; perturbations with each other, but it at least might.
+((derivative-F (lambda (x)
+		 (* x (one-F (* 2 x)))))
+ 7) ===> 1
+
+;;; Another don't confuse the perturbations.
+((derivative-F
+  (lambda (y)
+    ((derivative-F
+      (lambda (x)
+	(* x (* x y))))
+     (* y 2))))
+ 2) ===> 16
+

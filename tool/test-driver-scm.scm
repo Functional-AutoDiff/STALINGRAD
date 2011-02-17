@@ -601,6 +601,7 @@ all: $(FAILURE_REPORTS)
 	(append-map file->expectations
 	 '("one-offs.vlad"
 	   "addition.vlad"
+	   "basics.vlad"
 	   "bug-a.vlad"
 	   "bug-b.vlad"
 	   "bug-c.vlad"
