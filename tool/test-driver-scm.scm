@@ -473,7 +473,7 @@ all: $(FAILURE_REPORTS)
 	     expected ,expected))))
 
   (define vl-command (string-append (->namestring my-pathname)
-				      "../../BCL-AD/vl/run-vl "))
+				      "../../BCL-AD/vl/vl "))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
