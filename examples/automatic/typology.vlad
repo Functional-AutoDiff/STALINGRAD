@@ -1,0 +1,30 @@
+(perturb 1) ===> (perturbation 1)
+(write (perturb 1)) ===> (multiform (perturbation 1) (perturbation 1))
+(perturbation? (perturb 1))
+(perturbation? 1) ===> #f
+(bundle 1 (perturb 1)) ===> (forward 1 (perturbation 1))
+(forward? (bundle 1 (perturb 1)))
+(forward? 1) ===> #f
+(forward? (perturb 1)) ===> #f
+(unperturb (perturb 1)) ===> 1
+(primal (bundle 1 (perturb 1))) ===> 1
+(tangent (bundle 1 (perturb 1))) ===> (perturbation 1)
+(perturb (cons 1 2)) ===> (perturbation (1 . 2))
+(perturb #t) ===> (perturbation #t)
+(bundle (cons 1 2) (perturb (cons 3 4)))
+===> (or (forward (1 . 2) (perturbation (3 . 4)))
+	 ((forward 1 (perturbation 3)) . (forward 2 (perturbation 4))))
+(primal (bundle (cons 1 2) (perturb (cons 3 4)))) ===> (1 . 2)
+(unperturb (tangent (bundle (cons 1 2) (perturb (cons 3 4))))) ===> (3 . 4)
+(*j 1) ===> (reverse 1)
+
+(reverse? (*j sin))
+
+(define (car (cons x y)) x)
+(define (cdr (cons x y)) y)
+(reverse? (car ((*j sin) (*j 1))))
+(procedure? (cdr ((*j sin) (*j 1))))
+(sensitivity? ((cdr ((*j sin) (*j 1))) (sensitize 1)))
+(cdr (unsensitize ((cdr ((*j sin) (*j 1))) (sensitize 1))))
+===> 0.5403023058681398
+
