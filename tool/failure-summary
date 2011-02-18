@@ -4,7 +4,6 @@ dir="${1:-test-runs/last/}"
 
 for file in $(find $dir -name "*.fail" -not -empty -print | sort); do
     if [ -z "`grep 'Variable not found' $file`" -a \
-	-z "`grep 'Trying to normalize a non-definition' $file`" -a \
 	-z "`grep 'Subprocess' $file | grep 'terminated'`" ]; then
 	printf -- '----- %s:\n\n' $file
 	awk 1 $file # Like cat $file, but forces trailing newline if absent from $file
@@ -21,12 +20,11 @@ n_crash=$(find $dir -name "*.time" -exec head -1 '{}' \; \
     | grep "Command exited with non-zero status" | wc -l)
 
 n_unbound_var=$(find $dir -name "*.fail" | xargs grep "Variable not found" | wc -l)
-n_wrong_defn=$(find $dir -name "*.fail" | xargs grep "Trying to normalize a non-definition" | wc -l)
 n_too_hard=$(find $dir -name "*.fail" | xargs grep "Subprocess" | grep "terminated" | wc -l)
 
 echo ${n_examples} total examples, ${n_rejects} rejected, ${n_accepts} accepted.
 echo ${n_tests} attempted: ${n_fails} total failures, of them ${n_crash} crashes.
-echo -n ${n_too_hard} out of resources, ${n_wrong_defn} bad definitions, ${n_unbound_var} unbound variables
+echo -n ${n_too_hard} out of resources, ${n_unbound_var} unbound variables
 
 if [ ${n_unbound_var} -ne 0 ]; then
     echo ":"
