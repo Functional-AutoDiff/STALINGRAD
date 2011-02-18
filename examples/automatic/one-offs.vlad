@@ -103,8 +103,6 @@
   (let (((cons foo1 foo2) foo))
     (cons (foo1) (foo2)))) ===> (or (error "Invalid expression") (2 . 3))
 
-`(3) ===> (error "Unbound variable: QUASIQUOTE")
-
 #b100 ===> 4
 #o100 ===> 64
 #d100 ===> 100
