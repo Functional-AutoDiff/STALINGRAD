@@ -20,6 +20,8 @@
 (atan 2 3) ===> .5880026035475675
 (real? 4)
 (real? 2.073e-2)
+(real? (real 2))
+(positive? (real 2))
 
 (multiform
  (define (abs x) (if (negative? x) (- 0 x) x))
