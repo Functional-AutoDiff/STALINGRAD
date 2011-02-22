@@ -82,3 +82,12 @@
      (* y 2))))
  2) ===> 16
 
+;;; Derivative of a function that returns a function
+(define (adder n)
+  (lambda (x)
+    (+ x n)))
+
+(let ((d-adder ((derivative-F adder) 3)))
+  ;; The derivative of ADDER at any argument should be the function
+  ;; that adds 1.
+  (d-adder 4)) ===> 5
