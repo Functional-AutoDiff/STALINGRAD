@@ -305,7 +305,7 @@ all: $(FAILURE_REPORTS)
 
   (define (carefully-writing-version expectation)
     (define careful-write
-      (let ((bogon (random 1.)))
+      (let ((bogon (- (random 1.) 1001)))
 	`(define (carefully-write-shaped-object shape object)
 	   (let ((fail (lambda () (write-real (real ,bogon)))))
 	     (letrec ((loop
