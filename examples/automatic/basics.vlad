@@ -82,16 +82,19 @@
      (* y 2))))
  2) ===> 16
 
+;;; Derivative of a function that returns a data structure
+(define (duplicator x)
+  (cons x x))
+
+;; The derivative of DUPLICATOR at any point should be 1 paired with 1.
+((derivative-F duplicator) 3) ===> (1 . 1)
+
 ;;; Derivative of a function that returns a function
 (define (adder n)
   (lambda (x)
     (+ x n)))
 
 (let ((d-adder ((derivative-F adder) 3)))
-  ;; The derivative of ADDER at any argument should be the function
-  ;; that adds 1.
-  (d-adder 4)) ===> 5
-(let ((d-adder ((derivative-R adder) 3)))
   ;; The derivative of ADDER at any argument should be the function
   ;; that adds 1.
   (d-adder 4)) ===> 5
