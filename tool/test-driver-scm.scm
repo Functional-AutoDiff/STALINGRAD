@@ -323,7 +323,7 @@ all: $(FAILURE_REPORTS)
 				(if (and shape object)
 				    #t
 				    (if (or shape object)
-					(fail)
+					(let ((ignore (fail))) shape)
 					#f)))
 			       (else
 				(fail))))))
