@@ -286,11 +286,81 @@ all: $(FAILURE_REPORTS)
 
   ;;; The compiler has some differences from and restrictions relative
   ;;; the interpreter.  Expectations are written with the interpreter in
-  ;;; mind, and need to be adjusted for the compiler.  There are two
+  ;;; mind, and need to be adjusted for the compiler.  There are three
   ;;; ways to get a compilable expectation out of an interpreted one,
-  ;;; depending on whether the return value of the expression being
+  ;;; depending on whether and how the return value of the expression being
   ;;; tested can be checked in the compiled program.  Also, some tests
   ;;; cannot usefully be converted to testing the compiler at all.
+
+  ;;; The three ways to adapt interpretation to compilation are as
+  ;;; follows.  If the interpreted program is expected to write only
+  ;;; real numbers and return a real number, it can be converted to a
+  ;;; compiled program simply by wrapping the final expression in
+  ;;; (write-real (real ...)) to force the compiled program to print
+  ;;; the answer.  This option is checked with WRITABLE-EXPECTATION?
+  ;;; and the transformation implemented with WRITING-VALUE-VERSION.
+
+  ;;; If the interpreted program is expected to write only real
+  ;;; numbers and return a list structure containing real numbers and
+  ;;; booleans, then the compiled program can be modified to compute
+  ;;; that answer, and then recursively traverse it, checking that the
+  ;;; shape is right and printing out the real numbers inside.  To
+  ;;; check that the shape is right, the shape needs to be fed in as a
+  ;;; quoted constant into the compiled program.  This check is done
+  ;;; by CAREFULLY-WRITABLE-EXPECTATION?, and the transformation
+  ;;; effected by CAREFULLY-WRITING-VERSION.
+
+  ;;; Finally, as a stopgap measure, if the interpreted program is
+  ;;; expected to write some nonzero quantity of real numbers, but
+  ;;; return some other structure, a partial test of the compiled
+  ;;; program can be arranged by simply ignoring the expectation of
+  ;;; the returned structure and observing only the printouts.  This
+  ;;; possibility is checked by IGNORABLE-EXPECTATION?, and this
+  ;;; transformation effected by IGNORING-VALUE-VERSION.
+
+  ;;; Failing all that, the expectation will be rejected.  Explicitly,
+  ;;; any expectation that contains an exact string to be reproduced
+  ;;; will rejected, because such cannot be effectively adjusted; any
+  ;;; expectation that expects any outputs in addition to the return
+  ;;; value that are not real numbers will be rejected, because it is
+  ;;; impossible to track down the places where those outputs would
+  ;;; occur and replace them with real-only outputs; and any
+  ;;; expectation that expects only a return value, but whose return
+  ;;; value cannot be serialized conveniently into real numbers within
+  ;;; the program under test will be rejected as well.
+
+  (define (prepare expectation)
+    (define (reject reason)
+      (make-rejection
+       (%make-expectation
+	(string-append "compile-" (expectation-name expectation))
+	the-compiler
+	(expectation-forms expectation)
+	(expectation-inputs expectation)
+	(expectation-answer expectation))
+       reason))
+    (if (any exact-string? (expectation-forms expectation))
+	(reject "Not compiling exact string expectation")
+	(let ((expect (expectation-answer expectation)))
+	  (cond ((and (multiform? expect)
+		      (not (every number? (except-last-pair (multi-forms expect)))))
+		 (reject "Not compiling expectation that depends on internal write"))
+		((writable-expectation? expect)
+		 (writing-value-version expectation))
+		((carefully-writable-expectation? expect)
+		 (carefully-writing-version expectation))
+		((ignorable-expectation? expect)
+		 (ignoring-value-version expectation))
+		(else
+		 (reject "Not compiling expectation with single non-writable answer"))))))
+
+  (define (writable-expectation? expect)
+    (or (number? expect)
+	(error? expect)
+	(and (multiform? expect)
+	     (every number? (multi-forms expect)))
+	(and (alternate-behaviors? expect)
+	     (every writable-expectation? (behavior-alternatives expect)))))
 
   (define (writing-value-version expectation)
     (define (writing-value forms)
@@ -302,6 +372,20 @@ all: $(FAILURE_REPORTS)
      (writing-value (expectation-forms expectation))
      (expectation-inputs expectation)
      (expectation-answer expectation)))
+
+  (define (carefully-writable-expectation? expect)
+    (define (carefully-writable-form? expect-form)
+      (or (number? expect-form)
+	  (null? expect-form)
+	  (boolean? expect-form)
+	  (and (pair? expect-form)
+	       (carefully-writable-form? (car expect-form))
+	       (carefully-writable-form? (cdr expect-form)))))
+    (or (carefully-writable-form? expect)
+	(and (multiform? expect)
+	     (every number? (except-last-pair (multi-forms expect)))
+	     (carefully-writable-form?
+	      (car (last-pair (multi-forms expect)))))))
 
   (define (carefully-writing-version expectation)
     (define careful-write
@@ -365,6 +449,12 @@ all: $(FAILURE_REPORTS)
        (expectation-inputs expectation)
        (carefully-written-answer (expectation-answer expectation)))))
 
+  (define (ignorable-expectation? expect)
+    (or (and (multiform? expect)
+	     (every number? (except-last-pair (multi-forms expect))))
+	(and (alternate-behaviors? expect)
+	     (every ignorable-expectation? (behavior-alternatives expect)))))
+
   (define (ignoring-value-version expectation)
     (define (ignoring-value expect)
       (cond ((multiform? expect)
@@ -378,57 +468,8 @@ all: $(FAILURE_REPORTS)
      (expectation-inputs expectation)
      (ignoring-value (expectation-answer expectation))))
 
-  (define (prepare expectation)
-    (define (writable-expectation? expect)
-      (or (number? expect)
-	  (error? expect)
-	  (and (multiform? expect)
-	       (every number? (multi-forms expect)))
-	  (and (alternate-behaviors? expect)
-	       (every writable-expectation? (behavior-alternatives expect)))))
-    (define (carefully-writable-expectation? expect)
-      (define (carefully-writable-form? expect-form)
-	(or (number? expect-form)
-	    (null? expect-form)
-	    (boolean? expect-form)
-	    (and (pair? expect-form)
-		 (carefully-writable-form? (car expect-form))
-		 (carefully-writable-form? (cdr expect-form)))))
-      (or (carefully-writable-form? expect)
-	  (and (multiform? expect)
-	       (every number? (except-last-pair (multi-forms expect)))
-	       (carefully-writable-form?
-		(car (last-pair (multi-forms expect)))))))
-    (define (ignorable-expectation? expect)
-      (or (and (multiform? expect)
-	       (every number? (except-last-pair (multi-forms expect))))
-	  (and (alternate-behaviors? expect)
-	       (every ignorable-expectation? (behavior-alternatives expect)))))
-    (define (reject reason)
-      (make-rejection
-       (%make-expectation
-	(string-append "compile-" (expectation-name expectation))
-	the-compiler
-	(expectation-forms expectation)
-	(expectation-inputs expectation)
-	(expectation-answer expectation))
-       reason))
-    (if (any exact-string? (expectation-forms expectation))
-	(reject "Not compiling exact string expectation")
-	(let ((expect (expectation-answer expectation)))
-	  (cond ((and (multiform? expect)
-		      (not (every number? (except-last-pair (multi-forms expect)))))
-		 (reject "Not compiling expectation that depends on internal write"))
-		((writable-expectation? expect)
-		 (writing-value-version expectation))
-		((carefully-writable-expectation? expect)
-		 (carefully-writing-version expectation))
-		((ignorable-expectation? expect)
-		 (ignoring-value-version expectation))
-		(else
-		 (reject "Not compiling expectation with single non-writable answer"))))))
-
   ;;; Checking whether the compiler behaved as expected
+
   (define (discrepancy expectation)
     (define (error-possible? expected)
       (or (error? expected)
