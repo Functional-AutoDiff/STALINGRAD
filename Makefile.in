@@ -14,19 +14,23 @@ stalingrad: QobiScheme
 tool/test-driver-scm.com: tool/test-driver-scm.scm
 	mit-scheme --compiler --heap 6000 --batch-mode --no-init-file --eval '(cf "tool/test-driver-scm")' < /dev/null
 
-test: stalingrad tool/test-driver-scm.com
+prepare-test: stalingrad tool/test-driver-scm.com
 	./tool/test-setup
 	./tool/test-driver '(record-expectations! (fast-expectations))'
+
+test: prepare-test
 	$(MAKE) -C test-runs/last all
 	./tool/failure-summary
 
-test-full: stalingrad tool/test-driver-scm.com
+prepare-test-full: stalingrad tool/test-driver-scm.com
 	./tool/test-setup full
 	./tool/test-driver '(record-expectations! (all-expectations))'
+
+test-full: prepare-test-full
 	$(MAKE) -C test-runs/last all
 	./tool/failure-summary
 
 Makefile: Makefile.in
 	./config.status
 
-.PHONY: all targets QobiScheme stalingrad test test-full
+.PHONY: all targets QobiScheme stalingrad prepare-test test prepare-test-full test-full
