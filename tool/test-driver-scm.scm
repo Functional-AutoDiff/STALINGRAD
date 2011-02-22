@@ -321,10 +321,10 @@ all: $(FAILURE_REPORTS)
 				'())
 			       ((and (boolean? shape) (boolean? object))
 				(if (and shape object)
-				    #t
+				    (real 1)
 				    (if (or shape object)
-					(let ((ignore (fail))) shape)
-					#f)))
+					(fail)
+					(real 0))))
 			       (else
 				(fail))))))
 	       (loop shape object))))))
