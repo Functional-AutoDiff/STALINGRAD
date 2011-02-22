@@ -91,3 +91,7 @@
   ;; The derivative of ADDER at any argument should be the function
   ;; that adds 1.
   (d-adder 4)) ===> 5
+(let ((d-adder ((derivative-R adder) 3)))
+  ;; The derivative of ADDER at any argument should be the function
+  ;; that adds 1.
+  (d-adder 4)) ===> 5
