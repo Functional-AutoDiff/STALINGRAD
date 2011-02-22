@@ -346,15 +346,16 @@ all: $(FAILURE_REPORTS)
       (define (carefully-written-answer expect)
 	(cond ((multiform? expect)
 	       `(multiform ,@(except-last-pair (multi-forms expect))
-			   ,(carefully-written-expected-return-value
-			     final-answer)))
+			   ,@(multi-forms
+			      (carefully-written-expected-return-value
+			       final-answer))))
 	      (else (carefully-written-expected-return-value final-answer))))
       (%make-expectation
        (string-append "compile-" (expectation-name expectation))
        the-compiler
        (carefully-writing-value (expectation-forms expectation))
        (expectation-inputs expectation)
-       (carefully-written-answer expectation))))
+       (carefully-written-answer (expectation-answer expectation)))))
 
   (define (ignoring-value-version expectation)
     (define (ignoring-value expect)
