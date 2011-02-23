@@ -2,7 +2,7 @@
 
 ulimit -s unlimited # khazad-dum imposes a default soft limit of 8192??
 ulimit -d 1200000
-ulimit -t 3000
+ulimit -t 600
 
 SELFDIR=$(dirname $0)
 TEST_DRIVER="${SELFDIR}/test-driver"
