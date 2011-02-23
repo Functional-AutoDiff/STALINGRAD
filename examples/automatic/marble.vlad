@@ -11,23 +11,23 @@
   (lambda (x)
     (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
 
-(define ((marble-F f) w) (+ ((f 0) w) ((derivative-F (lambda (x) ((f x) w))) 0)))
-(define ((marble-R f) w) (+ ((f 0) w) ((derivative-R (lambda (x) ((f x) w))) 0)))
+(define ((marble-F f) w) (+ ((f 0.) w) ((derivative-F (lambda (x) ((f x) w))) 0.)))
+(define ((marble-R f) w) (+ ((f 0.) w) ((derivative-R (lambda (x) ((f x) w))) 0.)))
 
 (define (dmarble-FF f) (derivative-F (marble-F f)))
 (define (dmarble-FR f) (derivative-F (marble-R f)))
 (define (dmarble-RF f) (derivative-R (marble-F f)))
 (define (dmarble-RR f) (derivative-R (marble-R f)))
 
-((dmarble-FF (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3)
+((dmarble-FF (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3.)
 ===> -1.061695367731588 ;;; TODO Is this the right answer?
 
-((dmarble-FR (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3)
+((dmarble-FR (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3.)
 ===> -1.061695367731588
 
-((dmarble-RF (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3)
+((dmarble-RF (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3.)
 ===> -1.061695367731588
 
 ;; ;; Reverse-reverse is too slow for the fast suite
-;; ((dmarble-RR (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3)
+;; ((dmarble-RR (lambda (x) (lambda (w) (sin (+ (* x w) (sqrt w)))))) 3.)
 ;; ===> -1.061695367731588

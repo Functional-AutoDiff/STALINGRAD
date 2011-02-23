@@ -13,44 +13,44 @@
     (cdr (unsensitize ((cdr (f-reverse (*j x))) (sensitize (real 1))))))))
 
 ;;; Identity function
-((derivative-F (lambda (x) x)) 7) ===> 1
-((derivative-R (lambda (x) x)) 7) ===> 1
+((derivative-F (lambda (x) x)) (real 7)) ===> 1
+((derivative-R (lambda (x) x)) (real 7)) ===> 1
 
 ;;; Constant function
-((derivative-F (lambda (x) 3)) 7) ===> 0
-((derivative-R (lambda (x) 3)) 7) ===> 0
+((derivative-F (lambda (x) (real 3))) (real 7)) ===> 0
+((derivative-R (lambda (x) (real 3))) (real 7)) ===> 0
 
 ;;; Transform of +
-((derivative-F (lambda (x) (+ x 1))) 7) ===> 1
-((derivative-F (lambda (x) (+ x x))) 7) ===> 2
-((derivative-R (lambda (x) (+ x 1))) 7) ===> 1
-((derivative-R (lambda (x) (+ x x))) 7) ===> 2
+((derivative-F (lambda (x) (+ x 1))) (real 7)) ===> 1
+((derivative-F (lambda (x) (+ x x))) (real 7)) ===> 2
+((derivative-R (lambda (x) (+ x 1))) (real 7)) ===> 1
+((derivative-R (lambda (x) (+ x x))) (real 7)) ===> 2
 
 (define (one-F x)
-  ((derivative-F (lambda (y) (+ x y))) 3))
+  ((derivative-F (lambda (y) (+ x y))) (real 3)))
 
 (define (one-R x)
-  ((derivative-R (lambda (y) (+ x y))) 3))
+  ((derivative-R (lambda (y) (+ x y))) (real 3)))
 
 ;;; Nested constant function (don't conflate the perturbations)
-((derivative-F one-F) 7) ===> 0
-((derivative-F one-R) 7) ===> 0
-((derivative-R one-F) 7) ===> 0
-((derivative-R one-R) 7) ===> 0
+((derivative-F one-F) (real 7)) ===> 0
+((derivative-F one-R) (real 7)) ===> 0
+((derivative-R one-F) (real 7)) ===> 0
+((derivative-R one-R) (real 7)) ===> 0
 
 ;;; Another don't conflate the perturbations
-((derivative-F (lambda (x) (* x (one-F x)))) 7) ===> 1
-((derivative-F (lambda (x) (* x (one-R x)))) 7) ===> 1
-((derivative-R (lambda (x) (* x (one-F x)))) 7) ===> 1
-((derivative-R (lambda (x) (* x (one-R x)))) 7) ===> 1
+((derivative-F (lambda (x) (* x (one-F x)))) (real 7)) ===> 1
+((derivative-F (lambda (x) (* x (one-R x)))) (real 7)) ===> 1
+((derivative-R (lambda (x) (* x (one-F x)))) (real 7)) ===> 1
+((derivative-R (lambda (x) (* x (one-R x)))) (real 7)) ===> 1
 
 ;;; Don't confuse the perturbations
 ;; I'm not sure this would catch a thing that swapped the
 ;; perturbations with each other, but it at least might.
-((derivative-F (lambda (x) (* x (one-F (* 2 x))))) 7) ===> 1
-((derivative-F (lambda (x) (* x (one-R (* 2 x))))) 7) ===> 1
-((derivative-R (lambda (x) (* x (one-F (* 2 x))))) 7) ===> 1
-((derivative-R (lambda (x) (* x (one-R (* 2 x))))) 7) ===> 1
+((derivative-F (lambda (x) (* x (one-F (* (real 2) x))))) (real 7)) ===> 1
+((derivative-F (lambda (x) (* x (one-R (* (real 2) x))))) (real 7)) ===> 1
+((derivative-R (lambda (x) (* x (one-F (* (real 2) x))))) (real 7)) ===> 1
+((derivative-R (lambda (x) (* x (one-R (* (real 2) x))))) (real 7)) ===> 1
 
 ;;; Another don't confuse the perturbations.
 ((derivative-F
@@ -58,47 +58,48 @@
     ((derivative-F
       (lambda (x)
 	(* x (* x y))))
-     (* y 2))))
- 2) ===> 16
+     (* y (real 2)))))
+ (real 2)) ===> 16
 ((derivative-F
   (lambda (y)
     ((derivative-R
       (lambda (x)
 	(* x (* x y))))
-     (* y 2))))
- 2) ===> 16
+     (* y (real 2)))))
+ (real 2)) ===> 16
 ((derivative-R
   (lambda (y)
     ((derivative-F
       (lambda (x)
 	(* x (* x y))))
-     (* y 2))))
- 2) ===> 16
+     (* y (real 2)))))
+ (real 2)) ===> 16
 ((derivative-R
   (lambda (y)
     ((derivative-R
       (lambda (x)
 	(* x (* x y))))
-     (* y 2))))
- 2) ===> 16
+     (* y (real 2)))))
+ (real 2)) ===> 16
 
 ;;; Derivative of a function that returns a data structure
 (define (duplicator x)
   (cons x x))
 
 ;; The derivative of DUPLICATOR at any point should be 1 paired with 1.
-((derivative-F duplicator) 3) ===> (1 . 1)
+((derivative-F duplicator) (real 3)) ===> (1 . 1)
 
 ;;; Derivative of a function that returns a function
 (define (adder n)
   (lambda (x)
     (+ x n)))
 
-(let ((d-adder ((derivative-F adder) 3)))
-  ;; The derivative of ADDER at any argument should be the function
-  ;; that adds 1.
-  (d-adder 4)) ===> 5
+(let ((d-adder ((derivative-F adder) (real 3))))
+  ;; The derivative of ADDER at any point should be the function that
+  ;; adds 1.
+  (d-adder (real 4))) ===> 5
 
-(let ((dd-adder ((derivative-F (derivative-F adder)) 3)))
-  ;; The second derivative of ADDER at any argument should be the identiy function.
-  (dd-adder 4)) ===> 4
+(let ((dd-adder ((derivative-F (derivative-F adder)) (real 3))))
+  ;; The second derivative of ADDER at any point should be the identiy
+  ;; function.
+  (dd-adder (real 4))) ===> 4
