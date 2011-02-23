@@ -54,7 +54,8 @@
 
 (particle gradient-F gradient-F)
  ===> (or 0.2020094843175354    ;; TODO Is this the right answer?
-	  0.21063091077779036)  ;; SLAD gets this
+	  0.21063091077779036   ;; SLAD used to get this
+	  0.20719187464861197)  ;; Now SLAD gets this
 
 (particle gradient-F gradient-R)
  ===> 0.2020094843175354
