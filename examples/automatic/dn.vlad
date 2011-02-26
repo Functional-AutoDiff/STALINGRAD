@@ -55,3 +55,6 @@
 ((dn-using-*j 1 cos) 0) ===> 0.
 ((dn-using-*j 2 cos) 0) ===> -1.
 ((dn-using-*j 3 cos) 0) ===> 0.
+
+((dn-using-j* (real 2) exp) 4) ===> 54.59815003314424
+((dn-using-*j (real 2) exp) 4) ===> 54.59815003314424
