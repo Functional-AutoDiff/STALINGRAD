@@ -204,3 +204,18 @@
  ((j* (j* sqrt))
   (bundle (bundle 4. (perturb 1.)) (perturb (bundle 1. (perturb 0.))))))
 ===> (forward (forward 2. (perturbation 0.25)) (perturbation (forward 0.25 (perturbation -0.03125))))
+
+(multiform
+ (define (j* x) (bundle x (perturb (zero x))))
+ (define (derivative-F f)
+   (let ((f-forward (j* f)))
+     (lambda (x)
+       (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
+ ((derivative-F (lambda (x) (list x x))) 3)) ===> (1 1)
+(multiform
+ (define (j* x) (bundle x (perturb (zero x))))
+ (define (derivative-F f)
+   (let ((f-forward (j* f)))
+     (lambda (x)
+       (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
+ ((derivative-F (lambda (x) (list x))) 3)) ===> (1)
