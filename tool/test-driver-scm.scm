@@ -678,6 +678,7 @@ all: $(FAILURE_REPORTS)
 	(stalingrad-compiler)
 	;(bcl-ad-implementation "slad")
 	;(bcl-ad-implementation "vl")
+        ;(bcl-ad-implementation "dvl")
 	))
 
 (define (fast-expectations)
