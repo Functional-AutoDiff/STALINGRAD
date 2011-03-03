@@ -743,7 +743,8 @@ all: $(FAILURE_REPORTS)
 	   "prefix.vlad"
 	   "secant.vlad"
 	   "sqrt.vlad"
-	   "typology.vlad")))))))
+	   "typology.vlad"
+	   )))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
