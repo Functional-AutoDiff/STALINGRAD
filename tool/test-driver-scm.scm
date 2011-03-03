@@ -523,15 +523,18 @@ all: $(FAILURE_REPORTS)
 
   the-compiler)
 
-(define (slad)
+(define (bcl-ad-implementation name)
   (define (prepare expectation)
     (%make-expectation
-     (string-append "slad-" (expectation-name expectation))
-     slad-interpreter
+     (string-append name "-" (expectation-name expectation))
+     implementation
      (expectation-forms expectation)
      (expectation-inputs expectation)
      (strip-perturbation-tags (expectation-answer expectation))))
 
+  ;; It so happens that all current BCL-AD implementations of VLAD
+  ;; either do not tag perturbations or do not support forward mode at
+  ;; all.
   (define (strip-perturbation-tags form)
     (cond ((and (pair? form)
 		(eq? (car form) 'perturbation)
@@ -557,60 +560,21 @@ all: $(FAILURE_REPORTS)
 	     produced ,reaction
 	     expected ,expected))))
 
-  (define slad-command (string-append (->namestring my-pathname)
-				      "../../BCL-AD/slad/slad "))
+  (define command (string-append (->namestring my-pathname)
+				 "../../BCL-AD/" name "/" name " "))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
     (let ((input-string (with-output-to-string
 			  (lambda () (for-each pp inputs)))))
       (shell-command-output basename
-       (string-append slad-command test-directory basename ".vlad")
+       (string-append command test-directory basename ".vlad")
        input-string)))
 
-  (define slad-interpreter
-    (make-implementation 'slad-interpreter prepare discrepancy))
+  (define implementation
+    (make-implementation (string->symbol name) prepare discrepancy))
 
-  slad-interpreter)
-
-(define (vl)
-  (define (prepare expectation)
-    (%make-expectation
-     (string-append "vl-" (expectation-name expectation))
-     vl-compiler
-     (expectation-forms expectation)
-     (expectation-inputs expectation)
-     (expectation-answer expectation)))
-
-  (define (discrepancy expectation)
-    (let* ((forms (expectation-forms expectation))
-	   (expected (expectation-answer expectation))
-	   (inputs (expectation-inputs expectation))
-	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	   (reaction (reaction-to
-		      forms inputs (expectation-name expectation))))
-      (if (matches? expected reaction)
-	  #f
-	  `( running ,forms
-	     ,@input-report-slot
-	     produced ,reaction
-	     expected ,expected))))
-
-  (define vl-command (string-append (->namestring my-pathname)
-				      "../../BCL-AD/vl/vl "))
-
-  (define (reaction-to forms inputs basename)
-    (write-forms forms basename)
-    (let ((input-string (with-output-to-string
-			  (lambda () (for-each pp inputs)))))
-      (shell-command-output basename
-       (string-append vl-command test-directory basename ".vlad")
-       input-string)))
-
-  (define vl-compiler
-    (make-implementation 'vl-compiler prepare discrepancy))
-
-  vl-compiler)
+  implementation)
 
 ;;;; General treatment of discrepancies
 
@@ -712,8 +676,8 @@ all: $(FAILURE_REPORTS)
 (define implementations
   (list (stalingrad-interpreter)
 	(stalingrad-compiler)
-	;(slad)
-	;(vl)
+	;(bcl-ad-implementation "slad")
+	;(bcl-ad-implementation "vl")
 	))
 
 (define (fast-expectations)
