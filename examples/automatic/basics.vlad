@@ -108,10 +108,10 @@
 
 (let ((d-adder ((derivative-F adder) (real 3))))
   ;; The derivative of ADDER at any point should be the function that
-  ;; adds 1.
-  (d-adder (real 4))) ===> 5
+  ;; returns 1.  See the note in BCL-AD/axch/tangents-of-functions.tex
+  (d-adder (real 4))) ===> 1
 
 (let ((dd-adder ((derivative-F (derivative-F adder)) (real 3))))
-  ;; The second derivative of ADDER at any point should be the identiy
+  ;; The second derivative of ADDER at any point should be the zero
   ;; function.
-  (dd-adder (real 4))) ===> 4
+  (dd-adder (real 4))) ===> 0
