@@ -17,14 +17,14 @@
 (define test-directory "test-runs/last/")
 (define stalingrad-command
   (string-append (->namestring my-pathname) "../source/stalingrad -scmh 1000 -I "
-		 (->namestring my-pathname) "../examples/automatic/ "))
+                 (->namestring my-pathname) "../examples/automatic/ "))
 
 (define (read-all)
   (let loop ((results '())
-	     (form (read)))
+             (form (read)))
     (if (eof-object? form)
-	(reverse results)
-	(loop (cons form results) (read)))))
+        (reverse results)
+        (loop (cons form results) (read)))))
 
 (define (read-forms filename)
   (with-input-from-file filename read-all))
@@ -32,9 +32,9 @@
 (define (write-forms forms basename)
   (define (dispatched-write form)
     (if (exact-string? form)
-	(write-string (exact-string form))
-	(begin (pp form)
-	       (newline))))
+        (write-string (exact-string form))
+        (begin (pp form)
+               (newline))))
   (with-output-to-file (string-append test-directory basename ".vlad")
     (lambda ()
       (for-each dispatched-write forms))))
@@ -44,32 +44,32 @@
 (define (shell-command-output basename command #!optional input)
   (define (doit)
     (if (or (default-object? input) (equal? input ""))
-	(with-output-to-string
-	  (lambda ()
-	    (run-shell-command command)))
-	(let ((input-file-name (string-append test-directory basename ".input")))
-	  (with-output-to-file input-file-name
-	    (lambda ()
-	      (display input)
-	      (newline)))
-	  (with-output-to-string
-	    (lambda ()
-	      (run-shell-command (string-append command " < " input-file-name)))))))
+        (with-output-to-string
+          (lambda ()
+            (run-shell-command command)))
+        (let ((input-file-name (string-append test-directory basename ".input")))
+          (with-output-to-file input-file-name
+            (lambda ()
+              (display input)
+              (newline)))
+          (with-output-to-string
+            (lambda ()
+              (run-shell-command (string-append command " < " input-file-name)))))))
   (let ((answer (doit)))
     (cond ((or (re-string-search-forward "bash: line [0-9]+:[0-9 ]*Killed" answer)
-	       (re-string-search-forward "bash: line [0-9]+:[0-9 ]*Aborted" answer))
-	   (display answer)
-	   (newline)
-	   (error "Subprocess reports being terminated"))
-	  (else
-	   answer))))
+               (re-string-search-forward "bash: line [0-9]+:[0-9 ]*Aborted" answer))
+           (display answer)
+           (newline)
+           (error "Subprocess reports being terminated"))
+          (else
+           answer))))
 
 (define (write-makefile directory)
   (with-working-directory-pathname directory
    (lambda ()
      (with-output-to-file "Makefile"
        (lambda ()
-	 (display
+         (display
 "EXPECTATIONS=$(wildcard *.expect)
 FAILURE_REPORTS=$(EXPECTATIONS:.expect=.fail)
 
@@ -108,26 +108,26 @@ all: $(FAILURE_REPORTS)
 (define (matches? expected reaction)
   (define (structure-matches? expected gotten)
     (cond ((number? expected)
-	   ;; TODO I really should get the numerics right here.
-	   (< (abs (- expected gotten)) 1e-10))
-	  ((pair? expected)
-	   (and (pair? gotten)
-		(structure-matches? (car expected) (car gotten))
-		(structure-matches? (cdr expected) (cdr gotten))))
-	  (else
-	   (equal? expected gotten))))
+           ;; TODO I really should get the numerics right here.
+           (< (abs (- expected gotten)) 1e-10))
+          ((pair? expected)
+           (and (pair? gotten)
+                (structure-matches? (car expected) (car gotten))
+                (structure-matches? (cdr expected) (cdr gotten))))
+          (else
+           (equal? expected gotten))))
   (cond ((error? expected)
-	 (re-string-search-forward (error-message expected) reaction))
-	((alternate-behaviors? expected)
-	 (any (lambda (alternate)
-		(matches? alternate reaction))
-	      (behavior-alternatives expected)))
-	(else
-	 (let ((result (with-input-from-string reaction read-all)))
-	   (if (multiform? expected)
-	       (structure-matches? (multi-forms expected) result)
-	       (and (= 1 (length result))
-		    (structure-matches? expected (car result))))))))
+         (re-string-search-forward (error-message expected) reaction))
+        ((alternate-behaviors? expected)
+         (any (lambda (alternate)
+                (matches? alternate reaction))
+              (behavior-alternatives expected)))
+        (else
+         (let ((result (with-input-from-string reaction read-all)))
+           (if (multiform? expected)
+               (structure-matches? (multi-forms expected) result)
+               (and (= 1 (length result))
+                    (structure-matches? expected (car result))))))))
 
 (define (frobnicate string)
   ;; It appears that the latest binary of Stalingrad I have access
@@ -173,21 +173,21 @@ all: $(FAILURE_REPORTS)
 
 (define (make-expectation test-forms answer)
   (define the-input (if (with-input? answer)
-			(input-forms answer)
-			'()))
+                        (input-forms answer)
+                        '()))
   (define the-answer (if (with-input? answer)
-			 (answer-form answer)
-			 answer))
+                         (answer-form answer)
+                         answer))
   (%make-expectation #f #f test-forms the-input the-answer))
 
 (define (expectation->list expectation)
   (list (expectation-name expectation)
-	(if (implementation? (expectation-implementation expectation))
-	    (implementation-name (expectation-implementation expectation))
-	    #f)
-	(expectation-forms expectation)
-	(expectation-inputs expectation)
-	(expectation-answer expectation)))
+        (if (implementation? (expectation-implementation expectation))
+            (implementation-name (expectation-implementation expectation))
+            #f)
+        (expectation-forms expectation)
+        (expectation-inputs expectation)
+        (expectation-answer expectation)))
 
 (define (list->expectation lst)
   (%make-expectation
@@ -196,8 +196,8 @@ all: $(FAILURE_REPORTS)
 
 (define (deserialize-implementation name)
   (demand-assq name (map (lambda (impl)
-			   (cons (implementation-name impl) impl))
-			 implementations)))
+                           (cons (implementation-name impl) impl))
+                         implementations)))
 
 (define (demand-assq item alist)
   (let ((answer (assq item alist)))
@@ -209,7 +209,7 @@ all: $(FAILURE_REPORTS)
 
 (define (rejection->list rejection)
   (cons (rejection-reason rejection)
-	(expectation->list (rejection-expectation rejection))))
+        (expectation->list (rejection-expectation rejection))))
 
 (define (rejection-name rejection)
   (expectation-name (rejection-expectation rejection)))
@@ -252,26 +252,26 @@ all: $(FAILURE_REPORTS)
   ;;; Checking whether the interpreter behaved as expected
   (define (discrepancy expectation)
     (let* ((forms (expectation-forms expectation))
-	   (expected (expectation-answer expectation))
-	   (inputs (expectation-inputs expectation))
-	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	   (reaction (reaction-to
-		      forms inputs (expectation-name expectation))))
+           (expected (expectation-answer expectation))
+           (inputs (expectation-inputs expectation))
+           (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+           (reaction (reaction-to
+                      forms inputs (expectation-name expectation))))
       (if (matches? expected reaction)
-	  #f
-	  `( interpreting ,forms
-	     ,@input-report-slot
-	     produced ,reaction
-	     expected ,expected))))
+          #f
+          `( interpreting ,forms
+             ,@input-report-slot
+             produced ,reaction
+             expected ,expected))))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
     (let ((input-string (with-output-to-string
-			  (lambda () (for-each pp inputs)))))
+                          (lambda () (for-each pp inputs)))))
       (frobnicate
        (shell-command-output basename
-	(string-append stalingrad-command test-directory basename ".vlad")
-	input-string))))
+        (string-append stalingrad-command test-directory basename ".vlad")
+        input-string))))
 
   (define the-interpreter
     (make-implementation 'stalingrad-interpreter prepare discrepancy))
@@ -333,40 +333,40 @@ all: $(FAILURE_REPORTS)
     (define (reject reason)
       (make-rejection
        (%make-expectation
-	(string-append "compile-" (expectation-name expectation))
-	the-compiler
-	(expectation-forms expectation)
-	(expectation-inputs expectation)
-	(expectation-answer expectation))
+        (string-append "compile-" (expectation-name expectation))
+        the-compiler
+        (expectation-forms expectation)
+        (expectation-inputs expectation)
+        (expectation-answer expectation))
        reason))
     (let ((expect (expectation-answer expectation)))
       (cond ((any exact-string? (expectation-forms expectation))
-	     (reject "Not compiling exact string expectation"))
-	    ((and (multiform? expect)
-		  (not (every number? (except-last-pair (multi-forms expect)))))
-	     (reject "Not compiling expectation that depends on internal write"))
-	    ((writable-expectation? expect)
-	     (writing-value-version expectation))
-	    ((carefully-writable-expectation? expect)
-	     (carefully-writing-version expectation))
-	    ((ignorable-expectation? expect)
-	     (ignoring-value-version expectation))
-	    (else
-	     (reject
-	      "Not compiling expectation with single non-writable answer")))))
+             (reject "Not compiling exact string expectation"))
+            ((and (multiform? expect)
+                  (not (every number? (except-last-pair (multi-forms expect)))))
+             (reject "Not compiling expectation that depends on internal write"))
+            ((writable-expectation? expect)
+             (writing-value-version expectation))
+            ((carefully-writable-expectation? expect)
+             (carefully-writing-version expectation))
+            ((ignorable-expectation? expect)
+             (ignoring-value-version expectation))
+            (else
+             (reject
+              "Not compiling expectation with single non-writable answer")))))
 
   (define (writable-expectation? expect)
     (or (number? expect)
-	(error? expect)
-	(and (multiform? expect)
-	     (every number? (multi-forms expect)))
-	(and (alternate-behaviors? expect)
-	     (every writable-expectation? (behavior-alternatives expect)))))
+        (error? expect)
+        (and (multiform? expect)
+             (every number? (multi-forms expect)))
+        (and (alternate-behaviors? expect)
+             (every writable-expectation? (behavior-alternatives expect)))))
 
   (define (writing-value-version expectation)
     (define (writing-value forms)
       (append (except-last-pair forms)
-	      `((write-real (real ,(car (last-pair forms)))))))
+              `((write-real (real ,(car (last-pair forms)))))))
     (%make-expectation
      (string-append "compile-" (expectation-name expectation))
      the-compiler
@@ -377,72 +377,72 @@ all: $(FAILURE_REPORTS)
   (define (carefully-writable-expectation? expect)
     (define (carefully-writable-form? expect-form)
       (or (number? expect-form)
-	  (null? expect-form)
-	  (boolean? expect-form)
-	  (and (pair? expect-form)
-	       (carefully-writable-form? (car expect-form))
-	       (carefully-writable-form? (cdr expect-form)))))
+          (null? expect-form)
+          (boolean? expect-form)
+          (and (pair? expect-form)
+               (carefully-writable-form? (car expect-form))
+               (carefully-writable-form? (cdr expect-form)))))
     (or (carefully-writable-form? expect)
-	(and (multiform? expect)
-	     (every number? (except-last-pair (multi-forms expect)))
-	     (carefully-writable-form?
-	      (car (last-pair (multi-forms expect)))))))
+        (and (multiform? expect)
+             (every number? (except-last-pair (multi-forms expect)))
+             (carefully-writable-form?
+              (car (last-pair (multi-forms expect)))))))
 
   (define (carefully-writing-version expectation)
     (define careful-write
       (let ((bogon (- (random 1.) 1001)))
-	`(define (carefully-write-shaped-object shape object)
-	   (let ((fail (lambda () (write-real (real ,bogon)))))
-	     (letrec ((loop
-		       (lambda (shape object)
-			 (cond ((and (real? shape) (real? object))
-				(write-real (real object)))
-			       ((and (pair? shape) (pair? object))
-				(let (((cons shape-car shape-cdr) shape)
-				      ((cons object-car object-cdr) object))
-				  (let ((x (loop shape-car object-car)))
-				    (cons x (loop shape-cdr object-cdr)))))
-			       ((and (null? shape) (null? object))
-				'())
-			       ((and (boolean? shape) (boolean? object))
-				(if (and shape object)
-				    (real 1)
-				    (if (or shape object)
-					(fail)
-					(real 0))))
-			       (else
-				(fail))))))
-	       (loop shape object))))))
+        `(define (carefully-write-shaped-object shape object)
+           (let ((fail (lambda () (write-real (real ,bogon)))))
+             (letrec ((loop
+                       (lambda (shape object)
+                         (cond ((and (real? shape) (real? object))
+                                (write-real (real object)))
+                               ((and (pair? shape) (pair? object))
+                                (let (((cons shape-car shape-cdr) shape)
+                                      ((cons object-car object-cdr) object))
+                                  (let ((x (loop shape-car object-car)))
+                                    (cons x (loop shape-cdr object-cdr)))))
+                               ((and (null? shape) (null? object))
+                                '())
+                               ((and (boolean? shape) (boolean? object))
+                                (if (and shape object)
+                                    (real 1)
+                                    (if (or shape object)
+                                        (fail)
+                                        (real 0))))
+                               (else
+                                (fail))))))
+               (loop shape object))))))
     (define (carefully-written-expected-return-value expect)
       `(multiform
-	,@(let loop ((expect expect))
-	    (cond ((number? expect) `(,expect))
-		  ((pair? expect) `(,@(loop (car expect)) ,@(loop (cdr expect))))
-		  ((boolean? expect) '())
-		  ((null? expect) '())))))
+        ,@(let loop ((expect expect))
+            (cond ((number? expect) `(,expect))
+                  ((pair? expect) `(,@(loop (car expect)) ,@(loop (cdr expect))))
+                  ((boolean? expect) '())
+                  ((null? expect) '())))))
     (define (zero-out expect)
       (cond ((number? expect) 0)
-	    ((pair? expect)
-	     (cons (zero-out (car expect)) (zero-out (cdr expect))))
-	    ((boolean? expect) expect)
-	    ((null? expect) '())))
+            ((pair? expect)
+             (cons (zero-out (car expect)) (zero-out (cdr expect))))
+            ((boolean? expect) expect)
+            ((null? expect) '())))
     (define (get-final-answer answer)
       (if (multiform? answer)
-	  (car (last-pair (multi-forms answer)))
-	  answer))
+          (car (last-pair (multi-forms answer)))
+          answer))
     (let ((final-answer (get-final-answer (expectation-answer expectation))))
       (define (carefully-writing-value forms)
-	(append (except-last-pair forms)
-		(list careful-write
-		      `(carefully-write-shaped-object ',(zero-out final-answer)
-			,(car (last-pair forms))))))
+        (append (except-last-pair forms)
+                (list careful-write
+                      `(carefully-write-shaped-object ',(zero-out final-answer)
+                        ,(car (last-pair forms))))))
       (define (carefully-written-answer expect)
-	(cond ((multiform? expect)
-	       `(multiform ,@(except-last-pair (multi-forms expect))
-			   ,@(multi-forms
-			      (carefully-written-expected-return-value
-			       final-answer))))
-	      (else (carefully-written-expected-return-value final-answer))))
+        (cond ((multiform? expect)
+               `(multiform ,@(except-last-pair (multi-forms expect))
+                           ,@(multi-forms
+                              (carefully-written-expected-return-value
+                               final-answer))))
+              (else (carefully-written-expected-return-value final-answer))))
       (%make-expectation
        (string-append "compile-" (expectation-name expectation))
        the-compiler
@@ -452,16 +452,16 @@ all: $(FAILURE_REPORTS)
 
   (define (ignorable-expectation? expect)
     (or (and (multiform? expect)
-	     (every number? (except-last-pair (multi-forms expect))))
-	(and (alternate-behaviors? expect)
-	     (every ignorable-expectation? (behavior-alternatives expect)))))
+             (every number? (except-last-pair (multi-forms expect))))
+        (and (alternate-behaviors? expect)
+             (every ignorable-expectation? (behavior-alternatives expect)))))
 
   (define (ignoring-value-version expectation)
     (define (ignoring-value expect)
       (cond ((multiform? expect)
-	     `(multiform ,@(except-last-pair (multi-forms expect))))
-	    ((error? expect) expect)
-	    (else (error "Can't ignore the only expectation"))))
+             `(multiform ,@(except-last-pair (multi-forms expect))))
+            ((error? expect) expect)
+            (else (error "Can't ignore the only expectation"))))
     (%make-expectation
      (string-append "compile-" (expectation-name expectation))
      the-compiler
@@ -474,30 +474,30 @@ all: $(FAILURE_REPORTS)
   (define (discrepancy expectation)
     (define (error-possible? expected)
       (or (error? expected)
-	  (and (alternate-behaviors? expected)
-	       (any error-possible? expected))))
+          (and (alternate-behaviors? expected)
+               (any error-possible? expected))))
     (let* ((name (expectation-name expectation))
-	   (expected (expectation-answer expectation))
-	   (forms (expectation-forms expectation))
-	   (inputs (expectation-inputs expectation))
-	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	   (compiler-reaction (compilation-reaction-to forms name)))
+           (expected (expectation-answer expectation))
+           (forms (expectation-forms expectation))
+           (inputs (expectation-inputs expectation))
+           (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+           (compiler-reaction (compilation-reaction-to forms name)))
       (if (equal? "" compiler-reaction)
-	  (let ((run-reaction (execution-reaction inputs name)))
-	    (if (matches? expected run-reaction)
-		#f
-		`( running ,forms
-			   ,@input-report-slot
-			   produced ,run-reaction
-			   expected ,expected)))
-	  (if (error-possible? expected)
-	      (if (matches? expected compiler-reaction)
-		  #f
-		  `( compiling ,forms
-			       produced ,compiler-reaction
-			       expected ,expected))
-	      `( compiling ,forms
-			   produced ,compiler-reaction)))))
+          (let ((run-reaction (execution-reaction inputs name)))
+            (if (matches? expected run-reaction)
+                #f
+                `( running ,forms
+                           ,@input-report-slot
+                           produced ,run-reaction
+                           expected ,expected)))
+          (if (error-possible? expected)
+              (if (matches? expected compiler-reaction)
+                  #f
+                  `( compiling ,forms
+                               produced ,compiler-reaction
+                               expected ,expected))
+              `( compiling ,forms
+                           produced ,compiler-reaction)))))
 
   (define (compilation-reaction-to forms basename)
     (write-forms forms basename)
@@ -514,9 +514,9 @@ all: $(FAILURE_REPORTS)
 
   (define (execution-reaction forms basename)
     (let ((input-string (with-output-to-string
-			  (lambda () (for-each pp forms)))))
+                          (lambda () (for-each pp forms)))))
       (shell-command-output basename (string-append "./" test-directory basename)
-			    input-string)))
+                            input-string)))
 
   (define the-compiler
     (make-implementation 'stalingrad-compiler prepare discrepancy))
@@ -537,36 +537,36 @@ all: $(FAILURE_REPORTS)
   ;; all.
   (define (strip-perturbation-tags form)
     (cond ((and (pair? form)
-		(eq? (car form) 'perturbation)
-		(= 2 (length form)))
-	   (strip-perturbation-tags (cadr form)))
-	  ((pair? form)
-	   (cons (strip-perturbation-tags (car form))
-		 (strip-perturbation-tags (cdr form))))
-	  (else
-	   form)))
+                (eq? (car form) 'perturbation)
+                (= 2 (length form)))
+           (strip-perturbation-tags (cadr form)))
+          ((pair? form)
+           (cons (strip-perturbation-tags (car form))
+                 (strip-perturbation-tags (cdr form))))
+          (else
+           form)))
 
   (define (discrepancy expectation)
     (let* ((forms (expectation-forms expectation))
-	   (expected (expectation-answer expectation))
-	   (inputs (expectation-inputs expectation))
-	   (input-report-slot (if (null? inputs) '() `(on ,inputs)))
-	   (reaction (reaction-to
-		      forms inputs (expectation-name expectation))))
+           (expected (expectation-answer expectation))
+           (inputs (expectation-inputs expectation))
+           (input-report-slot (if (null? inputs) '() `(on ,inputs)))
+           (reaction (reaction-to
+                      forms inputs (expectation-name expectation))))
       (if (matches? expected reaction)
-	  #f
-	  `( interpreting ,forms
-	     ,@input-report-slot
-	     produced ,reaction
-	     expected ,expected))))
+          #f
+          `( interpreting ,forms
+             ,@input-report-slot
+             produced ,reaction
+             expected ,expected))))
 
   (define command (string-append (->namestring my-pathname)
-				 "../../BCL-AD/" name "/" name " "))
+                                 "../../BCL-AD/" name "/" name " "))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
     (let ((input-string (with-output-to-string
-			  (lambda () (for-each pp inputs)))))
+                          (lambda () (for-each pp inputs)))))
       (shell-command-output basename
        (string-append command test-directory basename ".vlad")
        input-string)))
@@ -587,18 +587,18 @@ all: $(FAILURE_REPORTS)
   (for-each
    (lambda (discrepancy-elt)
      (cond ((memq discrepancy-elt '(compiling interpreting produced expected))
-	    (display (string-capitalize (symbol->string discrepancy-elt)))
-	    (newline))
-	   ((string? discrepancy-elt)
-	    (display discrepancy-elt))
-	   (else (pp discrepancy-elt))))
+            (display (string-capitalize (symbol->string discrepancy-elt)))
+            (newline))
+           ((string? discrepancy-elt)
+            (display discrepancy-elt))
+           (else (pp discrepancy-elt))))
    discrepancy))
 
 (define (report-if-discrepancy expectation)
   (let ((maybe-trouble (discrepancy expectation)))
     (if maybe-trouble
-	(report-discrepancy maybe-trouble)
-	'ok)))
+        (report-discrepancy maybe-trouble)
+        'ok)))
 
 ;;;; Parsing expectations from files of examples
 
@@ -611,28 +611,28 @@ all: $(FAILURE_REPORTS)
 (define (shared-definitions-expectations forms)
   (define (definition? form)
     (and (pair? form)
-	 (or (eq? (car form) 'define)
-	     (eq? (car form) 'include))))
+         (or (eq? (car form) 'define)
+             (eq? (car form) 'include))))
   (let loop ((answers '())
-	     (forms forms)
-	     (definitions '()))
+             (forms forms)
+             (definitions '()))
     (define (expect answer)
       (cons (make-expectation
-	     (let ((query-forms (if (multiform? (car forms))
-				    (multi-forms (car forms))
-				    (list (car forms)))))
-	       (append (reverse definitions) query-forms)) answer)
-	    answers))
+             (let ((query-forms (if (multiform? (car forms))
+                                    (multi-forms (car forms))
+                                    (list (car forms)))))
+               (append (reverse definitions) query-forms)) answer)
+            answers))
     (cond ((null? forms)
-	   (reverse answers))
-	  ((definition? (car forms))
-	   (loop answers (cdr forms) (cons (car forms) definitions)))
-	  ((null? (cdr forms))
-	   (reverse (expect #t)))
-	  ((eq? '===> (cadr forms))
-	   (loop (expect (caddr forms)) (cdddr forms) definitions))
-	  (else
-	   (loop (expect #t) (cdr forms) definitions)))))
+           (reverse answers))
+          ((definition? (car forms))
+           (loop answers (cdr forms) (cons (car forms) definitions)))
+          ((null? (cdr forms))
+           (reverse (expect #t)))
+          ((eq? '===> (cadr forms))
+           (loop (expect (caddr forms)) (cdddr forms) definitions))
+          (else
+           (loop (expect #t) (cdr forms) definitions)))))
 
 (define (file-basename filename)
   (->namestring (pathname-new-type filename #f)))
@@ -640,46 +640,46 @@ all: $(FAILURE_REPORTS)
 (define (expectations-named basename expectations)
   (define (integer-log number base)
     (if (< number base)
-	0
-	(+ 1 (integer-log (quotient number base) base))))
+        0
+        (+ 1 (integer-log (quotient number base) base))))
   (define (pad string length pad-str)
     (if (>= (string-length string) length)
-	string
-	(pad (string-append pad-str string) length pad-str)))
+        string
+        (pad (string-append pad-str string) length pad-str)))
   (let* ((count (length expectations))
-	 (index-length (+ 1 (integer-log count 10))))
+         (index-length (+ 1 (integer-log count 10))))
     (define (number->uniform-string index)
        (pad (number->string index) index-length "0"))
     (map (lambda (expectation index)
-	   (update-expectation-name
-	    expectation
-	    (string-append basename "-" (number->uniform-string index))))
-	 expectations
-	 (iota count 1))))
+           (update-expectation-name
+            expectation
+            (string-append basename "-" (number->uniform-string index))))
+         expectations
+         (iota count 1))))
 
 (define (file->expectations filename)
   (if (file-exists? filename)
       (let* ((expectations (shared-definitions-expectations (read-forms filename)))
-	     (named-expectations (expectations-named
-				  (file-basename filename)
-				  expectations)))
-	(append-map
-	 (lambda (impl)
-	   (filter-map (implementation-preparer impl) named-expectations))
-	 implementations))
+             (named-expectations (expectations-named
+                                  (file-basename filename)
+                                  expectations)))
+        (append-map
+         (lambda (impl)
+           (filter-map (implementation-preparer impl) named-expectations))
+         implementations))
       (begin
-	(warn "File of examples not found" filename)
-	'())))
+        (warn "File of examples not found" filename)
+        '())))
 
 ;;;; Definitions of expectation sets
 
 (define implementations
   (list (stalingrad-interpreter)
-	(stalingrad-compiler)
-	;(bcl-ad-implementation "slad")
-	;(bcl-ad-implementation "vl")
+        (stalingrad-compiler)
+        ;(bcl-ad-implementation "slad")
+        ;(bcl-ad-implementation "vl")
         ;(bcl-ad-implementation "dvl")
-	))
+        ))
 
 (define (fast-expectations)
   (with-working-directory-pathname my-pathname
@@ -687,29 +687,29 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/automatic/"
       (lambda ()
-	(append-map file->expectations
-	 '("one-offs.vlad"
-	   "addition.vlad"
-	   "basics.vlad"
-	   "bug-a.vlad"
-	   "bug-b.vlad"
-	   "bug-c.vlad"
-	   "bug0.vlad"
-	   "bug1.vlad"
-	   "bug2.vlad"
-	   "bug3.vlad"
-	   "bug4.vlad"
-	   "even-odd.vlad"
-	   "example-fast.vlad"
-	   "factorial.vlad"
-	   "list-of-unknown-length.vlad"
-	   "marble.vlad"
-	   "multiply.vlad"
-	   "prefix.vlad"
-	   "secant.vlad"
-	   "sqrt.vlad"
-	   "typology.vlad"
-	   )))))))
+        (append-map file->expectations
+         '("one-offs.vlad"
+           "addition.vlad"
+           "basics.vlad"
+           "bug-a.vlad"
+           "bug-b.vlad"
+           "bug-c.vlad"
+           "bug0.vlad"
+           "bug1.vlad"
+           "bug2.vlad"
+           "bug3.vlad"
+           "bug4.vlad"
+           "even-odd.vlad"
+           "example-fast.vlad"
+           "factorial.vlad"
+           "list-of-unknown-length.vlad"
+           "marble.vlad"
+           "multiply.vlad"
+           "prefix.vlad"
+           "secant.vlad"
+           "sqrt.vlad"
+           "typology.vlad"
+           )))))))
 
 (define (slow-expectations)
   (with-working-directory-pathname
@@ -718,20 +718,20 @@ all: $(FAILURE_REPORTS)
      (with-working-directory-pathname
       "../examples/automatic/"
       (lambda ()
-	(append-map file->expectations
-	 '("backprop-F.vlad"
-	   "backprop-R.vlad"
-	   "dn.vlad"
-	   "double-agent.vlad"
-	   "example-full.vlad"
-	   "hessian.vlad"
-	   "particle.vlad"
-	   "probabilistic-lambda-calculus.vlad"
-	   "probabilistic-prolog.vlad"
-	   "saddle.vlad"
-	   "series.vlad"
-	   "slow-sqrt.vlad"
-	   "triple.vlad")))))))
+        (append-map file->expectations
+         '("backprop-F.vlad"
+           "backprop-R.vlad"
+           "dn.vlad"
+           "double-agent.vlad"
+           "example-full.vlad"
+           "hessian.vlad"
+           "particle.vlad"
+           "probabilistic-lambda-calculus.vlad"
+           "probabilistic-prolog.vlad"
+           "saddle.vlad"
+           "series.vlad"
+           "slow-sqrt.vlad"
+           "triple.vlad")))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
@@ -743,13 +743,13 @@ all: $(FAILURE_REPORTS)
 (define (save-expectation expectation)
   (if (expectation? expectation)
       (with-output-to-file
-	  (string-append test-directory (expectation-name expectation) ".expect")
-	(lambda ()
-	  (pp (expectation->list expectation))))
+          (string-append test-directory (expectation-name expectation) ".expect")
+        (lambda ()
+          (pp (expectation->list expectation))))
       (with-output-to-file
-	  (string-append test-directory (rejection-name expectation) ".reject")
-	(lambda ()
-	  (pp (rejection->list expectation))))))
+          (string-append test-directory (rejection-name expectation) ".reject")
+        (lambda ()
+          (pp (rejection->list expectation))))))
 
 (define (record-expectations! expectations)
   (write-makefile test-directory)
