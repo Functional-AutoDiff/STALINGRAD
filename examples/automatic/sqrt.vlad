@@ -18,7 +18,7 @@
 		  (if (<= (abs (- y y-prime)) 1e-5)
 		      y
 		      (loop y-prime))))))
-  (loop 1.0)))
+  (loop (- (+ x 1.0) x)))) ; Algebraic noop for the benefit of DVL type inference
 
 (sqrt 4) ===> 2
 
