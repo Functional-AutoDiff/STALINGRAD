@@ -169,7 +169,11 @@
 
 (multiform
  (include "math")
- (dot (list (read-real) (read-real)) (list (read-real) (read-real))))
+ (let* ((x (read-real))
+        (y (read-real))
+        (z (read-real))
+        (w (read-real)))
+   (dot (list x y) (list z w))))
 ===> (with-inputs (3 4 5 6) 39)
 
 (multiform
