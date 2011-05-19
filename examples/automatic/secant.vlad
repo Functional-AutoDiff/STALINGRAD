@@ -1,7 +1,15 @@
 ;;; -*- Scheme -*-
 
 (include "math")
-(define error (lambda (x) (/ 1. 0)))
+(define error
+  (lambda (x)
+    ;; TODO This expression causes the VL flow analysis to signal a
+    ;; divide by zero error during analysis.  The DVL flow analysis
+    ;; avoids this because its prefilter automatically wraps all
+    ;; inexact numbers in (real .), but the code DVL emits here causes
+    ;; the MIT Scheme compiler to signal a divide by zero error during
+    ;; compilation (during the constant folding phase).
+    (/ 1. 0)))
 
 ;;; Use the secant method to find the zero of a 1D monotonic
 ;;; continuous function F in the region LO to HI to tolerance EPS.
