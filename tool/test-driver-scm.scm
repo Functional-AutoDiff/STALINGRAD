@@ -561,7 +561,7 @@ all: $(FAILURE_REPORTS)
              expected ,expected))))
 
   (define command (string-append (->namestring my-pathname)
-                                 "../../BCL-AD/" name "/" name " "))
+                                 "../../BCL-AD/ls/" name "/" name " "))
 
   (define (reaction-to forms inputs basename)
     (write-forms forms basename)
