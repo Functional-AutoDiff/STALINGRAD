@@ -1,0 +1,69 @@
+(define (j* f)
+  (bundle f (perturb (zero f))))
+
+(define (derivative-a f)
+  (lambda (x)
+    (unperturb (tangent ((j* f) (bundle x (perturb 1)))))))
+
+(define (derivative-b f)
+  (let ((f-forw (j* f)))
+    (lambda (x)
+      (unperturb (tangent (f-forw (bundle x (perturb 1))))))))
+
+
+;(bundle (bundle 1 (perturb 2)) (perturb (bundle 3 (perturb 4))))
+;((bundle (lambda () (bundle 1 (perturb 2))) (perturb (lambda () (bundle 3 (perturb 4))))))
+;(let ((foo (bundle 1 (perturb 2))))
+;  (bundle foo (perturb (zero foo))))
+
+;(let ((foo (lambda () (bundle 1 (perturb 2)))))
+;  ((primal (bundle foo (perturb (zero foo))))))
+
+(let ((foo (lambda () (bundle 1 (perturb 2)))))
+  ((unperturb (tangent (bundle foo (perturb (zero foo)))))))
+
+(let ((foo (bundle 1 (perturb 2))))
+  (unperturb (tangent (bundle foo (perturb (zero foo))))))
+
+
+(let ((x 5))
+  (let ((f (lambda (y) (* x (* y y)))))
+    ((derivative-a (derivative-a f)) (real 6))))
+
+(let ((x 5))
+  (let ((f (lambda (y) (* x (* y y)))))
+    ((derivative-a (derivative-b f)) (real 6))))
+
+
+(let ((x 5))
+  (let ((f (lambda (y) (* x (* y y)))))
+    (derivative-a f)))
+
+(let ((foo (lambda (x) (bundle 1 (perturb 2)))))
+  (unperturb (tangent ((bundle foo (perturb (zero foo)))
+		       (bundle 6 (perturb 1))))))
+
+(let ((foo (lambda (x) (bundle 1 (perturb 2)))))
+  (perturb (zero foo)))
+
+(let ((foo (lambda (x) (+ x 1))))		
+  ((zero foo) (real 6)))
+
+(let ((foo (lambda (x) (+ x 1))))		
+  ((derivative-a foo) (real 6)))
+
+
+(let ((foo (lambda (x) (bundle x (perturb 2)))))
+  ((zero foo) (real 6)))
+
+(let ((y 2))
+  (let ((foo (lambda (x) (bundle x (perturb y)))))
+    ((zero foo) (real 6))))
+
+
+(let ((foo (lambda (x) (bundle 1 (perturb 2))))) ; !
+  ((unperturb (tangent (bundle foo (perturb (zero foo))))) (real 6)))
+
+(let ((w 2))
+  (let ((foo (lambda (x) (bundle 1 (perturb w))))) ; !
+    ((unperturb (tangent (bundle foo (perturb (zero foo))))) (real 6))))
