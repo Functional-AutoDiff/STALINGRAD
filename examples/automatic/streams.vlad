@@ -1,0 +1,12 @@
+(include "math")
+
+;; A litte experiment to test whether the compiler will fuse loops (by
+;; inspection of the generated C code).  Stalingrad C, with options
+;; -compile -k -inline -sra -widen-lists does not.
+
+(define (iota count)
+  (if (= 0 count)
+      '()
+      (cons count (iota (- count 1)))))
+
+(write-real ((reduce + 0) (iota (real 5))))
