@@ -1,0 +1,45 @@
+;; Here is an attempt to repeat streams-3.vlad in a way that abstracts
+;; the algebraic data types, but it doesn't seem to be working.  I
+;; don't like map, and I'm not sure I can write filter in this style
+;; at all.
+
+(define (eat-list lst eat-pair eat-null)
+  (lst eat-pair eat-null))
+
+(define (make-list null? use-eat-null use-eat-pair)
+  (lambda (eat-pair eat-null)
+    (if null?
+        (use-eat-null eat-null)
+        (use-eat-pair eat-pair))))
+
+(define (null?* lst)
+  (eat-list lst
+   (lambda (car cdr) #f)
+   (lambda ()        #t)))
+
+(define (sum lst)
+  (eat-list lst
+   (lambda (car cdr)
+     (+ car (sum cdr)))
+   (lambda () 0)))
+
+(define (iota count)
+  (make-list (= 0 count)
+   (lambda (eat-null)
+     (eat-null))
+   (lambda (eat-pair)
+     (eat-pair count (iota (- count 1))))))
+
+(define (map f lst)
+  (make-list (null?* lst)
+   (lambda (eat-null)
+     (eat-null))
+   (lambda (eat-pair)
+     (eat-list lst
+      (lambda (car cdr)
+        (eat-pair (f car) (map f cdr)))
+      ;; This branch is never called.
+      #f))))
+
+(write-real (sum (map (lambda (x) (* x x)) (iota (real 5)))))
+===> 55

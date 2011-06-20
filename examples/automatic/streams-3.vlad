@@ -1,0 +1,103 @@
+;; Expanding on the ideas in streams-2.  All of this fuses, although
+;; Stalingrad seems to emit combinatorially growing code (I suspect in
+;; particular filter, and espcially concat).
+
+(define (iota count)
+  (lambda (eat-pair eat-null)
+    (if (= 0 count)
+        (eat-null)
+        (eat-pair count (iota (- count 1))))))
+
+(define (map f lst)
+  (lambda (eat-pair eat-null)
+    (eat-list lst
+     (lambda (car cdr)
+       (eat-pair (f car) (map f cdr)))
+     (lambda ()
+       (eat-null)))))
+
+(define (filter p lst)
+  (lambda (eat-pair eat-null)
+    (eat-list lst
+     (lambda (car cdr)
+       (if (p car)
+           (eat-pair car (filter p cdr))
+           (eat-list (filter p cdr) eat-pair eat-null)))
+     (lambda ()
+       (eat-null)))))
+
+(define (concat list-of-lists)
+  (lambda (eat-pair eat-null)
+    (eat-list list-of-lists
+     (lambda (car-list cdr-list)
+       (eat-list car-list
+        (lambda (car cdr)
+          (eat-pair car (append cdr (concat cdr-list))))
+        (lambda ()
+          (eat-list (concat cdr-list) eat-pair eat-null))))
+     (lambda ()
+       (eat-null)))))
+
+(define (append list1 list2)
+  (lambda (eat-pair eat-null)
+    (eat-list list1
+     (lambda (car1 cdr1)
+       (eat-pair car1 (append cdr1 list2)))
+     (lambda ()
+       (eat-list list2 eat-pair eat-null)))))
+
+(define (zip-with f list1 list2)
+  (lambda (eat-pair eat-null)
+    (eat-list list1
+     (lambda (car1 cdr1)
+       (eat-list list2
+        (lambda (car2 cdr2)
+          (eat-pair (f car1 car2) (zip-with f cdr1 cdr2)))
+        (lambda ()
+          (eat-null))))
+     (lambda ()
+       (eat-null)))))
+
+(define (sum lst)
+  (eat-list lst
+   (lambda (car cdr)
+     (+ car (sum cdr)))
+   (lambda () 0)))
+
+(define (eat-list lst eat-pair eat-null)
+  (lst eat-pair eat-null))
+
+(let ((numbers (concat (map (lambda (x) (iota x))
+                            (iota (real 5))))))
+ (write-real
+  (sum
+   (map (lambda (x) (* x x))
+        (filter (lambda (x) (> x 2))
+                (zip-with - numbers
+                          (map (lambda (x) 1) numbers)))))))
+===> 34 ; 3^2 + 3^2 + 4^2
+
+;; If one attempts to abstract this with
+;; (define (make-list null? use-eat-null use-eat-pair)
+;;   (lambda (eat-pair eat-null)
+;;     (if null?
+;;         (use-eat-null eat-null)
+;;         (use-eat-pair eat-pair))))
+;; per streams-2.vlad, one finds that the definition of
+;; map does not translate:
+;; (define (map f lst)
+;;   (eat-list lst
+;;    (lambda (car cdr)
+;;      (make-list #f
+;;       (lambda (eat-null) (eat-null))
+;;       (lambda (eat-pair)
+;;         (eat-pair (f car) (map f cdr)))))
+;;    (lambda ()
+;;      (make-list #t
+;;       (lambda (eat-null) (eat-null))
+;;       (lambda (eat-pair)
+;;         (eat-pair (f car) (map f cdr)))))))
+;; is broken, because each branch needs the continuation for the other
+;; to produce union-free code, and this causes unbound variable
+;; problems.  If there were a working "bottom" primitive that unified
+;; with anything, this would probably work.
