@@ -19,3 +19,39 @@
   (lst eat-pair eat-null))
 
 (write-real (sum (iota (real 5))))
+
+;; How can we abstract this pattern?  This doesn't work:
+;; (define (iota count)
+;;   (if (= 0 count)
+;;       (lambda (eat-pair eat-null)
+;;         (eat-null))
+;;       (lambda (eat-pair eat-null)
+;;         (eat-pair count (iota (- count 1))))))
+;; the two lambda expressions are different, and therefore the if is
+;; not union-free.
+
+;; A hint comes from precomputing the conditional:
+;; (define (iota count)
+;;   (let ((null? (= 0 count)))
+;;     (lambda (eat-pair eat-null)
+;;       (if null?
+;;           (eat-null)
+;;           (eat-pair count (iota (- count 1)))))))
+
+;; The following works, and hides the representation of lists
+;; completely.
+;; (define (make-list null? use-eat-null use-eat-pair)
+;;   (lambda (eat-pair eat-null)
+;;     (if null?
+;;         (use-eat-null eat-null)
+;;         (use-eat-pair eat-pair))))
+;;
+;; (define (iota count)
+;;   (make-list (= 0 count)
+;;    (lambda (eat-null)
+;;      (eat-null))
+;;    (lambda (eat-pair)
+;;      (eat-pair count (iota (- count 1))))))
+;; Note that this also captures the idea that whichever way your
+;; dispatch goes, you only get to use one of the consumer
+;; continuations.
