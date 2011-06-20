@@ -1,0 +1,21 @@
+;; Another litte experiment to test whether the compiler will fuse
+;; loops (by inspection of the generated C code).  Whichever
+;; Stalingrad I had built on khazad-dum, with options -compile -k
+;; -inline -sra -widen-lists does fuse loops written in this style.
+
+(define (iota count)
+  (lambda (eat-pair eat-null)
+    (if (= 0 count)
+        (eat-null)
+        (eat-pair count (iota (- count 1))))))
+
+(define (sum lst)
+  (eat-list lst
+   (lambda (car cdr)
+     (+ car (sum cdr)))
+   (lambda () 0)))
+
+(define (eat-list lst eat-pair eat-null)
+  (lst eat-pair eat-null))
+
+(write-real (sum (iota (real 5))))
