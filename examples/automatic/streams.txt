@@ -1,0 +1,69 @@
+A note on stream fusion:
+
+Consider Church-encoding the "or" node of an algebraic data
+type such as a list:
+
+(define (Cons obj)
+  (lambda (if-pair if-null)
+    (if-pair obj)))
+
+(define (Null obj)
+  (lambda (if-pair if-null)
+    (if-null obj)))
+
+Suppose you have some program point somewhere that returns either a
+Cons or a Null, but you don't know which.  What can you ever do
+with such a thing?  Dispatch:
+
+(define (case-Cons-or-Null obj if-pair if-null)
+  (obj if-pair if-null))
+
+Map looks like this (I am ignoring the implementation of product nodes
+in your algebraic data type):
+
+(define (map f lst)
+  (case-Cons-or-Null lst
+   (lambda (pair)
+     (let ((first (%unsafe-car pair))
+           (rest (%unsafe-cdr pair)))
+       (Cons (%make-untagged-pair (f first) (map f rest)))))
+   (lambda (null)
+     (Null null))))
+
+Now, what happens if you know that this
+Cons-or-Null-but-you-don't-know-which only ever flows into one
+dispatch?  Then you know that only one set of continuations flows into
+your Cons-or-Null.  That means you can specialize the procedure
+produced by that instance of (Cons obj) to the one and only if-pair
+that it will ever get, and that instance of (Null obj) to the one and
+only if-null that it will ever get.  If you can arrange for the
+closure records to do the right thing, you can get rid of that
+dispatch completely.  And if you had a pipeline of these things, you
+should now get loop fusion for free.
+
+By the way, you don't only have to do fusion on streams.
+Consider
+
+data Tree a = Empty | Leaf a | Node (Tree a) (Tree a)
+
+data StreamTree a = STree s (s -> Choice s a)
+data Choice s a = Done | CLeaf a | Skip s | Split s s
+
+streamify :: Tree a -> StreamTree a
+streamify tree = STree tree \tree ->
+  case tree of
+    Empty -> Done
+    Leaf x -> CLeaf x
+    Node n1 n2 -> Split n1 n2
+
+unstreamify :: StreamTree a -> Tree a
+unstreamify (STree t more) = walk t where
+  walk t = case (more t) of
+    Done -> Empty
+    CLeaf x -> Leaf x
+    Skip t' -> walk t'
+    Split t1 t2 -> Node (walk t1) (walk t2)
+
+etc
+
+streams*.vlad are experiments on this theme.
