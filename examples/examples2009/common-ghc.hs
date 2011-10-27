@@ -66,7 +66,7 @@ vminus = zipWith (-)
 
 ktimesv k = map (k *)
 
-magnitude_squared x = foldl (+) 0 (map sqr x)
+magnitude_squared x = sum (map sqr x)
 
 magnitude :: Floating a => [a] -> a
 magnitude = sqrt . magnitude_squared
