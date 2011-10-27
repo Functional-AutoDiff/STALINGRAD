@@ -7,7 +7,8 @@ instance (Num a, Show a) => Show (Bundle a) where
     show (B x x') = "(B " ++ (show x) ++ " " ++ (show x') ++ ")"
 
 {-# INLINE lift #-}
-lift !x = B x 0
+lift :: Num a => a -> Bundle a
+lift x = B x 0
 
 instance (Num a) => Num (Bundle a) where
     fromInteger z       = lift (fromInteger z)
