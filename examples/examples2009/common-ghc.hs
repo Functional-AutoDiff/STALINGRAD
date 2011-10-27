@@ -1,4 +1,3 @@
-{-# LANGUAGE BangPatterns #-}
 module Common where
 
 data Num a => Bundle a = B !a !a
