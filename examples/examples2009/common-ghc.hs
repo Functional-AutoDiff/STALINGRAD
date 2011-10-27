@@ -1,6 +1,6 @@
 module Common where
 
-data Num a => Bundle a = B a a
+data Num a => Bundle a = B !a !a
 
 instance (Num a, Show a) => Show (Bundle a) where
     show (B x x') = "(B " ++ (show x) ++ " " ++ (show x') ++ ")"
