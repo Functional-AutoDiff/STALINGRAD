@@ -109,6 +109,6 @@ multivariate_argmin f x =
 
 multivariate_argmax :: (Floating a, Ord a) =>
                        ([Bundle a] -> Bundle a) -> [a] -> [a]
-multivariate_argmax f x = multivariate_argmin (\ x -> - (f x)) x
+multivariate_argmax f x = multivariate_argmin (negate . f) x
 
 multivariate_max f x = (lower_fs f) (multivariate_argmax f x)
