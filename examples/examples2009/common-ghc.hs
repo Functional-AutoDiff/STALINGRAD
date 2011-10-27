@@ -54,6 +54,9 @@ instance (Num a, Ord a, Real a) => Real (Bundle a) where
     toRational (B x _) = toRational x
 
 derivative :: Num a => (Bundle a -> Bundle a) -> a -> a
+{-# SPECIALIZE derivative :: (Bundle Double -> Bundle Double) -> Double -> Double #-}
+{-# SPECIALIZE derivative :: (Bundle (Bundle Double) -> Bundle (Bundle Double))
+                          -> (Bundle Double) -> (Bundle Double) #-}
 derivative f x = let (B _ y') = f (B x 1) in y'
 
 sqr x = x * x
@@ -83,14 +86,27 @@ replace_ith :: [a] -> Int -> a -> [a]
 replace_ith (x : xs) 0 xi = (xi : xs)
 replace_ith (x : xs) i xi = (x : (replace_ith xs (i-1) xi))
 
+gradient :: Num a => ([Bundle a] -> Bundle a) -> [a] -> [a]
+{-# SPECIALIZE gradient :: ([Bundle Double] -> Bundle Double) -> [Double] -> [Double] #-}
+{-# SPECIALIZE gradient :: ([Bundle (Bundle Double)] -> Bundle (Bundle Double))
+                        -> [Bundle Double] -> [Bundle Double] #-}
 gradient f x =
     map (\ i -> derivative
                 (\ xi -> f (replace_ith (map lift x) i xi)) (x !! i))
         [0 .. (length x) - 1]
 
+
 lower_fs :: Num a => ([Bundle a] -> Bundle a) -> [a] -> a
+{-# SPECIALIZE lower_fs :: ([Bundle Double] -> Bundle Double) -> [Double] -> Double #-}
+{-# SPECIALIZE lower_fs :: ([Bundle (Bundle Double)] -> Bundle (Bundle Double))
+                        -> [Bundle Double] -> (Bundle Double) #-}
 lower_fs f xs = let (B y _) = f (map lift xs) in y
 
+multivariate_argmin :: (Floating a, Ord a) =>
+                       ([Bundle a] -> Bundle a) -> [a] -> [a]
+{-# SPECIALIZE multivariate_argmin :: ([Bundle Double] -> Bundle Double) -> [Double] -> [Double] #-}
+{-# SPECIALIZE multivariate_argmin :: ([Bundle (Bundle Double)] -> Bundle (Bundle Double))
+                                   -> [Bundle Double] -> [Bundle Double] #-}
 multivariate_argmin f x =
     let g = gradient f
         ff = lower_fs f
@@ -114,6 +130,14 @@ multivariate_argmin f x =
 
 multivariate_argmax :: (Floating a, Ord a) =>
                        ([Bundle a] -> Bundle a) -> [a] -> [a]
+{-# SPECIALIZE multivariate_argmax :: ([Bundle Double] -> Bundle Double) -> [Double] -> [Double] #-}
+{-# SPECIALIZE multivariate_argmax :: ([Bundle (Bundle Double)] -> Bundle (Bundle Double))
+                                   -> [Bundle Double] -> [Bundle Double] #-}
 multivariate_argmax f x = multivariate_argmin (negate . f) x
 
+multivariate_max :: (Floating a, Ord a) =>
+                    ([Bundle a] -> Bundle a) -> [a] -> a
+{-# SPECIALIZE multivariate_max :: ([Bundle Double] -> Bundle Double) -> [Double] -> Double #-}
+{-# SPECIALiZE multivariate_max :: ([Bundle (Bundle Double)] -> Bundle (Bundle Double))
+                                -> [Bundle Double] -> Bundle Double #-}
 multivariate_max f x = (lower_fs f) (multivariate_argmax f x)
