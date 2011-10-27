@@ -74,7 +74,7 @@ distance_squared u v = magnitude_squared (vminus u v)
 distance u v = sqrt (distance_squared u v)
 
 replace_ith (x : xs) 0 xi = (xi : xs)
-replace_ith (x : xs) (i + 1) xi = (x : (replace_ith xs i xi))
+replace_ith (x : xs) i xi = (x : (replace_ith xs (i-1) xi))
 
 gradient f x =
     map (\ i -> derivative
