@@ -1,3 +1,4 @@
+{-# LANGUAGE BangPatterns #-}
 module Common where
 
 data Num a => Bundle a = B !a !a
@@ -5,7 +6,8 @@ data Num a => Bundle a = B !a !a
 instance (Num a, Show a) => Show (Bundle a) where
     show (B x x') = "(B " ++ (show x) ++ " " ++ (show x') ++ ")"
 
-lift x = B x 0
+{-# INLINE lift #-}
+lift !x = B x 0
 
 instance (Num a) => Num (Bundle a) where
     fromInteger z       = lift (fromInteger z)
