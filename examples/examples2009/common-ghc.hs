@@ -64,17 +64,22 @@ vplus = zipWith (+)
 vminus :: Num a => [a] -> [a] -> [a]
 vminus = zipWith (-)
 
+ktimesv :: Num a => a -> [a] -> [a]
 ktimesv k = map (k *)
 
+magnitude_squared :: Num a => [a] -> a
 magnitude_squared x = sum (map sqr x)
 
 magnitude :: Floating a => [a] -> a
 magnitude = sqrt . magnitude_squared
 
+distance_squared :: Num a => [a] -> [a] -> a
 distance_squared u v = magnitude_squared (vminus u v)
 
+distance :: Floating a => [a] -> [a] -> a
 distance u v = sqrt (distance_squared u v)
 
+replace_ith :: [a] -> Int -> a -> [a]
 replace_ith (x : xs) 0 xi = (xi : xs)
 replace_ith (x : xs) i xi = (x : (replace_ith xs (i-1) xi))
 
