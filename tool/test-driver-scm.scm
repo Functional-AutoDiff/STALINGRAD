@@ -674,11 +674,11 @@ all: $(FAILURE_REPORTS)
 ;;;; Definitions of expectation sets
 
 (define implementations
-  (list (stalingrad-interpreter)
-        (stalingrad-compiler)
+  (list ;(stalingrad-interpreter)
+        ;(stalingrad-compiler)
         ;(bcl-ad-implementation "slad")
         ;(bcl-ad-implementation "vl")
-        ;(bcl-ad-implementation "dvl")
+        (bcl-ad-implementation "dvl")
         ))
 
 (define (fast-expectations)
@@ -688,7 +688,7 @@ all: $(FAILURE_REPORTS)
       "../examples/automatic/"
       (lambda ()
         (append-map file->expectations
-         '("one-offs.vlad"
+         '()#;'("one-offs.vlad"
            "addition.vlad"
            "basics.vlad"
            "bug-a.vlad"
@@ -719,19 +719,20 @@ all: $(FAILURE_REPORTS)
       "../examples/automatic/"
       (lambda ()
         (append-map file->expectations
-         '("backprop-F.vlad"
-           "backprop-R.vlad"
-           "dn.vlad"
-           "double-agent.vlad"
-           "example-full.vlad"
-           "hessian.vlad"
-           "particle.vlad"
+         '(;"backprop-F.vlad"
+           ;"backprop-R.vlad"
+           ;"dn.vlad"
+           ;"double-agent.vlad"
+           ;"example-full.vlad"
+           ;"hessian.vlad"
+           ;"particle.vlad"
            "probabilistic-lambda-calculus.vlad"
            "probabilistic-prolog.vlad"
-           "saddle.vlad"
-           "series.vlad"
-           "slow-sqrt.vlad"
-           "triple.vlad")))))))
+           ;"saddle.vlad"
+           ;"series.vlad"
+           ;"slow-sqrt.vlad"
+           ;"triple.vlad"
+           )))))))
 
 (define (all-expectations)
   (append (fast-expectations) (slow-expectations)))
