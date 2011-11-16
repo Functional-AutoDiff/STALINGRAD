@@ -688,7 +688,7 @@ all: $(FAILURE_REPORTS)
       "../examples/automatic/"
       (lambda ()
         (append-map file->expectations
-         '()#;'("one-offs.vlad"
+         '("one-offs.vlad"
            "addition.vlad"
            "basics.vlad"
            "bug-a.vlad"
@@ -719,19 +719,19 @@ all: $(FAILURE_REPORTS)
       "../examples/automatic/"
       (lambda ()
         (append-map file->expectations
-         '(;"backprop-F.vlad"
-           ;"backprop-R.vlad"
-           ;"dn.vlad"
-           ;"double-agent.vlad"
-           ;"example-full.vlad"
-           ;"hessian.vlad"
-           ;"particle.vlad"
+         '("backprop-F.vlad"
+           "backprop-R.vlad"
+           "dn.vlad"
+           "double-agent.vlad"
+           "example-full.vlad"
+           "hessian.vlad"
+           "particle.vlad"
            "probabilistic-lambda-calculus.vlad"
            "probabilistic-prolog.vlad"
-           ;"saddle.vlad"
-           ;"series.vlad"
-           ;"slow-sqrt.vlad"
-           ;"triple.vlad"
+           "saddle.vlad"
+           "series.vlad"
+           "slow-sqrt.vlad"
+           "triple.vlad"
            )))))))
 
 (define (all-expectations)
