@@ -120,6 +120,12 @@
 
 (define (gradient-using-*j f) (gradient-R f))
 
+;; A hook for compatibility with DVL.  See explanation in
+;; BCL-AD/ls/dvl/stdlib/vlad-compatibility.dvl.
+
+(define (HACK-raise-to-same-bundle-level thing target)
+  thing)
+
 ;; "Sensible" defaults
 
 (define (derivative f) (derivative-using-*j f))

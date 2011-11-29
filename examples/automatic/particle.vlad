@@ -42,7 +42,9 @@
 			 (let* ((delta-t-f (/ (- (real 0) (list-ref x 1))
 					      (list-ref xdot 1)))
 				(x-t-f (v+ x (k*v delta-t-f xdot))))
-			   (sqr (list-ref x-t-f 0))))))))
+			   (HACK-raise-to-same-bundle-level
+                            (sqr (list-ref x-t-f 0))
+                            w)))))))
    (loop x-initial xdot-initial))))
 
 (define (particle outer-gradient inner-gradient)
