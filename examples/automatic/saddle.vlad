@@ -67,7 +67,12 @@
 
 (define (argmin-using-mnbrak-and-golden f l u)
  (mnbrak f l u (lambda (ax fa bx fb cx fc)
-		(golden f 1.0e-3 ax bx cx (lambda (mx fm) mx)))))
+		(golden f
+                        1.0e-3
+                        (HACK-raise-to-same-bundle-level ax fa)
+                        (HACK-raise-to-same-bundle-level bx fb)
+                        (HACK-raise-to-same-bundle-level cx fc)
+                        (lambda (mx fm) mx)))))
 
 (define (saddle outer-gradient inner-gradient)
   (let* ((linear-argmin (lambda (f x epsilon)

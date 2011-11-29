@@ -8,7 +8,10 @@
 
 (define (identity x) x)
 
-(define (max x y) (if (>= x y) x y))
+(define (max x y)
+  (if (>= x y)
+      (HACK-raise-to-same-bundle-level x y)
+      (HACK-raise-to-same-bundle-level y x)))
 
 ;;; Lists
 
@@ -168,7 +171,7 @@
 		(lambda (x)
 		  (let ((direction (select-direction x)))
 		    (if (<= (magnitude direction) epsilon)
-			x
+			(HACK-raise-to-same-bundle-level x direction)
 			(let* ((line (lambda (k) (v+ x (k*v k direction))))
 			       (line-f (lambda (k) (f (line k)))))
 			  (loop
