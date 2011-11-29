@@ -18,7 +18,7 @@
 		  (if (<= (abs (- y y-prime)) 1e-5)
 		      y
 		      (loop y-prime))))))
-  (loop (- (+ x 1.0) x)))) ; Algebraic noop for the benefit of DVL type inference
+  (loop (HACK-raise-to-same-bundle-level 1.0 x))))
 
 (sqrt 4) ===> 2
 
