@@ -98,6 +98,10 @@
 (define (objective-function x1 y1 x2 y2)
   (- (+ (sqr x1) (sqr y1)) (+ (sqr x2) (sqr y2))))
 
+(define (do-saddle outer-gradient inner-gradient)
+  ((saddle outer-gradient inner-gradient)
+   objective-function (list (real 1) (real 1)) 1e-2))
+
 ((saddle gradient-F gradient-F)
  objective-function (list (real 1) (real 1)) 1e-2)
  ===> ((4.965316230354233e-05 4.965316230354233e-05) (4.965316230354233e-05 4.965316230354233e-05))
