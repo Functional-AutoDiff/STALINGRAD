@@ -1,0 +1,47 @@
+;;; The list of unknown length written in CPS.
+
+;;; This offers two different problems for flow analysis than the
+;;; direct style version: First, if care is not exercised, the
+;;; analysis will try to make an infinite number of variants of
+;;; gen-list, with ever longer continuations.  A fix for this is,
+;;; whenever creating a binding, to chase up the collection of its
+;;; anscestors (bindings that depend on it) and see whether there is a
+;;; call to the same procedure with arguments that are not statically
+;;; larger.  If there is, you have a loop for which you have no static
+;;; proof of termination: residualize (in this case, the residual
+;;; gen-list will have to accept a union U between the original k and
+;;; (lambda (tail) ...) closed over U.  Can the binding for the first
+;;; call to gen-list be adjusted to use the union?
+
+;;; First, part two: Somehow, the object passed to the original k and
+;;; the tail passed to (lambda (tail) ...) must become lists of
+;;; unknown length -- the fact that a recursive union (between
+;;; procedures) appears in operator position must get translated to a
+;;; recursive union appearing in the argument position for the
+;;; entailed calls to the members of that union.
+
+;;; Second, since neither the length of the list being generated nor
+;;; the index at which it is accessed are known, the analysis has no
+;;; way to know that the program will not attempt to project a null to
+;;; a pair.  It must avoid crashing with a compile-time error in this
+;;; case.  Perhaps this can be accomplished by chasing up the
+;;; dependencies of a bad place looking for dynamic conditionals.
+
+(define (car (cons x y)) x)
+
+(define (cdr (cons x y)) y)
+
+(define (gen-list len f k)
+  (if (<= len 0)
+      (k '())
+      (gen-list (- len 1) f (lambda (tail) (k (cons (f len) tail))))))
+
+(define (list-ref lst ind)
+  (if (<= ind 0)
+      (car lst)
+      (list-ref (cdr lst) (- ind 1))))
+
+(let ((len (read-real)))
+  (gen-list len (lambda (x) x)
+   (lambda (lst)
+     (list-ref lst (read-real))))) ===> (with-inputs (5 3) 2)
