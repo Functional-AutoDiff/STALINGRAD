@@ -507,7 +507,7 @@ all: $(FAILURE_REPORTS)
        stalingrad-command
        ;; -imprecise-inexacts causes some "Warning: Arguments to bundle
        ;; might not conform" that's confusing the test suite.
-       "-compile -k -imprecise-inexacts -no-warnings "
+       "-compile -k -imprecise-inexacts -no-warnings -sra -alias -inline "
        test-directory
        basename
        ".vlad"))))
