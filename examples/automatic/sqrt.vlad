@@ -1,3 +1,9 @@
+;; A hook for compatibility with DVL.  See explanation in
+;; BCL-AD/ls/dvl/stdlib/vlad-compatibility.dvl.
+
+(define (HACK-raise-to-same-bundle-level thing target)
+  thing)
+
 (define (abs x) (if (negative? x) (- 0 x) x))
 
 (define (cdr (cons x y)) y)
