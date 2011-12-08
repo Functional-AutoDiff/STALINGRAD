@@ -2,10 +2,18 @@
 
 (define (j* x) (bundle x (perturb (zero x))))
 
+(define (full-tangent thing)
+  (cond ((procedure? thing)
+         (lambda (x) (full-tangent thing x)))
+        ((pair? thing)
+         (cons (full-tangent (car thing))
+               (full-tangent (cdr thing))))
+        (else (unperturb (tangent thing)))))
+
 (define (derivative-F f)
  (let ((f-forward (j* f)))
   (lambda (x)
-    (unperturb (tangent (f-forward (bundle x (perturb (real 1)))))))))
+    (full-tangent (f-forward (bundle x (perturb (real 1))))))))
 
 (define (derivative-R f)
  (let ((f-reverse (*j f)))
