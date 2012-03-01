@@ -1,7 +1,7 @@
 #                                               -*- Autoconf -*-
 # Process this file with autoconf to produce a configure script.
 
-AC_PREREQ([2.61])
+AC_PREREQ([2.68])
 AC_INIT([Stalingrad],[0.0],[barak@cs.nuim.ie])
 AC_CANONICAL_TARGET
 AC_CONFIG_SRCDIR([QobiScheme/source/jdhuff.h])
