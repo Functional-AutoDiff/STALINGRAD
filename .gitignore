@@ -15,3 +15,5 @@ x86_64-Linux-2.6.32-5-amd64/
 *.bci
 /tools/mplayerwin
 /tools/unbuff
+/tools/sum.c
+/tools/sum
