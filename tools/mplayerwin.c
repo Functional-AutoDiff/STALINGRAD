@@ -17,7 +17,7 @@ int main(int argc, char *argv[]) {
 	    argv[0]);
     exit(EXIT_FAILURE);
   }
-  sscanf(argv[1], "%x", &p);
+  sscanf(argv[1], "%x", (unsigned int *)&p);
   sscanf(argv[2], "%d", &x);
   sscanf(argv[3], "%d", &y);
   sscanf(argv[4], "%d", &width);
@@ -39,20 +39,20 @@ int main(int argc, char *argv[]) {
   if (strcmp(hostname, "thakaa.ecn.purdue.edu")==0) {
     sprintf(&command[0],
 	    "mplayer 2>/dev/null -really-quiet -wid 0x%x -vo gl %s",
-	    w,
+	    (unsigned int)w,
 	    argv[6]);
   }
   else if (strcmp(hostname, "etterretning.ecn.purdue.edu")==0||
            strcmp(hostname, "etterretning")==0) {
     sprintf(&command[0],
 	    "mplayer 2>/dev/null -really-quiet -wid 0x%x -vo x11 -zoom %s",
-	    w,
+	    (unsigned int)w,
 	    argv[6]);
   }
   else {
     sprintf(&command[0],
 	    "mplayer 2>/dev/null -really-quiet -wid 0x%x -vo xv %s",
-	    w,
+	    (unsigned int)w,
 	    argv[6]);
   }
   system(&command[0]);
