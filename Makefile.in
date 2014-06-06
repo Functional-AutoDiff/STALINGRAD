@@ -1,14 +1,10 @@
-all: QobiScheme stalingrad
+all: stalingrad
 
 targets:
-	@echo QobiScheme
 	@echo stalingrad
 
 
-QobiScheme:
-	$(MAKE) -C QobiScheme all
-
-stalingrad: QobiScheme
+stalingrad:
 	$(MAKE) -C source all
 
 tool/test-driver-scm.com: tool/test-driver-scm.scm
@@ -33,4 +29,4 @@ test-full: prepare-test-full
 Makefile: Makefile.in
 	./config.status
 
-.PHONY: all targets QobiScheme stalingrad prepare-test test prepare-test-full test-full
+.PHONY: all targets stalingrad prepare-test test prepare-test-full test-full

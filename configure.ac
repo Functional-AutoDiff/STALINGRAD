@@ -4,7 +4,7 @@
 AC_PREREQ([2.68])
 AC_INIT([Stalingrad],[0.0],[barak@cs.nuim.ie])
 AC_CANONICAL_TARGET
-AC_CONFIG_SRCDIR([QobiScheme/source/jdhuff.h])
+AC_CONFIG_SRCDIR([source/stalingrad.sc])
 
 # Checks for programs.
 AC_PROG_CXX
@@ -41,7 +41,6 @@ AC_FUNC_REALLOC
 AC_FUNC_STRTOD
 AC_CHECK_FUNCS([bzero dup2 floor ftime getcwd gettimeofday memset pow select socket sqrt strerror strrchr])
 
-AC_CONFIG_FILES([QobiScheme/Makefile
-                 source/Makefile
+AC_CONFIG_FILES([source/Makefile
                  Makefile])
 AC_OUTPUT

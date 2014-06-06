@@ -66,12 +66,14 @@ test-full:
 # ----------------------------------
 stalingradlib = stalingradlib-stuff.o
 
+QSDIR = ../../QobiScheme
+
 qslibs=\
- ../QobiScheme/source/QobiScheme.a\
- ../QobiScheme/source/QobiScheme-AD.a
+ $(QSDIR)/source/QobiScheme.a\
+ $(QSDIR)/source/QobiScheme-AD.a
 
 INCLUDES=\
-	-I ../QobiScheme/source \
+	-I $(QSDIR)/source \
 	-I $(SCXL)
 
 SCH=@SCH@
