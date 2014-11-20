@@ -1,0 +1,27 @@
+This directory contains:
+
+unbuff.c
+
+  Usage: unbuff command ...
+    Run a subsidiary command in such a way that its standard
+    output will not be buffered, and that its standard error
+    will be merged with its standard output.
+
+  This is obsolete: use the GNU coreutils stdbuf command instead, and
+  use standard shell mechanisms for redirecting standard error into
+  standard output.
+
+mplayerwin.c
+
+  used to play videos inside a hot-wired version of xpdf
+
+sum.sc
+
+  This code is self documenting.
+
+  $ egrep '[;"]' sum.sc
+  ;;; LaHaShem HaAretz U'Mloah
+	 "-"
+	 "."
+	 "."
+  ;;; Tam V'Nishlam Shevah L'El Borei Olam
